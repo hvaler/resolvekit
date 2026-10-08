@@ -133,7 +133,7 @@ export function InboxPage() {
               </span>
               <span role="cell" className="flex min-w-0 flex-col gap-[3px]">
                 <span className="text-[13px]">{STATUS_DISPLAY[r.status].label}</span>
-                <span className="font-mono text-[10.5px] leading-[1.2] text-ink3 [overflow-wrap:anywhere]">
+                <span className="truncate font-mono text-[10.5px] leading-[1.2] text-ink3" title={r.status}>
                   {r.status}
                 </span>
               </span>

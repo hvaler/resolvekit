@@ -4,7 +4,7 @@ export function AnalysisBar({ steps, run, note, onReplay }: { steps: string[]; r
   return (
     <div className="flex flex-none items-center gap-4 border-b border-line bg-surface2 px-[22px] py-2 text-[12.5px]">
       <span className="text-[10.5px] font-semibold uppercase tracking-[.08em] text-ink3">Analysis</span>
-      <ol aria-label="Analysis steps" className="m-0 flex min-w-0 list-none gap-4 whitespace-nowrap p-0">
+      <ol aria-label="Analysis steps" className="m-0 flex flex-none list-none gap-4 whitespace-nowrap p-0">
         {steps.map((label, i) => {
           const done = run > i;
           const active = run === i;
@@ -30,8 +30,8 @@ export function AnalysisBar({ steps, run, note, onReplay }: { steps: string[]; r
           );
         })}
       </ol>
-      <span className="flex-1" />
-      <span className="min-w-0 truncate text-[12px] text-ink3" title={note}>
+      {/* The steps keep their width; the note takes what is left and truncates instead of overlapping them. */}
+      <span className="min-w-0 flex-1 truncate pl-2 text-right text-[12px] text-ink3" title={note}>
         {note}
       </span>
       {onReplay && (
