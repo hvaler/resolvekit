@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agentCase, standardCase } from '../fixtures';
 import { quoteFor } from './quotes';
-import { chargedTotal } from './receipt';
+import { chargedTotal, receiptTotal } from './receipt';
 import { buildSubmission, totalSize } from './submission';
 import { deriveSentences } from './draft';
 
@@ -11,6 +11,13 @@ describe('agent receipt', () => {
     if (e2.body.kind !== 'receipt') throw new Error('E2 is not a receipt');
     expect(chargedTotal(e2.body.calls)).toEqual({ total: '1.37', parts: ['0.05', '0.40', '0.92'] });
     expect(chargedTotal(e2.body.calls).total).toBe(agentCase.summary.amount);
+  });
+
+  it('pins a total row of OK calls against the approved budget: 1.37 of 5.00 USD', () => {
+    const e2 = agentCase.evidence.find((e) => e.id === 'E2')!;
+    if (e2.body.kind !== 'receipt') throw new Error('E2 is not a receipt');
+    expect(receiptTotal(e2.body.calls, e2.body.currency, e2.body.cap)).toEqual({ label: 'Total charged · 3 OK calls', total: '1.37', ofCap: 'of 5.00 USD approved' });
+    expect(receiptTotal(e2.body.calls.slice(0, 1), 'USD').ofCap).toBe('USD');
   });
 });
 

@@ -55,7 +55,7 @@ export interface ReceiptCall {
 export type EvidenceBody =
   | { kind: 'lines'; lines: EvidenceLine[] }
   | { kind: 'mandate'; headline: string; sessionId: string; rows: KeyValueRow[] }
-  | { kind: 'receipt'; calls: ReceiptCall[]; currency: string }
+  | { kind: 'receipt'; calls: ReceiptCall[]; currency: string; /** Budget the buyer approved, as a decimal string. */ cap?: string }
   | { kind: 'settlement'; headline: string; captured: string; released: string; cap: string; rows: KeyValueRow[] };
 
 export interface EvidenceMeta {

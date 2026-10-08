@@ -48,6 +48,7 @@ export const agentCase: CaseFile = {
       body: {
         kind: 'receipt',
         currency: 'USD',
+        cap: '5.00',
         calls: [
           { fragment: 'r1', n: 1, time: '09:14:03', tool: 'quote_lookup', price: '0.05', ok: true, hash: 'a3f1…9c20' },
           { fragment: 'r2', n: 2, time: '09:15:40', tool: 'deep_report', price: '0.40', ok: false, hash: '7be0…41d7' },

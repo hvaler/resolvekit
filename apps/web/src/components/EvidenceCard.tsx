@@ -1,6 +1,6 @@
 import { isFragmentLit, useHighlight, useHoverHighlight, type Highlight } from '../app/highlight';
 import type { Evidence, EvidenceLine, KeyValueRow } from '../domain/types';
-import { ReceiptTable } from './ReceiptTable';
+import { ReceiptGrid } from './ReceiptGrid';
 import { EvidenceTag, cx } from './ui';
 
 export const evidenceDomId = (id: string) => `evidence-${id}`;
@@ -114,7 +114,7 @@ export function EvidenceCard({ evidence: e, used, contradictionOpen }: { evidenc
         </>
       )}
 
-      {b.kind === 'receipt' && <ReceiptTable id={e.id} calls={b.calls} currency={b.currency} hl={hl} />}
+      {b.kind === 'receipt' && <ReceiptGrid id={e.id} calls={b.calls} currency={b.currency} cap={b.cap} hl={hl} />}
 
       {b.kind === 'settlement' && (
         <>
