@@ -40,6 +40,25 @@ cp .env.example .env   # PayPal sandbox app credentials
 npm test
 ```
 
+## Web app
+
+`apps/web` is the merchant workspace (Vite + React 18 + TypeScript + Tailwind CSS): inbox, case file
+(timeline · evidence · response draft), approve-and-send with the PayPal re-read, the agent-purchase case and the
+"PayPal is still processing" state. It runs on synthetic data and a simulated `DisputeGateway`; the browser never
+calls PayPal (the real client in `packages/paypal` will sit behind a server).
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # type-checks, then builds apps/web/dist
+npm run typecheck
+npm test           # packages/paypal (node --test) + apps/web (vitest)
+```
+
+In development a small **Dev** control (bottom left) picks what the simulated PayPal does after evidence is
+submitted: *Waiting for buyer*, *Under review*, or *Timeout* (read back, then safe retry). In other builds add
+`?dev` to the URL, or `?outcome=under_review|timeout` to preselect it.
+
 ## AI tools
 
 To be documented as the analyst is built: model, what it does, and how its output is checked.
