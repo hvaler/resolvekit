@@ -1,0 +1,159 @@
+import { describe, expect, it } from 'vitest';
+import { agentCase, standardCase } from '../fixtures';
+import {
+  NOTES_LIMIT,
+  blockerSentence,
+  checklistState,
+  checklistSummary,
+  citationUse,
+  deriveSentences,
+  draftBlockers,
+  draftCounts,
+  notesCountLabel,
+  notesText,
+  recheckEdit,
+  type BlockerInput,
+  type DraftContext,
+} from './draft';
+import type { ContradictionResolution, DraftSentence, SentenceView } from './types';
+
+const done: DraftContext = { edits: {}, checking: null, analysisStep: 6, rejectionStep: 4 };
+const S = standardCase.sentences;
+const byId = (views: SentenceView[], id: string) => views.find((v) => v.id === id)!;
+const explain = standardCase.contradictions[0]!.explainText;
+
+describe('deriveSentences', () => {
+  it('keeps the analyst verdicts once the analysis is complete', () => {
+    const v = deriveSentences(S, done);
+    expect(v.map((x) => x.state)).toEqual(['supported', 'supported', 'supported', 'needs_review', 'rejected', 'supported', 'supported']);
+    expect(v.map((x) => x.num)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('shows rejected sentences as pending until the rejection step has run', () => {
+    expect(byId(deriveSentences(S, { ...done, analysisStep: 4 }), 'S5').state).toBe('pending');
+    expect(byId(deriveSentences(S, { ...done, analysisStep: 5 }), 'S5').state).toBe('rejected');
+  });
+
+  it('marks a sentence as checking while it is re-checked', () => {
+    expect(byId(deriveSentences(S, { ...done, checking: 'S2' }), 'S2').state).toBe('checking');
+  });
+
+  it('turns the address sentence supported when the edit names the delivered unit', () => {
+    const v = byId(deriveSentences(S, { ...done, edits: { S4: explain } }), 'S4');
+    expect(v.state).toBe('supported');
+    expect(v.reason).toBeNull();
+    expect(v.note).toMatch(/supported/);
+    expect(v.edited).toBe(true);
+  });
+
+  it('keeps needs review when the edit does not resolve it', () => {
+    const v = byId(deriveSentences(S, { ...done, edits: { S4: 'It was delivered.' } }), 'S4');
+    expect(v.state).toBe('needs_review');
+    expect(v.note).toBe('Edited · re-checked: still needs review');
+  });
+
+  it('ignores edits to rejected sentences', () => {
+    const v = byId(deriveSentences(S, { ...done, edits: { S5: 'Something else' } }), 'S5');
+    expect(v.state).toBe('rejected');
+    expect(v.text).toBe('The customer confirmed receipt by phone.');
+  });
+
+  it('accepts the analyst suggestion for the agent case', () => {
+    const g6 = agentCase.sentences.find((s) => s.id === 'G6')!;
+    expect(recheckEdit(g6, g6.suggestion!.text).state).toBe('supported');
+  });
+});
+
+describe('notesText', () => {
+  it('assembles supported sentences only, in order', () => {
+    const n = notesText(deriveSentences(S, done));
+    expect(n.startsWith('Order #10482 was placed')).toBe(true);
+    expect(n).not.toContain('confirmed receipt by phone');
+    expect(n).not.toContain('address the buyer gave at checkout');
+    expect(n.endsWith('are attached.')).toBe(true);
+  });
+
+  it('includes an edited sentence once it is supported, but not while re-checking', () => {
+    expect(notesText(deriveSentences(S, { ...done, edits: { S4: explain } }))).toContain('Apt 4B');
+    expect(notesText(deriveSentences(S, { ...done, edits: { S4: explain }, checking: 'S4' }))).not.toContain('Apt 4B');
+  });
+
+  it('formats the count against the 2,000-character limit', () => {
+    expect(NOTES_LIMIT).toBe(2000);
+    expect(notesCountLabel('x'.repeat(1234))).toBe('1,234 / 2,000');
+  });
+});
+
+describe('citationUse and counts', () => {
+  it('counts citations from sentences that can be sent or still need review', () => {
+    const v = deriveSentences(S, done);
+    expect(citationUse(v)).toEqual({ E1: 2, E2: 1, E3: 5, E4: 2, E5: 1 });
+    expect(draftCounts(v)).toEqual({ total: 7, supported: 5, needsReview: 1, removed: 1 });
+  });
+});
+
+describe('draftBlockers', () => {
+  const base = (over: Partial<BlockerInput> = {}): BlockerInput => ({
+    sentences: deriveSentences(S, done),
+    contradictions: standardCase.contradictions,
+    resolutions: {},
+    analysisComplete: true,
+    action: 'provide_evidence',
+    allowedActions: standardCase.allowedActions,
+    evidenceType: { allowed: true, satisfied: true, label: 'Proof of fulfillment' },
+    submitted: false,
+    ...over,
+  });
+  const explained: Record<string, ContradictionResolution> = { C1: { status: 'explained', sentenceNum: 4 } };
+
+  it('blocks on the needs-review sentence and the open contradiction', () => {
+    const b = draftBlockers(base());
+    expect(b.map((x) => x.kind)).toEqual(['needs_review', 'contradiction']);
+    expect(blockerSentence(b)).toBe('To continue: sentence 4 needs review and the address contradiction is open.');
+  });
+
+  it('is empty once the contradiction is explained and sentence 4 re-checked', () => {
+    const b = draftBlockers(base({ sentences: deriveSentences(S, { ...done, edits: { S4: explain } }), resolutions: explained }));
+    expect(b).toEqual([]);
+  });
+
+  it('still blocks on sentence 4 when the contradiction is only resolved with a note', () => {
+    const b = draftBlockers(base({ resolutions: { C1: { status: 'resolved', note: 'Same flat', by: 'Alex Moreno' } } }));
+    expect(b.map((x) => x.kind)).toEqual(['needs_review']);
+  });
+
+  it('blocks while the analysis runs or a sentence is being re-checked', () => {
+    expect(draftBlockers(base({ analysisComplete: false }))[0]!.kind).toBe('analysis');
+    const v = deriveSentences(S, { ...done, checking: 'S1' });
+    expect(draftBlockers(base({ sentences: v })).some((x) => x.kind === 'checking')).toBe(true);
+  });
+
+  it('blocks when the notes exceed the PayPal limit', () => {
+    const long: DraftSentence[] = [{ id: 'L', text: 'a'.repeat(NOTES_LIMIT + 1), verdict: 'supported', citations: [] }];
+    const b = draftBlockers(base({ sentences: deriveSentences(long, done), contradictions: [] }));
+    expect(b.map((x) => x.kind)).toEqual(['notes_limit']);
+  });
+
+  it('blocks a disallowed or unmet evidence type', () => {
+    const ready = { sentences: deriveSentences(S, { ...done, edits: { S4: 'Apt 4B' } }), resolutions: explained };
+    expect(draftBlockers(base({ ...ready, evidenceType: { allowed: false, satisfied: false, label: 'X' } }))[0]!.kind).toBe('evidence_type');
+    expect(draftBlockers(base({ ...ready, evidenceType: { allowed: true, satisfied: false, label: 'Proof of refund' } }))[0]!.kind).toBe('evidence_type');
+  });
+
+  it('blocks actions PayPal does not allow and anything after submission', () => {
+    expect(draftBlockers(base({ allowedActions: ['send_message'] })).some((x) => x.kind === 'action')).toBe(true);
+    expect(draftBlockers(base({ submitted: true })).map((x) => x.kind)).toEqual(['submitted']);
+  });
+});
+
+describe('checklist', () => {
+  it('reflects the contradiction state', () => {
+    const items = standardCase.checklist!.items;
+    const open = items.map((i) => checklistState(i, {}));
+    expect(open[2]).toBe('contradicts');
+    expect(checklistSummary(open)).toBe('4 of 5 present · 1 contradicts');
+    const resolved = items.map((i) => checklistState(i, { C1: { status: 'explained', sentenceNum: 4 } }));
+    expect(resolved[2]).toBe('resolved');
+    expect(checklistSummary(resolved)).toBe('5 of 5 present');
+  });
+});

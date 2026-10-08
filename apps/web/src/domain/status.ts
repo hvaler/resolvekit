@@ -1,0 +1,46 @@
+import type { ActionCode, DisputeStatus, InboxState } from './types';
+
+export type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'acc' | 'muted';
+
+export const STATUS_DISPLAY: Readonly<Record<DisputeStatus, { label: string; tone: Tone }>> = {
+  UNDER_REVIEW: { label: 'Under review by PayPal', tone: 'info' },
+  WAITING_FOR_SELLER_RESPONSE: { label: 'Waiting for your response', tone: 'warn' },
+  WAITING_FOR_BUYER_RESPONSE: { label: 'Waiting for buyer', tone: 'info' },
+  RESOLVED: { label: 'Resolved', tone: 'muted' },
+};
+
+export const STAGE_LABEL: Readonly<Record<string, string>> = {
+  INQUIRY: 'Inquiry',
+  CHARGEBACK: 'Claim',
+  PRE_ARBITRATION: 'Pre-arbitration',
+  ARBITRATION: 'Arbitration',
+};
+
+export const ACTION_LABEL: Readonly<Record<ActionCode, string>> = {
+  provide_evidence: 'Provide evidence',
+  send_message: 'Send message',
+  make_offer: 'Make an offer',
+  accept_claim: 'Accept claim',
+  escalate: 'Escalate',
+};
+
+export const INBOX_STATE_DISPLAY: Readonly<Record<InboxState, { label: string; tone: Tone; dashed?: boolean }>> = {
+  processing: { label: 'Processing by PayPal', tone: 'info', dashed: true },
+  drafting: { label: 'Drafting', tone: 'info' },
+  ready: { label: 'Ready for review', tone: 'acc' },
+  sent: { label: 'Sent · awaiting buyer', tone: 'muted' },
+  closed: { label: 'Closed', tone: 'muted' },
+};
+
+export function statusExplanation(status: DisputeStatus): string {
+  switch (status) {
+    case 'UNDER_REVIEW':
+      return 'PayPal is reviewing the case. No action is needed from you right now.';
+    case 'WAITING_FOR_BUYER_RESPONSE':
+      return 'PayPal is waiting for the buyer to respond to your evidence.';
+    case 'WAITING_FOR_SELLER_RESPONSE':
+      return 'PayPal is waiting for your response.';
+    case 'RESOLVED':
+      return 'PayPal has closed this dispute.';
+  }
+}

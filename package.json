@@ -8,9 +8,16 @@
     "node": ">=24"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
-    "test": "node --test \"packages/*/test/*.test.ts\""
+    "test": "npm run test:paypal && npm run test:web",
+    "test:paypal": "node --test \"packages/*/test/*.test.ts\"",
+    "test:web": "npm run test --workspace @resolvekit/web",
+    "dev": "npm run dev --workspace @resolvekit/web",
+    "build": "npm run build --workspace @resolvekit/web",
+    "preview": "npm run preview --workspace @resolvekit/web",
+    "typecheck": "npm run typecheck --workspace @resolvekit/web"
   }
 }
