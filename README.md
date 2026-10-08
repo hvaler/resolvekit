@@ -47,6 +47,14 @@ npm test
 "PayPal is still processing" state. It runs on synthetic data and a simulated `DisputeGateway`; the browser never
 calls PayPal (the real client in `packages/paypal` will sit behind a server).
 
+The inbox and the agent case's per-call receipt are built on **[AG Grid](https://www.ag-grid.com/) Community**
+(hackathon sponsor tool; `ag-grid-community` + `ag-grid-react` 33.3.2, no Enterprise modules). The inbox grid does the
+work: multi-sort (shift-click), quick-filter search, saved filter chips written to the grid's filter model, a pinned
+"Totals at risk" row recalculated from the filtered rows, keyboard navigation (Enter opens a case), column layout
+saved on the device, and in-place row updates (`applyTransaction`) when PayPal opens a new dispute or records
+evidence. The Quartz theme points at the ResolveKit CSS tokens, so light/dark and teal/indigo restyle it live. Design
+tokens live in `src/theme/resolvekit-tokens.css` with the Tailwind preset `tailwind.resolvekit.cjs`.
+
 ```bash
 npm install
 npm run dev        # http://localhost:5173
@@ -56,7 +64,8 @@ npm test           # packages/paypal (node --test) + apps/web (vitest)
 ```
 
 In development a small **Dev** control (bottom left) picks what the simulated PayPal does after evidence is
-submitted: *Waiting for buyer*, *Under review*, or *Timeout* (read back, then safe retry). In other builds add
+submitted: *Waiting for buyer*, *Under review*, or *Timeout* (read back, then safe retry). It can also make PayPal
+open the new dispute now (otherwise it opens after ~75 s) or simulate PayPal being unreachable. In other builds add
 `?dev` to the URL, or `?outcome=under_review|timeout` to preselect it.
 
 ## AI tools

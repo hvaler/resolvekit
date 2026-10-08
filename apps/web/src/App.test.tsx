@@ -21,7 +21,10 @@ describe('routes render without errors', () => {
   it('inbox', () => {
     const html = render('/');
     expect(html).toContain('Disputes');
-    expect(html).toContain('PP-R-NKQ-10194410');
+    // The grid rows render in the browser (AG Grid); the page around them renders here.
+    expect(html).toContain('8 disputes · 5 waiting for you · 2 due within 48 h · 1 new, still processing at PayPal');
+    expect(html).toContain('Needs my approval');
+    expect(html).toContain('Search disputes');
   });
 
   it('standard case file', () => {

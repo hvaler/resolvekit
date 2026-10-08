@@ -77,10 +77,29 @@ export async function safeRetry(gw: DisputeGateway, submission: EvidenceSubmissi
 
 export type SimulatedOutcome = 'waiting_for_buyer' | 'under_review' | 'timeout';
 
+/** How the simulated PayPal opens a new (UNDER_REVIEW, no actions) dispute to the seller after a while. */
+export interface ScheduledOpening {
+  afterMs: number;
+  status: DisputeStatus;
+  stage: string;
+  respondBy: string;
+  allowedActions: readonly ActionCode[];
+}
+
+/** PayPal could not be reached at all (no answer). Nothing was read. */
+export class GatewayUnavailableError extends Error {
+  constructor(message = 'PayPal could not be reached') {
+    super(message);
+    this.name = 'GatewayUnavailableError';
+  }
+}
+
 export interface SimulatedGatewayOptions {
   outcome: () => SimulatedOutcome;
   latencyMs?: number;
   now?: () => Date;
+  /** New disputes that PayPal opens to the seller once `afterMs` have passed since the gateway started. */
+  openings?: Readonly<Record<string, ScheduledOpening>>;
 }
 
 /**
@@ -92,16 +111,46 @@ export interface SimulatedGatewayOptions {
 export class SimulatedDisputeGateway implements DisputeGateway {
   private readonly disputes = new Map<string, DisputeSnapshot>();
   private readonly timedOut = new Set<string>();
-  private readonly opts: Required<SimulatedGatewayOptions>;
+  private readonly pending = new Map<string, ScheduledOpening>();
+  private readonly startedAt: number;
+  private offline = false;
+  private readonly opts: Required<Omit<SimulatedGatewayOptions, 'openings'>>;
   readonly sent: { submission: EvidenceSubmission; requestId: string }[] = [];
 
   constructor(initial: readonly DisputeSnapshot[], opts: SimulatedGatewayOptions) {
     for (const d of initial) this.disputes.set(d.id, structuredClone(d));
-    this.opts = { latencyMs: 0, now: () => new Date(), ...opts };
+    this.opts = { outcome: opts.outcome, latencyMs: opts.latencyMs ?? 0, now: opts.now ?? (() => new Date()) };
+    this.startedAt = this.opts.now().getTime();
+    for (const [id, o] of Object.entries(opts.openings ?? {})) this.pending.set(id, o);
+  }
+
+  /** Simulate a network outage: reads fail until it is turned off again. */
+  setOffline(offline: boolean): void {
+    this.offline = offline;
+  }
+
+  /** Open a scheduled dispute now instead of waiting (demo control). */
+  openNow(disputeId: string): void {
+    this.open(disputeId);
+  }
+
+  private open(disputeId: string): void {
+    const o = this.pending.get(disputeId);
+    const d = this.disputes.get(disputeId);
+    if (!o || !d) return;
+    this.pending.delete(disputeId);
+    if (d.status !== 'UNDER_REVIEW' || d.evidences.length) return;
+    d.status = o.status;
+    d.stage = o.stage;
+    d.respondBy = o.respondBy;
+    d.allowedActions = [...o.allowedActions];
   }
 
   async getDispute(disputeId: string): Promise<DisputeSnapshot> {
     await sleep(this.opts.latencyMs);
+    if (this.offline) throw new GatewayUnavailableError();
+    const o = this.pending.get(disputeId);
+    if (o && this.opts.now().getTime() - this.startedAt >= o.afterMs) this.open(disputeId);
     const d = this.disputes.get(disputeId);
     if (!d) throw new Error(`RESOURCE_NOT_FOUND: ${disputeId}`);
     return { ...structuredClone(d), readAt: utcStamp(this.opts.now()) };

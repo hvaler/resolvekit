@@ -1,4 +1,4 @@
-import type { ActionCode, DisputeStatus, InboxState } from './types';
+import type { ActionCode, DisputeStatus } from './types';
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'acc' | 'muted';
 
@@ -24,13 +24,6 @@ export const ACTION_LABEL: Readonly<Record<ActionCode, string>> = {
   escalate: 'Escalate',
 };
 
-export const INBOX_STATE_DISPLAY: Readonly<Record<InboxState, { label: string; tone: Tone; dashed?: boolean }>> = {
-  processing: { label: 'Processing by PayPal', tone: 'info', dashed: true },
-  drafting: { label: 'Drafting', tone: 'info' },
-  ready: { label: 'Ready for review', tone: 'acc' },
-  sent: { label: 'Sent · awaiting buyer', tone: 'muted' },
-  closed: { label: 'Closed', tone: 'muted' },
-};
 
 export function statusExplanation(status: DisputeStatus): string {
   switch (status) {

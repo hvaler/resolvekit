@@ -254,28 +254,6 @@ export interface CaseFile {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Inbox
-
-export type InboxState = 'processing' | 'drafting' | 'ready' | 'sent' | 'closed';
-
-export interface InboxRow {
-  id: string;
-  reasonText: string;
-  item: BuyerItemType;
-  customer: string;
-  amount: string;
-  stage: string | null;
-  status: DisputeStatus;
-  respondBy: string;
-  left: string;
-  urgent?: boolean;
-  state: InboxState;
-  note: string;
-  ready: number | null;
-  agent?: boolean;
-}
-
-// ---------------------------------------------------------------------------------------------
 // Sending
 
 export interface SubmissionFile {
@@ -310,4 +288,8 @@ export interface DisputeSnapshot {
   allowedActions: ActionCode[];
   evidences: RecordedEvidence[];
   readAt: string;
+  /** PayPal stage code, once PayPal has opened the dispute. */
+  stage?: string | null;
+  /** Seller response due date (ISO 8601, UTC), once PayPal has set one. */
+  respondBy?: string | null;
 }

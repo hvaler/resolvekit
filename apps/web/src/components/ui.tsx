@@ -10,22 +10,6 @@ export const TONE_FG: Record<Tone, string> = {
   acc: 'var(--acc)',
   muted: 'var(--ink3)',
 };
-export const TONE_SOFT: Record<Tone, string> = {
-  ok: 'var(--ok-soft)',
-  warn: 'var(--warn-soft)',
-  bad: 'var(--bad-soft)',
-  info: 'var(--info-soft)',
-  acc: 'var(--acc-soft)',
-  muted: 'var(--surface2)',
-};
-export const TONE_LINE: Record<Tone, string> = {
-  ok: 'var(--ok-line)',
-  warn: 'var(--warn-line)',
-  bad: 'var(--bad-line)',
-  info: 'var(--info-line)',
-  acc: 'var(--acc-line)',
-  muted: 'var(--line2)',
-};
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');

@@ -82,3 +82,31 @@ describe('safeRetry', () => {
     await expect(g.provideEvidence(submission, { requestId: 'rk-2' })).rejects.toThrow(/NOT_AUTHORIZED/);
   });
 });
+
+describe('new disputes opened by PayPal', () => {
+  const fresh: DisputeSnapshot = { id: 'N1', status: 'UNDER_REVIEW', allowedActions: [], evidences: [], readAt: '' };
+  const opening = {
+    afterMs: 60_000,
+    status: 'WAITING_FOR_SELLER_RESPONSE' as const,
+    stage: 'INQUIRY',
+    respondBy: '2026-10-18T19:00:00Z',
+    allowedActions: ['send_message', 'provide_evidence'] as const,
+  };
+
+  it('stays UNDER_REVIEW with no actions until the opening time, then reads back opened', async () => {
+    let now = Date.UTC(2026, 9, 8, 19, 0, 0);
+    const g = new SimulatedDisputeGateway([fresh], { outcome: () => 'waiting_for_buyer', now: () => new Date(now), openings: { N1: opening } });
+    expect(await g.getDispute('N1')).toMatchObject({ status: 'UNDER_REVIEW', allowedActions: [] });
+    now += 60_000;
+    expect(await g.getDispute('N1')).toMatchObject({ status: 'WAITING_FOR_SELLER_RESPONSE', stage: 'INQUIRY', respondBy: opening.respondBy, allowedActions: ['send_message', 'provide_evidence'] });
+  });
+
+  it('can be opened on demand, and fails reads while offline', async () => {
+    const g = new SimulatedDisputeGateway([fresh], { outcome: () => 'waiting_for_buyer', openings: { N1: opening } });
+    g.openNow('N1');
+    g.setOffline(true);
+    await expect(g.getDispute('N1')).rejects.toThrow('PayPal could not be reached');
+    g.setOffline(false);
+    expect((await g.getDispute('N1')).status).toBe('WAITING_FOR_SELLER_RESPONSE');
+  });
+});

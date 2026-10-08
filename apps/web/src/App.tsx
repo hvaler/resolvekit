@@ -1,8 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { useState } from 'react';
 import { useServices } from './app/services';
 import type { SimulatedOutcome } from './domain/gateway';
 import { CasePage } from './pages/CasePage';
 import { InboxPage } from './pages/InboxPage';
+import { processingDispute } from './fixtures';
 
 const OUTCOMES: { v: SimulatedOutcome; l: string }[] = [
   { v: 'waiting_for_buyer', l: 'Waiting for buyer' },
@@ -10,9 +12,10 @@ const OUTCOMES: { v: SimulatedOutcome; l: string }[] = [
   { v: 'timeout', l: 'Timeout → read back → safe retry' },
 ];
 
-/** Dev-only: choose what the simulated PayPal does when evidence is submitted. */
+/** Dev-only: choose what the simulated PayPal does (after evidence is submitted, new disputes, outages). */
 function DevOutcomeControl() {
-  const { outcome, setOutcome } = useServices();
+  const { outcome, setOutcome, simulator, refreshAll } = useServices();
+  const [offline, setOffline] = useState(false);
   return (
     <details className="fixed bottom-3 left-3 z-[60] rounded-xl border border-dashed border-line-2 bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2 shadow-[0_2px_8px_rgba(0,0,0,.08)]">
       <summary className="cursor-pointer">Dev</summary>
@@ -30,6 +33,29 @@ function DevOutcomeControl() {
             </option>
           ))}
         </select>
+      </div>
+      <div className="mt-1.5 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            simulator.openNow(processingDispute.id);
+            void refreshAll([processingDispute.id]);
+          }}
+          className="rounded-sm border border-line-2 bg-surface px-1.5 py-0.5"
+        >
+          PayPal opens {processingDispute.id} now
+        </button>
+        <label className="flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={offline}
+            onChange={(e) => {
+              setOffline(e.target.checked);
+              simulator.setOffline(e.target.checked);
+            }}
+          />
+          PayPal unreachable
+        </label>
       </div>
     </details>
   );

@@ -150,6 +150,8 @@ function ProcessingScreen() {
   const { snapshots } = useServices();
   usePolling([s.id]);
   const snap = snapshots[s.id];
+  const status = snap?.status ?? s.status;
+  const opened = status !== 'UNDER_REVIEW';
   return (
     <div className="flex min-h-screen min-w-[1180px] flex-col">
       <AppBar caseId={s.id} checkedAt={snap?.checkedAt ?? null} />
@@ -160,13 +162,20 @@ function ProcessingScreen() {
         <div className="overflow-hidden rounded-2xl border border-line bg-surface">
           <CaseHeader
             summary={s}
-            status={snap?.status ?? s.status}
-            statusDetail={`${snap?.status ?? s.status} · ${s.statusReadAgo}`}
+            status={status}
+            statusDetail={`${status} · ${opened ? 'opened by PayPal' : s.statusReadAgo}`}
             statusHighlight
-            processing
+            processing={!opened}
             className="border-b border-line"
           />
-          <ProcessingBanner checkedAt={snap?.checkedAt ?? null} allowedActions={snap?.allowedActions ?? []} />
+          {opened ? (
+            <p role="status" className="m-0 bg-ok-soft px-[22px] py-3.5 text-body text-ink">
+              PayPal has opened this dispute: {snap?.allowedActions.length ?? 0} actions are now allowed. Its case file is not part of the synthetic
+              demo data yet.
+            </p>
+          ) : (
+            <ProcessingBanner checkedAt={snap?.checkedAt ?? null} allowedActions={snap?.allowedActions ?? []} />
+          )}
         </div>
       </main>
     </div>
@@ -180,7 +189,7 @@ function NotInDemo({ id }: { id: string }) {
     <div className="flex min-h-screen flex-col">
       <AppBar caseId={id} checkedAt={snapshots[Object.keys(snapshots)[0] ?? '']?.checkedAt ?? null} />
       <main className="flex flex-col gap-3 px-7 py-6">
-        <h1 className="m-0 text-[22px] font-semibold tracking-[-0.01em]">{row ? row.reasonText : 'Case not found'}</h1>
+        <h1 className="m-0 text-title-lg">{row ? row.reason : 'Case not found'}</h1>
         <p className="m-0 max-w-[640px] text-[14px] text-ink-2">
           {row
             ? `This dispute is listed in the inbox for illustration. Its case file is not part of the synthetic demo data yet.`

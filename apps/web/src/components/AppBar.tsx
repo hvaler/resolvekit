@@ -77,7 +77,21 @@ export function ThemeControls() {
 
 export const MERCHANT = { name: 'Alex Moreno', initials: 'AM' } as const;
 
-export function AppBar({ caseId, badge, checkedAt }: { caseId?: string; badge?: ReactNode; checkedAt: number | null }) {
+export function AppBar({
+  caseId,
+  badge,
+  checkedAt,
+  onSync,
+  syncNow = false,
+}: {
+  caseId?: string;
+  badge?: ReactNode;
+  checkedAt: number | null;
+  /** Read from PayPal now: used by Retry when a read failed, and by "Sync now". */
+  onSync?: () => void;
+  /** Show a "Sync now" button next to the sync status (inbox). */
+  syncNow?: boolean;
+}) {
   return (
     <header className="flex h-11 flex-none items-center gap-3.5 border-b border-line bg-surface px-[18px]">
       <Logo />
@@ -103,7 +117,12 @@ export function AppBar({ caseId, badge, checkedAt }: { caseId?: string; badge?: 
         )}
       </nav>
       <span className="flex-1" />
-      <SyncIndicator checkedAt={checkedAt} />
+      <SyncIndicator checkedAt={checkedAt} onRetry={onSync} />
+      {syncNow && onSync && (
+        <button type="button" onClick={onSync} className="h-[26px] rounded-md border border-line-2 bg-surface px-[9px] text-[12px] text-ink-2">
+          Sync now
+        </button>
+      )}
       <span
         title="Connected to the PayPal sandbox. All data is synthetic."
         className="flex items-center gap-1.5 rounded-md border border-dashed border-info-line bg-info-soft px-2 py-1 text-[11.5px] font-medium text-info"
