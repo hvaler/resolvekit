@@ -71,7 +71,7 @@ export function DueCell(p: P) {
     return t ? (
       <Stack>
         <span className="text-body font-semibold">Totals at risk</span>
-        <Sub>Open disputes in view</Sub>
+        <Sub>In current view</Sub>
       </Stack>
     ) : null;
   }
@@ -231,7 +231,7 @@ export function ReadinessCell(p: P) {
       <Stack>
         <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
           <span aria-hidden="true" className="box-border h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-line-2 border-t-info" />
-          Analyst reading…
+          Reading…
         </span>
         <Sub>Not scored yet</Sub>
       </Stack>

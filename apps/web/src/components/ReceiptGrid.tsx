@@ -51,9 +51,9 @@ const COLUMNS: ColDef<Row>[] = [
   { field: 'n', headerName: '#', width: 38, cellClass: MONO_CELL, cellRenderer: NumberCell, colSpan: (p) => (p.node?.rowPinned ? 3 : 1) },
   { field: 'time', headerName: 'Time (UTC)', width: 88, cellClass: MONO_CELL },
   { field: 'tool', headerName: 'Tool', flex: 1, minWidth: 84, cellRenderer: ToolCell },
-  { field: 'price', headerName: 'Price', width: 70, type: 'rightAligned', cellRenderer: PriceCell, comparator: (a: string, b: string) => Number(a) - Number(b) },
-  { colId: 'status', field: 'ok', headerName: 'Status', width: 156, cellRenderer: StatusCell },
-  { field: 'hash', headerName: 'Request hash', width: 104, cellClass: MONO_CELL },
+  { field: 'price', headerName: 'Price', width: 66, type: 'rightAligned', cellRenderer: PriceCell, comparator: (a: string, b: string) => Number(a) - Number(b) },
+  { colId: 'status', field: 'ok', headerName: 'Status', width: 168, cellRenderer: StatusCell },
+  { field: 'hash', headerName: 'Hash', headerTooltip: 'Request hash', width: 92, cellClass: MONO_CELL },
 ];
 const DEFAULT_COL: ColDef<Row> = { sortable: true, resizable: true, suppressHeaderMenuButton: true };
 const getRowId = (p: GetRowIdParams<Row>) => p.data.fragment;

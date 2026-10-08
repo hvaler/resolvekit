@@ -16,7 +16,7 @@ describe('agent receipt', () => {
   it('pins a total row of OK calls against the approved budget: 1.37 of 5.00 USD', () => {
     const e2 = agentCase.evidence.find((e) => e.id === 'E2')!;
     if (e2.body.kind !== 'receipt') throw new Error('E2 is not a receipt');
-    expect(receiptTotal(e2.body.calls, e2.body.currency, e2.body.cap)).toEqual({ label: 'Total charged · 3 OK calls', total: '1.37', ofCap: 'of 5.00 USD approved' });
+    expect(receiptTotal(e2.body.calls, e2.body.currency, e2.body.cap)).toEqual({ label: 'Total · 3 OK calls', total: '1.37', ofCap: 'of 5.00 USD approved' });
     expect(receiptTotal(e2.body.calls.slice(0, 1), 'USD').ofCap).toBe('USD');
   });
 });
