@@ -32,7 +32,7 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
       role="group"
       aria-label={`Contradiction: ${c.title}. ${open ? 'Needs review' : 'Resolved'}`}
       aria-hidden={!visible}
-      className="relative mx-0 my-1.5 ml-2 flex flex-col gap-2 rounded-lg px-3 py-2.5 transition-[opacity,transform,background] duration-500"
+      className="relative mx-0 my-1.5 ml-2 flex flex-col gap-2 rounded-xl px-3 py-2.5 transition-[opacity,transform,background] duration-reveal"
       style={{
         background: open ? 'var(--warn-soft)' : 'var(--surface)',
         border: `1px solid ${open ? 'var(--warn-line)' : 'var(--ok-line)'}`,
@@ -51,7 +51,7 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
           {open ? 'Needs review' : 'Resolved'}
         </span>
       </div>
-      <div className="text-[13px] font-medium leading-[1.35]">{c.title}</div>
+      <div className="text-body font-medium leading-[1.35]">{c.title}</div>
       <div className="grid grid-cols-2 gap-1.5">
         {[c.a, c.b].map((side) => (
           <button
@@ -59,14 +59,14 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
             type="button"
             aria-label={`${side.label}: ${side.value}. Highlight in the source.`}
             {...hover({ ev: side.evidenceId, frags: [side.fragment] })}
-            className="flex flex-col gap-0.5 rounded-md border border-line2 bg-surface px-2 py-1.5 text-left"
+            className="flex flex-col gap-0.5 rounded-lg border border-line-2 bg-surface px-2 py-1.5 text-left"
           >
-            <span className="font-mono text-[10px] font-medium leading-[1.2] text-ink3">{side.label}</span>
-            <span className="font-mono text-[12.5px] font-semibold leading-[1.3]">{side.value}</span>
+            <span className="font-mono text-[10px] font-medium leading-[1.2] text-ink-3">{side.label}</span>
+            <span className="font-mono text-mono-id font-semibold">{side.value}</span>
           </button>
         ))}
       </div>
-      <div className="text-[12px] leading-[1.4] text-ink2">{c.assessment}</div>
+      <div className="text-[12px] leading-[1.4] text-ink-2">{c.assessment}</div>
       {open && !noteOpen && (
         <div className="flex flex-wrap gap-1.5">
           <MiniButton onClick={onExplain} className="border-warn-line font-medium text-ink">
@@ -77,7 +77,7 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
       )}
       {open && noteOpen && (
         <div className="flex flex-col gap-1.5">
-          <label htmlFor={noteId} className="text-[11.5px] text-ink2">
+          <label htmlFor={noteId} className="text-[11.5px] text-ink-2">
             Note (saved to the audit log)
           </label>
           <textarea
@@ -85,7 +85,7 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
             rows={2}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="box-border block w-full resize-y rounded-[5px] border border-line2 bg-surface px-2 py-1.5 text-[12.5px]"
+            className="box-border block w-full resize-y rounded-md border border-line-2 bg-surface px-2 py-1.5 text-[12.5px]"
           />
           <div className="flex gap-1.5">
             <button
@@ -97,7 +97,7 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
                   setNoteOpen(false);
                 }
               }}
-              className="rounded-[5px] border-0 bg-acc px-2.5 py-[5px] text-[12px] font-medium text-acc-ink disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border-0 bg-acc px-2.5 py-[5px] text-[12px] font-medium text-acc-ink disabled:cursor-not-allowed disabled:opacity-50"
             >
               Resolve with note
             </button>

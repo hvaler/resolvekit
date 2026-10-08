@@ -8,7 +8,7 @@ export function SyncIndicator({ checkedAt }: { checkedAt: number | null }) {
   const secs = useSecondsSince(checkedAt);
   const stale = secs != null && secs > POLL_S * 3;
   return (
-    <span className="flex items-center gap-[7px] text-[12px] text-ink2">
+    <span className="flex items-center gap-[7px] text-[12px] text-ink-2">
       <span aria-hidden="true" className={cx('h-[7px] w-[7px] rounded-full', stale ? 'bg-warn' : 'bg-ok')} />
       {secs == null ? 'Not synced yet' : `${stale ? 'Sync delayed' : 'Synced with PayPal'} · last checked ${secs}s ago`}
     </span>
@@ -20,7 +20,7 @@ export function PollCountdown({ checkedAt }: { checkedAt: number | null }) {
   const secs = useSecondsSince(checkedAt);
   const next = secs == null ? null : Math.max(0, POLL_S - (secs % POLL_S));
   return (
-    <span className="font-mono text-[11.5px] font-medium leading-none text-ink2">
+    <span className="font-mono text-caption font-medium leading-none text-ink-2">
       {secs == null ? 'Not checked yet' : `Checked ${secs}s ago · next in ${next}s`}
     </span>
   );

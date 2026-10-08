@@ -33,7 +33,7 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
 
 /** Small monospace code shown next to a human label (PayPal codes). */
 export function Code({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cx('font-mono text-[10.5px] font-normal leading-[1.3] text-ink3', className)}>{children}</span>;
+  return <span className={cx('font-mono text-mono-code font-normal text-ink-3', className)}>{children}</span>;
 }
 
 /** Evidence id tag: "E3". */
@@ -42,7 +42,7 @@ export function EvidenceTag({ id, size = 'md' }: { id: string; size?: 'sm' | 'md
     <span
       className={cx(
         'flex-none bg-acc-soft font-mono font-semibold leading-none text-acc',
-        size === 'md' ? 'rounded px-1.5 py-1 text-[11px]' : 'rounded-[3px] px-[5px] py-[3px] text-[10.5px]',
+        size === 'md' ? 'rounded-sm px-1.5 py-1 text-[11px]' : 'rounded-xs px-[5px] py-[3px] text-[10.5px]',
       )}
     >
       {id}
@@ -54,7 +54,7 @@ export function Spinner({ size = 20, tone = 'acc', slow = false }: { size?: numb
   return (
     <span
       aria-hidden="true"
-      className={cx('box-border inline-block flex-none rounded-full', slow ? 'animate-rkspin-slow' : 'animate-rkspin')}
+      className={cx('box-border inline-block flex-none rounded-full', slow ? 'animate-spin-slow' : 'animate-spin')}
       style={{
         width: size,
         height: size,
@@ -70,9 +70,9 @@ type ButtonVariant = 'primary' | 'secondary';
 export function Button({ variant = 'secondary', className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
   const v: Record<ButtonVariant, string> = {
     primary: 'border-0 bg-acc px-[18px] font-semibold text-acc-ink',
-    secondary: 'border border-line2 bg-surface px-4 font-medium',
+    secondary: 'border border-line-2 bg-surface px-4 font-medium',
   };
-  return <button type="button" className={cx('h-10 rounded-lg text-[13.5px] disabled:cursor-not-allowed', v[variant], className)} {...rest} />;
+  return <button type="button" className={cx('h-10 rounded-xl text-[13.5px] disabled:cursor-not-allowed', v[variant], className)} {...rest} />;
 }
 
 /** The main call-to-action at the bottom of a composer: accent when enabled, muted when not. */
@@ -93,8 +93,8 @@ export function PrimaryAction({
       disabled={!enabled}
       onClick={onClick}
       className={cx(
-        'h-[42px] rounded-lg border-0 text-[14px] font-semibold transition-[background] duration-300',
-        enabled ? 'cursor-pointer bg-acc text-acc-ink' : 'cursor-not-allowed bg-line text-ink3',
+        'h-[42px] rounded-xl border-0 text-[14px] font-semibold transition-[background] duration-base',
+        enabled ? 'cursor-pointer bg-acc text-acc-ink' : 'cursor-not-allowed bg-line text-ink-3',
         className,
       )}
     >
@@ -108,7 +108,7 @@ export function MiniButton({ className, ...rest }: ButtonHTMLAttributes<HTMLButt
   return (
     <button
       type="button"
-      className={cx('rounded-[5px] border border-line2 bg-surface px-[9px] py-[5px] text-[12px] text-ink2 disabled:cursor-not-allowed', className)}
+      className={cx('rounded-md border border-line-2 bg-surface px-[9px] py-[5px] text-[12px] text-ink-2 disabled:cursor-not-allowed', className)}
       {...rest}
     />
   );

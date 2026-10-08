@@ -7,7 +7,7 @@ import { Code, cx } from './ui';
 function Cell({ label, children, first = false, className, style }: { label?: string; children: ReactNode; first?: boolean; className?: string; style?: CSSProperties }) {
   return (
     <div className={cx('flex flex-col gap-[3px]', first ? 'pr-[18px]' : 'border-l border-line px-4', className)} style={style}>
-      {label && <span className="text-[11.5px] text-ink3">{label}</span>}
+      {label && <span className="text-[11.5px] text-ink-3">{label}</span>}
       {children}
     </div>
   );
@@ -38,12 +38,12 @@ export function CaseHeader({ summary: s, status, statusDetail, statusHighlight =
       }}
     >
       <Cell first className="gap-0.5">
-        <span className="text-[24px] font-semibold leading-[1.1] tracking-[-0.01em]">
-          {s.amount} <span className="text-[16px] font-normal text-ink2">{s.currency}</span>
+        <span className="text-display">
+          {s.amount} <span className="text-[16px] font-normal text-ink-2">{s.currency}</span>
         </span>
         <span className="flex flex-wrap items-center gap-2">
           <span className="text-[14px] font-medium">{s.reasonText}</span>
-          <span title="Item type declared by the buyer when opening the dispute" className="rounded border border-line2 px-[7px] py-0.5 text-[11.5px] text-ink2">
+          <span title="Item type declared by the buyer when opening the dispute" className="rounded-sm border border-line-2 px-[7px] py-0.5 text-[11.5px] text-ink-2">
             Buyer declared: {s.buyerItemType}
           </span>
         </span>
@@ -56,13 +56,12 @@ export function CaseHeader({ summary: s, status, statusDetail, statusHighlight =
             <Code>{s.stage}</Code>
           </>
         ) : (
-          <span className="text-[14px] font-medium text-ink3">Not set yet</span>
+          <span className="text-[14px] font-medium text-ink-3">Not set yet</span>
         )}
       </Cell>
       <Cell
         label="PayPal status"
-        className="-my-1 py-1 transition-[background] duration-1000"
-        style={{ background: statusHighlight ? 'var(--info-soft)' : 'transparent' }}
+        className={cx('-my-1 py-1 transition-[background] duration-status', statusHighlight && 'bg-info-soft')}
       >
         <div aria-live="polite" className="flex flex-col gap-[3px]">
           <StatusLabel status={status} pulse={processing} />
@@ -73,15 +72,15 @@ export function CaseHeader({ summary: s, status, statusDetail, statusHighlight =
         {s.respondBy ? (
           <>
             <span className="text-[14px] font-medium">{s.respondBy}</span>
-            <span className="font-mono text-[11.5px] font-medium leading-[1.3] text-ink2">{s.timeLeft}</span>
+            <span className="font-mono text-caption font-medium leading-[1.3] text-ink-2">{s.timeLeft}</span>
           </>
         ) : (
-          <span className="text-[14px] font-medium text-ink3">Set when it opens</span>
+          <span className="text-[14px] font-medium text-ink-3">Set when it opens</span>
         )}
       </Cell>
       <Cell label="Disputed transaction" className="pr-0">
-        <span className="font-mono text-[12.5px] font-medium leading-[1.3]">{s.transactionId}</span>
-        <span className="text-[12px] text-ink2">{s.captureText}</span>
+        <span className="font-mono text-mono-id">{s.transactionId}</span>
+        <span className="text-[12px] text-ink-2">{s.captureText}</span>
       </Cell>
     </div>
   );

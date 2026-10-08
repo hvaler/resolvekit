@@ -1,0 +1,83 @@
+/* ResolveKit design tokens · v2 (identical to the case-file mocks)
+   Put data-theme="light|dark" and data-accent="teal|indigo" on the SAME element (usually <html>).
+   Teal is the default accent, so data-accent="teal" can be omitted. */
+
+:root {
+  /* type */
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* radius */
+  --radius-xs: 3px;   /* source tags (ORD, CAR) */
+  --radius-sm: 4px;   /* badges, evidence IDs */
+  --radius-md: 5px;   /* small buttons, inline actions */
+  --radius-lg: 6px;   /* rows, inputs, fragments */
+  --radius-xl: 8px;   /* buttons, radio cards, notes */
+  --radius-2xl: 10px; /* cards, grid wrapper */
+  --radius-3xl: 12px; /* modal */
+  --radius-pill: 999px; /* citation chips, filter chips */
+  /* elevation */
+  --shadow-none: none;
+  --shadow-ring: 0 0 0 3px var(--hl);                 /* highlighted (cited) card */
+  --shadow-float: 0 4px 16px rgba(0, 0, 0, .08);      /* grid loading overlay */
+  --shadow-toast: 0 10px 30px rgba(0, 0, 0, .25);     /* toast */
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, .28);     /* approve-and-send dialog */
+  --focus-ring: 2px solid var(--acc);                 /* outline, offset 2px */
+  /* motion */
+  --dur-instant: 150ms; /* chip fill */
+  --dur-fast: 200ms;    /* highlight in/out, row hover */
+  --dur-base: 300ms;    /* step ticks, button enable, panel width */
+  --dur-reveal: 500ms;  /* contradiction marker enters */
+  --dur-strike: 900ms;  /* unsupported sentence strike-through */
+  --dur-status: 1200ms; /* PayPal status cell flash after re-read */
+  --dur-spin: 800ms;    /* spinner, linear, infinite */
+  --dur-pulse: 1600ms;  /* processing dot, ease-in-out, infinite */
+  --ease-standard: ease;
+  --ease-pulse: ease-in-out;
+  --ease-linear: linear;
+}
+
+[data-theme="light"], :root:not([data-theme]) {
+  color-scheme: light;
+  --bg: #F4F4F1; --surface: #FFFFFF; --surface2: #F8F8F6;
+  --line: #E5E4E0; --line2: #D2D1CC;
+  --ink: #1A1C1D; --ink2: #4B5154; --ink3: #6A7074;
+  --acc: #0E5E61; --acc-ink: #FFFFFF; --acc-soft: #E3EFEE; --acc-line: #9CC6C4;
+  --ok: #1C6A42; --ok-soft: #E6F1E9; --ok-line: #8DC0A0;
+  --warn: #8A5300; --warn-soft: #FBF1DA; --warn-line: #DDA84C;
+  --bad: #AD281F; --bad-soft: #FBE9E6; --bad-line: #E39C93;
+  --info: #475A6B; --info-soft: #EDF1F4; --info-line: #B8C4CF;
+  --hl: rgba(14, 94, 97, .12);
+}
+[data-theme="light"][data-accent="indigo"] {
+  --acc: #4B3FA8; --acc-soft: #ECEAF8; --acc-line: #B3ACE3;
+  --hl: rgba(75, 63, 168, .11);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0F1213; --surface: #161A1B; --surface2: #1B2021;
+  --line: #283032; --line2: #384144;
+  --ink: #E6E9E9; --ink2: #AFB7BA; --ink3: #8C959A;
+  --acc: #5BBDB8; --acc-ink: #062A2A; --acc-soft: #14302F; --acc-line: #2D6B68;
+  --ok: #6DCB97; --ok-soft: #13271C; --ok-line: #2F6B49;
+  --warn: #E9BA66; --warn-soft: #2B2210; --warn-line: #7B5B1F;
+  --bad: #F29084; --bad-soft: #2E1715; --bad-line: #7B3631;
+  --info: #A7B7C5; --info-soft: #1A2228; --info-line: #3B4B58;
+  --hl: rgba(91, 189, 184, .16);
+}
+[data-theme="dark"][data-accent="indigo"] {
+  --acc: #A89EF4; --acc-ink: #1A1440; --acc-soft: #231F3E; --acc-line: #4B4392;
+  --hl: rgba(168, 158, 244, .16);
+}
+
+/* base */
+body { background: var(--bg); color: var(--ink); font: 400 14px/1.45 var(--font-sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+@keyframes rkspin { to { transform: rotate(360deg); } }
+@keyframes rkpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* Reduced motion: no transitions, no loops. Status still reads from text/colour, never from motion alone. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}

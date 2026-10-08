@@ -6,7 +6,7 @@ export function StatusDot({ status, pulse = false, size = 8 }: { status: Dispute
   return (
     <span
       aria-hidden="true"
-      className={cx('inline-block flex-none rounded-full', pulse && 'animate-rkpulse')}
+      className={cx('inline-block flex-none rounded-full', pulse && 'animate-pulse')}
       style={{ width: size, height: size, background: TONE_FG[STATUS_DISPLAY[status].tone] }}
     />
   );
@@ -27,14 +27,14 @@ export function StateBadge({ state }: { state: InboxState }) {
   const d = INBOX_STATE_DISPLAY[state];
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded px-2 py-[3px] text-[11.5px] font-medium"
+      className="inline-flex items-center gap-1.5 rounded-sm px-2 py-[3px] text-[11.5px] font-medium"
       style={{
         border: `1px ${d.dashed ? 'dashed' : 'solid'} ${TONE_LINE[d.tone]}`,
         background: state === 'closed' ? 'transparent' : TONE_SOFT[d.tone],
         color: TONE_FG[d.tone],
       }}
     >
-      {state === 'processing' && <span aria-hidden="true" className="h-1.5 w-1.5 animate-rkpulse rounded-full bg-info" />}
+      {state === 'processing' && <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-info" />}
       {d.label}
     </span>
   );

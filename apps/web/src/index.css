@@ -1,53 +1,30 @@
+/* Design tokens (colour, type, radius, elevation, motion) from the design handoff. Light/dark via data-theme,
+   teal/indigo via data-accent on <html>. Tailwind names for them come from tailwind.resolvekit.cjs. */
+@import './theme/resolvekit-tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Theme tokens, ported 1:1 from the design handoff. Light/dark via data-theme, teal/indigo via data-accent. */
-[data-theme='light'] {
-  --bg: #f4f4f1; --surface: #ffffff; --surface2: #f8f8f6; --line: #e5e4e0; --line2: #d2d1cc;
-  --ink: #1a1c1d; --ink2: #4b5154; --ink3: #6a7074;
-  --acc: #0e5e61; --acc-ink: #ffffff; --acc-soft: #e3efee; --acc-line: #9cc6c4;
-  --ok: #1c6a42; --ok-soft: #e6f1e9; --ok-line: #8dc0a0;
-  --warn: #8a5300; --warn-soft: #fbf1da; --warn-line: #dda84c;
-  --bad: #ad281f; --bad-soft: #fbe9e6; --bad-line: #e39c93;
-  --info: #475a6b; --info-soft: #edf1f4; --info-line: #b8c4cf;
-  --hl: rgba(14, 94, 97, 0.12);
-  --scrim: rgba(12, 14, 15, 0.48);
-  color-scheme: light;
-}
-[data-theme='light'][data-accent='indigo'] {
-  --acc: #4b3fa8; --acc-soft: #eceaf8; --acc-line: #b3ace3; --hl: rgba(75, 63, 168, 0.11);
-}
-[data-theme='dark'] {
-  --bg: #0f1213; --surface: #161a1b; --surface2: #1b2021; --line: #283032; --line2: #384144;
-  --ink: #e6e9e9; --ink2: #afb7ba; --ink3: #8c959a;
-  --acc: #5bbdb8; --acc-ink: #062a2a; --acc-soft: #14302f; --acc-line: #2d6b68;
-  --ok: #6dcb97; --ok-soft: #13271c; --ok-line: #2f6b49;
-  --warn: #e9ba66; --warn-soft: #2b2210; --warn-line: #7b5b1f;
-  --bad: #f29084; --bad-soft: #2e1715; --bad-line: #7b3631;
-  --info: #a7b7c5; --info-soft: #1a2228; --info-line: #3b4b58;
-  --hl: rgba(91, 189, 184, 0.16);
-  --scrim: rgba(0, 0, 0, 0.6);
-  color-scheme: dark;
-}
-[data-theme='dark'][data-accent='indigo'] {
-  --acc: #a89ef4; --acc-ink: #1a1440; --acc-soft: #231f3e; --acc-line: #4b4392; --hl: rgba(168, 158, 244, 0.16);
-}
+/* App-only token: the backdrop behind the approve-and-send dialog. */
+[data-theme='light'] { --scrim: rgba(12, 14, 15, 0.48); }
+[data-theme='dark'] { --scrim: rgba(0, 0, 0, 0.6); }
 
 @layer base {
   html, body, #root { height: 100%; }
+  /* Repeated after Tailwind's preflight, which would otherwise reset the body line-height. */
   body {
     margin: 0;
     background: var(--bg);
     color: var(--ink);
-    font: 400 14px/1.45 'IBM Plex Sans', system-ui, sans-serif;
+    font: 400 14px/1.45 var(--font-sans);
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--acc); }
   a:hover { color: var(--ink); }
   button, input, textarea, select { font: inherit; color: inherit; }
-  :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 }
 
 @layer components {
@@ -57,13 +34,9 @@
     background-repeat: no-repeat;
     background-position: 0 58%;
     background-size: 0% 1.5px;
-    transition: background-size 0.9s ease, color 0.6s;
+    transition: background-size var(--dur-strike) var(--ease-standard), color 0.6s;
   }
   .rk-strike[data-struck='true'] { background-size: 100% 1.5px; }
   .rk-hatch { background: repeating-linear-gradient(135deg, var(--line) 0 3px, var(--surface2) 3px 7px); }
   .text-pretty { text-wrap: pretty; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; animation: none !important; }
 }

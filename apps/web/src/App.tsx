@@ -14,7 +14,7 @@ const OUTCOMES: { v: SimulatedOutcome; l: string }[] = [
 function DevOutcomeControl() {
   const { outcome, setOutcome } = useServices();
   return (
-    <details className="fixed bottom-3 left-3 z-[60] rounded-lg border border-dashed border-line2 bg-surface px-2.5 py-1.5 text-[11.5px] text-ink2 shadow-[0_2px_8px_rgba(0,0,0,.08)]">
+    <details className="fixed bottom-3 left-3 z-[60] rounded-xl border border-dashed border-line-2 bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2 shadow-[0_2px_8px_rgba(0,0,0,.08)]">
       <summary className="cursor-pointer">Dev</summary>
       <div className="mt-1.5 flex items-center gap-2">
         <label htmlFor="dev-outcome">PayPal re-read outcome</label>
@@ -22,7 +22,7 @@ function DevOutcomeControl() {
           id="dev-outcome"
           value={outcome}
           onChange={(e) => setOutcome(e.target.value as SimulatedOutcome)}
-          className="rounded border border-line2 bg-surface px-1 py-0.5 text-[11.5px]"
+          className="rounded-sm border border-line-2 bg-surface px-1 py-0.5 text-[11.5px]"
         >
           {OUTCOMES.map((o) => (
             <option key={o.v} value={o.v}>

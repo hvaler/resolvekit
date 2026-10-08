@@ -15,7 +15,7 @@ export function ProcessingBanner({ checkedAt, allowedActions }: { checkedAt: num
       <Spinner tone="info" slow />
       <div className="flex flex-col gap-0.5">
         <strong className="text-[14.5px] font-semibold">PayPal is processing this new dispute. Actions appear shortly.</strong>
-        <span className="text-[13px] text-ink2">
+        <span className="text-body text-ink-2">
           New disputes stay in this state for a few minutes before PayPal opens them to you. Meanwhile the analyst is reading documents. Nothing can
           be sent until PayPal opens the dispute.
         </span>
@@ -24,12 +24,12 @@ export function ProcessingBanner({ checkedAt, allowedActions }: { checkedAt: num
         <PollCountdown checkedAt={checkedAt} />
         <span className="flex gap-[5px]" aria-label="Actions not available yet">
           {EXPECTED.map((a) => (
-            <span key={a} className="rounded border border-dashed border-line2 px-2 py-[3px] text-[11.5px] text-ink3">
+            <span key={a} className="rounded-sm border border-dashed border-line-2 px-2 py-[3px] text-[11.5px] text-ink-3">
               {ACTION_LABEL[a]}
             </span>
           ))}
         </span>
-        <span className="text-[11.5px] text-ink3">
+        <span className="text-[11.5px] text-ink-3">
           {allowedActions.length ? `PayPal now allows ${allowedActions.length} actions` : 'No actions allowed by PayPal yet'}
         </span>
       </div>

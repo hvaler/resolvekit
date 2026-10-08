@@ -63,11 +63,11 @@ export function InboxPage() {
         <div className="flex items-end justify-between gap-5">
           <div className="flex flex-col gap-[3px]">
             <h1 className="m-0 text-[22px] font-semibold tracking-[-0.01em]">Disputes</h1>
-            <span className="text-[13.5px] text-ink2">
+            <span className="text-[13.5px] text-ink-2">
               {count.approval} need your approval · {drafting} being drafted · {count.processing} new, still processing at PayPal
             </span>
           </div>
-          <span className="text-[12.5px] text-ink3">Sorted by response due date. New disputes can take a few minutes to appear and to open.</span>
+          <span className="text-[12.5px] text-ink-3">Sorted by response due date. New disputes can take a few minutes to appear and to open.</span>
         </div>
 
         <div role="radiogroup" aria-label="Filter disputes" className="flex flex-wrap items-center gap-2">
@@ -81,8 +81,8 @@ export function InboxPage() {
                 aria-checked={on}
                 onClick={() => setFilter(ch.k)}
                 className={cx(
-                  'rounded-md px-[11px] py-1.5 text-[13px]',
-                  on ? 'border border-ink bg-ink font-medium text-surface' : cx('border bg-surface', ch.dashed ? 'border-dashed border-info-line' : 'border-line2'),
+                  'rounded-lg px-[11px] py-1.5 text-body',
+                  on ? 'border border-ink bg-ink font-medium text-surface' : cx('border bg-surface', ch.dashed ? 'border-dashed border-info-line' : 'border-line-2'),
                 )}
               >
                 {ch.label}
@@ -91,8 +91,8 @@ export function InboxPage() {
           })}
         </div>
 
-        <div role="table" aria-label="Disputes" className="overflow-hidden rounded-[10px] border border-line bg-surface">
-          <div role="row" className={`${COLS} border-b border-line bg-surface2 py-2.5 text-[11.5px] font-medium text-ink3`}>
+        <div role="table" aria-label="Disputes" className="overflow-hidden rounded-2xl border border-line bg-surface">
+          <div role="row" className={`${COLS} border-b border-line bg-surface-2 py-2.5 text-[11.5px] font-medium text-ink-3`}>
             <span role="columnheader">Dispute · reason · item type</span>
             <span role="columnheader">Customer</span>
             <span role="columnheader" className="text-right">
@@ -113,58 +113,58 @@ export function InboxPage() {
               to={`/cases/${r.id}`}
               role="row"
               aria-label={`${r.id}, ${r.reasonText}, ${r.amount} USD, ${STATUS_DISPLAY[r.status].label}`}
-              className={`${COLS} items-center border-b border-line py-3 text-ink no-underline last:border-b-0 hover:bg-surface2 hover:text-ink`}
+              className={`${COLS} items-center border-b border-line py-3 text-ink no-underline last:border-b-0 hover:bg-surface-2 hover:text-ink`}
               style={{ opacity: r.state === 'closed' ? 0.72 : 1 }}
             >
               <span role="cell" className="flex min-w-0 flex-col gap-[3px]">
-                <span className="font-mono text-[12.5px] font-medium leading-[1.2]">{r.id}</span>
-                <span className="text-[12.5px] text-ink2">
+                <span className="font-mono text-mono-id leading-[1.2]">{r.id}</span>
+                <span className="text-[12.5px] text-ink-2">
                   {r.reasonText} · {r.item}
                 </span>
               </span>
-              <span role="cell" className="font-mono text-[12px] leading-[1.2] text-ink2">
+              <span role="cell" className="font-mono text-mono-frag leading-[1.2] text-ink-2">
                 {r.customer}
               </span>
-              <span role="cell" className="text-right font-mono text-[13px] font-medium leading-[1.2]">
-                {r.amount} <span className="font-normal text-ink3">USD</span>
+              <span role="cell" className="text-right font-mono text-body font-medium leading-[1.2]">
+                {r.amount} <span className="font-normal text-ink-3">USD</span>
               </span>
-              <span role="cell" className="font-mono text-[11px] font-medium leading-none text-ink2">
+              <span role="cell" className="font-mono text-[11px] font-medium leading-none text-ink-2">
                 {r.stage ?? '—'}
               </span>
               <span role="cell" className="flex min-w-0 flex-col gap-[3px]">
-                <span className="text-[13px]">{STATUS_DISPLAY[r.status].label}</span>
-                <span className="truncate font-mono text-[10.5px] leading-[1.2] text-ink3" title={r.status}>
+                <span className="text-body">{STATUS_DISPLAY[r.status].label}</span>
+                <span className="truncate font-mono text-mono-code leading-[1.2] text-ink-3" title={r.status}>
                   {r.status}
                 </span>
               </span>
               <span role="cell" className="flex flex-col gap-[3px]">
-                <span className="text-[13px]">{r.respondBy}</span>
-                <span className="font-mono text-[11.5px] font-medium leading-none" style={{ color: r.urgent ? 'var(--bad)' : 'var(--ink2)' }}>
+                <span className="text-body">{r.respondBy}</span>
+                <span className="font-mono text-caption font-medium leading-none" style={{ color: r.urgent ? 'var(--bad)' : 'var(--ink2)' }}>
                   {r.left}
                   {r.urgent && <span className="sr-only"> (urgent)</span>}
                 </span>
               </span>
               <span role="cell">
                 <span
-                  className="inline-block rounded border border-line2 px-[7px] py-[3px] text-[11.5px] font-medium"
+                  className="inline-block rounded-sm border border-line-2 px-[7px] py-[3px] text-[11.5px] font-medium"
                   style={{ background: r.agent ? 'var(--acc-soft)' : 'transparent', color: r.agent ? 'var(--acc)' : 'var(--ink2)' }}
                 >
                   {r.agent ? 'Agent purchase' : 'Standard'}
                 </span>
               </span>
               <span role="cell" className="flex items-center gap-[7px]">
-                <span aria-hidden="true" className="h-[5px] w-12 overflow-hidden rounded-[3px] bg-line">
+                <span aria-hidden="true" className="h-[5px] w-12 overflow-hidden rounded-xs bg-line">
                   <span className="block h-full" style={{ width: `${r.ready ?? 0}%`, background: (r.ready ?? 0) >= 90 ? 'var(--ok)' : 'var(--warn)' }} />
                 </span>
-                <span className="font-mono text-[11.5px] font-medium leading-none text-ink2">{r.ready == null ? '—' : `${r.ready}%`}</span>
+                <span className="font-mono text-caption font-medium leading-none text-ink-2">{r.ready == null ? '—' : `${r.ready}%`}</span>
               </span>
               <span role="cell" className="flex flex-col items-start gap-1">
                 <StateBadge state={r.state} />
-                <span className="text-[11.5px] text-ink3">{r.note}</span>
+                <span className="text-[11.5px] text-ink-3">{r.note}</span>
               </span>
             </Link>
           ))}
-          {shown.length === 0 && <p className="m-0 px-[18px] py-6 text-[13px] text-ink2">No disputes match this filter.</p>}
+          {shown.length === 0 && <p className="m-0 px-[18px] py-6 text-body text-ink-2">No disputes match this filter.</p>}
         </div>
       </main>
     </div>

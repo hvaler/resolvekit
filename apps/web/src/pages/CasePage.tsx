@@ -70,7 +70,7 @@ function CaseFileScreen({ c }: { c: CaseFile }) {
           caseId={id}
           checkedAt={snap?.checkedAt ?? null}
           badge={
-            c.kind === 'agent' ? <span className="rounded bg-acc-soft px-[7px] py-[3px] text-[11.5px] font-medium text-acc">Agent purchase</span> : undefined
+            c.kind === 'agent' ? <span className="rounded-sm bg-acc-soft px-[7px] py-[3px] text-[11.5px] font-medium text-acc">Agent purchase</span> : undefined
           }
         />
         <CaseHeader
@@ -103,16 +103,16 @@ function CaseFileScreen({ c }: { c: CaseFile }) {
           <section aria-label="Evidence" className="flex min-w-0 flex-1 flex-col gap-3 overflow-auto px-5 pb-8 pt-4">
             <div className="flex items-baseline justify-between">
               <h2 className="m-0 text-[14px] font-semibold">
-                Evidence <span className="text-[12.5px] font-normal text-ink3">· {c.evidenceSources}</span>
+                Evidence <span className="text-[12.5px] font-normal text-ink-3">· {c.evidenceSources}</span>
               </h2>
               {c.kind === 'agent' ? (
-                <span className="text-[12px] text-ink3">Sources: PayPal, MeterMCP receipts</span>
+                <span className="text-[12px] text-ink-3">Sources: PayPal, MeterMCP receipts</span>
               ) : (
                 <button
                   type="button"
                   disabled
                   title="Uploading evidence is not available in this demo"
-                  className="rounded-[5px] border border-line2 bg-surface px-2.5 py-[5px] text-[12px] text-ink2 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-md border border-line-2 bg-surface px-2.5 py-[5px] text-[12px] text-ink-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   + Add evidence
                 </button>
@@ -157,7 +157,7 @@ function ProcessingScreen() {
         <Link to="/" className="text-[12.5px]">
           ← All cases
         </Link>
-        <div className="overflow-hidden rounded-[10px] border border-line bg-surface">
+        <div className="overflow-hidden rounded-2xl border border-line bg-surface">
           <CaseHeader
             summary={s}
             status={snap?.status ?? s.status}
@@ -181,12 +181,12 @@ function NotInDemo({ id }: { id: string }) {
       <AppBar caseId={id} checkedAt={snapshots[Object.keys(snapshots)[0] ?? '']?.checkedAt ?? null} />
       <main className="flex flex-col gap-3 px-7 py-6">
         <h1 className="m-0 text-[22px] font-semibold tracking-[-0.01em]">{row ? row.reasonText : 'Case not found'}</h1>
-        <p className="m-0 max-w-[640px] text-[14px] text-ink2">
+        <p className="m-0 max-w-[640px] text-[14px] text-ink-2">
           {row
             ? `This dispute is listed in the inbox for illustration. Its case file is not part of the synthetic demo data yet.`
             : `There is no dispute ${id} in this workspace.`}
         </p>
-        <Link to="/" className="text-[13px]">
+        <Link to="/" className="text-body">
           ← All cases
         </Link>
       </main>
