@@ -1,0 +1,16 @@
+{
+  "name": "resolvekit",
+  "private": true,
+  "description": "Evidence-first PayPal dispute workspace: every claim cited, unsupported claims rejected, the merchant approves.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --test \"packages/*/test/*.test.ts\""
+  }
+}

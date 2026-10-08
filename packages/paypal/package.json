@@ -1,0 +1,6 @@
+{
+  "name": "@resolvekit/paypal",
+  "private": true,
+  "type": "module",
+  "exports": "./src/client.ts"
+}
