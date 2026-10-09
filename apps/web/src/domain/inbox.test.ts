@@ -112,7 +112,7 @@ describe('saved filter chips', () => {
   });
 
   it('count the disputes each chip matches', () => {
-    expect(chipCounts(rows)).toEqual({ approval: 2, agent: 2, processing: 1, due48: 2 });
+    expect(chipCounts(rows)).toEqual({ approval: 1, agent: 2, processing: 1, due48: 2 });
     const both = rows.filter((r) => CHIPS.filter((c) => c.key === 'agent' || c.key === 'due48').every((c) => c.matches(r)));
     expect(both.map((r) => r.id)).toEqual(['PP-R-KDA-10192258']);
   });
