@@ -63,7 +63,7 @@ export function AnalysisBar({ steps, run, note, label, problem, onReplay, onReru
   const complete = run >= steps.length;
   const budget = live?.configured ? ` · ${live.remaining}/${live.limit} live runs left this hour` : '';
   return (
-    <div className="flex flex-none items-center gap-4 border-b border-line bg-surface-2 px-[22px] py-2 text-[12.5px]">
+    <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-surface-2 px-[22px] py-2 text-[12.5px]">
       <span className="text-[10.5px] font-semibold uppercase tracking-[.08em] text-ink-3">Analysis</span>
       <ol aria-label="Analysis steps" className="m-0 flex flex-none list-none gap-4 whitespace-nowrap p-0">
         {steps.map((stepLabel, i) => {
@@ -91,9 +91,11 @@ export function AnalysisBar({ steps, run, note, label, problem, onReplay, onReru
         })}
       </ol>
       {/* The steps keep their width; the note takes what is left and truncates instead of overlapping them. */}
-      <span className={cx('min-w-0 flex-1 truncate pl-2 text-right text-[12px]', problem ? 'text-warn' : 'text-ink-3')} title={problem ?? note} role={problem ? 'status' : undefined}>
+      <span className={cx('min-w-[160px] flex-1 truncate pl-2 text-right text-[12px]', problem ? 'text-warn' : 'text-ink-3')} title={problem ?? note} role={problem ? 'status' : undefined}>
         {problem ?? note}
       </span>
+      {/* Provenance and controls stay together; on a narrow window they wrap to a second line instead of clipping. */}
+      <span className="ml-auto flex flex-none items-center gap-2">
       <span
         className={cx('flex-none whitespace-nowrap rounded-sm px-[7px] py-0.5 font-mono text-[11px]', label.live ? 'bg-acc-soft text-acc' : 'border border-line-2 bg-surface text-ink-2')}
         title={label.title}
@@ -123,6 +125,7 @@ export function AnalysisBar({ steps, run, note, label, problem, onReplay, onReru
           Re-run with AI
         </button>
       )}
+      </span>
     </div>
   );
 }

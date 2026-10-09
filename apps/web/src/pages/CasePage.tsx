@@ -25,7 +25,7 @@ import { caseFiles, inbox, processingDispute } from '../fixtures';
 
 /** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
 function contradictionLabel(blockerName: string | undefined): string {
-  const t = (blockerName ?? 'contradiction').replace(/^thes+/i, '');
+  const t = (blockerName ?? 'contradiction').replace(/^the\s+/i, '');
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
