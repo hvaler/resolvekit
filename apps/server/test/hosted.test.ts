@@ -106,12 +106,12 @@ async function goldenStore() {
   return store;
 }
 type IntentBody = { id: string; contentHash: string; error?: string };
-/** Compose an intent (no demo code needed) and, with a cookie, approve it. */
-async function intentFor(app: ReturnType<typeof setup>['app'], cookie?: string): Promise<IntentBody> {
-  const r = await app(req(intentPath, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED } }));
+/** Compose an intent (a demo session owns it) and, unless told not to, approve it with the same session. */
+async function intentFor(app: ReturnType<typeof setup>['app'], cookie: string, andApprove = true): Promise<IntentBody> {
+  const r = await app(req(intentPath, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED }, cookie }));
   const i = (await r.json()) as IntentBody;
   assert.equal(r.status, 201, JSON.stringify(i));
-  if (cookie) assert.equal((await app(req(`${intentPath}/${i.id}/approve`, { body: { contentHash: i.contentHash }, cookie }))).status, 200);
+  if (andApprove) assert.equal((await app(req(`${intentPath}/${i.id}/approve`, { body: { contentHash: i.contentHash }, cookie }))).status, 200);
   return i;
 }
 const analysisPath = `/api/cases/${CASE}/analysis`;
@@ -192,9 +192,9 @@ test('unlock: a good code sets an HttpOnly Secure SameSite=Strict cookie for 12 
 test('unlock: the cookie expires after 12 h, and a tampered or foreign-secret cookie unlocks nothing', async () => {
   let now = new Date('2026-10-09T08:00:00Z');
   const { app, pp } = setup({ now: () => now, store: await goldenStore() });
-  const i = await intentFor(app);
-  const approvePath = `${intentPath}/${i.id}/approve`;
   const { cookie } = await unlock(app);
+  const i = await intentFor(app, cookie!, false);
+  const approvePath = `${intentPath}/${i.id}/approve`;
   const [name, value] = cookie!.split('=');
   const [exp, nonce, sig] = value!.split('.');
   const tampered = `${name}=${Number(exp) + 3_600_000}.${nonce}.${sig}`;
@@ -261,7 +261,10 @@ test('protected: evidence send, live re-run, cache-miss analysis and re-check al
   const g = await goldenFor(CASE, input);
   store.cached.set(g.key, g);
   const { app, pp, model, counters } = setup({ store });
-  const i = await intentFor(app);
+  // Composing an intent already needs the demo unlock; approving or sending without it is refused.
+  assert.equal((await app(req(intentPath, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED } }))).status, 403);
+  const { cookie } = await unlock(app);
+  const i = await intentFor(app, cookie!, false);
   const send2 = await app(req(evidencePath, { body: { intentId: i.id } }));
   assert.equal(send2.status, 403);
   const send = await app(req(`${intentPath}/${i.id}/approve`, { body: { contentHash: i.contentHash } }));
@@ -288,15 +291,15 @@ test('unlocked: an approved intent goes to PayPal and counts against the daily c
   const { app, pp, counters } = setup({ store: await goldenStore() });
   const { cookie } = await unlock(app);
   const i = await intentFor(app, cookie!);
-  // Another session (another judge) cannot send what this one approved.
+  // Another session (another judge) cannot send what this one approved: for it, the intent does not exist.
   await sleep(5);
   const other = await unlock(app, CODE, '198.51.100.9');
   const foreign = await app(req(evidencePath, { body: { intentId: i.id }, cookie: other.cookie! }));
-  assert.equal(foreign.status, 403);
-  assert.equal(((await foreign.json()) as { error: string }).error, 'NOT_THE_APPROVER');
+  assert.equal(foreign.status, 404);
+  assert.equal(((await foreign.json()) as { error: string }).error, 'UNKNOWN_INTENT');
   const r = await app(req(evidencePath, { body: { intentId: i.id }, cookie: cookie! }));
   assert.equal(r.status, 202);
-  const events = ((await (await app(req(`/api/disputes/${CASE}/audit`))).json()) as { events: Array<{ kind: string; actor: string }> }).events;
+  const events = ((await (await app(req(`/api/disputes/${CASE}/audit`, { cookie: cookie! }))).json()) as { events: Array<{ kind: string; actor: string }> }).events;
   assert.match(events.find((e) => e.kind === 'intent_approved')!.actor, /^demo session [0-9a-f]{12}$/);
   assert.equal(pp.sends(), 1);
   assert.equal(counters.state().caps.evidence!.used, 1);

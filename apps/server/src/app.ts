@@ -407,8 +407,10 @@ export function createApi(opts: ApiOptions): Api {
       text = typeof body?.text === 'string' ? body.text.trim() : '';
       if (!text || text.length > 600) return json(400, { error: 'INVALID_TEXT', detail: 'text must be 1-600 characters' });
       if (CONTROL_CHARS.test(text) || /[\r\n]/.test(text)) return json(400, { error: 'INVALID_TEXT', detail: 'text must not contain line breaks, control or bidi characters' });
-      // A sentence is being edited: whatever was approved before no longer describes the response.
-      intents.invalidateCase(caseId, 'a sentence was edited after this intent was composed');
+      // A sentence is being edited: whatever this session approved before no longer describes its response. Other
+      // sessions' intents are theirs and stay as they are.
+      const editor = actorOf(req, false);
+      if (editor.ok) intents.invalidateCase(caseId, 'a sentence was edited after this intent was composed', editor.actor);
     }
     const input = await serverInput(caseId);
     if (input instanceof Response) return input;
@@ -431,6 +433,9 @@ export function createApi(opts: ApiOptions): Api {
 
   /** POST /api/disputes/:case/intent → compose the exact content to send, from the server's own case and analysis. */
   const createIntent = async (req: Request, caseId: string): Promise<Response> => {
+    // Hosted: intents belong to a demo session, so composing one needs the demo unlock (simulated cases included).
+    const who = actorOf(req, true);
+    if (!who.ok) return json(who.refusal.status, who.refusal.body);
     const parsed = await readJson(req);
     if (!parsed.ok) return parsed.res;
     const ir = parseIntentRequest(parsed.body);
@@ -439,8 +444,8 @@ export function createApi(opts: ApiOptions): Api {
     if (st instanceof Response) return st;
     const composed = await compose(caseId, st, ir);
     if (composed instanceof Response) return composed;
-    const who = actorOf(req, false);
-    const intent = intents.create({ ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.ok ? who.actor : 'visitor' });
+    const intent = intents.create({ ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor });
+    if ('ok' in intent) return json(intent.status, { error: intent.error, detail: intent.detail });
     return json(201, publicIntent(intent));
   };
 
@@ -450,10 +455,8 @@ export function createApi(opts: ApiOptions): Api {
     if (!parsed.ok) return parsed.res;
     const hash = (parsed.body as { contentHash?: unknown } | null)?.contentHash;
     if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) return json(400, { error: 'INVALID_APPROVAL', detail: 'contentHash (the sha256 of the content you reviewed) is required' });
-    const i = intents.get(intentId);
-    if (!i || i.caseId !== caseId) return json(404, { error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case' });
-    // Approving what goes to real PayPal needs a demo session (hosted); the simulator needs none.
-    const who = actorOf(req, i.disputeId != null);
+    // Only the session that composed the intent can approve it; for any other it does not exist.
+    const who = actorOf(req, true);
     if (!who.ok) return json(who.refusal.status, who.refusal.body);
     const t = intents.approve(intentId, caseId, hash, who.actor);
     if (!t.ok) return json(t.status, { error: t.error, detail: t.detail, ...(t.intent ? { intent: publicIntent(t.intent) } : {}) });
@@ -476,18 +479,18 @@ export function createApi(opts: ApiOptions): Api {
       });
     }
     const intentId = body.intentId;
-    const i0 = intents.get(intentId);
-    if (!i0 || i0.caseId !== caseId) return json(404, { error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case' });
+    const who = actorOf(req, true);
+    if (!who.ok) return json(who.refusal.status, who.refusal.body);
+    // Only the owner session's own intent: anyone else's does not exist for this request.
+    const i0 = intents.get(intentId, who.actor);
+    if (!i0 || i0.caseId !== caseId) return json(404, { error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case and session' });
     if (i0.disputeId !== boundId) {
       intents.invalidate(intentId, 'the case is bound to another dispute now');
       return json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${i0.disputeId ?? 'the simulator'}; the case is bound to ${boundId} now` });
     }
-    const who = actorOf(req, true);
-    if (!who.ok) return json(who.refusal.status, who.refusal.body);
-    if (i0.approvedBy && who.actor !== i0.approvedBy) return json(403, { error: 'NOT_THE_APPROVER', detail: 'Only the session that approved this intent can send it' });
 
     // One send at a time: of two concurrent confirmations, exactly one gets past this synchronous transition.
-    const claim = intents.beginSend(intentId, caseId);
+    const claim = intents.beginSend(intentId, caseId, who.actor);
     if (!claim.ok) return json(claim.status, { error: claim.error, detail: claim.detail, ...(claim.intent ? { intent: publicIntent(claim.intent) } : {}) });
     const intent = claim.intent;
     const refuse = (res: Response, why: string, invalidate: boolean): Response => {
@@ -505,6 +508,11 @@ export function createApi(opts: ApiOptions): Api {
       const st = await caseState(caseId);
       if (st instanceof Response) return refuse(st, `PayPal could not be read (${st.status})`, false);
       if (!st.dispute) return refuse(json(409, { error: 'NOT_BOUND', detail: 'PayPal is not connected for this case now' }), 'PayPal not connected', false);
+      // PayPal takes the seller's evidence once. If it already has some (another session sent first), this intent is
+      // over: say so plainly instead of composing it again.
+      if (st.snap && hasSellerEvidence(st.snap)) {
+        return refuse(json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent' }), 'PayPal already has seller evidence', true);
+      }
       if (sha256(documentsSignature(st.input)) !== intent.documentsHash) {
         return refuse(json(409, { error: 'DOCUMENTS_CHANGED', detail: 'The case documents changed since you approved this response; review it again' }), 'documents changed', true);
       }
@@ -557,7 +565,7 @@ export function createApi(opts: ApiOptions): Api {
       intents.sent(intentId, who.actor, 'accepted by PayPal (read back to confirm)');
       log(`provide-evidence sent · case ${caseId} → ${boundId} · ${intent.evidenceType} · ${files.length} file(s)${sid ? ` · MeterMCP receipt ${sid}` : ''} · intent ${intentId} · request ${intent.requestId}`);
       // Accepted by PayPal is not "recorded": the client reads the dispute back to find out what PayPal stored.
-      return json(202, { sent: true, intent: publicIntent(intents.get(intentId)!) });
+      return json(202, { sent: true, intent: publicIntent(intents.get(intentId, who.actor)!) });
     } catch (e) {
       if (!sending) intents.revert(intentId, claim.previous);
       throw e;
@@ -577,7 +585,7 @@ export function createApi(opts: ApiOptions): Api {
     }
     const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
-    const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|intent|audit)(?:\/(int-[0-9a-f]{24})(\/approve)?)?)?$/.exec(path);
+    const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|intent|audit)(?:\/(int-[0-9a-f]{32})(\/approve|\/cancel)?)?)?$/.exec(path);
     if (!m) return json(404, { error: 'NOT_FOUND' });
     const caseId = m[1]!;
     const sub = m[2];
@@ -587,14 +595,23 @@ export function createApi(opts: ApiOptions): Api {
     // in-browser simulator records it.
     if (sub === 'intent' || sub === 'audit') {
       if (!CASE_FILES[caseId]) return json(404, { error: 'UNKNOWN_CASE' });
+      if (!intentId && sub === 'intent') return req.method === 'POST' ? createIntent(req, caseId) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (m[4] === '/approve') return req.method === 'POST' ? approveIntent(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      // Reads, cancels and the audit trail: the session's own (hosted: needs the demo unlock).
+      const who = actorOf(req, true);
+      if (!who.ok) return json(who.refusal.status, who.refusal.body);
       if (sub === 'audit') {
         if (intentId || req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
-        return json(200, { events: intents.events(caseId) });
+        // Local: the operator sees the case's whole trail. Hosted: each demo session sees its own.
+        return json(200, { events: intents.events(caseId, opts.gate ? who.actor : undefined) });
       }
-      if (!intentId) return req.method === 'POST' ? createIntent(req, caseId) : json(405, { error: 'METHOD_NOT_ALLOWED' });
-      if (m[4]) return req.method === 'POST' ? approveIntent(req, caseId, intentId) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (m[4] === '/cancel') {
+        if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+        const t = intents.cancel(intentId!, caseId, who.actor);
+        return t.ok ? json(200, publicIntent(t.intent)) : json(t.status, { error: t.error, detail: t.detail });
+      }
       if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
-      const i = intents.get(intentId);
+      const i = intents.get(intentId!, who.actor);
       return i && i.caseId === caseId ? json(200, publicIntent(i)) : json(404, { error: 'UNKNOWN_INTENT' });
     }
     if (intentId) return json(404, { error: 'NOT_FOUND' });

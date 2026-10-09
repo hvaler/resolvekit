@@ -3,28 +3,38 @@
  *
  * An intent is exactly what will go to PayPal for one case (see apps/web/src/domain/intent.ts), composed here from the
  * server's own documents and analysis. Its life: proposed → approved (by the merchant, with the content hash they saw)
- * → sending → sent | failed. A newer intent for the same case, an edit, or a change of documents or bindings
- * invalidates it. Every transition is synchronous (check and set in one step, no await in between), so two
+ * → sending → sent | failed. Every transition is synchronous (check and set in one step, no await in between), so two
  * confirmations of the same intent can never both start a send.
  *
- * Persisted on the data dir when given files: intents as one JSON file (the latest {@link MAX_INTENTS}), events as an
- * append-only JSON-lines log. No document text and no secrets go into either: notes are the merchant's own response.
+ * Each intent belongs to the session that created it (hosted: the demo session; local: the operator). Only that
+ * session can read, approve, send or cancel it: for anyone else it does not exist (404). One session's actions (a new
+ * intent, an edit) only ever invalidate that session's own intents. Ids carry 128 random bits.
+ *
+ * Bounded: at most {@link MAX_OPEN_PER_OWNER_CASE} open intents per session and case, {@link MAX_OPEN} open intents in
+ * all (expired ones are dropped first), {@link MAX_INTENTS} stored, a {@link INTENT_TTL_MS} lifetime, and an audit
+ * file that is compacted to its latest {@link MAX_EVENTS_IN_MEMORY} lines beyond {@link MAX_EVENTS_FILE_BYTES}.
+ * Persisted on the data dir when given files. No document text and no secrets go into either file.
  */
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { IntentRequest, IntentStatus, SubmissionIntent } from '../../web/src/domain/intent.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
 
 export const MAX_INTENTS = 500;
+export const MAX_OPEN = 200;
+export const MAX_OPEN_PER_OWNER_CASE = 5;
 export const MAX_EVENTS_IN_MEMORY = 5000;
+export const MAX_EVENTS_FILE_BYTES = 4 * 1024 * 1024;
 export const INTENT_TTL_MS = 30 * 60_000;
+export const INTENT_ID = /^int-[0-9a-f]{32}$/;
 
-/** What the server keeps about an intent besides what it shows: how to compose it again, and who asked. */
+/** What the server keeps about an intent besides what it shows: how to compose it again, and whose it is. */
 export interface StoredIntent extends SubmissionIntent {
   request: IntentRequest;
   /** The verifier's verdicts on the edits, valid for {@link SubmissionIntent.analysisKey}. */
   rechecks: Record<string, Recheck>;
+  /** The owner: the session that created it. Only it can read, approve, send or cancel the intent. */
   createdBy: string;
 }
 
@@ -32,6 +42,7 @@ export type AuditKind =
   | 'intent_created'
   | 'intent_approved'
   | 'intent_invalidated'
+  | 'intent_cancelled'
   | 'send_started'
   | 'send_refused'
   | 'sent'
@@ -53,12 +64,20 @@ export interface AuditEvent {
   detail?: string;
 }
 
-export type Transition = { ok: true; intent: StoredIntent; previous: IntentStatus } | { ok: false; status: number; error: string; detail: string; intent?: StoredIntent };
+export interface Refused {
+  ok: false;
+  status: number;
+  error: string;
+  detail: string;
+  intent?: StoredIntent;
+}
+export type Transition = { ok: true; intent: StoredIntent; previous: IntentStatus } | Refused;
 
 const OPEN: readonly IntentStatus[] = ['proposed', 'approved', 'failed'];
+const NOT_FOUND: Refused = { ok: false, status: 404, error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case and session' };
 
 export function newIntentId(): string {
-  return `int-${randomBytes(12).toString('hex')}`;
+  return `int-${randomBytes(16).toString('hex')}`;
 }
 
 export class IntentStore {
@@ -68,6 +87,7 @@ export class IntentStore {
   private readonly eventsFile: string | null;
   private readonly now: () => Date;
   private readonly ttlMs: number;
+  private eventsBytes = 0;
 
   constructor(o: { file?: string | null; eventsFile?: string | null; now?: () => Date; ttlMs?: number } = {}) {
     this.file = o.file ?? null;
@@ -77,7 +97,7 @@ export class IntentStore {
     if (this.file) {
       try {
         const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StoredIntent[];
-        for (const i of saved) {
+        for (const i of saved.slice(-MAX_INTENTS)) {
           // A send cut short by a restart is unknown, not sent: it may be retried with the same PayPal-Request-Id,
           // and the evidence route reads PayPal first (provide_evidence disappears once evidence is in).
           if (i.status === 'sending') Object.assign(i, { status: 'failed', reason: 'the server restarted during the send' });
@@ -89,8 +109,9 @@ export class IntentStore {
     }
     if (this.eventsFile) {
       try {
-        const lines = readFileSync(this.eventsFile, 'utf8').split('\n').filter(Boolean).slice(-MAX_EVENTS_IN_MEMORY);
-        for (const l of lines) {
+        const text = readFileSync(this.eventsFile, 'utf8');
+        this.eventsBytes = Buffer.byteLength(text);
+        for (const l of text.split('\n').filter(Boolean).slice(-MAX_EVENTS_IN_MEMORY)) {
           try {
             this.log.push(JSON.parse(l) as AuditEvent);
           } catch {
@@ -126,7 +147,26 @@ export class IntentStore {
     if (this.eventsFile) {
       try {
         mkdirSync(dirname(this.eventsFile), { recursive: true });
-        appendFileSync(this.eventsFile, JSON.stringify(ev) + '\n');
+        const line = JSON.stringify(ev) + '\n';
+        if (this.eventsBytes + line.length > MAX_EVENTS_FILE_BYTES) {
+          // Compact: keep the latest events that fit in half the budget, so the disk use stays bounded.
+          const tmp = `${this.eventsFile}.tmp`;
+          const kept: string[] = [];
+          let bytes = 0;
+          for (let k = this.log.length - 1; k >= 0; k--) {
+            const l = JSON.stringify(this.log[k]) + '\n';
+            if (bytes + Buffer.byteLength(l) > MAX_EVENTS_FILE_BYTES / 2) break;
+            kept.push(l);
+            bytes += Buffer.byteLength(l);
+          }
+          const text = kept.reverse().join('');
+          writeFileSync(tmp, text);
+          renameSync(tmp, this.eventsFile);
+          this.eventsBytes = Buffer.byteLength(text);
+        } else {
+          appendFileSync(this.eventsFile, line);
+          this.eventsBytes += Buffer.byteLength(line);
+        }
       } catch {
         /* the in-memory log still has it */
       }
@@ -134,8 +174,19 @@ export class IntentStore {
     return ev;
   }
 
-  events(caseId: string): AuditEvent[] {
-    return this.log.filter((e) => e.caseId === caseId);
+  /** The case's events; with `actor`, only that session's own (hosted visitors see their own trail). */
+  events(caseId: string, actor?: string): AuditEvent[] {
+    return this.log.filter((e) => e.caseId === caseId && (actor === undefined || e.actor === actor));
+  }
+
+  /** The audit file's size on disk (tests). */
+  eventsFileBytes(): number {
+    if (!this.eventsFile) return 0;
+    try {
+      return statSync(this.eventsFile).size;
+    } catch {
+      return 0;
+    }
   }
 
   /** Expire a proposed/approved intent past its deadline (in place). */
@@ -143,19 +194,45 @@ export class IntentStore {
     if ((i.status === 'proposed' || i.status === 'approved') && Date.parse(i.expiresAt) <= this.now().getTime()) {
       i.status = 'expired';
       i.reason = 'not sent within 30 minutes of being composed';
-      this.save();
     }
     return i;
   }
 
-  get(id: string): StoredIntent | null {
+  private sweep() {
+    for (const i of this.intents.values()) this.fresh(i);
+  }
+
+  /** The intent, only for its owner (anyone else: null, as if it did not exist). */
+  get(id: string, owner: string): StoredIntent | null {
+    const i = this.intents.get(id);
+    return i && i.createdBy === owner ? this.fresh(i) : null;
+  }
+
+  /** The intent whoever owns it (server-internal: bindings, tests). */
+  peek(id: string): StoredIntent | null {
     const i = this.intents.get(id);
     return i ? this.fresh(i) : null;
   }
 
-  /** Store a new intent. Any open intent of the same case is invalidated: only the latest content can be sent. */
-  create(i: Omit<StoredIntent, 'id' | 'status' | 'createdAt' | 'expiresAt' | 'approvedBy' | 'approvedAt' | 'sentAt' | 'reason' | 'requestId'>): StoredIntent {
+  private open(): StoredIntent[] {
+    return [...this.intents.values()].filter((i) => OPEN.includes(i.status) || i.status === 'sending');
+  }
+
+  /**
+   * Store a new intent for its owner. The owner's own open intents for the case are invalidated (only the latest
+   * content can be sent); nobody else's are touched. Refused when the server holds too many open intents.
+   */
+  create(i: Omit<StoredIntent, 'id' | 'status' | 'createdAt' | 'expiresAt' | 'approvedBy' | 'approvedAt' | 'sentAt' | 'reason' | 'requestId'>): StoredIntent | Refused {
+    this.sweep();
     this.invalidateCase(i.caseId, 'replaced by a newer intent for this case', i.createdBy);
+    const mine = this.open().filter((x) => x.caseId === i.caseId && x.createdBy === i.createdBy);
+    if (mine.length >= MAX_OPEN_PER_OWNER_CASE) return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'This session has too many open intents for this case' };
+    if (this.open().length >= MAX_OPEN) return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'The server holds too many open submission intents; try again in a few minutes' };
+    // Make room: drop the oldest closed (sent, invalidated, expired, cancelled) intents first; open ones are never dropped.
+    if (this.intents.size >= MAX_INTENTS) {
+      const closed = [...this.intents.values()].filter((x) => !(OPEN.includes(x.status) || x.status === 'sending')).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      for (const o of closed.slice(0, this.intents.size - MAX_INTENTS + 1)) this.intents.delete(o.id);
+    }
     const id = newIntentId();
     const now = this.now();
     const stored: StoredIntent = {
@@ -171,20 +248,15 @@ export class IntentStore {
       reason: null,
     };
     this.intents.set(id, stored);
-    // Keep the newest intents only.
-    if (this.intents.size > MAX_INTENTS) {
-      const old = [...this.intents.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, this.intents.size - MAX_INTENTS);
-      for (const o of old) this.intents.delete(o.id);
-    }
     this.save();
     this.record({ caseId: i.caseId, kind: 'intent_created', actor: i.createdBy, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: stored.requestId });
     return stored;
   }
 
-  /** proposed → approved, only with the content hash the merchant saw. */
+  /** proposed → approved, by its owner only, with the content hash the merchant saw. */
   approve(id: string, caseId: string, contentHash: string, actor: string): Transition {
-    const i = this.get(id);
-    if (!i || i.caseId !== caseId) return { ok: false, status: 404, error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case' };
+    const i = this.get(id, actor);
+    if (!i || i.caseId !== caseId) return NOT_FOUND;
     if (i.status !== 'proposed') return { ok: false, status: 409, error: `INTENT_${i.status.toUpperCase()}`, detail: `This intent is ${i.status}${i.reason ? ` (${i.reason})` : ''}; review the response again`, intent: i };
     if (contentHash !== i.contentHash) return { ok: false, status: 409, error: 'CONTENT_HASH_MISMATCH', detail: 'The approved content is not the content of this intent', intent: i };
     i.status = 'approved';
@@ -195,10 +267,10 @@ export class IntentStore {
     return { ok: true, intent: i, previous: 'proposed' };
   }
 
-  /** approved | failed → sending. Synchronous: of two concurrent confirmations, exactly one gets here. */
-  beginSend(id: string, caseId: string): Transition {
-    const i = this.get(id);
-    if (!i || i.caseId !== caseId) return { ok: false, status: 404, error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case' };
+  /** approved | failed → sending, by its owner only. Synchronous: of two concurrent confirmations, exactly one gets here. */
+  beginSend(id: string, caseId: string, actor: string): Transition {
+    const i = this.get(id, actor);
+    if (!i || i.caseId !== caseId) return NOT_FOUND;
     if (i.status !== 'approved' && i.status !== 'failed') {
       const detail =
         i.status === 'proposed'
@@ -213,6 +285,19 @@ export class IntentStore {
     const previous = i.status;
     i.status = 'sending';
     this.save();
+    return { ok: true, intent: i, previous };
+  }
+
+  /** proposed | approved | failed → cancelled, by its owner only. */
+  cancel(id: string, caseId: string, actor: string): Transition {
+    const i = this.get(id, actor);
+    if (!i || i.caseId !== caseId) return NOT_FOUND;
+    if (!OPEN.includes(i.status)) return { ok: false, status: 409, error: `INTENT_${i.status.toUpperCase()}`, detail: `This intent is ${i.status}`, intent: i };
+    const previous = i.status;
+    i.status = 'invalidated';
+    i.reason = 'cancelled by the merchant';
+    this.save();
+    this.record({ caseId, kind: 'intent_cancelled', actor, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash });
     return { ok: true, intent: i, previous };
   }
 
@@ -252,14 +337,21 @@ export class IntentStore {
     this.record({ caseId: i.caseId, kind: 'intent_invalidated', actor, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, detail: reason });
   }
 
-  /** Invalidate every open intent of a case (an edit, a newer intent, changed documents). */
-  invalidateCase(caseId: string, reason: string, actor = 'ResolveKit') {
-    for (const i of this.intents.values()) if (i.caseId === caseId && OPEN.includes(this.fresh(i).status)) this.invalidate(i.id, reason, actor);
+  /** Invalidate the open intents one session holds for a case (its edit, its newer intent). Never anyone else's. */
+  invalidateCase(caseId: string, reason: string, owner: string) {
+    for (const i of this.intents.values()) {
+      if (i.caseId === caseId && i.createdBy === owner && OPEN.includes(this.fresh(i).status)) this.invalidate(i.id, reason, owner);
+    }
   }
 
-  /** Invalidate every open intent (the bindings changed). */
+  /** Invalidate every open intent (the operator changed the bindings). */
   invalidateAll(reason: string) {
     for (const i of this.intents.values()) if (OPEN.includes(this.fresh(i).status)) this.invalidate(i.id, reason);
+  }
+
+  /** Number of stored intents (tests, health). */
+  size(): number {
+    return this.intents.size;
   }
 }
 

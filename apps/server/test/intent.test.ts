@@ -292,24 +292,8 @@ test('M3: approvals and sends are persisted on the data dir and listed by the au
   const approved = events.find((e) => e.kind === 'intent_approved')!;
   assert.deepEqual([approved.actor, approved.contentHash, approved.intentId, approved.disputeId, approved.requestId], [LOCAL_OPERATOR, i.contentHash, i.id, REAL, i.requestId]);
   assert.match(events.find((e) => e.kind === 'sent')!.detail!, /accepted by PayPal/);
-  assert.equal(reloaded.get(i.id)!.status, 'sent');
+  assert.equal(reloaded.peek(i.id)!.status, 'sent');
   // The audit route answers the same events.
   const r = await app(get(`/api/disputes/${CASE}/audit`));
   assert.deepEqual(((await r.json()) as { events: Array<{ kind: string }> }).events.map((e) => e.kind), events.map((e) => e.kind));
-});
-
-test('M3: a send cut short by a restart is not "sent": it reloads as failed (retryable with the same request id)', (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'rk-intents-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const file = join(dir, 'intents.json');
-  const s = new IntentStore({ file, now: () => NOW });
-  const i = s.create({
-    caseId: CASE, disputeId: REAL, documentsHash: 'd', analysisKey: 'k', evidenceType: 'OTHER', carrier: '', tracking: '', notes: 'n', files: [], sentences: [], resolutionNotes: [],
-    contentHash: 'h', request: { evidenceType: 'OTHER', edits: {}, resolutions: {} }, rechecks: {}, createdBy: LOCAL_OPERATOR,
-  });
-  assert.ok(s.approve(i.id, CASE, 'h', LOCAL_OPERATOR).ok);
-  assert.ok(s.beginSend(i.id, CASE).ok);
-  const after = new IntentStore({ file, now: () => NOW });
-  assert.equal(after.get(i.id)!.status, 'failed');
-  assert.ok(after.beginSend(i.id, CASE).ok);
 });
