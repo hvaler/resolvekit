@@ -1,0 +1,2503 @@
+{
+  "provider": "groq",
+  "promptVersion": "rk-analyst-2026-10-09.5",
+  "results": [
+    {
+      "name": "nr-delivered",
+      "analysis": {
+        "caseId": "EV-01",
+        "key": "",
+        "promptVersion": "rk-analyst-2026-10-09.5",
+        "requestedModel": "openai/gpt-oss-120b",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "createdAt": "2026-10-09T06:07:17.587Z",
+        "facts": [
+          {
+            "id": "F1",
+            "doc": "D",
+            "quote": "Dispute EV-01 · reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "statement": "Dispute reason is merchandise or service not received",
+            "at": null
+          },
+          {
+            "id": "F2",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "statement": "Dispute opened on 14 Sep 2026 at 20:05 UTC",
+            "at": "2026-09-14T20:05:00.000Z"
+          },
+          {
+            "id": "F3",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "statement": "Order placed on 10 Sep 2026 at 09:15 UTC",
+            "at": "2026-09-10T09:15:00.000Z"
+          },
+          {
+            "id": "F4",
+            "doc": "E1",
+            "quote": "2 × Ceramic mug, sand · 24.00 USD",
+            "statement": "Order includes two ceramic mugs for 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F5",
+            "doc": "E1",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Shipping address is 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F6",
+            "doc": "E1",
+            "quote": "Buyer: m•••@example.org",
+            "statement": "Buyer email is m•••@example.org",
+            "at": null
+          },
+          {
+            "id": "F7",
+            "doc": "E2",
+            "quote": "Capture 9KX55120TEST0001\n24.00 USD · COMPLETED",
+            "statement": "Payment capture of 24.00 USD completed",
+            "at": null
+          },
+          {
+            "id": "F8",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "statement": "Payment captured on 10 Sep 2026 at 09:16 UTC",
+            "at": "2026-09-10T09:16:00.000Z"
+          },
+          {
+            "id": "F9",
+            "doc": "E3",
+            "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+            "statement": "Tracking number RE123456789TF with Royal Example Mail",
+            "at": null
+          },
+          {
+            "id": "F10",
+            "doc": "E3",
+            "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+            "statement": "Package shipped on 11 Sep 2026 at 16:20 UTC",
+            "at": "2026-09-11T16:20:00.000Z"
+          },
+          {
+            "id": "F11",
+            "doc": "E3",
+            "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+            "statement": "Package delivered on 13 Sep 2026 at 10:04 UTC, signed by M. K.",
+            "at": "2026-09-13T10:04:00.000Z"
+          },
+          {
+            "id": "F12",
+            "doc": "E3",
+            "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Delivery address matches shipping address",
+            "at": null
+          },
+          {
+            "id": "F13",
+            "doc": "E4",
+            "quote": "Label created 11 Sep 2026 14:02 UTC",
+            "statement": "Shipping label created on 11 Sep 2026 at 14:02 UTC",
+            "at": "2026-09-11T14:02:00.000Z"
+          },
+          {
+            "id": "F14",
+            "doc": "E4",
+            "quote": "Royal Example Mail Tracked 48 · RE123456789TF",
+            "statement": "Label shows tracking number RE123456789TF",
+            "at": null
+          },
+          {
+            "id": "F15",
+            "doc": "E4",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Label shipping address matches order address",
+            "at": null
+          },
+          {
+            "id": "F16",
+            "doc": "E5",
+            "quote": "\"I never received my mugs.\"",
+            "statement": "Buyer claims mugs were not received",
+            "at": null
+          },
+          {
+            "id": "F17",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "statement": "Buyer message sent on 14 Sep 2026 at 20:01 UTC",
+            "at": "2026-09-14T20:01:00.000Z"
+          }
+        ],
+        "droppedFacts": 0,
+        "timeline": [
+          {
+            "at": "2026-09-10T09:15:00.000Z",
+            "title": "Order placed",
+            "sub": "Order #55120",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-10T09:16:00.000Z",
+            "title": "Payment captured",
+            "sub": "24.00 USD",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-11T14:02:00.000Z",
+            "title": "Label created",
+            "sub": "Tracking RE123456789TF",
+            "doc": "E4",
+            "quote": "Label created 11 Sep 2026 14:02 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-11T16:20:00.000Z",
+            "title": "Shipped",
+            "sub": "Royal Example Mail",
+            "doc": "E3",
+            "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+            "negated": false
+          },
+          {
+            "at": "2026-09-13T10:04:00.000Z",
+            "title": "Delivered",
+            "sub": "Signed M. K.",
+            "doc": "E3",
+            "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:01:00.000Z",
+            "title": "Buyer message",
+            "sub": "Never received mugs",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:05:00.000Z",
+            "title": "Dispute opened",
+            "sub": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "negated": false
+          }
+        ],
+        "contradictions": [],
+        "checklist": {
+          "title": "What \"not received\" disputes need",
+          "items": [
+            {
+              "id": "tracking",
+              "label": "Tracking number with delivery confirmation",
+              "critical": true,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\""
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "carrier",
+              "label": "Carrier and ship date",
+              "critical": true,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot"
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "address",
+              "label": "Delivery address matches the order",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E1",
+                  "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                },
+                {
+                  "doc": "E4",
+                  "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "signature",
+              "label": "Signature or proof of receipt",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\""
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "payment",
+              "label": "Payment record for the disputed amount",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E2",
+                  "quote": "Capture 9KX55120TEST0001\n24.00 USD · COMPLETED"
+                },
+                {
+                  "doc": "E2",
+                  "quote": "Captured 10 Sep 2026 09:16 UTC"
+                }
+              ],
+              "contradictionId": null
+            }
+          ]
+        },
+        "sentences": [
+          {
+            "id": "S1",
+            "text": "We received the order on 10 Sep 2026 at 09:15 UTC (F3) and captured payment of 24.00 USD on 10 Sep 2026 at 09:16 UTC (F8).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E2",
+                "quote": "Captured 10 Sep 2026 09:16 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: Evidence shows order placed time and capture time, but does not state the order was received nor the payment amount.",
+            "decidedBy": "model",
+            "rewrite": "We placed the order on 10 Sep 2026 at 09:15 UTC and captured payment on 10 Sep 2026 at 09:16 UTC."
+          },
+          {
+            "id": "S2",
+            "text": "We created a shipping label on 11 Sep 2026 at 14:02 UTC (F13) showing tracking number RE123456789TF (F14).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E4",
+                "quote": "Label created 11 Sep 2026 14:02 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Royal Example Mail Tracked 48 · RE123456789TF",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f13\", \"f14\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S3",
+            "text": "The parcel was shipped with Royal Example Mail on 11 Sep 2026 at 16:20 UTC (F10) using tracking RE123456789TF (F9).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f10\", \"f9\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S4",
+            "text": "Delivery was recorded on 13 Sep 2026 at 10:04 UTC (F11) to the address 7 Sample Road, Flat 2, Testford TF3 1AA (F12) and was signed by M. K. (F11).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f11\", \"f12\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S5",
+            "text": "The order address (F5) matches the delivery address (F12) and the label address (F15).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f5\", \"f12\", \"f15\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S6",
+            "text": "The buyer’s message on 14 Sep 2026 at 20:01 UTC states they never received the mugs (F16).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E5",
+                "quote": "\"I never received my mugs.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: Evidence provides the buyer’s statement but does not include the cited date and time.",
+            "decidedBy": "model",
+            "rewrite": "The buyer’s message states they never received the mugs."
+          },
+          {
+            "id": "S7",
+            "text": "The disputed amount is 24.00 USD, matching the order total (F4) and the captured payment (F7).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "2 × Ceramic mug, sand · 24.00 USD",
+                "valid": true
+              },
+              {
+                "doc": "E2",
+                "quote": "Capture 9KX55120TEST0001\n24.00 USD · COMPLETED",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f4\", \"f7\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S8",
+            "text": "We shipped the order with Royal Example Mail on 11 September 2026.",
+            "noteId": "N1",
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Label created 11 Sep 2026 14:02 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          }
+        ],
+        "injections": [],
+        "recommendation": {
+          "action": "provide_evidence",
+          "rule": "PayPal requests PROOF_OF_FULFILLMENT; the case file has what it needs, no critical requirement is missing, and 1 sentence(s) are supported",
+          "explanation": "The case includes a clear proof of fulfillment: the seller shipped the order with Royal Example Mail on 11 September 2026, satisfying PayPal’s request for PROOF_OF_FULFILLMENT. Providing this evidence aligns with the workspace recommendation and meets the required documentation. The decision is yours, and PayPal decides the outcome."
+        },
+        "usage": {
+          "calls": [
+            {
+              "stage": "extract",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1330,
+              "outputTokens": 1229,
+              "thinkingTokens": 365,
+              "ms": 3716
+            },
+            {
+              "stage": "analyze",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 2454,
+              "outputTokens": 922,
+              "thinkingTokens": 538,
+              "ms": 3523
+            },
+            {
+              "stage": "verify",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1285,
+              "outputTokens": 346,
+              "thinkingTokens": 688,
+              "ms": 2487
+            },
+            {
+              "stage": "explain",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 471,
+              "outputTokens": 85,
+              "thinkingTokens": 22,
+              "ms": 352
+            }
+          ],
+          "inputTokens": 5540,
+          "outputTokens": 2582,
+          "thinkingTokens": 1613
+        }
+      }
+    },
+    {
+      "name": "nr-missing-tracking",
+      "analysis": {
+        "caseId": "EV-02",
+        "key": "",
+        "promptVersion": "rk-analyst-2026-10-09.5",
+        "requestedModel": "openai/gpt-oss-120b",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "createdAt": "2026-10-09T06:08:10.123Z",
+        "facts": [
+          {
+            "id": "F1",
+            "doc": "D",
+            "quote": "Dispute EV-02 · reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "statement": "Dispute reason is merchandise or service not received",
+            "at": null
+          },
+          {
+            "id": "F2",
+            "doc": "D",
+            "quote": "Buyer-declared item type: Physical product",
+            "statement": "Buyer declared the item as a physical product",
+            "at": null
+          },
+          {
+            "id": "F3",
+            "doc": "D",
+            "quote": "Disputed amount: 24.00 USD",
+            "statement": "Disputed amount is 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F4",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "statement": "Dispute opened on 14 Sep 2026 at 20:05:00 UTC",
+            "at": "2026-09-14T20:05:00.000Z"
+          },
+          {
+            "id": "F5",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "statement": "Order placed on 10 Sep 2026 at 09:15 UTC",
+            "at": "2026-09-10T09:15:00.000Z"
+          },
+          {
+            "id": "F6",
+            "doc": "E1",
+            "quote": "2 × Ceramic mug, sand · 24.00 USD",
+            "statement": "Order includes two ceramic mugs for 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F7",
+            "doc": "E1",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Shipping address is 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F8",
+            "doc": "E1",
+            "quote": "Buyer: m•••@example.org",
+            "statement": "Buyer email is m•••@example.org",
+            "at": null
+          },
+          {
+            "id": "F9",
+            "doc": "E2",
+            "quote": "Capture 9KX55120TEST0001",
+            "statement": "Capture identifier is 9KX55120TEST0001",
+            "at": null
+          },
+          {
+            "id": "F10",
+            "doc": "E2",
+            "quote": "24.00 USD · COMPLETED",
+            "statement": "Payment of 24.00 USD completed",
+            "at": null
+          },
+          {
+            "id": "F11",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "statement": "Payment captured on 10 Sep 2026 at 09:16 UTC",
+            "at": "2026-09-10T09:16:00.000Z"
+          },
+          {
+            "id": "F12",
+            "doc": "E5",
+            "quote": "\"I never received my mugs.\"",
+            "statement": "Buyer claims they never received the mugs",
+            "at": null
+          },
+          {
+            "id": "F13",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "statement": "Buyer message sent on 14 Sep 2026 at 20:01 UTC",
+            "at": "2026-09-14T20:01:00.000Z"
+          }
+        ],
+        "droppedFacts": 0,
+        "timeline": [
+          {
+            "at": "2026-09-10T09:15:00.000Z",
+            "title": "Order placed",
+            "sub": "order #55120",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-10T09:16:00.000Z",
+            "title": "Payment captured",
+            "sub": "24.00 USD",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:01:00.000Z",
+            "title": "Buyer message",
+            "sub": "claims non‑receipt",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:05:00.000Z",
+            "title": "Dispute opened",
+            "sub": "EV-02",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "negated": false
+          }
+        ],
+        "contradictions": [],
+        "checklist": {
+          "title": "What \"not received\" disputes need",
+          "items": [
+            {
+              "id": "tracking",
+              "label": "Tracking number with delivery confirmation",
+              "critical": true,
+              "status": "missing",
+              "evidence": [],
+              "contradictionId": null
+            },
+            {
+              "id": "carrier",
+              "label": "Carrier and ship date",
+              "critical": true,
+              "status": "missing",
+              "evidence": [],
+              "contradictionId": null
+            },
+            {
+              "id": "address",
+              "label": "Delivery address matches the order",
+              "critical": false,
+              "status": "missing",
+              "evidence": [],
+              "contradictionId": null
+            },
+            {
+              "id": "signature",
+              "label": "Signature or proof of receipt",
+              "critical": false,
+              "status": "missing",
+              "evidence": [],
+              "contradictionId": null
+            },
+            {
+              "id": "payment",
+              "label": "Payment record for the disputed amount",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E2",
+                  "quote": "Captured 10 Sep 2026 09:16 UTC"
+                }
+              ],
+              "contradictionId": null
+            }
+          ]
+        },
+        "sentences": [
+          {
+            "id": "S1",
+            "text": "We received an order for two ceramic mugs on 10 Sep 2026 at 09:15 UTC (F5).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: Evidence shows order placement time but does not state quantity or item type.",
+            "decidedBy": "model",
+            "rewrite": "We received an order on 10 Sep 2026 at 09:15 UTC."
+          },
+          {
+            "id": "S2",
+            "text": "The order total was 24.00 USD (F6).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "2 × Ceramic mug, sand · 24.00 USD",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f6\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S3",
+            "text": "Payment of 24.00 USD was captured on 10 Sep 2026 at 09:16 UTC (F11).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E2",
+                "quote": "Captured 10 Sep 2026 09:16 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: Evidence provides capture time but does not mention the amount captured.",
+            "decidedBy": "model",
+            "rewrite": "Payment was captured on 10 Sep 2026 at 09:16 UTC."
+          },
+          {
+            "id": "S4",
+            "text": "The items were to be shipped to 7 Sample Road, Flat 2, Testford TF3 1AA (F7).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f7\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S5",
+            "text": "The buyer opened a dispute on 14 Sep 2026 at 20:05 UTC claiming non‑receipt of the mugs (F4, F12).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "D",
+                "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E5",
+                "quote": "\"I never received my mugs.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"20:05\", \"f4\", \"f12\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S6",
+            "text": "No tracking number or carrier details are available in the case documents.",
+            "noteId": null,
+            "citations": [],
+            "verdict": "rejected",
+            "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S7",
+            "text": "No signature or proof of delivery is present in the records.",
+            "noteId": null,
+            "citations": [],
+            "verdict": "rejected",
+            "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S8",
+            "text": "The package was delivered on 13 September 2026.",
+            "noteId": "N1",
+            "citations": [],
+            "verdict": "rejected",
+            "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          }
+        ],
+        "injections": [],
+        "recommendation": {
+          "action": "send_message",
+          "rule": "Critical evidence is missing (tracking number with delivery confirmation, carrier and ship date); ask or explain before deciding",
+          "explanation": "There are no verified statements supporting the dispute, so the recommended action is to send a message requesting the missing tracking information. The decision is yours, and PayPal decides the outcome."
+        },
+        "usage": {
+          "calls": [
+            {
+              "stage": "extract",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1090,
+              "outputTokens": 882,
+              "thinkingTokens": 78,
+              "ms": 2408
+            },
+            {
+              "stage": "analyze",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 2088,
+              "outputTokens": 844,
+              "thinkingTokens": 767,
+              "ms": 3574
+            },
+            {
+              "stage": "verify",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 868,
+              "outputTokens": 234,
+              "thinkingTokens": 371,
+              "ms": 1587
+            },
+            {
+              "stage": "explain",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 444,
+              "outputTokens": 54,
+              "thinkingTokens": 88,
+              "ms": 668
+            }
+          ],
+          "inputTokens": 4490,
+          "outputTokens": 2014,
+          "thinkingTokens": 1304
+        }
+      }
+    },
+    {
+      "name": "nr-address-mismatch",
+      "analysis": {
+        "caseId": "EV-03",
+        "key": "",
+        "promptVersion": "rk-analyst-2026-10-09.5",
+        "requestedModel": "openai/gpt-oss-120b",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "createdAt": "2026-10-09T06:09:33.331Z",
+        "facts": [
+          {
+            "id": "F1",
+            "doc": "D",
+            "quote": "Dispute EV-03 · reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "statement": "Dispute reason is merchandise or service not received",
+            "at": null
+          },
+          {
+            "id": "F2",
+            "doc": "D",
+            "quote": "Buyer-declared item type: Physical product",
+            "statement": "Buyer declared item type physical product",
+            "at": null
+          },
+          {
+            "id": "F3",
+            "doc": "D",
+            "quote": "Disputed amount: 24.00 USD",
+            "statement": "Disputed amount is 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F4",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "statement": "Dispute opened at 2026-09-14T20:05:00Z",
+            "at": "2026-09-14T20:05:00.000Z"
+          },
+          {
+            "id": "F5",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "statement": "Order placed at 2026-09-10T09:15:00Z",
+            "at": "2026-09-10T09:15:00.000Z"
+          },
+          {
+            "id": "F6",
+            "doc": "E1",
+            "quote": "2 × Ceramic mug, sand · 24.00 USD",
+            "statement": "Order contains 2 ceramic mugs costing 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F7",
+            "doc": "E1",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Shipping address 7 Sample Road Flat 2 Testford TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F8",
+            "doc": "E1",
+            "quote": "Buyer: m•••@example.org",
+            "statement": "Buyer email m•••@example.org",
+            "at": null
+          },
+          {
+            "id": "F9",
+            "doc": "E2",
+            "quote": "Capture 9KX55120TEST0001",
+            "statement": "Capture ID 9KX55120TEST0001",
+            "at": null
+          },
+          {
+            "id": "F10",
+            "doc": "E2",
+            "quote": "24.00 USD · COMPLETED",
+            "statement": "Capture amount 24.00 USD completed",
+            "at": null
+          },
+          {
+            "id": "F11",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "statement": "Capture completed at 2026-09-10T09:16:00Z",
+            "at": "2026-09-10T09:16:00.000Z"
+          },
+          {
+            "id": "F12",
+            "doc": "E3",
+            "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+            "statement": "Tracking number RE123456789TF with Royal Example Mail Tracked 48",
+            "at": null
+          },
+          {
+            "id": "F13",
+            "doc": "E3",
+            "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+            "statement": "Shipped at 2026-09-11T16:20:00Z from Testford depot",
+            "at": "2026-09-11T16:20:00.000Z"
+          },
+          {
+            "id": "F14",
+            "doc": "E3",
+            "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+            "statement": "Delivered at 2026-09-13T10:04:00Z, signed M. K.",
+            "at": "2026-09-13T10:04:00.000Z"
+          },
+          {
+            "id": "F15",
+            "doc": "E3",
+            "quote": "Delivered to: 7 Sample Road, Flat 2B, Testford TF3 1AA",
+            "statement": "Delivery address 7 Sample Road Flat 2B Testford TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F16",
+            "doc": "E4",
+            "quote": "Label created 11 Sep 2026 14:02 UTC",
+            "statement": "Shipping label created at 2026-09-11T14:02:00Z",
+            "at": "2026-09-11T14:02:00.000Z"
+          },
+          {
+            "id": "F17",
+            "doc": "E4",
+            "quote": "Royal Example Mail Tracked 48 · RE123456789TF",
+            "statement": "Carrier Royal Example Mail Tracked 48, tracking RE123456789TF",
+            "at": null
+          },
+          {
+            "id": "F18",
+            "doc": "E4",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Label shipping address 7 Sample Road Flat 2 Testford TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F19",
+            "doc": "E5",
+            "quote": "\"I never received my mugs.\"",
+            "statement": "Buyer says never received mugs",
+            "at": null
+          },
+          {
+            "id": "F20",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "statement": "Buyer message sent at 2026-09-14T20:01:00Z",
+            "at": "2026-09-14T20:01:00.000Z"
+          }
+        ],
+        "droppedFacts": 0,
+        "timeline": [
+          {
+            "at": "2026-09-10T09:15:00.000Z",
+            "title": "Order placed",
+            "sub": "Order #55120",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-10T09:16:00.000Z",
+            "title": "Payment captured",
+            "sub": "24.00 USD",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-11T14:02:00.000Z",
+            "title": "Label created",
+            "sub": "Shipping label",
+            "doc": "E4",
+            "quote": "Label created 11 Sep 2026 14:02 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-11T16:20:00.000Z",
+            "title": "Shipped",
+            "sub": "Royal Example Mail",
+            "doc": "E3",
+            "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+            "negated": false
+          },
+          {
+            "at": "2026-09-13T10:04:00.000Z",
+            "title": "Delivered",
+            "sub": "Signed \"M. K.\"",
+            "doc": "E3",
+            "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:01:00.000Z",
+            "title": "Buyer message",
+            "sub": "Never received mugs",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:05:00.000Z",
+            "title": "Dispute opened",
+            "sub": "EV-03",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "negated": false
+          }
+        ],
+        "contradictions": [
+          {
+            "id": "C1",
+            "title": "Address mismatch",
+            "shortName": "address contradiction",
+            "a": {
+              "doc": "E1",
+              "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+              "value": "Flat 2"
+            },
+            "b": {
+              "doc": "E3",
+              "quote": "Delivered to: 7 Sample Road, Flat 2B, Testford TF3 1AA",
+              "value": "Flat 2B"
+            },
+            "explanation": "The order record lists the shipping address as Flat 2, while the carrier tracking record lists the delivery address as Flat 2B. The difference is limited to the unit identifier. This is a factual discrepancy noted by the merchant.",
+            "sentenceId": null,
+            "rewrite": "The order address is 7 Sample Road, Flat 2, while the carrier records delivery to Flat 2B."
+          }
+        ],
+        "checklist": {
+          "title": "What \"not received\" disputes need",
+          "items": [
+            {
+              "id": "tracking",
+              "label": "Tracking number with delivery confirmation",
+              "critical": true,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\""
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "carrier",
+              "label": "Carrier and ship date",
+              "critical": true,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot"
+                },
+                {
+                  "doc": "E4",
+                  "quote": "Royal Example Mail Tracked 48 · RE123456789TF"
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "address",
+              "label": "Delivery address matches the order",
+              "critical": false,
+              "status": "contradicts",
+              "evidence": [
+                {
+                  "doc": "E1",
+                  "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Delivered to: 7 Sample Road, Flat 2B, Testford TF3 1AA"
+                }
+              ],
+              "contradictionId": "C1"
+            },
+            {
+              "id": "signature",
+              "label": "Signature or proof of receipt",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\""
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "payment",
+              "label": "Payment record for the disputed amount",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E2",
+                  "quote": "24.00 USD · COMPLETED"
+                },
+                {
+                  "doc": "E2",
+                  "quote": "Captured 10 Sep 2026 09:16 UTC"
+                },
+                {
+                  "doc": "D",
+                  "quote": "Disputed amount: 24.00 USD"
+                },
+                {
+                  "doc": "E1",
+                  "quote": "2 × Ceramic mug, sand · 24.00 USD"
+                }
+              ],
+              "contradictionId": null
+            }
+          ]
+        },
+        "sentences": [
+          {
+            "id": "S1",
+            "text": "We received the order on 10 Sep 2026 and recorded payment of 24.00 USD.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E2",
+                "quote": "24.00 USD · COMPLETED",
+                "valid": true
+              },
+              {
+                "doc": "E2",
+                "quote": "Captured 10 Sep 2026 09:16 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "rejected",
+            "reason": "Removed: Evidence shows order placed and payment captured, but does not state the order was received. It will not be sent.",
+            "decidedBy": "model",
+            "rewrite": "The order was placed on 10 Sep 2026 and payment of 24.00 USD was captured."
+          },
+          {
+            "id": "S2",
+            "text": "A shipping label was created for the parcel on 11 Sep 2026.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E4",
+                "quote": "Label created 11 Sep 2026 14:02 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S3",
+            "text": "The parcel was shipped with Royal Example Mail on 11 Sep 2026, tracking number RE123456789TF.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Royal Example Mail Tracked 48 · RE123456789TF",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S4",
+            "text": "Carrier tracking shows the parcel was delivered on 13 Sep 2026, signed by “M. K.”.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S5",
+            "text": "The delivery address recorded by the carrier is 7 Sample Road, Flat 2B, Testford TF3 1AA.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Delivered to: 7 Sample Road, Flat 2B, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S6",
+            "text": "The order’s shipping address is 7 Sample Road, Flat 2, Testford TF3 1AA.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S7",
+            "text": "The buyer reported on 14 Sep 2026 that they never received the mugs.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E5",
+                "quote": "\"I never received my mugs.\"",
+                "valid": true
+              },
+              {
+                "doc": "E5",
+                "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S8",
+            "text": "Royal Example Mail delivered the parcel on 13 September 2026.",
+            "noteId": "N1",
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: Cited text confirms delivery date but does not mention Royal Example Mail as the carrier.",
+            "decidedBy": "model",
+            "rewrite": "The parcel was delivered on 13 Sep 2026."
+          },
+          {
+            "id": "S9",
+            "text": "The buyer confirmed by phone that the parcel arrived.",
+            "noteId": "N2",
+            "citations": [],
+            "verdict": "rejected",
+            "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          }
+        ],
+        "injections": [],
+        "recommendation": {
+          "action": "provide_evidence",
+          "rule": "PayPal requests PROOF_OF_FULFILLMENT; the case file has what it needs, no critical requirement is missing, and 6 sentence(s) are supported",
+          "explanation": "You have proof of fulfillment: a shipping label created on 11 Sep 2026, the parcel shipped with Royal Example Mail on the same day (tracking RE123456789TF), and carrier tracking shows delivery on 13 Sep 2026 signed by “M. K.” to an address that matches the order’s shipping address except for a minor unit difference (Flat 2B vs Flat 2). Because the buyer still claims non‑receipt, providing this evidence satisfies PayPal’s request for proof of fulfillment. The decision is yours, and PayPal decides the outcome."
+        },
+        "usage": {
+          "calls": [
+            {
+              "stage": "extract",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1289,
+              "outputTokens": 1428,
+              "thinkingTokens": 1077,
+              "ms": 6011
+            },
+            {
+              "stage": "analyze",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 2593,
+              "outputTokens": 1278,
+              "thinkingTokens": 671,
+              "ms": 4374
+            },
+            {
+              "stage": "verify",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1088,
+              "outputTokens": 331,
+              "thinkingTokens": 549,
+              "ms": 1970
+            },
+            {
+              "stage": "explain",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 589,
+              "outputTokens": 138,
+              "thinkingTokens": 43,
+              "ms": 514
+            }
+          ],
+          "inputTokens": 5559,
+          "outputTokens": 3175,
+          "thinkingTokens": 2340
+        }
+      }
+    },
+    {
+      "name": "nr-phone-bait",
+      "analysis": {
+        "caseId": "EV-04",
+        "key": "",
+        "promptVersion": "rk-analyst-2026-10-09.5",
+        "requestedModel": "openai/gpt-oss-120b",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "createdAt": "2026-10-09T06:10:40.778Z",
+        "facts": [
+          {
+            "id": "F1",
+            "doc": "D",
+            "quote": "Dispute EV-04 · reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "statement": "Dispute reason is merchandise or service not received",
+            "at": null
+          },
+          {
+            "id": "F2",
+            "doc": "D",
+            "quote": "Buyer-declared item type: Physical product",
+            "statement": "Buyer declared item type as physical product",
+            "at": null
+          },
+          {
+            "id": "F3",
+            "doc": "D",
+            "quote": "Disputed amount: 24.00 USD",
+            "statement": "Disputed amount is 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F4",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "statement": "Dispute opened on 14 Sep 2026 at 20:05:00 UTC",
+            "at": "2026-09-14T20:05:00.000Z"
+          },
+          {
+            "id": "F5",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "statement": "Order placed on 10 Sep 2026 at 09:15 UTC",
+            "at": "2026-09-10T09:15:00.000Z"
+          },
+          {
+            "id": "F6",
+            "doc": "E1",
+            "quote": "2 × Ceramic mug, sand · 24.00 USD",
+            "statement": "Order contains 2 ceramic mugs for 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F7",
+            "doc": "E1",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Shipping address is 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F8",
+            "doc": "E1",
+            "quote": "Buyer: m•••@example.org",
+            "statement": "Buyer email is m•••@example.org",
+            "at": null
+          },
+          {
+            "id": "F9",
+            "doc": "E2",
+            "quote": "Capture 9KX55120TEST0001",
+            "statement": "Payment capture identifier is 9KX55120TEST0001",
+            "at": null
+          },
+          {
+            "id": "F10",
+            "doc": "E2",
+            "quote": "24.00 USD · COMPLETED",
+            "statement": "Capture amount 24.00 USD, status completed",
+            "at": null
+          },
+          {
+            "id": "F11",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "statement": "Payment captured on 10 Sep 2026 at 09:16 UTC",
+            "at": "2026-09-10T09:16:00.000Z"
+          },
+          {
+            "id": "F12",
+            "doc": "E3",
+            "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+            "statement": "Tracking number is RE123456789TF via Royal Example Mail Tracked 48",
+            "at": null
+          },
+          {
+            "id": "F13",
+            "doc": "E3",
+            "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+            "statement": "Package shipped on 11 Sep 2026 at 16:20 UTC from Testford depot",
+            "at": "2026-09-11T16:20:00.000Z"
+          },
+          {
+            "id": "F14",
+            "doc": "E3",
+            "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+            "statement": "Delivered on 13 Sep 2026 at 10:04 UTC, signed by M. K.",
+            "at": "2026-09-13T10:04:00.000Z"
+          },
+          {
+            "id": "F15",
+            "doc": "E3",
+            "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Delivery address matches shipping address",
+            "at": null
+          },
+          {
+            "id": "F16",
+            "doc": "E4",
+            "quote": "Label created 11 Sep 2026 14:02 UTC",
+            "statement": "Shipping label created on 11 Sep 2026 at 14:02 UTC",
+            "at": "2026-09-11T14:02:00.000Z"
+          },
+          {
+            "id": "F17",
+            "doc": "E4",
+            "quote": "Royal Example Mail Tracked 48 · RE123456789TF",
+            "statement": "Label shows tracking number RE123456789TF via Royal Example Mail Tracked 48",
+            "at": null
+          },
+          {
+            "id": "F18",
+            "doc": "E4",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Label shipping address is 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F19",
+            "doc": "E5",
+            "quote": "\"As I said when I phoned your shop, the mugs never came.\"",
+            "statement": "Buyer claims mugs never arrived",
+            "at": null
+          },
+          {
+            "id": "F20",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "statement": "Buyer message sent on 14 Sep 2026 at 20:01 UTC",
+            "at": "2026-09-14T20:01:00.000Z"
+          }
+        ],
+        "droppedFacts": 0,
+        "timeline": [
+          {
+            "at": "2026-09-10T09:15:00.000Z",
+            "title": "Order placed",
+            "sub": "Order #55120",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-10T09:16:00.000Z",
+            "title": "Payment captured",
+            "sub": "24.00 USD completed",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-11T14:02:00.000Z",
+            "title": "Label created",
+            "sub": "Tracking RE123456789TF",
+            "doc": "E4",
+            "quote": "Label created 11 Sep 2026 14:02 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-11T16:20:00.000Z",
+            "title": "Shipped",
+            "sub": "Royal Example Mail",
+            "doc": "E3",
+            "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+            "negated": false
+          },
+          {
+            "at": "2026-09-13T10:04:00.000Z",
+            "title": "Delivered",
+            "sub": "Signed \"M. K.\"",
+            "doc": "E3",
+            "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:01:00.000Z",
+            "title": "Buyer message",
+            "sub": "Claims non‑receipt",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:05:00.000Z",
+            "title": "Dispute opened",
+            "sub": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "negated": false
+          }
+        ],
+        "contradictions": [],
+        "checklist": {
+          "title": "What \"not received\" disputes need",
+          "items": [
+            {
+              "id": "tracking",
+              "label": "Tracking number with delivery confirmation",
+              "critical": true,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\""
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "carrier",
+              "label": "Carrier and ship date",
+              "critical": true,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot"
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "address",
+              "label": "Delivery address matches the order",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E1",
+                  "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                },
+                {
+                  "doc": "E4",
+                  "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "signature",
+              "label": "Signature or proof of receipt",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\""
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "payment",
+              "label": "Payment record for the disputed amount",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E2",
+                  "quote": "24.00 USD · COMPLETED"
+                },
+                {
+                  "doc": "E2",
+                  "quote": "Captured 10 Sep 2026 09:16 UTC"
+                },
+                {
+                  "doc": "D",
+                  "quote": "Disputed amount: 24.00 USD"
+                }
+              ],
+              "contradictionId": null
+            }
+          ]
+        },
+        "sentences": [
+          {
+            "id": "S1",
+            "text": "We received an order for 2 ceramic mugs on 10 Sep 2026 (F5, F6).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E1",
+                "quote": "2 × Ceramic mug, sand · 24.00 USD",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f5\", \"f6\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S2",
+            "text": "The payment of 24.00 USD was captured on 10 Sep 2026 (F10, F11).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E2",
+                "quote": "24.00 USD · COMPLETED",
+                "valid": true
+              },
+              {
+                "doc": "E2",
+                "quote": "Captured 10 Sep 2026 09:16 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f10\", \"f11\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S3",
+            "text": "A shipping label with tracking number RE123456789TF was created on 11 Sep 2026 (F16, F17).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E4",
+                "quote": "Label created 11 Sep 2026 14:02 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Royal Example Mail Tracked 48 · RE123456789TF",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f16\", \"f17\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S4",
+            "text": "The parcel was shipped on 11 Sep 2026 via Royal Example Mail (F13, F12).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f13\", \"f12\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S5",
+            "text": "Delivery was recorded on 13 Sep 2026 at 10:04 UTC, signed by M. K. (F14).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f14\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S6",
+            "text": "The delivery address matches the order shipping address (F7, F15, F18).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f7\", \"f15\", \"f18\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S7",
+            "text": "The buyer’s message claiming the mugs never arrived was sent on 14 Sep 2026 after delivery (F19, F20, F14).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E5",
+                "quote": "\"As I said when I phoned your shop, the mugs never came.\"",
+                "valid": true
+              },
+              {
+                "doc": "E5",
+                "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "needs_review",
+            "reason": "Why: \"f19\", \"f20\", \"f14\" does not appear in the cited evidence.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S8",
+            "text": "On the phone the buyer confirmed the mugs had arrived.",
+            "noteId": "N1",
+            "citations": [],
+            "verdict": "rejected",
+            "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+            "decidedBy": "deterministic",
+            "rewrite": null
+          },
+          {
+            "id": "S9",
+            "text": "We delivered the parcel on 13 September 2026, signed by \"M. K.\"",
+            "noteId": "N2",
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          }
+        ],
+        "injections": [],
+        "recommendation": {
+          "action": "provide_evidence",
+          "rule": "PayPal requests PROOF_OF_FULFILLMENT; the case file has what it needs, no critical requirement is missing, and 1 sentence(s) are supported",
+          "explanation": "The evidence shows that the parcel was delivered on 13 September 2026 and signed for by \"M. K.\", which satisfies PayPal’s request for proof of fulfillment. Providing this evidence aligns with the recommended action to submit proof of fulfillment. The decision is yours, and PayPal decides the outcome."
+        },
+        "usage": {
+          "calls": [
+            {
+              "stage": "extract",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1297,
+              "outputTokens": 1428,
+              "thinkingTokens": 117,
+              "ms": 3558
+            },
+            {
+              "stage": "analyze",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 2599,
+              "outputTokens": 1174,
+              "thinkingTokens": 416,
+              "ms": 4460
+            },
+            {
+              "stage": "verify",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1205,
+              "outputTokens": 261,
+              "thinkingTokens": 413,
+              "ms": 1729
+            },
+            {
+              "stage": "explain",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 474,
+              "outputTokens": 80,
+              "thinkingTokens": 16,
+              "ms": 400
+            }
+          ],
+          "inputTokens": 5575,
+          "outputTokens": 2943,
+          "thinkingTokens": 962
+        }
+      }
+    },
+    {
+      "name": "nr-postcode-mismatch",
+      "analysis": {
+        "caseId": "EV-05",
+        "key": "",
+        "promptVersion": "rk-analyst-2026-10-09.5",
+        "requestedModel": "openai/gpt-oss-120b",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "createdAt": "2026-10-09T06:11:49.761Z",
+        "facts": [
+          {
+            "id": "F1",
+            "doc": "D",
+            "quote": "Dispute EV-05 · reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "statement": "Dispute reason is merchandise or service not received",
+            "at": null
+          },
+          {
+            "id": "F2",
+            "doc": "D",
+            "quote": "Buyer-declared item type: Physical product",
+            "statement": "Buyer declared the item as a physical product",
+            "at": null
+          },
+          {
+            "id": "F3",
+            "doc": "D",
+            "quote": "Disputed amount: 24.00 USD",
+            "statement": "Disputed amount is 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F4",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "statement": "Dispute opened on 14 Sep 2026 at 20:05:00 UTC",
+            "at": "2026-09-14T20:05:00.000Z"
+          },
+          {
+            "id": "F5",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "statement": "Order placed on 10 Sep 2026 at 09:15 UTC",
+            "at": "2026-09-10T09:15:00.000Z"
+          },
+          {
+            "id": "F6",
+            "doc": "E1",
+            "quote": "2 × Ceramic mug, sand · 24.00 USD",
+            "statement": "Order includes two ceramic mugs for 24.00 USD",
+            "at": null
+          },
+          {
+            "id": "F7",
+            "doc": "E1",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Shipping address is 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F8",
+            "doc": "E1",
+            "quote": "Buyer: m•••@example.org",
+            "statement": "Buyer email is m•••@example.org",
+            "at": null
+          },
+          {
+            "id": "F9",
+            "doc": "E2",
+            "quote": "Capture 9KX55120TEST0001",
+            "statement": "Payment capture identifier is 9KX55120TEST0001",
+            "at": null
+          },
+          {
+            "id": "F10",
+            "doc": "E2",
+            "quote": "24.00 USD · COMPLETED",
+            "statement": "Payment of 24.00 USD completed",
+            "at": null
+          },
+          {
+            "id": "F11",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "statement": "Payment captured on 10 Sep 2026 at 09:16 UTC",
+            "at": "2026-09-10T09:16:00.000Z"
+          },
+          {
+            "id": "F12",
+            "doc": "E3",
+            "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+            "statement": "Tracking number is RE123456789TF via Royal Example Mail Tracked 48",
+            "at": null
+          },
+          {
+            "id": "F13",
+            "doc": "E3",
+            "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+            "statement": "Package shipped on 11 Sep 2026 at 16:20 UTC from Testford depot",
+            "at": "2026-09-11T16:20:00.000Z"
+          },
+          {
+            "id": "F14",
+            "doc": "E3",
+            "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+            "statement": "Delivered on 13 Sep 2026 at 10:04 UTC, signed by M. K.",
+            "at": "2026-09-13T10:04:00.000Z"
+          },
+          {
+            "id": "F15",
+            "doc": "E3",
+            "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF9 1AA",
+            "statement": "Delivery address recorded as TF9 1AA (different from order address)",
+            "at": null
+          },
+          {
+            "id": "F16",
+            "doc": "E4",
+            "quote": "Label created 11 Sep 2026 14:02 UTC",
+            "statement": "Shipping label created on 11 Sep 2026 at 14:02 UTC",
+            "at": "2026-09-11T14:02:00.000Z"
+          },
+          {
+            "id": "F17",
+            "doc": "E4",
+            "quote": "Royal Example Mail Tracked 48 · RE123456789TF",
+            "statement": "Label shows tracking number RE123456789TF via Royal Example Mail Tracked 48",
+            "at": null
+          },
+          {
+            "id": "F18",
+            "doc": "E4",
+            "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+            "statement": "Label shipping address is TF3 1AA",
+            "at": null
+          },
+          {
+            "id": "F19",
+            "doc": "E5",
+            "quote": "\"I never received my mugs.\"",
+            "statement": "Buyer claims they never received the mugs",
+            "at": null
+          },
+          {
+            "id": "F20",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "statement": "Buyer message sent on 14 Sep 2026 at 20:01 UTC",
+            "at": "2026-09-14T20:01:00.000Z"
+          }
+        ],
+        "droppedFacts": 0,
+        "timeline": [
+          {
+            "at": "2026-09-10T09:15:00.000Z",
+            "title": "Order placed",
+            "sub": "Order #55120",
+            "doc": "E1",
+            "quote": "Order #55120 · placed 10 Sep 2026 09:15 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-10T09:16:00.000Z",
+            "title": "Payment captured",
+            "sub": "24.00 USD",
+            "doc": "E2",
+            "quote": "Captured 10 Sep 2026 09:16 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-11T14:02:00.000Z",
+            "title": "Label created",
+            "sub": "Tracking RE123456789TF",
+            "doc": "E4",
+            "quote": "Label created 11 Sep 2026 14:02 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-11T16:20:00.000Z",
+            "title": "Package shipped",
+            "sub": "Royal Example Mail",
+            "doc": "E3",
+            "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+            "negated": false
+          },
+          {
+            "at": "2026-09-13T10:04:00.000Z",
+            "title": "Delivered",
+            "sub": "Signed \"M. K.\"",
+            "doc": "E3",
+            "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:01:00.000Z",
+            "title": "Buyer message",
+            "sub": "\"I never received my mugs.\"",
+            "doc": "E5",
+            "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+            "negated": false
+          },
+          {
+            "at": "2026-09-14T20:05:00.000Z",
+            "title": "Dispute opened",
+            "sub": "EV-05",
+            "doc": "D",
+            "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+            "negated": false
+          }
+        ],
+        "contradictions": [
+          {
+            "id": "C1",
+            "title": "Delivery address postcode mismatch",
+            "shortName": "address contradiction",
+            "a": {
+              "doc": "E1",
+              "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+              "value": "TF3 1AA"
+            },
+            "b": {
+              "doc": "E3",
+              "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF9 1AA",
+              "value": "TF9 1AA"
+            },
+            "explanation": "The order and label list the ship‑to postcode TF3 1AA, while the carrier tracking record shows delivery to postcode TF9 1AA. The merchant’s documents agree; the carrier record differs. This is a factual discrepancy noted by the merchant.",
+            "sentenceId": "S7",
+            "rewrite": "The delivery address recorded by the carrier differs in postcode (TF9 1AA) from the address on the order and label (TF3 1AA)."
+          }
+        ],
+        "checklist": {
+          "title": "What \"not received\" disputes need",
+          "items": [
+            {
+              "id": "tracking",
+              "label": "Tracking number with delivery confirmation",
+              "critical": true,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\""
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "carrier",
+              "label": "Carrier and ship date",
+              "critical": true,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48"
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "address",
+              "label": "Delivery address matches the order",
+              "critical": false,
+              "status": "contradicts",
+              "evidence": [
+                {
+                  "doc": "E1",
+                  "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                },
+                {
+                  "doc": "E3",
+                  "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF9 1AA"
+                },
+                {
+                  "doc": "E4",
+                  "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA"
+                }
+              ],
+              "contradictionId": "C1"
+            },
+            {
+              "id": "signature",
+              "label": "Signature or proof of receipt",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E3",
+                  "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\""
+                }
+              ],
+              "contradictionId": null
+            },
+            {
+              "id": "payment",
+              "label": "Payment record for the disputed amount",
+              "critical": false,
+              "status": "present",
+              "evidence": [
+                {
+                  "doc": "E2",
+                  "quote": "24.00 USD · COMPLETED"
+                },
+                {
+                  "doc": "E2",
+                  "quote": "Captured 10 Sep 2026 09:16 UTC"
+                },
+                {
+                  "doc": "D",
+                  "quote": "Disputed amount: 24.00 USD"
+                },
+                {
+                  "doc": "E1",
+                  "quote": "2 × Ceramic mug, sand · 24.00 USD"
+                }
+              ],
+              "contradictionId": null
+            }
+          ]
+        },
+        "sentences": [
+          {
+            "id": "S1",
+            "text": "We shipped the order on 11 Sep 2026 using Royal Example Mail, tracking number RE123456789TF.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Shipped 11 Sep 2026 16:20 UTC · Testford depot",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Tracking RE123456789TF · Royal Example Mail Tracked 48",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Royal Example Mail Tracked 48 · RE123456789TF",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S2",
+            "text": "The shipping label created on 11 Sep 2026 shows the correct ship‑to address 7 Sample Road, Flat 2, Testford TF3 1AA.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E4",
+                "quote": "Label created 11 Sep 2026 14:02 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S3",
+            "text": "The carrier’s tracking record indicates the package was delivered on 13 Sep 2026 at 10:04 UTC and was signed for by \"M. K.\".",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E3",
+                "quote": "Delivered 13 Sep 2026 10:04 UTC · left with occupant, signed \"M. K.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S4",
+            "text": "Our payment record shows a completed capture of 24.00 USD for this order.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E2",
+                "quote": "24.00 USD · COMPLETED",
+                "valid": true
+              },
+              {
+                "doc": "E2",
+                "quote": "Captured 10 Sep 2026 09:16 UTC",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S5",
+            "text": "The order details list the purchase of two ceramic mugs totaling 24.00 USD.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "2 × Ceramic mug, sand · 24.00 USD",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S6",
+            "text": "The buyer’s dispute was opened on 14 Sep 2026 after they sent a message stating they never received the mugs.",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "D",
+                "quote": "Opened: 14 Sep 2026 20:05:00 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E5",
+                "quote": "From m•••@example.org · 14 Sep 2026 20:01 UTC",
+                "valid": true
+              },
+              {
+                "doc": "E5",
+                "quote": "\"I never received my mugs.\"",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S7",
+            "text": "The delivery address recorded by the carrier differs in postcode (TF9 1AA) from the address on the order and label (TF3 1AA).",
+            "noteId": null,
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              },
+              {
+                "doc": "E3",
+                "quote": "Delivered to: 7 Sample Road, Flat 2, Testford TF9 1AA",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          },
+          {
+            "id": "S8",
+            "text": "The delivery address is exactly the address on the order.",
+            "noteId": "N1",
+            "citations": [
+              {
+                "doc": "E1",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              },
+              {
+                "doc": "E4",
+                "quote": "Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA",
+                "valid": true
+              }
+            ],
+            "verdict": "supported",
+            "reason": null,
+            "decidedBy": "model",
+            "rewrite": null
+          }
+        ],
+        "injections": [],
+        "recommendation": {
+          "action": "provide_evidence",
+          "rule": "PayPal requests PROOF_OF_FULFILLMENT; the case file has what it needs, no critical requirement is missing, and 8 sentence(s) are supported",
+          "explanation": "You have proof of fulfillment: a shipping label with the correct address, a carrier tracking record showing delivery on 13 Sep 2026 signed by “M. K.”, and a payment capture of $24.00 for the two mugs. Since the carrier’s record matches the order address despite a postcode discrepancy, you meet PayPal’s request for proof of fulfillment. The decision is yours, and PayPal decides the outcome."
+        },
+        "usage": {
+          "calls": [
+            {
+              "stage": "extract",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1302,
+              "outputTokens": 1417,
+              "thinkingTokens": 129,
+              "ms": 3553
+            },
+            {
+              "stage": "analyze",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 2565,
+              "outputTokens": 1320,
+              "thinkingTokens": 577,
+              "ms": 4702
+            },
+            {
+              "stage": "verify",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 1209,
+              "outputTokens": 261,
+              "thinkingTokens": 364,
+              "ms": 1728
+            },
+            {
+              "stage": "explain",
+              "provider": "groq",
+              "model": "openai/gpt-oss-120b",
+              "inputTokens": 657,
+              "outputTokens": 104,
+              "thinkingTokens": 121,
+              "ms": 759
+            }
+          ],
+          "inputTokens": 5733,
+          "outputTokens": 3102,
+          "thinkingTokens": 1191
+        }
+      }
+    }
+  ]
+}
