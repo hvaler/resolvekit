@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useServices } from '../app/services';
 import { allowedActionsAfter } from '../domain/allowedActions';
 import { compareSentRecorded } from '../domain/compare';
+import { lockedReason } from '../domain/demoClient';
 import { formatCount, notesCountLabel } from '../domain/draft';
 import { EVIDENCE_TYPE_LABEL } from '../domain/evidenceTypes';
 import { safeRetry, submitWithReadBack, type SendPhase, type SendResult } from '../domain/gateway';
@@ -12,6 +13,7 @@ import { totalSize } from '../domain/submission';
 import { utcClock, utcStamp } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView } from '../domain/types';
 import { MERCHANT } from './AppBar';
+import { DemoUnlockForm } from './DemoUnlock';
 import { Button, EvidenceTag, Spinner, cx } from './ui';
 
 type Flow = 'review' | 'confirm' | 'sending' | 'error' | 'recorded';
@@ -109,12 +111,15 @@ export interface ApproveFlowProps {
  * "Recorded" is only ever shown from the dispute as read back from PayPal.
  */
 export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: ApproveFlowProps) {
-  const { gatewayFor, modeOf, applySnapshot, addAudit, audit } = useServices();
+  const { gatewayFor, modeOf, applySnapshot, addAudit, audit, demo } = useServices();
   const id = c.summary.id;
   // Decided once when the flow opens: a submission never switches between the simulator and real PayPal mid-way.
   const [{ gateway, mode }] = useState(() => ({ gateway: gatewayFor(id), mode: modeOf(id) }));
   const [flow, setFlow] = useState<Flow>('review');
   const [checked, setChecked] = useState(false);
+  // Hosted demo: real PayPal sends need the demo code (the simulator never does).
+  const locked = mode.kind === 'paypal' ? lockedReason(demo, 'evidence') : null;
+  const canSubmit = checked && !locked;
   const [phase, setPhase] = useState<SendPhase | null>(null);
   const [reached, setReached] = useState<SendPhase[]>([]);
   const [retrying, setRetrying] = useState(false);
@@ -195,7 +200,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
   };
 
   const submit = () => {
-    if (!checked) return;
+    if (!canSubmit) return;
     const now = new Date();
     setApprovedAt(now);
     addAudit(id, MERCHANT.name, 'Approved submission (confirmation checkbox)');
@@ -381,6 +386,13 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                     <span className="font-mono text-body">{id}</span>.
                   </span>
                 </label>
+                {locked && (
+                  <div role="note" data-testid="send-locked" className="flex flex-col gap-2.5 rounded-2xl border border-line-2 bg-surface-2 px-4 py-3.5">
+                    <strong className="text-[13.5px] font-semibold">Demo code required</strong>
+                    <span className="text-body leading-normal text-ink-2">{locked}</span>
+                    <DemoUnlockForm compact />
+                  </div>
+                )}
               </div>
             </div>
             <Footer>
@@ -389,12 +401,13 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
               <button
                 type="button"
                 onClick={submit}
-                disabled={!checked}
+                disabled={!canSubmit}
+                title={locked ? `Demo code required: ${locked}` : undefined}
                 className="h-[42px] rounded-xl border-0 px-5 text-[14px] font-semibold transition-[background] duration-fast"
                 style={{
-                  background: checked ? 'var(--bad)' : 'var(--line)',
-                  color: checked ? '#fff' : 'var(--ink3)',
-                  cursor: checked ? 'pointer' : 'not-allowed',
+                  background: canSubmit ? 'var(--bad)' : 'var(--line)',
+                  color: canSubmit ? '#fff' : 'var(--ink3)',
+                  cursor: canSubmit ? 'pointer' : 'not-allowed',
                 }}
               >
                 Submit evidence to PayPal

@@ -125,6 +125,11 @@ export function AnalysisBar({ steps, run, note, label, problem, onReplay, onReru
           Re-run with AI
         </button>
       )}
+      {onRerun && rerunBlocked?.startsWith('Demo code required') && (
+        <span data-testid="rerun-locked" title={rerunBlocked} className="flex-none whitespace-nowrap rounded-sm border border-dashed border-line-2 px-[7px] py-0.5 text-[11px] text-ink-3">
+          Demo code required
+        </span>
+      )}
       </span>
     </div>
   );

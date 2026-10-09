@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useServices } from '../app/services';
 import { useTheme } from '../theme/ThemeProvider';
+import { DemoUnlock } from './DemoUnlock';
 import { SyncIndicator } from './SyncIndicator';
 import { cx } from './ui';
 
@@ -165,6 +166,7 @@ export function AppBar({
         </button>
       )}
       <ModeBadge caseId={caseId} />
+      <DemoUnlock />
       <ThemeControls />
       <span role="img" aria-label={MERCHANT.name} className="grid h-[26px] w-[26px] place-items-center rounded-full bg-acc-soft text-[10.5px] font-semibold text-acc">
         {MERCHANT.initials}

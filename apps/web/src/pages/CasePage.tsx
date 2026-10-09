@@ -16,6 +16,7 @@ import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
 import { withMeterMcp } from '../domain/agentSession';
+import { lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView, withPayPal } from '../domain/paypalView';
 import { hasSellerEvidence } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
@@ -44,7 +45,7 @@ export function CasePage() {
 
 function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const id = demo.summary.id;
-  const { snapshots, addAudit, analysis: analysisClient } = useServices();
+  const { snapshots, addAudit, analysis: analysisClient, demo: demoLock } = useServices();
   usePolling([id]);
   const source = usePayPalSource(id);
   // A bound case only uses a snapshot read from PayPal; a simulated one uses the simulator's.
@@ -64,7 +65,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   // The analyst reads the documents exactly as shown: once PayPal's (and MeterMCP's) data is in for a bound case.
   const docsFinal = source.kind === 'simulated' || source.kind === 'live';
   const input = useMemo(() => (docsFinal ? buildInput(docs, { allowedActions: allowed }) : null), [docsFinal, docs, allowed.join(',')]);
-  const analysis = useAnalysis(id, input, analysisClient);
+  const locked = useMemo(() => ({ live: lockedReason(demoLock, 'live-analysis'), recheck: lockedReason(demoLock, 'recheck') }), [demoLock]);
+  const analysis = useAnalysis(id, input, analysisClient, locked);
   const an = analysis.state;
   const c = useMemo(() => (an.kind === 'ready' ? withAnalysis(docs, an.analysis, an.input) : docs), [docs, an]);
   const status = snap?.status ?? demo.summary.status;

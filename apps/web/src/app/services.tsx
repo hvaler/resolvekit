@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnalysisClient } from '../domain/analysisClient';
+import { DemoClient, type DemoState, type UnlockResult } from '../domain/demoClient';
 import { SimulatedDisputeGateway, type DisputeGateway, type SimulatedOutcome } from '../domain/gateway';
 import { HttpDisputeGateway, RoutingDisputeGateway, modeFor, type GatewayMode, type ServerHealth } from '../domain/httpGateway';
 import { payPalSource, type PayPalSource } from '../domain/paypalView';
@@ -49,6 +50,10 @@ interface Services {
   refresh: (disputeId: string) => Promise<void>;
   audit: Readonly<Record<string, AuditEntry[]>>;
   addAudit: (disputeId: string, who: string, what: string) => void;
+  /** The hosted demo's lock; null when there is none (local server, no server). */
+  demo: DemoState | null;
+  unlockDemo: (code: string) => Promise<UnlockResult>;
+  lockDemo: () => Promise<void>;
 }
 
 const ServicesContext = createContext<Services | null>(null);
@@ -88,6 +93,37 @@ export function ServicesProvider({
   );
   const http = useMemo(() => (server === undefined ? new HttpDisputeGateway() : server), [server]);
   const analysis = useMemo(() => (server === null ? null : new AnalysisClient()), [server]);
+  const demoClient = useMemo(() => (server === null ? null : new DemoClient()), [server]);
+  const [demo, setDemo] = useState<DemoState | null>(null);
+  useEffect(() => {
+    if (!demoClient) return;
+    let live = true;
+    void demoClient.state().then((d) => live && setDemo(d));
+    return () => {
+      live = false;
+    };
+  }, [demoClient]);
+  // The unlock cookie expires on the server; follow it on screen.
+  useEffect(() => {
+    if (!demo?.unlocked || !demo.expiresAt || !demoClient) return;
+    const ms = Date.parse(demo.expiresAt) - Date.now();
+    const t = window.setTimeout(() => void demoClient.state().then(setDemo), Math.max(1_000, Math.min(ms + 1_000, 2_147_000_000)));
+    return () => window.clearTimeout(t);
+  }, [demo, demoClient]);
+  const unlockDemo = useCallback(
+    async (code: string): Promise<UnlockResult> => {
+      if (!demoClient) return { ok: false, error: 'No server' };
+      const r = await demoClient.unlock(code);
+      if (r.ok) setDemo(r.state);
+      return r;
+    },
+    [demoClient],
+  );
+  const lockDemo = useCallback(async () => {
+    if (!demoClient) return;
+    await demoClient.lock();
+    setDemo(await demoClient.state());
+  }, [demoClient]);
   const [health, setHealth] = useState<ServerHealth | null>(null);
   const healthRef = useRef<ServerHealth | null>(null);
   healthRef.current = health;
@@ -164,8 +200,8 @@ export function ServicesProvider({
 
   const modeKnown = !http || health != null;
   const value = useMemo<Services>(
-    () => ({ analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit }),
-    [analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit],
+    () => ({ analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, unlockDemo, lockDemo }),
+    [analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, unlockDemo, lockDemo],
   );
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }

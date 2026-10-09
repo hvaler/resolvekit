@@ -38,7 +38,10 @@ const docsSignature = (i: AnalysisInput) => canonicalJson({ ...i, dispute: { ...
  *
  * @param input the case's documents as shown, or null while they are not final.
  */
-export function useAnalysis(caseId: string, input: AnalysisInput | null, client: AnalysisClient | null): AnalysisHandle {
+/**
+ * @param locked hosted demo: why live runs and re-checks are locked (demo code needed), or null.
+ */
+export function useAnalysis(caseId: string, input: AnalysisInput | null, client: AnalysisClient | null, locked: { live: string | null; recheck: string | null } = { live: null, recheck: null }): AnalysisHandle {
   // Freeze the input per document set: allowed actions change after sending, the documents do not.
   const frozen = useRef<{ sig: string; input: AnalysisInput } | null>(null);
   if (input) {
@@ -147,13 +150,15 @@ export function useAnalysis(caseId: string, input: AnalysisInput | null, client:
   const recheck = useCallback(
     async (text: string): Promise<VerifyAnswer> => {
       if (!client || !fixed) throw new Error('the AI verifier runs on the ResolveKit server, which is not connected');
+      if (locked.recheck) throw new Error(`demo code required: ${locked.recheck} Unlock demo actions in the app bar`);
       return client.verify(caseId, fixed, text);
     },
-    [caseId, client, fixed],
+    [caseId, client, fixed, locked.recheck],
   );
 
   let rerunBlocked: string | null = null;
-  if (!client || !serverUp) rerunBlocked = 'Live runs need the ResolveKit server (npm run server) with a model key';
+  if (locked.live) rerunBlocked = `Demo code required: ${locked.live} Unlock demo actions in the app bar.`;
+  else if (!client || !serverUp) rerunBlocked = 'Live runs need the ResolveKit server (npm run server) with a model key';
   else if (live && !live.configured) rerunBlocked = 'No model key (GEMINI_API_KEY / GROQ_API_KEY) on the server';
   else if (live && live.remaining <= 0) rerunBlocked = `Live-run limit reached (${live.limit}/hour); next in ${Math.ceil(live.resetInSec / 60)} min`;
   else if (state.kind === 'running' || state.kind === 'loading' || state.kind === 'waiting') rerunBlocked = 'Analysis in progress';
