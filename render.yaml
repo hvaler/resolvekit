@@ -1,0 +1,102 @@
+# ResolveKit on Render: two web services from this repo, each with a small persistent disk.
+# Blueprint reference: https://render.com/docs/blueprint-spec — see README "Deploy on Render".
+#
+# - resolvekit: the web app and its API on one public origin (apps/server in hosted mode).
+# - resolvekit-metermcp: the metered MCP gateway (apps/metermcp in hosted mode): public /mcp for judges' MCP clients
+#   and PayPal's approval return pages; its admin routes answer only apps/server over Render's private network.
+#
+# Secrets are `sync: false`: Render asks for them once, when the Blueprint is first created (not on later syncs).
+# Enter the same DEMO_CODE and the same PayPal sandbox app credentials in both services.
+
+services:
+  - type: web
+    name: resolvekit
+    runtime: node
+    plan: starter # legacy name of 0.5c-512mb; a disk needs a paid plan
+    region: oregon
+    buildCommand: npm ci && npm run build
+    startCommand: node apps/server/src/main.ts
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    disk:
+      name: resolvekit-data
+      mountPath: /var/data # analysis cache, analyst usage log, daily caps (and bindings.json if not in BINDINGS_JSON)
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: RESOLVEKIT_MODE
+        value: hosted
+      - key: RESOLVEKIT_DATA_DIR
+        value: /var/data
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEMO_CODE # given to judges in the Devpost testing instructions
+        sync: false
+      - key: BINDINGS_JSON # {"<web case id>":"<PayPal sandbox dispute id>"}; see apps/server/bindings.example.json
+        sync: false
+      - key: RESOLVEKIT_SESSION_SECRET # signs the demo-unlock cookie
+        generateValue: true
+      - key: METERMCP_URL # private network host:port of MeterMCP (server-to-server only)
+        fromService:
+          type: web
+          name: resolvekit-metermcp
+          property: hostport
+      - key: METERMCP_ADMIN_TOKEN # the admin token MeterMCP generated
+        fromService:
+          type: web
+          name: resolvekit-metermcp
+          envVarKey: METERMCP_ADMIN_TOKEN
+      - key: DAILY_LIVE_ANALYSES
+        value: 60
+      - key: DAILY_RECHECKS
+        value: 200
+      - key: DAILY_EVIDENCE_SENDS
+        value: 20
+      - key: TRUSTED_PROXY_HOPS # Render's proxy appends the client to X-Forwarded-For
+        value: 1
+
+  - type: web
+    name: resolvekit-metermcp
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm ci
+    startCommand: node apps/metermcp/src/main.ts
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    disk:
+      name: metermcp-data
+      mountPath: /var/data # the SQLite ledger and the daily budget cap
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: METERMCP_MODE
+        value: hosted
+      - key: METERMCP_DATA_DIR
+        value: /var/data
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: DEMO_CODE # same value as in resolvekit; MCP clients send it as the x-demo-code header
+        sync: false
+      - key: METERMCP_ADMIN_TOKEN # shared with resolvekit (fromService above)
+        generateValue: true
+      - key: METERMCP_BUDGET
+        value: "5.00"
+      - key: DAILY_BUDGETS
+        value: 20
+      - key: TRUSTED_PROXY_HOPS
+        value: 1
