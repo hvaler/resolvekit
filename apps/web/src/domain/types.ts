@@ -14,14 +14,17 @@ export type DisputeStatus =
 export type DisputeReason =
   | 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED'
   | 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED'
-  | 'UNAUTHORISED';
+  | 'UNAUTHORISED'
+  | 'INCORRECT_AMOUNT';
 
 export type ActionCode = 'provide_evidence' | 'send_message' | 'make_offer' | 'accept_claim' | 'escalate';
 
 export type EvidenceType =
   | 'PROOF_OF_FULFILLMENT'
   | 'PROOF_FOR_SOFTWARE_OR_SERVICE_DELIVERED'
-  | 'PROOF_OF_REFUND';
+  | 'PROOF_OF_REFUND'
+  /** Notes and documents (PayPal's reasons-and-evidence table: e.g. the listing and return policy for "not as described"). */
+  | 'OTHER';
 
 /** Item type as declared by the buyer in PayPal's dispute form (not the order's category). */
 export type BuyerItemType = 'Physical product' | 'Digital download' | 'Service' | 'Booking';
@@ -268,6 +271,12 @@ export interface CaseFile {
   merchantNotes?: string[];
   /** A note shown above the evidence (e.g. the agent case's documents are demo data, and why). */
   notice?: { tone: 'info' | 'warn'; text: string } | null;
+  /**
+   * Where the simulated PayPal starts for this dispute when it is not at its first seller turn: evidence already on
+   * the dispute (the buyer's entry, the seller's earlier submission), the buyer's due date and PayPal's outcome.
+   * Absent: a fresh dispute waiting for the seller.
+   */
+  simulatedPayPal?: Pick<DisputeSnapshot, 'evidences' | 'buyerRespondBy' | 'outcome'>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -381,6 +390,8 @@ export interface DisputeSnapshot {
   /** Buyer response due date (ISO 8601), when PayPal is waiting for the buyer. */
   buyerRespondBy?: string | null;
   /** The disputed transaction as PayPal reports it: the seller-side id (the capture), its time, gross amount and status. */
+  /** PayPal's `dispute_outcome` once the dispute is resolved (e.g. RESOLVED_SELLER_FAVOUR), with the time it closed. */
+  outcome?: { code: string; closedAt: string | null } | null;
   /** Agent cases only: the MeterMCP session of the disputed capture (absent for other cases and the simulator). */
   agentReceipt?: AgentReceiptSource | null;
   transaction?: {

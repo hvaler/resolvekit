@@ -33,8 +33,13 @@ export function compareSentRecorded(sent: EvidenceSubmission, recorded: Recorded
       recorded: r ? r.evidenceType : NOT_RECORDED,
       match: !!r && r.evidenceType === sent.evidenceType,
     },
-    { field: 'Carrier', sent: sent.carrier, recorded: r ? r.carrier : NOT_RECORDED, match: !!r && r.carrier === sent.carrier },
-    { field: 'Tracking number', sent: sent.tracking, recorded: r ? r.tracking : NOT_RECORDED, match: !!r && r.tracking === sent.tracking },
+    // Evidence without tracking (type OTHER: notes and documents) has no carrier or tracking to compare.
+    ...(sent.carrier || sent.tracking
+      ? [
+          { field: 'Carrier', sent: sent.carrier, recorded: r ? r.carrier : NOT_RECORDED, match: !!r && r.carrier === sent.carrier },
+          { field: 'Tracking number', sent: sent.tracking, recorded: r ? r.tracking : NOT_RECORDED, match: !!r && r.tracking === sent.tracking },
+        ]
+      : []),
     {
       field: 'Files',
       sent: sentFiles.join('\n'),

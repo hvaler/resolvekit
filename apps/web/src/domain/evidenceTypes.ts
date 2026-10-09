@@ -16,6 +16,7 @@ export const EVIDENCE_TYPE_LABEL: Readonly<Record<EvidenceType, string>> = {
   PROOF_OF_FULFILLMENT: 'Proof of fulfillment',
   PROOF_FOR_SOFTWARE_OR_SERVICE_DELIVERED: 'Proof the service was delivered',
   PROOF_OF_REFUND: 'Proof of refund',
+  OTHER: 'Other: notes and documents',
 };
 
 export interface EvidenceTypeOption {

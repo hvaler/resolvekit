@@ -56,7 +56,7 @@ export function caseAllowedActions(source: PayPalSource, simulated: DisputeSnaps
 }
 
 const isEvidenceType = (t: string): t is EvidenceType => t in EVIDENCE_TYPE_LABEL;
-const KNOWN_REASONS: readonly string[] = ['MERCHANDISE_OR_SERVICE_NOT_RECEIVED', 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED', 'UNAUTHORISED'];
+const KNOWN_REASONS: readonly string[] = ['MERCHANDISE_OR_SERVICE_NOT_RECEIVED', 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED', 'UNAUTHORISED', 'INCORRECT_AMOUNT'];
 
 /** The evidence type PayPal requests now; null when it requests none (e.g. once the seller's evidence is in). */
 export function caseRequestedEvidence(source: PayPalSource, demo: EvidenceType | null): EvidenceType | null {

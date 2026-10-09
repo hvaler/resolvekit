@@ -208,6 +208,8 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
   };
 
   const fileList = submission.files;
+  // Notes-and-documents evidence (OTHER) carries no carrier or tracking.
+  const tracked = !!(submission.carrier || submission.tracking);
   const carrierText = c.fulfillment.carrier === c.fulfillment.carrierLabel ? c.fulfillment.carrier : `${c.fulfillment.carrierLabel}`;
 
   return (
@@ -309,13 +311,17 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                       <span className="text-[12px] text-warn">! PayPal is not requesting evidence now</span>
                     )}
                   </Row>
-                  <Row k="Carrier" ddClass="font-mono text-body font-medium leading-[1.4]">
-                    {carrierText}
-                    {carrierText !== submission.carrier && <span className="ml-1.5 text-[10.5px] font-normal text-ink-3">{submission.carrier}</span>}
-                  </Row>
-                  <Row k={digital ? 'Reference' : 'Tracking'} ddClass="font-mono text-body font-medium leading-[1.4]">
-                    {submission.tracking}
-                  </Row>
+                  {tracked && (
+                    <>
+                      <Row k="Carrier" ddClass="font-mono text-body font-medium leading-[1.4]">
+                        {carrierText}
+                        {carrierText !== submission.carrier && <span className="ml-1.5 text-[10.5px] font-normal text-ink-3">{submission.carrier}</span>}
+                      </Row>
+                      <Row k={digital ? 'Reference' : 'Tracking'} ddClass="font-mono text-body font-medium leading-[1.4]">
+                        {submission.tracking}
+                      </Row>
+                    </>
+                  )}
                   <Row k="Files" ddClass="flex flex-col gap-1 font-mono text-mono-frag leading-[1.4]">
                     {fileList.map((f) => (
                       <span key={f.name}>
@@ -366,9 +372,11 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                   <Row k="Action" ddClass="font-medium">
                     Provide evidence · {EVIDENCE_TYPE_LABEL[submission.evidenceType]}
                   </Row>
-                  <Row k={digital ? 'Reference' : 'Tracking'} ddClass="font-mono text-body">
-                    {carrierText} · {submission.tracking}
-                  </Row>
+                  {tracked && (
+                    <Row k={digital ? 'Reference' : 'Tracking'} ddClass="font-mono text-body">
+                      {carrierText} · {submission.tracking}
+                    </Row>
+                  )}
                   <Row k="Notes">
                     {supported.length} supported sentences · {formatCount(submission.notes.length)} characters
                   </Row>
