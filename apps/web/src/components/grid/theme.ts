@@ -1,7 +1,43 @@
-import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
+import {
+  CellStyleModule,
+  ClientSideRowModelApiModule,
+  ClientSideRowModelModule,
+  ColumnApiModule,
+  HighlightChangesModule,
+  ModuleRegistry,
+  NumberFilterModule,
+  PinnedRowModule,
+  QuickFilterModule,
+  RenderApiModule,
+  RowApiModule,
+  RowStyleModule,
+  ScrollApiModule,
+  TextFilterModule,
+  TooltipModule,
+  ValidationModule,
+  themeQuartz,
+} from 'ag-grid-community';
 
-// AG Grid Community only: no Enterprise modules and no licence key.
-ModuleRegistry.registerModules([AllCommunityModule]);
+// AG Grid Community only (no Enterprise modules, no licence key), and only the features the two grids use instead of
+// AllCommunityModule (~1.09 MB). AG Grid logs an error naming the module whenever a feature needs a missing one.
+ModuleRegistry.registerModules([
+  ClientSideRowModelModule, // rows held in the browser
+  ClientSideRowModelApiModule, // applyTransaction, forEachNodeAfterFilter
+  RowApiModule, // getRowNode, getDisplayedRowAtIndex, getPinnedBottomRow
+  ColumnApiModule, // get/apply/resetColumnState (column layout saved on the device)
+  TextFilterModule, // inbox chips: status, case type, next step
+  NumberFilterModule, // inbox chip: due soon
+  QuickFilterModule, // inbox search
+  PinnedRowModule, // "Totals at risk" and the receipt total
+  RenderApiModule, // refreshCells, redrawRows
+  HighlightChangesModule, // flashCells when PayPal changes a dispute
+  ScrollApiModule, // ensureIndexVisible
+  RowStyleModule, // getRowStyle
+  CellStyleModule, // cellClass
+  TooltipModule, // receipt "Hash" header tooltip
+]);
+// Development only: explains misconfigured grid options in the console (left out of production builds).
+if (import.meta.env.DEV) ModuleRegistry.registerModules([ValidationModule]);
 
 /**
  * Quartz mapped onto the ResolveKit tokens. Every colour is a CSS variable, so the grid follows

@@ -52,8 +52,9 @@ export default defineConfig({
   server: { proxy: api },
   preview: { proxy: api },
   build: {
-    // AG Grid Community (AllCommunityModule) is ~1 MB minified; keep it in its own cacheable chunk.
-    chunkSizeWarningLimit: 1100,
+    // AG Grid Community (core + the modules registered in src/components/grid/theme.ts) is ~0.86 MB minified; keep
+    // it in its own cacheable chunk.
+    chunkSizeWarningLimit: 900,
     rollupOptions: { output: { manualChunks: { 'ag-grid': ['ag-grid-community', 'ag-grid-react'] } } },
   },
   test: {
