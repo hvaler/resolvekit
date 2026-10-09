@@ -51,6 +51,7 @@ dispute's amount differs from the demo case's order, the case header says so, an
 The API only answers the local web app. It listens on `127.0.0.1`, refuses other `Host` headers (DNS rebinding) and
 foreign `Origin`s, needs a per-launch token that the Vite proxy adds on the server side (the browser never sees it),
 and takes JSON only for writes. The Vite dev/preview proxy also refuses cross-site requests before adding the token.
+The public demo runs the same API in **hosted mode** instead (see [Deploy on Render](#deploy-on-render)).
 
 ## Principles
 
@@ -66,7 +67,7 @@ Requires Node.js 24+ (TypeScript runs natively, no build step).
 ```bash
 cp .env.example .env   # PayPal sandbox app credentials (never committed)
 npm install
-npm test               # packages/* (incl. the analyst, fake model) + apps/server + apps/metermcp (node --test, no network) + apps/web (vitest)
+npm test               # packages/* (incl. the analyst, fake model, hosting) + apps/server + apps/metermcp (node --test, no network) + apps/web (vitest)
 ```
 
 To use real sandbox disputes, bind cases to them and run the server next to the web app:
@@ -236,6 +237,79 @@ failures led to two new deterministic checks. Earlier versions, Groq details and
 
 **Data.** Only the synthetic demo documents (fictional names, addresses and identifiers) and, for bound cases, PayPal
 sandbox data are sent to the model. No real customer data.
+
+## Deploy on Render
+
+The public demo runs on [Render](https://render.com) from [`render.yaml`](render.yaml) (a Blueprint): two web
+services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB persistent disk, Node 24.19.0.
+
+| Service | Start | Disk (`/var/data`) | Public |
+|---|---|---|---|
+| `resolvekit` | `node apps/server/src/main.ts` with `RESOLVEKIT_MODE=hosted` | analysis cache, analyst usage log, daily caps | the web app and `/api`, one origin |
+| `resolvekit-metermcp` | `node apps/metermcp/src/main.ts` with `METERMCP_MODE=hosted` | SQLite ledger, daily budget cap | `/mcp`, `/approved`, `/cancelled`, `/health` |
+
+**Steps**
+
+1. Push the repo to GitHub. In Render: **New → Blueprint**, pick the repo; Render reads `render.yaml`.
+2. Render asks once for the `sync: false` secrets (both services ask for their own copy; use the same values):
+   `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (the PayPal **sandbox** app, developer.paypal.com → Apps & Credentials),
+   `GEMINI_API_KEY` (Google AI Studio), `GROQ_API_KEY` (console.groq.com; optional fallback), `DEMO_CODE` (12+
+   random characters; it goes into the Devpost testing instructions) and `BINDINGS_JSON`:
+   `{"PP-R-TVH-10190665":"<sandbox dispute id>","PP-R-MMC-10190702":"<sandbox dispute id>"}` (see
+   `apps/server/bindings.example.json`). Bindings are validated at start; a bad one stops the service. Without
+   `BINDINGS_JSON` the server reads `/var/data/bindings.json`.
+3. Render generates `RESOLVEKIT_SESSION_SECRET` (signs the unlock cookie) and `METERMCP_ADMIN_TOKEN` (given to
+   `resolvekit` with `fromService`), and passes MeterMCP's private-network `host:port` as `METERMCP_URL`.
+   `RENDER_EXTERNAL_URL` / `PORT` come from Render. A custom domain goes in `RESOLVEKIT_CUSTOM_DOMAINS` /
+   `METERMCP_CUSTOM_DOMAINS`.
+4. After the first deploy: open the app, **Unlock demo actions**, and open each bound case once. A bound case's
+   documents include PayPal's (and MeterMCP's) live data, so the committed golden analyses do not match them; the
+   first unlocked visit runs the analyst live and caches the result on the disk, and every visitor sees it from then
+   on, without the code. (Or copy `apps/server/data/analysis-cache/*.json` onto the disk.)
+5. The agent case shows the real MeterMCP receipt only if the hosted ledger has the session of the disputed capture:
+   run the demo agent against the hosted MeterMCP
+   (`METERMCP_URL=https://<metermcp host>/mcp METERMCP_DEMO_CODE=<code> npm run demo-agent`), approve with the sandbox
+   buyer, open the dispute on its capture as the buyer, and bind it. (Or copy the local `metermcp.sqlite` onto the
+   disk.)
+6. PayPal accepts evidence once per dispute. To let the next judge send for real, open a fresh sandbox dispute and
+   update `BINDINGS_JSON` (the service restarts with the new binding).
+
+**Hosted mode** (`apps/server/src/hosted.ts`, `apps/metermcp/src/app.ts`, `packages/hosting`)
+
+- Browsing is free: inbox, cases, PayPal reads, stored analyses, health.
+- What costs money or quota or cannot be undone needs the **demo code**: sending evidence to the real PayPal sandbox,
+  live AI runs (including a plain request whose documents have no stored analysis) and AI re-checks of edited
+  sentences. `POST /api/demo/unlock {code}` compares it in constant time and sets an `HttpOnly; Secure;
+  SameSite=Strict` cookie, HMAC-signed with `RESOLVEKIT_SESSION_SECRET`, valid 12 h. Unlock attempts: 5 per IP per
+  15 min, 60 per hour overall, counted before the code is compared. The web app shows **Unlock demo actions** in the
+  app bar; locked actions say **Demo code required** and why.
+- Global **daily caps**, persisted on the disk and reserved atomically before the work starts (refunded when it did
+  not happen): `DAILY_LIVE_ANALYSES` (60), `DAILY_RECHECKS` (200), `DAILY_EVIDENCE_SENDS` (20), on top of the
+  hourly limits (`LIVE_ANALYSES_PER_HOUR` 6, `RECHECKS_PER_HOUR` 30). Live runs and re-checks only run on the demo
+  cases' own documents (`apps/server/src/anchor.ts`): the merchant documents and notes must be the server's fixture
+  line for line; only PayPal/MeterMCP data fields come from the latest read.
+- Requests: `Host` must be the public host (`/healthz` excepted, for Render's health check); `/api` writes must
+  carry the service's own `Origin`; POST is JSON only; per-IP limits (300 `/api` requests and 60 PayPal reads per 5
+  min); the client IP is the last `X-Forwarded-For` entry (one trusted proxy hop, `TRUSTED_PROXY_HOPS`).
+- Headers on every answer: CSP (own scripts only; Google Fonts; `frame-ancestors 'none'`), HSTS, `nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`.
+- MeterMCP: `/mcp` is public for judges' own MCP clients. Free tools work for anyone; **creating a budget** (the
+  PayPal order behind `payment_required`) needs the demo code in the `x-demo-code` HTTP header and stays within
+  `DAILY_BUDGETS` (20) per day; without it a paid tool answers `demo_code_required`. Wrong codes: 5 per IP per 15
+  min. Return/cancel URLs use `RENDER_EXTERNAL_URL`. Admin routes (`/sessions…`) answer only requests that did not
+  come through Render's public proxy (no `X-Forwarded-For`, not the public host) and carry the admin token.
+- Local mode is unchanged (127.0.0.1, per-launch tokens, Vite proxy).
+
+**Costs.** Two Starter instances plus 2 GB of disk (see render.com/pricing), PayPal sandbox (free), Gemini/Groq
+usage within the daily caps. A disk rules out zero-downtime deploys (a few seconds of downtime per deploy) and
+scaling beyond one instance. Judges' testing instructions: [`docs/judges.md`](docs/judges.md).
+
+**Rehearse locally**: build the web app, then start both in hosted mode with fake Render variables, e.g. MeterMCP with
+`METERMCP_MODE=hosted PORT=10001 RENDER_EXTERNAL_URL=http://localhost:10001 METERMCP_ADMIN_TOKEN=<32+ chars>
+METERMCP_DATA_DIR=<dir>` and the server with `RESOLVEKIT_MODE=hosted PORT=10000 RENDER_EXTERNAL_URL=http://localhost:10000
+RESOLVEKIT_DATA_DIR=<dir> METERMCP_URL=127.0.0.1:10001 METERMCP_ADMIN_TOKEN=<same> DEMO_CODE=<code>
+BINDINGS_JSON=...` (both with `node --env-file-if-exists=.env …` for the PayPal and model keys), and open
+http://localhost:10000.
 
 ## License
 
