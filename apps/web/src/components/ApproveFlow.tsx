@@ -5,6 +5,7 @@ import { compareSentRecorded } from '../domain/compare';
 import { formatCount, notesCountLabel } from '../domain/draft';
 import { EVIDENCE_TYPE_LABEL } from '../domain/evidenceTypes';
 import { safeRetry, submitWithReadBack, type SendPhase, type SendResult } from '../domain/gateway';
+import type { GatewayMode } from '../domain/httpGateway';
 import { quoteFor } from '../domain/quotes';
 import { STATUS_DISPLAY, statusExplanation } from '../domain/status';
 import { totalSize } from '../domain/submission';
@@ -15,15 +16,21 @@ import { Button, EvidenceTag, Spinner, cx } from './ui';
 
 type Flow = 'review' | 'confirm' | 'sending' | 'error' | 'recorded';
 
-const STEPS = ['Review', 'Confirm', 'Send', 'Recorded by PayPal'] as const;
 const FLOW_STEP: Record<Flow, number> = { review: 0, confirm: 1, sending: 2, error: 2, recorded: 3 };
-const TITLE: Record<Flow, string> = {
-  review: 'Review what will be sent',
-  confirm: 'Confirm and submit',
-  sending: 'Submitting to PayPal',
-  error: 'Submission not confirmed',
-  recorded: 'Recorded by PayPal',
-};
+
+/** Who records the evidence: real PayPal, or the in-browser simulator. Every "recorded" message says which. */
+export function recordedBy(mode: GatewayMode): string {
+  return mode.kind === 'paypal' ? 'Recorded by PayPal' : 'Recorded by the PayPal simulator';
+}
+const steps = (mode: GatewayMode) => ['Review', 'Confirm', 'Send', recordedBy(mode)];
+const title = (flow: Flow, mode: GatewayMode): string =>
+  ({
+    review: 'Review what will be sent',
+    confirm: 'Confirm and submit',
+    sending: mode.kind === 'paypal' ? `Submitting to PayPal ${mode.env}` : 'Submitting to the PayPal simulator',
+    error: 'Submission not confirmed',
+    recorded: recordedBy(mode),
+  })[flow];
 
 function newRequestId(): string {
   const hex = Math.floor(Math.random() * 0xffffff)
@@ -32,8 +39,9 @@ function newRequestId(): string {
   return `rk-req-${hex}`;
 }
 
-function Stepper({ flow }: { flow: Flow }) {
+function Stepper({ flow, mode }: { flow: Flow; mode: GatewayMode }) {
   const idx = FLOW_STEP[flow];
+  const STEPS = steps(mode);
   return (
     <ol aria-label="Steps" className="m-0 flex list-none items-center gap-2 p-0">
       {STEPS.map((label, i) => {
@@ -101,7 +109,10 @@ export interface ApproveFlowProps {
  * "Recorded" is only ever shown from the dispute as read back from PayPal.
  */
 export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: ApproveFlowProps) {
-  const { gateway, applySnapshot, addAudit, audit } = useServices();
+  const { gatewayFor, modeOf, applySnapshot, addAudit, audit } = useServices();
+  const id = c.summary.id;
+  // Decided once when the flow opens: a submission never switches between the simulator and real PayPal mid-way.
+  const [{ gateway, mode }] = useState(() => ({ gateway: gatewayFor(id), mode: modeOf(id) }));
   const [flow, setFlow] = useState<Flow>('review');
   const [checked, setChecked] = useState(false);
   const [phase, setPhase] = useState<SendPhase | null>(null);
@@ -137,7 +148,6 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
 
   const supported = views.filter((v) => v.state === 'supported');
   const removed = views.filter((v) => v.state === 'rejected');
-  const id = c.summary.id;
   const digital = !!c.fulfillment.digital;
 
   const run = async (retry: boolean) => {
@@ -150,7 +160,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
       if (!mounted.current) return;
       setPhase(p);
       setReached((r) => (r.includes(p) ? r : [...r, p]));
-      if (p === 'sending') addAudit(id, 'ResolveKit', `Sent provide_evidence · request ${requestId}`);
+      if (p === 'sending') addAudit(id, 'ResolveKit', `Sent provide_evidence${mode.kind === 'paypal' ? ` to PayPal ${mode.env}` : ' to the simulator'} · request ${requestId}`);
     };
     let r: SendResult;
     let base: DisputeSnapshot;
@@ -176,7 +186,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
     applySnapshot(r.snapshot);
     addAudit(
       id,
-      'PayPal re-read',
+      mode.kind === 'paypal' ? 'PayPal re-read' : 'Simulator re-read',
       r.kind === 'recorded' ? `Status ${r.snapshot.status} · evidence stored` : `Status ${r.snapshot.status} · no evidence recorded`,
     );
     if (!mounted.current) return;
@@ -206,14 +216,14 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
         <div className="flex flex-none items-center gap-5 border-b border-line px-[26px] py-4">
           <div className="flex flex-col gap-0.5">
             <h2 id="approve-title" ref={headingRef} tabIndex={-1} className="m-0 text-[18px] font-semibold tracking-[-0.01em] outline-none">
-              {TITLE[flow]}
+              {title(flow, mode)}
             </h2>
             <span className="font-mono text-caption leading-[1.3] text-ink-3">
               {id} · {c.summary.amount} {c.summary.currency}
             </span>
           </div>
           <span className="flex-1" />
-          <Stepper flow={flow} />
+          <Stepper flow={flow} mode={mode} />
           {closable && (
             <button type="button" aria-label="Close" onClick={onClose} className="ml-2 h-7 w-7 rounded-lg border border-line-2 bg-surface text-ink-2">
               ×
@@ -395,7 +405,11 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
           <div className="flex flex-1 items-center justify-center">
             <div className="flex w-[520px] flex-col gap-[18px]">
               <SendProgress approvedAt={approvedAt} phase={phase} reached={reached} retrying={retrying} />
-              <span className="pl-8 text-body text-ink-2">We only show &quot;Recorded&quot; after reading the dispute back from PayPal.</span>
+              <span className="pl-8 text-body text-ink-2">
+                {mode.kind === 'paypal'
+                  ? `Live PayPal ${mode.env}: we only show "Recorded" after reading the dispute back from PayPal.`
+                  : 'Simulated PayPal: we only show "Recorded" after reading the dispute back from the simulator.'}
+              </span>
             </div>
           </div>
         )}
@@ -411,9 +425,14 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                   <strong className="text-[15px] font-semibold">PayPal didn&apos;t confirm the submission</strong>
                   <span className="text-body-lg leading-normal">
                     {result?.kind === 'not_recorded' && /timed out/i.test(result.error) ? 'The request timed out. ' : ''}
-                    We read the dispute back from PayPal: <strong>no evidence is recorded</strong>
-                    {result ? ` and the status is still ${result.snapshot.status}.` : '.'}
+                    We read the dispute back from {mode.kind === 'paypal' ? 'PayPal' : 'the simulator'}: <strong>no new evidence from you is recorded</strong>
+                    {result ? ` and the status is ${result.snapshot.status}.` : '.'}
                   </span>
+                  {result?.kind === 'not_recorded' && !/timed out|no evidence recorded/i.test(result.error) && (
+                    <span className="font-mono text-mono-frag text-ink-2">
+                      {mode.kind === 'paypal' ? 'PayPal' : 'Simulator'} answered: {result.error}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -430,7 +449,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
         )}
 
         {flow === 'recorded' && result?.kind === 'recorded' && (
-          <Recorded result={result} submission={submission} approvedAt={approvedAt} actionsBefore={actionsBefore} audit={[...c.audit, ...(audit[id] ?? [])]} onClose={onClose} />
+          <Recorded mode={mode} result={result} submission={submission} approvedAt={approvedAt} actionsBefore={actionsBefore} audit={[...c.audit, ...(audit[id] ?? [])]} onClose={onClose} />
         )}
       </div>
     </div>
@@ -469,6 +488,7 @@ function SendProgress({ approvedAt, phase, reached, retrying }: { approvedAt: Da
 }
 
 function Recorded({
+  mode,
   result,
   submission,
   approvedAt,
@@ -476,6 +496,7 @@ function Recorded({
   audit,
   onClose,
 }: {
+  mode: GatewayMode;
   result: Extract<SendResult, { kind: 'recorded' }>;
   submission: EvidenceSubmission;
   approvedAt: Date | null;
@@ -494,13 +515,15 @@ function Recorded({
             ✓
           </span>
           <div className="flex flex-col gap-0.5">
-            <strong className="text-[15px] font-semibold">Recorded by PayPal</strong>
+            <strong className="text-[15px] font-semibold">{recordedBy(mode)}</strong>
             <span className="text-body text-ink-2">
-              Read back from PayPal at {snap.readAt}. This is what PayPal stored, not what we expect it stored.
+              {mode.kind === 'paypal' && snap.origin?.kind === 'paypal'
+                ? `Read back from PayPal ${snap.origin.env} (dispute ${snap.origin.disputeId}) at ${snap.readAt}. This is what PayPal stored, not what we expect it stored.`
+                : `Read back from the PayPal simulator at ${snap.readAt}. No real PayPal dispute is involved.`}
             </span>
           </div>
           <div className="flex flex-col items-end gap-0.5 border-l border-ok-line pl-[18px]">
-            <span className="text-[11.5px] text-ink-3">PayPal status now</span>
+            <span className="text-[11.5px] text-ink-3">{mode.kind === 'paypal' ? 'PayPal status now' : 'Simulated status now'}</span>
             <span className="text-[16px] font-semibold">{STATUS_DISPLAY[snap.status].label}</span>
             <span className="font-mono text-mono-code leading-[1.2] text-ink-2">{snap.status}</span>
           </div>
@@ -509,7 +532,7 @@ function Recorded({
         <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-5">
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between">
-              <h3 className="m-0 text-[14px] font-semibold">Sent vs. recorded by PayPal</h3>
+              <h3 className="m-0 text-[14px] font-semibold">Sent vs. {mode.kind === 'paypal' ? 'recorded by PayPal' : 'recorded by the simulator'}</h3>
               <span className={cx('text-[12px]', cmp.allMatch ? 'text-ok' : 'text-bad')}>
                 {cmp.allMatch ? '✓' : '!'} {cmp.matched} of {cmp.total} fields match
               </span>
@@ -518,7 +541,7 @@ function Recorded({
               <div role="row" className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)_76px] gap-3 border-b border-line bg-surface-2 px-3.5 py-2 text-[11.5px] font-medium text-ink-3">
                 <span role="columnheader">Field</span>
                 <span role="columnheader">Sent</span>
-                <span role="columnheader">Recorded by PayPal</span>
+                <span role="columnheader">{mode.kind === 'paypal' ? 'Recorded by PayPal' : 'Recorded (simulator)'}</span>
                 <span role="columnheader">Match</span>
               </div>
               {cmp.rows.map((m) => (

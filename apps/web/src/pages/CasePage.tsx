@@ -133,6 +133,7 @@ function CaseFileScreen({ c }: { c: CaseFile }) {
             c={c}
             d={d}
             allowedActions={allowed}
+            realPayPal={snap?.origin?.kind === 'paypal'}
             checkedAt={snap?.checkedAt ?? null}
             submitted={submitted}
             onReview={() => navigate(`/cases/${id}/approve`)}

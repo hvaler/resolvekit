@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { useServices } from '../app/services';
 import { useTheme } from '../theme/ThemeProvider';
 import { SyncIndicator } from './SyncIndicator';
 import { cx } from './ui';
@@ -75,6 +76,46 @@ export function ThemeControls() {
   );
 }
 
+/**
+ * Which PayPal is behind what is on screen, always visible: real PayPal (sandbox or live) for a case bound to a real
+ * dispute while the server reports PayPal connected, otherwise the in-browser simulator.
+ */
+export function ModeBadge({ caseId }: { caseId?: string }) {
+  const { modeOf, health, snapshots } = useServices();
+  const origin = caseId ? snapshots[caseId]?.origin : undefined;
+  const disputeId = origin?.kind === 'paypal' ? origin.disputeId : null;
+  const bound = health?.bound.length ?? 0;
+  if (caseId) {
+    const m = modeOf(caseId);
+    if (m.kind === 'paypal') {
+      return (
+        <span
+          data-testid="mode-badge"
+          title={`This case reads and writes the real PayPal ${m.env} dispute${disputeId ? ` ${disputeId}` : ''} through the ResolveKit server. Case documents are synthetic.`}
+          className="flex items-center gap-1.5 rounded-md border border-ok-line bg-ok-soft px-2 py-1 text-[11.5px] font-medium text-ok"
+        >
+          <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-ok" />
+          PayPal {m.env} · live{disputeId ? <span className="font-mono font-normal"> {disputeId}</span> : null}
+        </span>
+      );
+    }
+  }
+  return (
+    <span
+      data-testid="mode-badge"
+      title={
+        caseId
+          ? 'This case runs on the in-browser PayPal simulator: nothing is sent to PayPal. All data is synthetic.'
+          : `Cases run on the in-browser PayPal simulator${bound ? `, except ${bound} bound to a real PayPal ${health?.paypal} dispute` : ''}. All data is synthetic.`
+      }
+      className="flex items-center gap-1.5 rounded-md border border-dashed border-info-line bg-info-soft px-2 py-1 text-[11.5px] font-medium text-info"
+    >
+      <span aria-hidden="true" className="h-[5px] w-[5px] rotate-45 border-[1.5px] border-info" />
+      Simulated PayPal{!caseId && bound ? ` · ${bound} case${bound > 1 ? 's' : ''} on PayPal ${health?.paypal}` : ''}
+    </span>
+  );
+}
+
 export const MERCHANT = { name: 'Alex Moreno', initials: 'AM' } as const;
 
 export function AppBar({
@@ -123,13 +164,7 @@ export function AppBar({
           Sync now
         </button>
       )}
-      <span
-        title="Connected to the PayPal sandbox. All data is synthetic."
-        className="flex items-center gap-1.5 rounded-md border border-dashed border-info-line bg-info-soft px-2 py-1 text-[11.5px] font-medium text-info"
-      >
-        <span aria-hidden="true" className="h-[5px] w-[5px] rotate-45 border-[1.5px] border-info" />
-        Sandbox · synthetic data
-      </span>
+      <ModeBadge caseId={caseId} />
       <ThemeControls />
       <span role="img" aria-label={MERCHANT.name} className="grid h-[26px] w-[26px] place-items-center rounded-full bg-acc-soft text-[10.5px] font-semibold text-acc">
         {MERCHANT.initials}

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useMatch } from 'react-router-dom';
 import { useState } from 'react';
 import { useServices } from './app/services';
 import type { SimulatedOutcome } from './domain/gateway';
@@ -12,13 +12,16 @@ const OUTCOMES: { v: SimulatedOutcome; l: string }[] = [
   { v: 'timeout', l: 'Timeout → read back → safe retry' },
 ];
 
-/** Dev-only: choose what the simulated PayPal does (after evidence is submitted, new disputes, outages). */
+/** Dev-only, simulator only: choose what the simulated PayPal does (after evidence is submitted, new disputes, outages). */
 function DevOutcomeControl() {
-  const { outcome, setOutcome, simulator, refreshAll } = useServices();
+  const { outcome, setOutcome, simulator, refreshAll, modeOf } = useServices();
   const [offline, setOffline] = useState(false);
+  const caseMatch = useMatch('/cases/:id/*');
+  // The outcome picker drives the simulator only: a case on real PayPal gets what PayPal does.
+  if (caseMatch?.params.id && modeOf(caseMatch.params.id).kind === 'paypal') return null;
   return (
     <details className="fixed bottom-3 left-3 z-[60] rounded-xl border border-dashed border-line-2 bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2 shadow-[0_2px_8px_rgba(0,0,0,.08)]">
-      <summary className="cursor-pointer">Dev</summary>
+      <summary className="cursor-pointer">Dev · simulator</summary>
       <div className="mt-1.5 flex items-center gap-2">
         <label htmlFor="dev-outcome">PayPal re-read outcome</label>
         <select

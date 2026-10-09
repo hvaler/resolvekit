@@ -8,7 +8,7 @@ import { ThemeProvider } from './theme/ThemeProvider';
 function render(path: string): string {
   return renderToString(
     <ThemeProvider>
-      <ServicesProvider latencyMs={0}>
+      <ServicesProvider latencyMs={0} server={null}>
         <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <App />
         </MemoryRouter>
@@ -33,6 +33,9 @@ describe('routes render without errors', () => {
     expect(html).toContain('PayPal is asking for:');
     expect(html).toContain('EVIDENCE_TYPE_IS_NOT_ALLOWED');
     expect(html).toContain('Delivery address differs from order address');
+    // Without the server reporting PayPal connected, the case runs on the simulator and says so.
+    expect(html).toContain('Simulated PayPal');
+    expect(html).not.toContain('PayPal sandbox · live');
   });
 
   it('agent case file', () => {

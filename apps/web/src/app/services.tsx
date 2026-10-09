@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SimulatedDisputeGateway, type DisputeGateway, type SimulatedOutcome } from '../domain/gateway';
+import { HttpDisputeGateway, RoutingDisputeGateway, modeFor, type GatewayMode, type ServerHealth } from '../domain/httpGateway';
 import { utcHm } from '../domain/time';
 import type { AuditEntry, DisputeSnapshot } from '../domain/types';
 import { initialSnapshots, processingDispute, processingOpening } from '../fixtures';
@@ -20,7 +21,14 @@ export interface SyncState {
 }
 
 interface Services {
+  /** Routes each case to real PayPal (bound case, server connected) or to the simulator. */
   gateway: DisputeGateway;
+  /** The gateway serving this case right now. Capture it once per flow so a flow never switches mid-way. */
+  gatewayFor: (caseId: string) => DisputeGateway;
+  /** Which PayPal serves this case: shown in the app bar and in every "recorded" message. */
+  modeOf: (caseId: string) => GatewayMode;
+  /** The server's PayPal connection, once checked (null while checking). */
+  health: ServerHealth | null;
   /** The simulated PayPal behind {@link gateway}, for the demo controls. */
   simulator: SimulatedDisputeGateway;
   sync: SyncState;
@@ -46,13 +54,22 @@ function initialOutcome(): SimulatedOutcome {
   return q === 'under_review' || q === 'timeout' ? q : 'waiting_for_buyer';
 }
 
-export function ServicesProvider({ children, latencyMs = SIMULATED_LATENCY_MS }: { children: ReactNode; latencyMs?: number }) {
+export function ServicesProvider({
+  children,
+  latencyMs = SIMULATED_LATENCY_MS,
+  server,
+}: {
+  children: ReactNode;
+  latencyMs?: number;
+  /** The ResolveKit server. Pass null to run on the simulator only (tests). */
+  server?: HttpDisputeGateway | null;
+}) {
   const [outcome, setOutcome] = useState<SimulatedOutcome>(initialOutcome);
   const outcomeRef = useRef(outcome);
   outcomeRef.current = outcome;
 
-  // One gateway for the whole session. The real one will call a server route backed by packages/paypal.
-  const gateway = useMemo(
+  // One simulator for the whole session; bound cases go to the ResolveKit server (real PayPal) instead.
+  const simulator = useMemo(
     () =>
       new SimulatedDisputeGateway(initialSnapshots, {
         outcome: () => outcomeRef.current,
@@ -61,6 +78,13 @@ export function ServicesProvider({ children, latencyMs = SIMULATED_LATENCY_MS }:
       }),
     [latencyMs],
   );
+  const http = useMemo(() => (server === undefined ? new HttpDisputeGateway() : server), [server]);
+  const [health, setHealth] = useState<ServerHealth | null>(null);
+  const healthRef = useRef<ServerHealth | null>(null);
+  healthRef.current = health;
+  const modeOf = useCallback((caseId: string) => modeFor(caseId, healthRef.current), []);
+  const gateway = useMemo<DisputeGateway>(() => (http ? new RoutingDisputeGateway(http, simulator, modeOf) : simulator), [http, simulator, modeOf]);
+  const gatewayFor = useCallback((caseId: string): DisputeGateway => (http && modeOf(caseId).kind === 'paypal' ? http : simulator), [http, simulator, modeOf]);
 
   const [snapshots, setSnapshots] = useState<Record<string, TrackedSnapshot>>(() => {
     const now = Date.now();
@@ -92,13 +116,28 @@ export function ServicesProvider({ children, latencyMs = SIMULATED_LATENCY_MS }:
   );
   const refresh = useCallback((id: string) => refreshAll([id]), [refreshAll]);
 
+  // Ask the server once whether PayPal is connected and which cases are bound; then read those cases from PayPal.
+  useEffect(() => {
+    if (!http) return;
+    let live = true;
+    void http.health().then((h) => {
+      if (!live) return;
+      healthRef.current = h;
+      setHealth(h);
+      if (h.bound.length) void refreshAll(h.bound);
+    });
+    return () => {
+      live = false;
+    };
+  }, [http, refreshAll]);
+
   const addAudit = useCallback((id: string, who: string, what: string) => {
     setAudit((all) => ({ ...all, [id]: [...(all[id] ?? []), { time: utcHm(new Date()), who, what }] }));
   }, []);
 
   const value = useMemo<Services>(
-    () => ({ gateway, simulator: gateway, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit }),
-    [gateway, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit],
+    () => ({ gateway, gatewayFor, modeOf, health, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit }),
+    [gateway, gatewayFor, modeOf, health, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit],
   );
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }

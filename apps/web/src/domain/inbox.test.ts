@@ -130,8 +130,9 @@ describe('applying a fresh read from PayPal', () => {
 
   it('after evidence is recorded: nothing to do, no due date', () => {
     const recorded = { evidenceType: 'PROOF_OF_FULFILLMENT' as const, source: 'SUBMITTED_BY_SELLER', carrier: 'UPS', tracking: '1Z', notes: '', files: [], storedAt: '' };
-    const r = applySnapshot(tvh, snap({ id: tvh.id, status: 'WAITING_FOR_BUYER_RESPONSE', evidences: [recorded] }));
+    const r = applySnapshot(tvh, snap({ id: tvh.id, status: 'WAITING_FOR_BUYER_RESPONSE', evidences: [recorded], origin: { kind: 'paypal', env: 'sandbox', disputeId: 'PP-R-REAL' } }));
     expect(r).toMatchObject({ status: 'WAITING_FOR_BUYER_RESPONSE', nextKind: 'none', nextSub: 'Evidence recorded by PayPal', respondBy: null });
+    expect(applySnapshot(tvh, snap({ id: tvh.id, status: 'WAITING_FOR_BUYER_RESPONSE', evidences: [recorded] })).nextSub).toBe('Evidence recorded by the simulator');
     expect(toGridRow(r, DEMO_NOW).dueH).toBeNull();
   });
 

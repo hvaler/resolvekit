@@ -250,7 +250,7 @@ export function applySnapshot(d: InboxDispute, s: DisputeSnapshot | undefined): 
       status: s.status,
       next: reviewing ? 'Nothing to do · PayPal is reviewing' : 'Nothing to do · buyer’s turn',
       nextKind: 'none',
-      nextSub: 'Evidence recorded by PayPal',
+      nextSub: s.origin?.kind === 'paypal' ? 'Evidence recorded by PayPal' : 'Evidence recorded by the simulator',
       respondBy: null,
       dueNote: reviewing ? 'PayPal reviewing' : 'Buyer to respond',
     };

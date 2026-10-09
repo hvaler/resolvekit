@@ -134,11 +134,13 @@ export interface ResponseComposerProps {
   allowedActions: readonly ActionCode[];
   checkedAt: number | null;
   submitted: boolean;
+  /** The dispute is on real PayPal (not the simulator): only then does the copy say "recorded by PayPal". */
+  realPayPal?: boolean;
   onReview: () => void;
 }
 
 /** Right zone: the draft with its sentence states, evidence type, attachments, action, and the way forward. */
-export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, onReview }: ResponseComposerProps) {
+export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, realPayPal = false, onReview }: ResponseComposerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const busy = d.blockers.some((b) => b.kind === 'analysis' || b.kind === 'checking');
   const actionable = d.actionable;
@@ -149,7 +151,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, o
   let btnLabel: string;
   if (submitted) {
     blockText = 'Evidence was submitted. PayPal no longer offers "Provide evidence" for this dispute.';
-    btnLabel = 'Evidence recorded by PayPal';
+    btnLabel = realPayPal ? 'Evidence recorded by PayPal' : 'Evidence recorded by the simulator';
   } else if (actionable.length && !busy) {
     blockText = blockerSentence(actionable);
     blockColor = 'var(--warn)';
