@@ -14,6 +14,7 @@ import {
   standardOrder,
   type PrepareOptions,
 } from '../scripts/demo-prepare-lib.ts';
+import { parseBindings } from '../src/bindings.ts';
 
 const ok = (argv: string[]) => {
   const o = parseArgs(argv);
@@ -68,8 +69,8 @@ test('demo:prepare buyer instructions: not received; physical product for the st
 
 test('demo:prepare dispute readiness and receipt check', () => {
   assert.deepEqual(disputeReadiness(null), { state: 'missing' });
-  assert.deepEqual(disputeReadiness({ dispute_id: 'PP-D-1', status: 'UNDER_REVIEW' }), { state: 'processing', disputeId: 'PP-D-1', status: 'UNDER_REVIEW' });
-  assert.deepEqual(disputeReadiness({ dispute_id: 'PP-D-1', status: 'WAITING_FOR_SELLER_RESPONSE' }), { state: 'ready', disputeId: 'PP-D-1', status: 'WAITING_FOR_SELLER_RESPONSE' });
+  assert.deepEqual(disputeReadiness({ dispute_id: 'PP-R-D0001', status: 'UNDER_REVIEW' }), { state: 'processing', disputeId: 'PP-R-D0001', status: 'UNDER_REVIEW' });
+  assert.deepEqual(disputeReadiness({ dispute_id: 'PP-R-D0001', status: 'WAITING_FOR_SELLER_RESPONSE' }), { state: 'ready', disputeId: 'PP-R-D0001', status: 'WAITING_FOR_SELLER_RESPONSE' });
   const call = (status: string) => ({ status });
   const good = { calls: [call('OK'), call('FAILED'), call('OK'), call('OK')], settlement: { status: 'captured', capture_id: 'CAP2' } };
   assert.deepEqual(agentReceiptProblems(good), []);
@@ -78,6 +79,11 @@ test('demo:prepare dispute readiness and receipt check', () => {
 });
 
 test('demo:prepare BINDINGS_JSON: what is known, and what is missing', () => {
-  assert.deepEqual(bindingsJson({ standard: 'PP-D-1', agent: 'PP-D-2' }), { json: `{"${STANDARD_CASE_ID}":"PP-D-1","${AGENT_CASE_ID}":"PP-D-2"}`, missing: [] });
-  assert.deepEqual(bindingsJson({ agent: 'PP-D-2' }), { json: `{"${AGENT_CASE_ID}":"PP-D-2"}`, missing: [STANDARD_CASE_ID] });
+  const both = bindingsJson({ standard: { dispute: 'PP-R-D0001', capture: 'CAP1AAAAAAAA' }, agent: { dispute: 'PP-R-D0002', capture: 'CAP2BBBBBBBB' } });
+  assert.deepEqual(JSON.parse(both.json), { [STANDARD_CASE_ID]: { dispute: 'PP-R-D0001', capture: 'CAP1AAAAAAAA' }, [AGENT_CASE_ID]: { dispute: 'PP-R-D0002', capture: 'CAP2BBBBBBBB' } });
+  assert.deepEqual(both.missing, []);
+  const one = bindingsJson({ agent: { dispute: 'PP-R-D0002', capture: 'CAP2BBBBBBBB' } });
+  assert.deepEqual([JSON.parse(one.json), one.missing], [{ [AGENT_CASE_ID]: { dispute: 'PP-R-D0002', capture: 'CAP2BBBBBBBB' } }, [STANDARD_CASE_ID]]);
+  // The server reads exactly this format.
+  assert.deepEqual(parseBindings(JSON.parse(both.json))[STANDARD_CASE_ID], { dispute: 'PP-R-D0001', capture: 'CAP1AAAAAAAA' });
 });

@@ -50,19 +50,21 @@ test('a dispute without amount, transaction or dates maps them to null', () => {
   assert.equal(s.buyerItemType, null);
 });
 
-test('startup binding check logs a mismatch between the bound dispute and the demo case order, without writing', async () => {
-  const pp = fakePayPal([{ status: 200, body: waitingDispute() }, { status: 200, body: { ...waitingDispute(), dispute_amount: { currency_code: 'USD', value: '7.00' } } }, { status: 404, body: { name: 'RESOURCE_NOT_FOUND' } }]);
+test('startup binding check verifies each bound dispute and logs why one is not this payment, without writing', async () => {
+  const std = { ...waitingDispute(), dispute_amount: { currency_code: 'USD', value: '7.00' }, disputed_transactions: [{ ...waitingDispute().disputed_transactions![0]!, gross_amount: { currency_code: 'USD', value: '7.00' } }] };
+  const pp = fakePayPal([{ status: 200, body: waitingDispute() }, { status: 200, body: std }, { status: 404, body: { name: 'RESOURCE_NOT_FOUND' } }]);
   const paypal = new PayPalClient({ clientId: 'id', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
   const lines: string[] = [];
+  const capture = '4FT237453Y5353014';
   await checkBindings({
     paypal,
-    bindings: { 'CASE-A': 'PP-R-1', 'CASE-B': 'PP-R-2', 'CASE-C': 'PP-R-3' },
-    caseOrders: { 'CASE-A': { value: '7.00', currency: 'USD' }, 'CASE-B': { value: '7.00', currency: 'USD' }, 'CASE-C': { value: '1.00', currency: 'USD' } },
+    bindings: { 'CASE-A': { dispute: 'PP-R-REAL-1', capture }, 'CASE-B': { dispute: 'PP-R-REAL-1', capture }, 'CASE-C': { dispute: 'PP-R-3', capture } },
+    cases: Object.fromEntries(['CASE-A', 'CASE-B', 'CASE-C'].map((k) => [k, { value: '7.00', currency: 'USD', transactionId: 'DEMO0000000001' }])),
     log: (l) => lines.push(l),
   });
-  assert.ok(lines.some((l) => l.includes('CASE-A → PP-R-1: MISMATCH') && l.includes('is 1.37 USD; this demo case’s order is 7.00 USD')), lines.join(' | '));
-  assert.ok(lines.some((l) => l.includes('CASE-B → PP-R-2: amount matches (7.00 USD)')));
-  assert.ok(lines.some((l) => l.includes('CASE-C → PP-R-3: could not read')));
+  assert.ok(lines.some((l) => l.includes('CASE-A → PP-R-REAL-1') && l.includes('INVALID') && l.includes('1.37 USD; this case’s order is 7.00 USD')), lines.join(' | '));
+  assert.ok(lines.some((l) => l.includes('CASE-B → PP-R-REAL-1') && l.includes('verified (7.00 USD)')), lines.join(' | '));
+  assert.ok(lines.some((l) => l.includes('CASE-C → PP-R-3') && l.includes('could not read')));
   assert.ok(pp.apiCalls().every((c) => c.method === 'GET'));
   assert.ok(!lines.join(' | ').includes('secret'));
 });

@@ -208,13 +208,22 @@ export function agentReceiptProblems(r: Record<string, any> | null): string[] {
   return out;
 }
 
-/** The BINDINGS_JSON value for Render, with what is known; missing cases are said, not invented. */
-export function bindingsJson(found: { standard?: string; agent?: string }): { json: string; missing: string[] } {
-  const b: Record<string, string> = {};
+/** One bound case: the dispute and the capture it must be about (the server verifies both before any send). */
+export interface FoundDispute {
+  dispute: string;
+  capture: string;
+}
+
+/**
+ * The BINDINGS_JSON value for Render, with what is known; missing cases are said, not invented. Each case is bound to
+ * its dispute AND the capture this script created, so the server can verify the dispute is that payment.
+ */
+export function bindingsJson(found: { standard?: FoundDispute; agent?: FoundDispute }): { json: string; missing: string[] } {
+  const b: Record<string, FoundDispute> = {};
   const missing: string[] = [];
-  if (found.standard) b[STANDARD_CASE_ID] = found.standard;
+  if (found.standard) b[STANDARD_CASE_ID] = { dispute: found.standard.dispute, capture: found.standard.capture };
   else missing.push(STANDARD_CASE_ID);
-  if (found.agent) b[AGENT_CASE_ID] = found.agent;
+  if (found.agent) b[AGENT_CASE_ID] = { dispute: found.agent.dispute, capture: found.agent.capture };
   else missing.push(AGENT_CASE_ID);
   return { json: JSON.stringify(b), missing };
 }

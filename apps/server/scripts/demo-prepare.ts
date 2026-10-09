@@ -7,7 +7,8 @@
  *       ledger and the hosted agent case shows the real receipt), with METERMCP_DEMO_CODE from the environment.
  *   (c) prints what the sandbox buyer clicks to open each dispute.
  *   (d) polls PayPal until each dispute appears and reaches WAITING_FOR_SELLER_RESPONSE.
- *   (e) prints the BINDINGS_JSON to paste into Render.
+ *   (e) prints the BINDINGS_JSON to paste into Render: each case bound to { dispute, capture }, so the server can verify,
+ *       right before any send, that the dispute is about exactly the capture this script created.
  *
  * Flags run steps separately or resume (see USAGE in demo-prepare-lib.ts); --dry-run creates nothing. PayPal
  * credentials come from .env (node --env-file-if-exists); nothing secret is printed.
@@ -166,7 +167,10 @@ async function main() {
     captures.agent ? waitForDispute(paypal, 'agent', captures.agent, o) : Promise.resolve(null),
   ]);
   rule();
-  const b = bindingsJson({ ...(std ? { standard: std } : {}), ...(agent ? { agent } : {}) });
+  const b = bindingsJson({
+    ...(std && captures.standard ? { standard: { dispute: std, capture: captures.standard } } : {}),
+    ...(agent && captures.agent ? { agent: { dispute: agent, capture: captures.agent } } : {}),
+  });
   say('(e) BINDINGS_JSON for Render (resolvekit service → Environment), ready to paste:');
   console.log(`\n${b.json}\n`);
   if (b.missing.length) say(`not bound (no ready dispute): ${b.missing.join(', ')}; keep their current binding if they have one.`);

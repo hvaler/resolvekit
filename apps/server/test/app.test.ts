@@ -94,7 +94,7 @@ test('health: sandbox after a lazy OAuth check, with the bound cases; no secret 
   const { app, pp } = setup();
   const r = await app(get('/api/health'));
   const text = await r.text();
-  assert.deepEqual(JSON.parse(text), { paypal: 'sandbox', bound: [CASE] });
+  assert.deepEqual(JSON.parse(text), { paypal: 'sandbox', bound: [CASE], bindings: { [CASE]: { status: 'unchecked', reasons: [], checkedAt: null } } });
   assert.ok(!text.includes('super-secret-value') && !text.includes('tok'));
   assert.deepEqual(pp.calls.map((c) => c.path), ['/v1/oauth2/token']);
 });

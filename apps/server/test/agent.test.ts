@@ -139,7 +139,7 @@ async function intentSetup(replies: Parameters<typeof fakePayPal>[0], meterMcp: 
   const receiptSource: AgentReceiptSource = docsMeter ? { kind: 'metermcp', session: toMeteredSession(receipt()) } : { kind: 'none', reason: `MeterMCP has no session for capture ${CAPTURE}` };
   const input = caseInput(agentCase, { kind: 'live', snap: { ...snap, agentReceipt: receiptSource }, failed: null });
   const { analyst } = await analystFor([[CASE, input]]);
-  const app = createApp({ paypal, env: 'sandbox', bindings: { [CASE]: REAL }, port: 8787, token: TOKEN, allowedOrigins: DEFAULT_ORIGINS, meterMcp, analyst });
+  const app = createApp({ paypal, env: 'sandbox', bindings: { [CASE]: { dispute: REAL, capture: CAPTURE } }, port: 8787, token: TOKEN, allowedOrigins: DEFAULT_ORIGINS, meterMcp, analyst });
   const intent = async () => {
     const r = await app(post(`/api/disputes/${CASE}/intent`, { evidenceType: 'PROOF_OF_FULFILLMENT' }));
     const b = (await r.json()) as { id: string; contentHash: string; carrier: string; tracking: string; files: Array<{ name: string }>; error?: string };

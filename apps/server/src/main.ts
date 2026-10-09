@@ -20,7 +20,7 @@ import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { FileAnalysisStore, RateLimiter, modelFromEnv } from '@resolvekit/analyst/node';
 import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
-import { checkBindings, parseBindings } from './bindings.ts';
+import { checkBindings, parseBindings, type Binding } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
 import { createHostedApp, type HostedApp } from './hosted.ts';
 import { IntentStore } from './intents.ts';
@@ -43,7 +43,7 @@ const dataDir = process.env.RESOLVEKIT_DATA_DIR ?? fileURLToPath(new URL('../dat
 
 const bindingsFile = process.env.RESOLVEKIT_BINDINGS ?? (hosted ? join(dataDir, 'bindings.json') : fileURLToPath(new URL('../bindings.json', import.meta.url)));
 
-function loadBindings(): Record<string, string> {
+function loadBindings(): Record<string, Binding> {
   // Hosted: BINDINGS_JSON (a secret env var) wins; otherwise a file. Never from a client.
   if (hosted && process.env.BINDINGS_JSON) {
     try {
@@ -154,10 +154,10 @@ const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '
 server.listen(port, host, () => {
   log(`ResolveKit server on http://${host}:${port} · PayPal ${paypal ? env : 'unconfigured'} · ${Object.keys(bindings).length} bound case(s)`);
   log(`Analyst: ${analystConfig ? `${analystConfig.primary.provider}/${analystConfig.primary.model} (providers: ${analystConfig.available.join(', ')})` : 'no model key: stored analyses only'}`);
-  for (const [caseId, disputeId] of Object.entries(bindings)) log(`  ${caseId} → ${disputeId}`);
-  // Read each bound dispute once in the background and warn if its amount is not the demo case's order amount.
-  const caseOrders = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency }]));
-  void checkBindings({ paypal, bindings, caseOrders, log });
+  for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}`);
+  // Read and verify each bound dispute once in the background (logged); sending verifies again on its own fresh read.
+  const cases = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency, transactionId: c.summary.transactionId }]));
+  void checkBindings({ paypal, bindings, cases, log });
   // Hosted: analyse each bound case once in the background, so visitors without the demo code see an analysis.
   if (hostedApp) void hostedApp.warmUp();
 });
@@ -167,7 +167,7 @@ server.listen(port, host, () => {
 const watchBindings = hosted && !process.env.BINDINGS_JSON;
 if (watchBindings) {
   watchFile(bindingsFile, { interval: 30_000 }, () => {
-    let next: Record<string, string>;
+    let next: Record<string, Binding>;
     try {
       next = parseBindings(JSON.parse(readFileSync(bindingsFile, 'utf8')));
     } catch (e) {
@@ -178,7 +178,7 @@ if (watchBindings) {
     for (const k of Object.keys(bindings)) delete bindings[k];
     Object.assign(bindings, next);
     log(`bindings changed · ${Object.keys(bindings).length} bound case(s)`);
-    for (const [caseId, disputeId] of Object.entries(bindings)) log(`  ${caseId} → ${disputeId}`);
+    for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}`);
     void hostedApp?.bindingsChanged();
   });
 }

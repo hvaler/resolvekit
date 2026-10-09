@@ -14,7 +14,7 @@ import { caseInput, standardCase } from '@resolvekit/cases';
 import { createHostedApp } from '../src/hosted.ts';
 import { INTENT_ID, IntentStore, MAX_EVENTS_FILE_BYTES, MAX_OPEN, MAX_OPEN_PER_IP, MAX_OPEN_PER_OWNER, type StoredIntent } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
-import { RESOLVED, analystFor, standardDispute } from './kit.ts';
+import { RESOLVED, STD_CAPTURE, analystFor, standardDispute } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
@@ -53,7 +53,7 @@ async function setup() {
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
-    bindings: { [CASE]: REAL },
+    bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
     analyst,
     site: null,
     counters: new DailyCounters({ file: null, limits: { 'live-analysis': 5, recheck: 50, evidence: 5 } }),
@@ -298,4 +298,45 @@ test('store: the audit file stays bounded (compacted to the latest events)', (t)
   for (let k = 0; k < 6000; k++) s.record({ caseId: CASE, kind: 'edit_rechecked', actor: `a${k}`, detail });
   assert.ok(s.eventsFileBytes() <= MAX_EVENTS_FILE_BYTES, String(s.eventsFileBytes()));
   assert.equal(new IntentStore({ eventsFile }).events(CASE).at(-1)!.actor, 'a5999');
+});
+
+test('ordering: a refused creation (per-IP cap, global cap) changes nothing, and replaces nothing', () => {
+  const s = new IntentStore();
+  // Session A already holds an intent for CASE, from IP X; IP X is otherwise full.
+  const mine = created(s.create(draft('A', CASE, 'X')));
+  assert.ok(s.approve(mine.id, CASE, 'h', 'A').ok);
+  for (let k = 1; k < MAX_OPEN_PER_IP; k++) created(s.create(draft(`other-${k}`, CASE, 'X')));
+  const snapshot = () => JSON.stringify([s.size(), s.get(mine.id, 'A')!.status, s.events(CASE).length]);
+  const before = snapshot();
+  // A new session from X: refused, nothing changed.
+  assert.ok('ok' in s.create(draft('B', CASE, 'X')));
+  assert.equal(snapshot(), before);
+  // A's intent for ANOTHER case would not replace its CASE intent, so X stays full: refused, and A's intent is untouched.
+  assert.ok('ok' in s.create(draft('A', 'CASE-2', 'X')));
+  assert.equal(snapshot(), before);
+  assert.equal(s.get(mine.id, 'A')!.status, 'approved');
+  // A's newer intent for the SAME case frees its own slot: committed, and only then is the old one replaced.
+  const next = created(s.create(draft('A', CASE, 'X')));
+  assert.equal(s.get(mine.id, 'A')!.status, 'invalidated');
+  assert.equal(s.get(next.id, 'A')!.status, 'proposed');
+});
+
+test('ordering: admit() is a pure pre-check (no state change), refusing exactly what create() would refuse', () => {
+  const s = new IntentStore();
+  for (let k = 0; k < MAX_OPEN_PER_IP; k++) created(s.create(draft(`s-${k}`, CASE, 'Y')));
+  const before = JSON.stringify([s.size(), s.events(CASE).length]);
+  const r = s.admit(CASE, 'newcomer', 'Y');
+  assert.equal(r?.status, 429);
+  assert.equal(s.admit(CASE, 'newcomer', 'Z'), null);
+  assert.equal(JSON.stringify([s.size(), s.events(CASE).length]), before);
+});
+
+test('hosted: refused compositions give their rate-limit slot back (a malformed or capped request does not lock the address out)', async () => {
+  const { app } = await setup();
+  const c = await unlock(app, '198.51.100.7');
+  for (let k = 0; k < 30; k++) {
+    const r = await app(req(`${base}/intent`, { body: { evidenceType: 'NOT A TYPE' }, cookie: c, ip: '198.51.100.7' }));
+    assert.equal(r.status, 400);
+  }
+  await compose(app, c);
 });

@@ -13,7 +13,8 @@ import { caseInput, standardCase } from '@resolvekit/cases';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER, LOCAL_OPERATOR } from '../src/app.ts';
 import { IntentStore } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
-import { RESOLVED, analystFor, goldenNotes, standardDispute } from './kit.ts';
+import { RESOLVED, STD_CAPTURE, analystFor, goldenNotes, standardDispute } from './kit.ts';
+import type { Binding } from '../src/bindings.ts';
 
 const CASE = standardCase.summary.id;
 const REAL = 'PP-R-REAL-1';
@@ -42,14 +43,14 @@ function routedPayPal(o: { dispute?: () => Dispute; sendStatus?: () => number; s
 
 const boundInput = (d: Dispute = standardDispute()) => caseInput(standardCase, { kind: 'live', snap: toSnapshot(d, CASE, 'sandbox', NOW), failed: null });
 
-async function setup(o: Parameters<typeof routedPayPal>[0] & { bound?: boolean; recheck?: Record<string, unknown>; intents?: IntentStore } = {}) {
+async function setup(o: Parameters<typeof routedPayPal>[0] & { bound?: boolean; binding?: string | Binding; recheck?: Record<string, unknown>; intents?: IntentStore } = {}) {
   const pp = routedPayPal(o);
   const { analyst, model } = await analystFor([[CASE, boundInput()], [CASE, caseInput(standardCase, { kind: 'simulated' })]], o.recheck);
   const lines: string[] = [];
   const app = createApp({
     paypal: pp.client,
     env: 'sandbox',
-    bindings: o.bound === false ? {} : { [CASE]: REAL },
+    bindings: o.bound === false ? {} : { [CASE]: o.binding ?? { dispute: REAL, capture: STD_CAPTURE } },
     now: () => NOW,
     log: (l) => lines.push(l),
     port: 8787,
@@ -296,4 +297,22 @@ test('M3: approvals and sends are persisted on the data dir and listed by the au
   // The audit route answers the same events.
   const r = await app(get(`/api/disputes/${CASE}/audit`));
   assert.deepEqual(((await r.json()) as { events: Array<{ kind: string }> }).events.map((e) => e.kind), events.map((e) => e.kind));
+});
+
+test('ordering: a creation that fails (PayPal unreadable, blocked draft) retires nothing: the approved intent still sends', async () => {
+  let down = false;
+  const { app, pp } = await setup({ dispute: () => (down ? (() => { throw new Error('offline'); })() : standardDispute()) });
+  const i = await propose(app);
+  assert.equal((await approve(app, i)).status, 200);
+  down = true;
+  const failed = await app(post(intentPath, request()));
+  assert.equal(failed.status, 409);
+  assert.equal((await failed.json()).error, 'BINDING_UNAVAILABLE');
+  down = false;
+  const blocked = await app(post(intentPath, request({ resolutions: {} })));
+  assert.equal(blocked.status, 422);
+  // Neither refusal replaced the approved intent.
+  assert.equal(((await (await app(get(`${intentPath}/${i.id}`))).json()) as Intent).status, 'approved');
+  assert.equal((await app(post(evidencePath, { intentId: i.id }))).status, 202);
+  assert.equal(pp.sends.length, 1);
 });

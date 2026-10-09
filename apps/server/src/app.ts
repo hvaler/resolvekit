@@ -19,6 +19,7 @@ import type { Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
 import { hasSellerEvidence } from '../../web/src/domain/recorded.ts';
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
+import { toBinding, verifyBinding, type Binding, type BindingState } from './bindings.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
 import { IntentStore, publicIntent, type StoredIntent } from './intents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
@@ -58,8 +59,11 @@ export interface ApiOptions {
   /** null when PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET are not set. */
   paypal: PayPalClient | null;
   env: PayPalEnv;
-  /** Web case id → real PayPal dispute id. Unbound cases are never sent to PayPal. */
-  bindings: Readonly<Record<string, string>>;
+  /**
+   * Web case id → the real PayPal payment it stands for: { dispute, capture } (or the old dispute-id string, which
+   * cannot pass the send-time check, see bindings.ts). Unbound cases are never sent to PayPal. May change in place.
+   */
+  bindings: Readonly<Record<string, string | Binding>>;
   now?: () => Date;
   log?: (line: string) => void;
   /** MeterMCP: the agent case's session receipt, found by the disputed capture. null = not used. */
@@ -207,6 +211,21 @@ export function createApi(opts: ApiOptions): Api {
   /** The verifier's verdicts on edited sentences, by `${analysisKey}\n${text}`: only these edits can be sent. */
   const verified = new Map<string, Recheck>();
 
+  /** The case's binding, normalised (string or object form), or null. */
+  const bindingOf = (caseId: string): Binding | null => toBinding(opts.bindings[caseId]);
+  /**
+   * The last verification of each binding, from a fresh read (see bindings.ts). Kept with the binding it verified:
+   * a changed binding is "unchecked" until read again. Shown by /api/health; sending re-verifies anyway.
+   */
+  const bindingStatus = new Map<string, { status: BindingState; reasons: string[]; checkedAt: string; binding: Binding }>();
+  const bindingState = (caseId: string) => {
+    const b = bindingOf(caseId);
+    const st = bindingStatus.get(caseId);
+    if (!b) return null;
+    if (!st || st.binding.dispute !== b.dispute || st.binding.capture !== b.capture) return { status: 'unchecked' as const, reasons: [], checkedAt: null };
+    return { status: st.status, reasons: st.reasons, checkedAt: st.checkedAt };
+  };
+
   /** Who is acting (hosted: the demo session; local: the operator at this machine). */
   const actorOf = (req: Request, unlocked: boolean): Actor => (opts.gate ? opts.gate.actor(req, unlocked) : { ok: true, actor: LOCAL_OPERATOR });
 
@@ -263,7 +282,7 @@ export function createApi(opts: ApiOptions): Api {
   const pins = opts.pins ?? new InputPins();
   const serverInput = async (caseId: string): Promise<AnalysisInput | Response> => {
     const demo = CASE_FILES[caseId]!;
-    const disputeId = opts.bindings[caseId];
+    const disputeId = bindingOf(caseId)?.dispute;
     let source: PayPalSource = { kind: 'simulated' };
     if (disputeId && opts.paypal) {
       const cached = reads.get(caseId);
@@ -280,14 +299,15 @@ export function createApi(opts: ApiOptions): Api {
 
   /** Whether a case goes to real PayPal: bound, and PayPal connected (the web app decides the same way, from /health). */
   const boundDispute = async (caseId: string): Promise<string | null> => {
-    const disputeId = opts.bindings[caseId];
+    const disputeId = bindingOf(caseId)?.dispute;
     if (!disputeId || !opts.paypal) return null;
     return (await checkHealth()).paypal === 'unconfigured' ? null : disputeId;
   };
 
   /**
    * The case right now, for composing or re-checking an intent: a bound case is read fresh from PayPal (never from
-   * the read cache); a simulated case is the demo case. Answers the problem when PayPal cannot be read.
+   * the read cache) and its binding verified on that read (bindings.ts): an unreadable dispute or a binding that is
+   * not this payment fails closed (409, with the reasons). A simulated case is the demo case.
    */
   const caseState = async (caseId: string): Promise<CaseState | Response> => {
     const demo = CASE_FILES[caseId]!;
@@ -296,11 +316,21 @@ export function createApi(opts: ApiOptions): Api {
       const source: PayPalSource = { kind: 'simulated' };
       return { source, input: pins.resolve(caseId, caseInput(demo, source), false), dispute: null, snap: null, disputeId: null };
     }
+    const binding = bindingOf(caseId)!;
+    const mark = (status: BindingState, reasons: string[]) => bindingStatus.set(caseId, { status, reasons, checkedAt: now().toISOString(), binding });
     let dispute: Dispute;
     try {
       dispute = await opts.paypal!.disputes.get(disputeId);
     } catch (e) {
-      return fromPayPalError(e);
+      const why = `PayPal could not be read for dispute ${disputeId} (${failureText(e)})`;
+      mark('unavailable', [why]);
+      return json(409, { error: 'BINDING_UNAVAILABLE', detail: `Sending is blocked: ${why}`, reasons: [why] });
+    }
+    const check = verifyBinding({ value: demo.summary.amount, currency: demo.summary.currency, transactionId: demo.summary.transactionId }, binding, dispute);
+    mark(check.status, check.reasons);
+    if (check.status !== 'verified') {
+      log(`binding ${caseId} → ${disputeId}: INVALID at send time · ${check.reasons.join('; ')}`);
+      return json(409, { error: 'BINDING_INVALID', detail: 'Sending is blocked: the bound PayPal dispute is not this case’s payment', reasons: check.reasons });
     }
     const snap = await snapshotOf(caseId, dispute);
     reads.set(caseId, { at: now().getTime(), snap });
@@ -431,6 +461,12 @@ export function createApi(opts: ApiOptions): Api {
     return json(r.status, { ...(r.body as object), input });
   };
 
+  const tooManyIntents = (x: { status: number; error: string; detail: string; retryAfterSec?: number }) => {
+    const r = json(x.status, { error: x.error, detail: x.detail, ...(x.retryAfterSec ? { retryAfterSec: x.retryAfterSec } : {}) });
+    if (x.retryAfterSec) r.headers.set('retry-after', String(x.retryAfterSec));
+    return r;
+  };
+
   /** POST /api/disputes/:case/intent → compose the exact content to send, from the server's own case and analysis. */
   const createIntent = async (req: Request, caseId: string): Promise<Response> => {
     // Hosted: intents belong to a demo session, so composing one needs the demo unlock (simulated cases included).
@@ -440,16 +476,15 @@ export function createApi(opts: ApiOptions): Api {
     if (!parsed.ok) return parsed.res;
     const ir = parseIntentRequest(parsed.body);
     if (isComposeProblem(ir)) return json(ir.status, { error: ir.error, detail: ir.detail });
+    // Caps before any expensive work (PayPal read, composing, hashing); nothing changes when refused.
+    const full = intents.admit(caseId, who.actor, who.client ?? 'local');
+    if (full) return tooManyIntents(full);
     const st = await caseState(caseId);
     if (st instanceof Response) return st;
     const composed = await compose(caseId, st, ir);
     if (composed instanceof Response) return composed;
     const intent = intents.create({ ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local' });
-    if ('ok' in intent) {
-      const r = json(intent.status, { error: intent.error, detail: intent.detail, ...(intent.retryAfterSec ? { retryAfterSec: intent.retryAfterSec } : {}) });
-      if (intent.retryAfterSec) r.headers.set('retry-after', String(intent.retryAfterSec));
-      return r;
-    }
+    if ('ok' in intent) return tooManyIntents(intent);
     return json(201, publicIntent(intent));
   };
 
@@ -510,7 +545,10 @@ export function createApi(opts: ApiOptions): Api {
     let sending = false;
     try {
       const st = await caseState(caseId);
-      if (st instanceof Response) return refuse(st, `PayPal could not be read (${st.status})`, false);
+      if (st instanceof Response) {
+        const b = (await st.clone().json().catch(() => ({}))) as { error?: string };
+        return refuse(st, b.error ?? `refused (${st.status})`, b.error === 'BINDING_INVALID');
+      }
       if (!st.dispute) return refuse(json(409, { error: 'NOT_BOUND', detail: 'PayPal is not connected for this case now' }), 'PayPal not connected', false);
       // PayPal takes the seller's evidence once. If it already has some (another session sent first), this intent is
       // over: say so plainly instead of composing it again.
@@ -585,7 +623,8 @@ export function createApi(opts: ApiOptions): Api {
     if (path === '/api/demo' && req.method === 'GET') return json(200, { hosted: false });
     if (path === '/api/health' && req.method === 'GET') {
       const h = await checkHealth();
-      return json(200, { ...h, bound: h.paypal === 'unconfigured' ? [] : Object.keys(opts.bindings) });
+      const bound = h.paypal === 'unconfigured' ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
+      return json(200, { ...h, bound, bindings: Object.fromEntries(bound.map((k) => [k, bindingState(k)])) });
     }
     const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
@@ -620,7 +659,7 @@ export function createApi(opts: ApiOptions): Api {
     }
     if (intentId) return json(404, { error: 'NOT_FOUND' });
 
-    const disputeId = opts.bindings[caseId];
+    const disputeId = bindingOf(caseId)?.dispute;
     if (!disputeId) return json(404, { error: 'NOT_BOUND', detail: `Case ${caseId} is not bound to a PayPal dispute` });
     const paypal = opts.paypal;
     if (!paypal) return json(503, { error: 'PAYPAL_UNCONFIGURED' });
@@ -640,6 +679,7 @@ export function createApi(opts: ApiOptions): Api {
     inputFor: serverInput,
     forgetReads: () => {
       reads.clear();
+      bindingStatus.clear();
       intents.invalidateAll('the bindings changed');
     },
     intents,

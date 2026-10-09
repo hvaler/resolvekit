@@ -1,5 +1,7 @@
 {
-  "_comment": "Copy to bindings.json (git-ignored). Web case id → real PayPal sandbox dispute id. Unbound cases stay on the simulated PayPal and are never sent to PayPal.",
-  "PP-R-TVH-10190665": "PP-R-XXX-00000000",
-  "PP-R-MMC-10190702": ""
+  "_comment": "Copy to bindings.json (git-ignored). Web case id -> the real PayPal sandbox payment it stands for: the dispute id and the capture it is about (npm run demo:prepare prints this). Before anything is sent, the server checks on a fresh read that the dispute is about exactly that capture, for the case's amount and currency. The old form \"case\": \"PP-R-...\" (no capture) is still read but cannot pass that check. Unbound cases stay on the simulated PayPal.",
+  "PP-R-TVH-10190665": {
+    "dispute": "PP-R-XXX-00000000",
+    "capture": "XXXXXXXXXXXXXXXXX"
+  }
 }

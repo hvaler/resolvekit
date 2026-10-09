@@ -9,8 +9,8 @@ import { AnalystService } from '../src/analysis.ts';
 import { parseBindings } from '../src/bindings.ts';
 import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
 import { toSnapshot } from '../src/mapping.ts';
-import { waitingDispute } from './fixtures.ts';
-import { RESOLVED, goldenFor } from './kit.ts';
+
+import { RESOLVED, STD_CAPTURE, goldenFor, standardDispute } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
@@ -20,7 +20,7 @@ const CODE = 'judges-code-2026';
 const SECRET = 'x'.repeat(48);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The standard case bound to the waiting sandbox dispute, as the web app shows it (and the server analyses it). */
-const boundInput = (): AnalysisInput => caseInput(standardCase, { kind: 'live', snap: toSnapshot(waitingDispute(), CASE, 'sandbox', new Date()), failed: null });
+const boundInput = (): AnalysisInput => caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
 
 /** PayPal by path: every dispute read answers the waiting dispute, every send succeeds; optionally slow or failing reads. */
 function routedPayPal(o: { failRead?: () => boolean; delayMs?: number } = {}) {
@@ -32,7 +32,7 @@ function routedPayPal(o: { failRead?: () => boolean; delayMs?: number } = {}) {
     await sleep(o.delayMs ?? 2);
     if (u.pathname.endsWith('/provide-evidence')) return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     if (o.failRead?.()) return new Response(JSON.stringify({ name: 'INTERNAL_SERVICE_ERROR' }), { status: 500, headers: { 'content-type': 'application/json' } });
-    return new Response(JSON.stringify(waitingDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify(standardDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   return { calls, sends: () => calls.filter((c) => c.endsWith('/provide-evidence')).length, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
@@ -57,7 +57,7 @@ function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?:
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
-    bindings: { [CASE]: REAL },
+    bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
     log: (l) => lines.push(l),
     analyst,
     site,
@@ -328,7 +328,8 @@ test('caps: a send that fails before reaching PayPal (dispute read failed) is re
   const i = await intentFor(app, cookie!);
   fail = true;
   const r = await app(req(evidencePath, { body: { intentId: i.id }, cookie: cookie! }));
-  assert.equal(r.status, 502);
+  assert.equal(r.status, 409);
+  assert.equal(((await r.json()) as { error: string }).error, 'BINDING_UNAVAILABLE');
   assert.equal(pp.sends(), 0);
   assert.equal(counters.state().caps.evidence!.used, 0);
 });
@@ -424,8 +425,11 @@ test('rate limits: PayPal reads per IP', async () => {
 
 // ------------------------------------------------------------------------------------------------ bindings
 
-test('bindings: validated; comments skipped; anything else refused', () => {
-  assert.deepEqual(parseBindings({ _comment: 'x', [CASE]: 'PP-R-VIJ-10190671' }), { [CASE]: 'PP-R-VIJ-10190671' });
+test('bindings: validated; comments skipped; object form with the capture, or the old string form; anything else refused', () => {
+  assert.deepEqual(parseBindings({ _comment: 'x', [CASE]: 'PP-R-VIJ-10190671' }), { [CASE]: { dispute: 'PP-R-VIJ-10190671', capture: null } });
+  assert.deepEqual(parseBindings({ [CASE]: { dispute: 'PP-R-VIJ-10190671', capture: '4FT237453Y5353014' } }), { [CASE]: { dispute: 'PP-R-VIJ-10190671', capture: '4FT237453Y5353014' } });
+  assert.throws(() => parseBindings({ [CASE]: { dispute: 'PP-R-VIJ-10190671', capture: 'not a capture' } }), /PayPal dispute id/);
+  assert.throws(() => parseBindings({ [CASE]: { dispute: 'PP-R-VIJ-10190671', extra: 1 } }), /PayPal dispute id/);
   assert.throws(() => parseBindings([]), /JSON object/);
   assert.throws(() => parseBindings({ [CASE]: 'https://evil.example' }), /PayPal dispute id/);
   assert.throws(() => parseBindings({ '../x': 'PP-R-VIJ-10190671' }), /invalid case id/);
