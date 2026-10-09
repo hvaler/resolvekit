@@ -61,3 +61,8 @@ test('web mapping: contradiction card, timeline placement, evidence flags, check
     standardCase.evidence.map((e) => e.body),
   );
 });
+
+test('web mapping: the internal id of PayPal’s dispute record never reaches the merchant', async () => {
+  const { readable } = await import('../src/web.ts');
+  assert.equal(readable('document D records the buyer stating x; D states y; Dates stay.'), 'PayPal’s dispute record records the buyer stating x; PayPal’s dispute record states y; Dates stay.');
+});

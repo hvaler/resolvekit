@@ -48,6 +48,9 @@ export function toCitations(input: AnalysisInput, quotes: readonly (Quote | Cita
   return out;
 }
 
+/** "D" is the analyst's id for PayPal's dispute record, which the merchant sees as such, not as a document. */
+export const readable = (t: string) => t.replace(/\b(?:document|doc)\s+D\b/g, 'PayPal’s dispute record').replace(/\bD(?=\s+(?:records|states|shows|says|lists)\b)/g, 'PayPal’s dispute record');
+
 export const REPHRASE_LABEL = 'Rephrase to what the evidence shows';
 
 /** Labels of the analysis bar's steps, from a finished analysis (contradictions at index 3, removals at 5). */
@@ -126,7 +129,7 @@ export function withAnalysis(c: CaseFile, a: CaseAnalysis, input: AnalysisInput)
     text: s.text,
     verdict: s.verdict,
     citations: toCitations(input, s.citations),
-    ...(s.reason ? { reason: s.reason } : {}),
+    ...(s.reason ? { reason: readable(s.reason) } : {}),
     ...(s.rewrite && s.verdict === 'needs_review' ? { suggestion: { label: REPHRASE_LABEL, text: s.rewrite } } : {}),
     origin: s.noteId ? 'merchant_note' : 'analyst',
   }));
@@ -143,7 +146,7 @@ export function withAnalysis(c: CaseFile, a: CaseAnalysis, input: AnalysisInput)
       title: k.title,
       a: side(k.a),
       b: side(k.b),
-      assessment: k.explanation,
+      assessment: readable(k.explanation),
       explainSentenceId: target && k.rewrite ? target : '',
       explainText: target && k.rewrite ? k.rewrite : '',
       blockerName: `the ${k.shortName.replace(/^the\s+/i, '')}`,
