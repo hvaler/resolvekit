@@ -28,21 +28,32 @@ export function mapEvidence(e: Evidence): RecordedEvidence {
   };
 }
 
+function money(m: { value: string; currency_code: string } | undefined): { value: string; currency: string } | null {
+  return m ? { value: m.value, currency: m.currency_code } : null;
+}
+
 /**
  * @param caseId the web case the dispute is bound to: the snapshot keeps that id so the app updates the right case.
  */
 export function toSnapshot(d: Dispute, caseId: string, env: PayPalEnv, readAt: Date): DisputeSnapshot {
+  const tx = d.disputed_transactions?.[0];
   return {
     id: caseId,
     status: mapStatus(d.status),
     stage: d.dispute_life_cycle_stage ?? null,
     reason: d.reason ?? null,
-    buyerItemType: d.disputed_transactions?.[0]?.items?.[0]?.item_type ?? null,
+    buyerItemType: tx?.items?.[0]?.item_type ?? null,
     allowedActions: sellerActions(d) as ActionCode[],
     requestedEvidence: requestedEvidence(d),
     evidences: (d.evidences ?? []).map(mapEvidence),
+    // PayPal stops returning the seller due date once seller evidence is in: absent stays null, never a stale date.
     respondBy: d.seller_response_due_date ?? null,
-    amount: d.dispute_amount ? { value: d.dispute_amount.value, currency: d.dispute_amount.currency_code } : null,
+    buyerRespondBy: d.buyer_response_due_date ?? null,
+    amount: money(d.dispute_amount),
+    createdAt: d.create_time ?? null,
+    transaction: tx?.seller_transaction_id
+      ? { id: tx.seller_transaction_id, createdAt: tx.create_time ?? null, amount: money(tx.gross_amount) }
+      : null,
     readAt: utcStamp(readAt),
     origin: { kind: 'paypal', env, disputeId: d.dispute_id ?? '' },
   };

@@ -4,17 +4,44 @@ import type { Dispute } from '@resolvekit/paypal';
 export function waitingDispute(): Dispute {
   return {
     dispute_id: 'PP-R-REAL-1',
+    create_time: '2026-10-08T19:31:23.864Z',
     status: 'WAITING_FOR_SELLER_RESPONSE',
     reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED',
     dispute_life_cycle_stage: 'INQUIRY',
     dispute_amount: { currency_code: 'USD', value: '1.37' },
     seller_response_due_date: '2026-10-28T19:31:23.864Z',
-    disputed_transactions: [{ seller_transaction_id: '4FT237453Y5353014', items: [{ item_type: 'PRODUCT' }] }],
+    disputed_transactions: [
+      {
+        seller_transaction_id: '4FT237453Y5353014',
+        create_time: '2026-10-08T19:30:33.000Z',
+        gross_amount: { currency_code: 'USD', value: '1.37' },
+        items: [{ item_type: 'PRODUCT' }],
+      },
+    ],
     evidences: [
       { evidence_type: 'CREATE', notes: 'lorem', source: 'SUBMITTED_BY_BUYER', date: '2026-10-08T19:31:23.864Z' },
       { evidence_type: 'PROOF_OF_FULFILLMENT', source: 'REQUESTED_FROM_SELLER', date: '2026-10-08T19:34:53.797Z' },
     ],
     links: [{ rel: 'self' }, { rel: 'accept_claim' }, { rel: 'provide_evidence' }, { rel: 'send_message' }, { rel: 'escalate' }, { rel: 'make_offer' }],
+  };
+}
+
+/**
+ * The same dispute after the seller's evidence is in, as read in the sandbox (2026-10-09): waiting for the buyer,
+ * no seller due date (PayPal stops returning it), a buyer due date, no REQUESTED_FROM_SELLER entry.
+ */
+export function evidenceInDispute(): Dispute {
+  const d = waitingDispute();
+  delete d.seller_response_due_date;
+  return {
+    ...d,
+    status: 'WAITING_FOR_BUYER_RESPONSE',
+    buyer_response_due_date: '2026-10-19T04:37:54.000Z',
+    evidences: [
+      d.evidences![0]!,
+      { evidence_type: 'PROOF_OF_FULFILLMENT', source: 'SUBMITTED_BY_SELLER', date: '2026-10-09T04:37:54.098Z', action_info: { action: 'PROVIDE_EVIDENCE' } },
+    ],
+    links: [{ rel: 'self' }, { rel: 'accept_claim' }, { rel: 'send_message' }, { rel: 'escalate' }],
   };
 }
 

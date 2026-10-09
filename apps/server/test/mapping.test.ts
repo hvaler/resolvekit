@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mapStatus, toSnapshot } from '../src/mapping.ts';
 import { buildAttachments, CASE_FILES, evidenceLines, SYNTHETIC_HEADER, UnknownFileError } from '../src/documents.ts';
 import { writePdf } from '../src/pdf.ts';
-import { waitingDispute } from './fixtures.ts';
+import { evidenceInDispute, fakePayPal, waitingDispute } from './fixtures.ts';
+import { checkBindings } from '../src/bindings.ts';
+import { PayPalClient } from '@resolvekit/paypal';
 import type { DisputeSnapshot } from '../../web/src/domain/types.ts';
 
 const at = new Date(Date.UTC(2026, 9, 9, 8, 0, 0));
@@ -19,10 +21,50 @@ test('maps a real-shaped dispute: status, stage, reason, item type, actions, req
   assert.deepEqual(s.requestedEvidence, ['PROOF_OF_FULFILLMENT']);
   assert.equal(s.respondBy, '2026-10-28T19:31:23.864Z');
   assert.deepEqual(s.amount, { value: '1.37', currency: 'USD' });
+  assert.equal(s.createdAt, '2026-10-08T19:31:23.864Z');
+  assert.deepEqual(s.transaction, { id: '4FT237453Y5353014', createdAt: '2026-10-08T19:30:33.000Z', amount: { value: '1.37', currency: 'USD' } });
+  assert.equal(s.buyerRespondBy, null);
   assert.equal(s.readAt, '9 Oct 2026 08:00:00 UTC');
   assert.deepEqual(s.origin, { kind: 'paypal', env: 'sandbox', disputeId: 'PP-R-REAL-1' });
   // The buyer entry and PayPal's request are kept verbatim with their source, so the web never mistakes them for seller evidence.
   assert.deepEqual(s.evidences.map((e) => [e.evidenceType, e.source]), [['CREATE', 'SUBMITTED_BY_BUYER'], ['PROOF_OF_FULFILLMENT', 'REQUESTED_FROM_SELLER']]);
+});
+
+test('after seller evidence: no seller due date (null, never stale), buyer due date, nothing requested, no provide_evidence', () => {
+  const s = toSnapshot(evidenceInDispute(), 'C', 'sandbox', at);
+  assert.equal(s.status, 'WAITING_FOR_BUYER_RESPONSE');
+  assert.equal(s.respondBy, null);
+  assert.equal(s.buyerRespondBy, '2026-10-19T04:37:54.000Z');
+  assert.deepEqual(s.requestedEvidence, []);
+  assert.deepEqual(s.allowedActions, ['send_message', 'accept_claim', 'escalate']);
+  assert.deepEqual(s.amount, { value: '1.37', currency: 'USD' });
+});
+
+test('a dispute without amount, transaction or dates maps them to null', () => {
+  const s = toSnapshot({ dispute_id: 'X', status: 'UNDER_REVIEW' }, 'C', 'sandbox', at);
+  assert.equal(s.amount, null);
+  assert.equal(s.transaction, null);
+  assert.equal(s.createdAt, null);
+  assert.equal(s.respondBy, null);
+  assert.equal(s.reason, null);
+  assert.equal(s.buyerItemType, null);
+});
+
+test('startup binding check logs a mismatch between the bound dispute and the demo case order, without writing', async () => {
+  const pp = fakePayPal([{ status: 200, body: waitingDispute() }, { status: 200, body: { ...waitingDispute(), dispute_amount: { currency_code: 'USD', value: '7.00' } } }, { status: 404, body: { name: 'RESOURCE_NOT_FOUND' } }]);
+  const paypal = new PayPalClient({ clientId: 'id', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
+  const lines: string[] = [];
+  await checkBindings({
+    paypal,
+    bindings: { 'CASE-A': 'PP-R-1', 'CASE-B': 'PP-R-2', 'CASE-C': 'PP-R-3' },
+    caseOrders: { 'CASE-A': { value: '7.00', currency: 'USD' }, 'CASE-B': { value: '7.00', currency: 'USD' }, 'CASE-C': { value: '1.00', currency: 'USD' } },
+    log: (l) => lines.push(l),
+  });
+  assert.ok(lines.some((l) => l.includes('CASE-A → PP-R-1: MISMATCH') && l.includes('is 1.37 USD; this demo case’s order is 7.00 USD')), lines.join(' | '));
+  assert.ok(lines.some((l) => l.includes('CASE-B → PP-R-2: amount matches (7.00 USD)')));
+  assert.ok(lines.some((l) => l.includes('CASE-C → PP-R-3: could not read')));
+  assert.ok(pp.apiCalls().every((c) => c.method === 'GET'));
+  assert.ok(!lines.join(' | ').includes('secret'));
 });
 
 test('maps seller evidence with tracking, document names, notes, action and date', () => {

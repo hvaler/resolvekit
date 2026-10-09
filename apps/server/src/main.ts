@@ -8,6 +8,8 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { createApp, DEFAULT_ORIGINS } from './app.ts';
+import { checkBindings } from './bindings.ts';
+import { CASE_FILES } from './documents.ts';
 import { toNodeListener } from './node.ts';
 
 const env: PayPalEnv = process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox';
@@ -43,6 +45,9 @@ const server = createServer(toNodeListener(app, `http://${host}:${port}`));
 server.listen(port, host, () => {
   log(`ResolveKit server on http://${host}:${port} · PayPal ${paypal ? env : 'unconfigured'} · ${Object.keys(bindings).length} bound case(s)`);
   for (const [caseId, disputeId] of Object.entries(bindings)) log(`  ${caseId} → ${disputeId}`);
+  // Read each bound dispute once in the background and warn if its amount is not the demo case's order amount.
+  const caseOrders = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency }]));
+  void checkBindings({ paypal, bindings, caseOrders, log });
 });
 
 const stop = () => {

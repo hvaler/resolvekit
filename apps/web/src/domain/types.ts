@@ -320,4 +320,10 @@ export interface DisputeSnapshot {
   requestedEvidence?: string[];
   /** Disputed amount as PayPal reports it. */
   amount?: { value: string; currency: string } | null;
+  /** When PayPal created the dispute (ISO 8601). */
+  createdAt?: string | null;
+  /** Buyer response due date (ISO 8601), when PayPal is waiting for the buyer. */
+  buyerRespondBy?: string | null;
+  /** The disputed transaction as PayPal reports it: the seller-side id (the capture), its time and gross amount. */
+  transaction?: { id: string; createdAt: string | null; amount: { value: string; currency: string } | null } | null;
 }

@@ -19,8 +19,15 @@ export interface Dispute {
   dispute_life_cycle_stage?: string;
   evidences?: Evidence[];
   links?: DisputeLink[];
-  disputed_transactions?: Array<{ seller_transaction_id?: string; items?: Array<{ item_type?: string }> }>;
+  create_time?: string;
+  disputed_transactions?: Array<{
+    seller_transaction_id?: string;
+    create_time?: string;
+    gross_amount?: { currency_code: string; value: string };
+    items?: Array<{ item_type?: string }>;
+  }>;
   seller_response_due_date?: string;
+  buyer_response_due_date?: string;
   dispute_amount?: { currency_code: string; value: string };
 }
 export interface EvidenceFile { name: string; type: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/gif'; data: Uint8Array }
