@@ -1,0 +1,540 @@
+{
+  "caseId": "PP-R-HFA-10176021",
+  "key": "56a540104981534eebb1b4e3593b8dad32711e1cd92e2d8a5ac52b9beebb9844",
+  "promptVersion": "rk-analyst-2026-10-09.7",
+  "requestedModel": "gemini-3.8-flash",
+  "provider": "gemini",
+  "model": "gemini-3.8-flash",
+  "createdAt": "2026-10-09T19:32:53.672Z",
+  "facts": [
+    {
+      "id": "F1",
+      "doc": "D",
+      "quote": "Dispute PP-R-HFA-10176021 · reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "statement": "The dispute identifier is PP-R-HFA-10176021 with reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED.",
+      "at": null
+    },
+    {
+      "id": "F2",
+      "doc": "D",
+      "quote": "Reason as shown to the merchant: Buyer says the item was not received",
+      "statement": "The reason shown to the merchant is that the buyer says the item was not received.",
+      "at": null
+    },
+    {
+      "id": "F3",
+      "doc": "D",
+      "quote": "Buyer-declared item type: Physical product",
+      "statement": "The buyer declared the item type as physical product.",
+      "at": null
+    },
+    {
+      "id": "F4",
+      "doc": "D",
+      "quote": "Disputed amount: 12.00 USD",
+      "statement": "The disputed amount is 12.00 USD.",
+      "at": null
+    },
+    {
+      "id": "F5",
+      "doc": "D",
+      "quote": "Opened: 25 Sep 2026 09:00:00 UTC",
+      "statement": "The dispute was opened on 25 September 2026 at 09:00:00 UTC.",
+      "at": "2026-09-25T09:00:00.000Z"
+    },
+    {
+      "id": "F6",
+      "doc": "D",
+      "quote": "Stage: INQUIRY",
+      "statement": "The dispute stage is INQUIRY.",
+      "at": null
+    },
+    {
+      "id": "F7",
+      "doc": "E1",
+      "quote": "Received: 18 Sep 2026 · 17:36 (from Order system)",
+      "statement": "The order record was received from the order system on 18 September 2026 at 17:36 UTC.",
+      "at": "2026-09-18T17:36:00.000Z"
+    },
+    {
+      "id": "F8",
+      "doc": "E1",
+      "quote": "Order #10421 · placed 18 Sep 2026 17:36 UTC",
+      "statement": "Order #10421 was placed on 18 September 2026 at 17:36 UTC.",
+      "at": "2026-09-18T17:36:00.000Z"
+    },
+    {
+      "id": "F9",
+      "doc": "E1",
+      "quote": "1 × Beeswax candle pair · 12.00 USD",
+      "statement": "The order contains one beeswax candle pair for 12.00 USD.",
+      "at": null
+    },
+    {
+      "id": "F10",
+      "doc": "E1",
+      "quote": "Ship to: 3 Example Close, Exampleton EX7 •••",
+      "statement": "The shipping address on the order is 3 Example Close, Exampleton EX7 •••.",
+      "at": null
+    },
+    {
+      "id": "F11",
+      "doc": "E1",
+      "quote": "Buyer: h•••@example.com",
+      "statement": "The buyer email address is h•••@example.com.",
+      "at": null
+    },
+    {
+      "id": "F12",
+      "doc": "E2",
+      "quote": "Capture 6HF17602AB3376021",
+      "statement": "The payment capture identifier is 6HF17602AB3376021.",
+      "at": null
+    },
+    {
+      "id": "F13",
+      "doc": "E2",
+      "quote": "12.00 USD · COMPLETED",
+      "statement": "Payment of 12.00 USD is completed.",
+      "at": null
+    },
+    {
+      "id": "F14",
+      "doc": "E2",
+      "quote": "Captured 18 Sep 2026 17:37 UTC",
+      "statement": "Payment was captured on 18 September 2026 at 17:37 UTC.",
+      "at": "2026-09-18T17:37:00.000Z"
+    },
+    {
+      "id": "F15",
+      "doc": "E3",
+      "quote": "Received: 23 Sep 2026 · 15:24 (from Carrier (USPS))",
+      "statement": "Carrier tracking data was received from USPS on 23 September 2026 at 15:24 UTC.",
+      "at": "2026-09-23T15:24:00.000Z"
+    },
+    {
+      "id": "F16",
+      "doc": "E3",
+      "quote": "Tracking 9400111899223100176021 · USPS Ground Advantage",
+      "statement": "The tracking number is 9400111899223100176021 via USPS Ground Advantage.",
+      "at": null
+    },
+    {
+      "id": "F17",
+      "doc": "E3",
+      "quote": "Shipped 19 Sep 2026 10:05 UTC · Exampleton post office",
+      "statement": "The package was shipped from Exampleton post office on 19 September 2026 at 10:05 UTC.",
+      "at": "2026-09-19T10:05:00.000Z"
+    },
+    {
+      "id": "F18",
+      "doc": "E3",
+      "quote": "Delivered 23 Sep 2026 15:10 UTC · left at front door",
+      "statement": "The package was delivered and left at the front door on 23 September 2026 at 15:10 UTC.",
+      "at": "2026-09-23T15:10:00.000Z"
+    },
+    {
+      "id": "F19",
+      "doc": "E3",
+      "quote": "Delivered to: 3 Example Close, Exampleton EX7",
+      "statement": "The package was delivered to 3 Example Close, Exampleton EX7.",
+      "at": null
+    },
+    {
+      "id": "F20",
+      "doc": "E4",
+      "quote": "Received: 19 Sep 2026 · 09:12 (from Order system)",
+      "statement": "The shipping label was received from the order system on 19 September 2026 at 09:12 UTC.",
+      "at": "2026-09-19T09:12:00.000Z"
+    },
+    {
+      "id": "F21",
+      "doc": "E4",
+      "quote": "Label created 19 Sep 2026 09:12 UTC",
+      "statement": "The shipping label was created on 19 September 2026 at 09:12 UTC.",
+      "at": "2026-09-19T09:12:00.000Z"
+    },
+    {
+      "id": "F22",
+      "doc": "E4",
+      "quote": "USPS Ground Advantage · 0.3 kg · 9400111899223100176021",
+      "statement": "A USPS Ground Advantage 0.3 kg label was created with tracking 9400111899223100176021.",
+      "at": null
+    },
+    {
+      "id": "F23",
+      "doc": "E4",
+      "quote": "Ship to: 3 Example Close, Exampleton EX7",
+      "statement": "The label specifies the shipping destination as 3 Example Close, Exampleton EX7.",
+      "at": null
+    },
+    {
+      "id": "F24",
+      "doc": "E5",
+      "quote": "Received: 25 Sep 2026 · 09:00 (from PayPal dispute)",
+      "statement": "The dispute message was received from PayPal dispute on 25 September 2026 at 09:00 UTC.",
+      "at": "2026-09-25T09:00:00.000Z"
+    },
+    {
+      "id": "F25",
+      "doc": "E5",
+      "quote": "\"My order never came.\"",
+      "statement": "The buyer stated that their order never arrived.",
+      "at": null
+    },
+    {
+      "id": "F26",
+      "doc": "E5",
+      "quote": "From h•••@example.com · 25 Sep 2026 09:00 UTC",
+      "statement": "The message was sent by h•••@example.com on 25 September 2026 at 09:00 UTC.",
+      "at": "2026-09-25T09:00:00.000Z"
+    }
+  ],
+  "droppedFacts": 0,
+  "timeline": [
+    {
+      "at": "2026-09-18T17:36:00.000Z",
+      "title": "Order placed",
+      "sub": "Order #10421 for 12.00 USD",
+      "doc": "E1",
+      "quote": "Order #10421 · placed 18 Sep 2026 17:36 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-09-18T17:37:00.000Z",
+      "title": "Payment captured",
+      "sub": "12.00 USD captured",
+      "doc": "E2",
+      "quote": "Captured 18 Sep 2026 17:37 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-09-19T09:12:00.000Z",
+      "title": "Shipping label created",
+      "sub": "USPS Ground Advantage label created",
+      "doc": "E4",
+      "quote": "Label created 19 Sep 2026 09:12 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-09-19T10:05:00.000Z",
+      "title": "Package shipped",
+      "sub": "Shipped via USPS from Exampleton",
+      "doc": "E3",
+      "quote": "Shipped 19 Sep 2026 10:05 UTC · Exampleton post office",
+      "negated": false
+    },
+    {
+      "at": "2026-09-23T15:10:00.000Z",
+      "title": "Package delivered",
+      "sub": "Delivered and left at front door",
+      "doc": "E3",
+      "quote": "Delivered 23 Sep 2026 15:10 UTC · left at front door",
+      "negated": false
+    },
+    {
+      "at": "2026-09-25T09:00:00.000Z",
+      "title": "Dispute opened",
+      "sub": "Dispute PP-R-HFA-10176021 opened by buyer",
+      "doc": "D",
+      "quote": "Opened: 25 Sep 2026 09:00:00 UTC",
+      "negated": false
+    }
+  ],
+  "contradictions": [],
+  "checklist": {
+    "title": "What \"not received\" disputes need",
+    "items": [
+      {
+        "id": "tracking",
+        "label": "Tracking number with delivery confirmation",
+        "critical": true,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E3",
+            "quote": "Tracking 9400111899223100176021 · USPS Ground Advantage"
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivered 23 Sep 2026 15:10 UTC · left at front door"
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivered to: 3 Example Close, Exampleton EX7"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "carrier",
+        "label": "Carrier and ship date",
+        "critical": true,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E3",
+            "quote": "Tracking 9400111899223100176021 · USPS Ground Advantage"
+          },
+          {
+            "doc": "E3",
+            "quote": "Shipped 19 Sep 2026 10:05 UTC · Exampleton post office"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "address",
+        "label": "Delivery address matches the order",
+        "critical": false,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E1",
+            "quote": "Ship to: 3 Example Close, Exampleton EX7 •••"
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivered to: 3 Example Close, Exampleton EX7"
+          },
+          {
+            "doc": "E4",
+            "quote": "Ship to: 3 Example Close, Exampleton EX7"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "signature",
+        "label": "Signature or proof of receipt",
+        "critical": false,
+        "status": "missing",
+        "evidence": [],
+        "contradictionId": null
+      },
+      {
+        "id": "payment",
+        "label": "Payment record for the disputed amount",
+        "critical": false,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "D",
+            "quote": "Disputed amount: 12.00 USD"
+          },
+          {
+            "doc": "E2",
+            "quote": "Capture 6HF17602AB3376021"
+          },
+          {
+            "doc": "E2",
+            "quote": "12.00 USD · COMPLETED"
+          },
+          {
+            "doc": "E2",
+            "quote": "Captured 18 Sep 2026 17:37 UTC"
+          }
+        ],
+        "contradictionId": null
+      }
+    ]
+  },
+  "sentences": [
+    {
+      "id": "S1",
+      "text": "We received order #10421 for a beeswax candle pair totalling 12.00 USD, which was successfully captured under transaction 6HF17602AB3376021.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E1",
+          "quote": "Order #10421 · placed 18 Sep 2026 17:36 UTC",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "1 × Beeswax candle pair · 12.00 USD",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "Capture 6HF17602AB3376021",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "12.00 USD · COMPLETED",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "Captured 18 Sep 2026 17:37 UTC",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S2",
+      "text": "We shipped the package on 19 September 2026 via USPS Ground Advantage under tracking number 9400111899223100176021.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E3",
+          "quote": "Tracking 9400111899223100176021 · USPS Ground Advantage",
+          "valid": true
+        },
+        {
+          "doc": "E3",
+          "quote": "Shipped 19 Sep 2026 10:05 UTC · Exampleton post office",
+          "valid": true
+        },
+        {
+          "doc": "E4",
+          "quote": "USPS Ground Advantage · 0.3 kg · 9400111899223100176021",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S3",
+      "text": "Carrier tracking confirms the parcel was delivered on 23 September 2026 to 3 Example Close, Exampleton EX7, matching the order address.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E1",
+          "quote": "Ship to: 3 Example Close, Exampleton EX7 •••",
+          "valid": true
+        },
+        {
+          "doc": "E3",
+          "quote": "Delivered 23 Sep 2026 15:10 UTC · left at front door",
+          "valid": true
+        },
+        {
+          "doc": "E3",
+          "quote": "Delivered to: 3 Example Close, Exampleton EX7",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S4",
+      "text": "The buyer opened this dispute on 25 September 2026 stating that their order never arrived.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "D",
+          "quote": "Opened: 25 Sep 2026 09:00:00 UTC",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "\"My order never came.\"",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "From h•••@example.com · 25 Sep 2026 09:00 UTC",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S5",
+      "text": "The buyer later told us the parcel was with a neighbour.",
+      "noteId": "N1",
+      "citations": [],
+      "verdict": "rejected",
+      "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+      "decidedBy": "deterministic",
+      "rewrite": null
+    }
+  ],
+  "injections": [],
+  "recommendation": null,
+  "usage": {
+    "calls": [
+      {
+        "stage": "screen",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 1069,
+        "outputTokens": 5,
+        "thinkingTokens": 0,
+        "ms": 2747
+      },
+      {
+        "stage": "extract",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 1406,
+        "outputTokens": 2416,
+        "thinkingTokens": 0,
+        "ms": 13603
+      },
+      {
+        "stage": "analyze",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 2910,
+        "outputTokens": 1138,
+        "thinkingTokens": 0,
+        "ms": 9292
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 639,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 1966
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 567,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 2205
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 625,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 2507
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 578,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 3635
+      }
+    ],
+    "inputTokens": 7794,
+    "outputTokens": 3751,
+    "thinkingTokens": 0
+  }
+}
