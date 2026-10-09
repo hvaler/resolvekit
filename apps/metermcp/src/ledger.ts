@@ -199,10 +199,12 @@ export class Ledger {
    * calls + this price would exceed the cap. The reservation is the PENDING call row.
    */
   reserve(id: string, tool: string, priceCents: number, now: string, hash: (n: number) => string): Reservation {
+    if (!Number.isSafeInteger(priceCents) || priceCents <= 0) throw new Error(`Invalid price ${priceCents}`);
     return this.tx(() => {
       const s = this.db.prepare('SELECT status, cap_cents FROM sessions WHERE id = ?').get(id) as { status: SessionStatus; cap_cents: number } | undefined;
       if (!s || s.status !== 'active') return { ok: false, reason: 'not_active', status: s?.status ?? null };
       const used = this.usedCents(id);
+      if (!Number.isSafeInteger(used) || !Number.isSafeInteger(s.cap_cents)) throw new Error('Ledger totals unreadable');
       if (used + priceCents > s.cap_cents) return { ok: false, reason: 'over_budget', remainingCents: s.cap_cents - used, capCents: s.cap_cents };
       const { next } = this.db.prepare('SELECT COALESCE(MAX(n), 0) + 1 AS next FROM calls WHERE session_id = ?').get(id) as { next: number };
       this.db

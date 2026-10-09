@@ -45,6 +45,38 @@ export type ToolAnswer = {
 
 const answer = (body: unknown, isError = false): ToolAnswer => ({ ...(isError ? { isError: true } : {}), content: [{ type: 'text', text: JSON.stringify(body, null, 2) }] });
 
+/** Strict money parse: null (never a default) when the value is missing or malformed. */
+function cents(value: string | undefined): number | null {
+  if (value == null) return null;
+  try {
+    return toCents(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Why an authorized order must NOT open this session, or null when it may. Every check fails closed: the order must
+ * be this session's own (order id, and custom_id when PayPal returns it), with exactly one authorization in status
+ * CREATED for exactly the session's cap and currency, and a known expiry still in the future.
+ */
+export function authorizationProblem(s: SessionRow, order: Order, now: Date): string | null {
+  if (order.id !== s.order_id) return `order ${order.id} is not this session's order ${s.order_id}`;
+  const pu = order.purchase_units?.[0];
+  if (pu?.custom_id != null && pu.custom_id !== s.id) return `order custom_id ${pu.custom_id} is not this session`;
+  const auths = pu?.payments?.authorizations ?? [];
+  if (auths.length !== 1) return `expected one authorization, PayPal reports ${auths.length}`;
+  const a: Authorization = auths[0]!;
+  if (!a.id) return 'authorization without id';
+  if (a.status !== 'CREATED') return `authorization ${a.id} is ${a.status ?? 'without status'}, not CREATED`;
+  if (a.amount?.currency_code !== s.currency) return `authorization currency ${a.amount?.currency_code ?? 'missing'} is not ${s.currency}`;
+  if (cents(a.amount?.value) !== s.cap_cents) return `authorized amount ${a.amount?.value ?? 'missing'} is not the cap ${fromCents(s.cap_cents)}`;
+  const exp = a.expiration_time ? Date.parse(a.expiration_time) : NaN;
+  if (!Number.isFinite(exp)) return `authorization ${a.id} has no valid expiration_time`;
+  if (exp <= now.getTime()) return `authorization ${a.id} expired at ${a.expiration_time}`;
+  return null;
+}
+
 const isAnswer = (x: SessionRow | ToolAnswer): x is ToolAnswer => Array.isArray((x as ToolAnswer).content);
 
 export const INJECTED_FAILURE = 'UPSTREAM_UNAVAILABLE (injected by the METERMCP_FAIL_FIRST test switch)';
@@ -186,19 +218,22 @@ export class Meter {
       this.o.ledger.cancel(s.id, this.iso());
       return this.o.ledger.session(s.id)!;
     }
-    const auth: Authorization | undefined = order.purchase_units?.[0]?.payments?.authorizations?.[0];
-    if (order.status === 'COMPLETED' && auth?.id) {
-      const capCents = toCents(auth.amount?.value ?? fromCents(s.cap_cents));
-      if (capCents !== s.cap_cents) this.o.log(`session ${s.id}: authorized ${auth.amount?.value} differs from the cap; the cap stays ${fromCents(s.cap_cents)}`);
-      this.o.ledger.activate(s.id, {
-        authorizationId: auth.id,
-        authorizationStatus: auth.status ?? null,
-        expiresAt: auth.expiration_time ?? null,
-        approvedAt: this.iso(),
-        authorizedAt: auth.create_time ?? null,
-      });
-      this.o.log(`session ${s.id}: approved, authorization ${auth.id} (${auth.status ?? '?'}) · cap ${fromCents(s.cap_cents)} ${s.currency}`);
+    if (order.status !== 'COMPLETED') return this.o.ledger.session(s.id)!;
+    const problem = authorizationProblem(s, order, this.o.now());
+    if (problem) {
+      // Fail closed: the session stays pending_approval (no paid call can run) and the reason is logged.
+      this.o.log(`session ${s.id}: NOT opened, ${problem}`);
+      return this.o.ledger.session(s.id)!;
     }
+    const auth = order.purchase_units![0]!.payments!.authorizations![0]!;
+    this.o.ledger.activate(s.id, {
+      authorizationId: auth.id,
+      authorizationStatus: auth.status!,
+      expiresAt: auth.expiration_time!,
+      approvedAt: this.iso(),
+      authorizedAt: auth.create_time ?? null,
+    });
+    this.o.log(`session ${s.id}: approved, authorization ${auth.id} (${auth.status}) · cap ${fromCents(s.cap_cents)} ${s.currency}`);
     return this.o.ledger.session(s.id)!;
   }
 
@@ -222,8 +257,19 @@ export class Meter {
       return answer({ error: 'session_closed', session_id: s.id, status: s.status, message: 'This session is closing or awaiting settlement; no more paid calls. Call close_session to finish settlement.' }, true);
     }
 
-    const priceCents = toCents(tool.price);
-    const r = this.o.ledger.reserve(s.id, tool.name, priceCents, this.iso(), (n) => requestHash(s.id, n, tool.name, args));
+    const exp = s.authorization_expires_at ? Date.parse(s.authorization_expires_at) : NaN;
+    if (!s.authorization_id || !Number.isFinite(exp) || exp <= this.o.now().getTime()) {
+      return answer({ error: 'authorization_expired', session_id: s.id, message: 'The PayPal authorization behind this session is missing or expired; no paid call can run. Call close_session.' }, true);
+    }
+    const priceCents = cents(tool.price);
+    if (priceCents == null || priceCents <= 0) return answer({ error: 'price_unavailable', tool: tool.name, message: 'This tool has no valid price; the call was not made.' }, true);
+    let r: ReturnType<Ledger['reserve']>;
+    try {
+      r = this.o.ledger.reserve(s.id, tool.name, priceCents, this.iso(), (n) => requestHash(s.id, n, tool.name, args));
+    } catch (e) {
+      this.o.log(`session ${s.id}: reservation failed (${why(e)}); call refused`);
+      return answer({ error: 'ledger_unavailable', message: 'The call could not be metered, so it was not made and nothing was charged.' }, true);
+    }
     if (!r.ok) {
       if (r.reason === 'over_budget') {
         return answer(
@@ -353,11 +399,24 @@ export class Meter {
       this.o.ledger.settlementFailed(id, paypal ? 'No authorization recorded' : 'PayPal is not configured');
       return this.closeResult(this.o.ledger.session(id)!);
     }
+    if (!Number.isSafeInteger(charged) || charged < 0 || charged > s.cap_cents) {
+      this.o.ledger.settlementFailed(id, `Charged total ${charged} cents is not within the cap; not captured`);
+      return this.closeResult(this.o.ledger.session(id)!);
+    }
     try {
+      // Verify the authorization in PayPal before moving money. CREATED: capture or void. CAPTURED on a retry: only
+      // the idempotent replay of our own capture (same PayPal-Request-Id) can succeed. Anything else: fail closed.
+      const auth = await paypal.payments.getAuthorization(s.authorization_id);
+      const retryReplay = auth.status === 'CAPTURED' && charged > 0 && s.settlement_attempts > 1;
+      if (auth.status !== 'CREATED' && !retryReplay) throw new Error(`Authorization ${s.authorization_id} is ${auth.status ?? 'without status'} in PayPal; not settled`);
+      if (auth.amount?.currency_code !== s.currency || (cents(auth.amount?.value) ?? -1) < charged) {
+        throw new Error(`Authorization ${s.authorization_id} does not cover ${fromCents(charged)} ${s.currency}; not settled`);
+      }
       if (charged === 0) {
         const v = await paypal.payments.voidAuthorization(s.authorization_id, { requestId: `${id}-void` });
-        this.o.ledger.voided(id, { authorizationStatus: v.status ?? null, now: this.iso() });
-        this.o.log(`session ${id}: nothing consumed, authorization ${s.authorization_id} voided (${v.status ?? '?'})`);
+        if (v.status !== 'VOIDED') throw new Error(`Void answered ${v.status ?? 'no status'}, not VOIDED`);
+        this.o.ledger.voided(id, { authorizationStatus: v.status, now: this.iso() });
+        this.o.log(`session ${id}: nothing consumed, authorization ${s.authorization_id} voided (${v.status})`);
       } else {
         const ok = this.o.ledger.calls(id).filter((c) => c.status === 'OK');
         const note = `MeterMCP session ${id}: ${ok.length} paid tool call${ok.length === 1 ? '' : 's'} (${ok.map((c) => `${c.tool} ${fromCents(c.price_cents)}`).join(', ')}); failed calls not charged; remainder released.`;
@@ -366,6 +425,11 @@ export class Meter {
           { amount: { currency_code: s.currency, value: fromCents(charged) }, finalCapture: true, invoiceId: `${id}-settle`, noteToPayer: note.length > 255 ? `${note.slice(0, 252)}...` : note },
           { requestId: `${id}-settle` },
         );
+        if (!capture.id) throw new Error('PayPal returned a capture without id');
+        if (capture.status !== 'COMPLETED' && capture.status !== 'PENDING') throw new Error(`Capture ${capture.id} is ${capture.status ?? 'without status'}`);
+        if (capture.amount && (capture.amount.currency_code !== s.currency || cents(capture.amount.value) !== charged)) {
+          throw new Error(`Capture ${capture.id} is ${capture.amount.value} ${capture.amount.currency_code}, not ${fromCents(charged)} ${s.currency}`);
+        }
         // Read the authorization back: after a final capture PayPal reports it CAPTURED (the rest released).
         let authStatus: string | null = null;
         try {
