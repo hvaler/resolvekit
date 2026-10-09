@@ -78,17 +78,71 @@ export function buildServer(meter: Meter, policy?: BudgetPolicy): McpServer {
 const rpcError = (status: number, message: string) =>
   new Response(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message }, id: null }), { status, headers: { 'content-type': 'application/json' } });
 
-/** Handles /mcp requests (already past the HTTP guards). */
-export function createMcpEndpoint(meter: Meter, policy?: BudgetPolicy) {
-  const transports = new Map<string, WebStandardStreamableHTTPServerTransport>();
+/** Limits on live MCP sessions (transports, each with its own McpServer in memory). */
+export interface McpLimits {
+  /** Live MCP sessions in all. */
+  maxSessions: number;
+  /** Live MCP sessions per client IP. */
+  maxPerIp: number;
+  /** A session with no request for this long is closed (its transport freed, its payment session closed). */
+  idleMs: number;
+  now?: () => number;
+}
+
+export const DEFAULT_MCP_LIMITS: McpLimits = { maxSessions: 200, maxPerIp: 20, idleMs: 15 * 60_000 };
+
+/** Simple counters for /health and the log. */
+export interface McpMetrics {
+  live: number;
+  rejected: number;
+  expired: number;
+}
+
+/**
+ * Handles /mcp requests (already past the HTTP guards). Live sessions are capped in all and per client IP; the slot
+ * is reserved synchronously before the session is set up, so concurrent initializations cannot overshoot. A session
+ * idle for {@link McpLimits.idleMs} is closed: its transport is freed and its payment session closed safely (settled
+ * with only its OK calls, or cancelled if never approved; a call in flight makes it wait for the meter's own sweep).
+ */
+export function createMcpEndpoint(meter: Meter, policy?: BudgetPolicy, limits: Partial<McpLimits> = {}) {
+  const L: McpLimits = { ...DEFAULT_MCP_LIMITS, ...limits };
+  const now = L.now ?? Date.now;
+  const live = new Map<string, { transport: WebStandardStreamableHTTPServerTransport | null; ip: string; lastSeen: number }>();
+  const metrics = { rejected: 0, expired: 0 };
+
+  const drop = (id: string) => void live.delete(id);
+
+  /** Close every session idle for longer than the limit. Returns the ids closed. */
+  const sweepIdle = async (): Promise<string[]> => {
+    const cutoff = now() - L.idleMs;
+    const idle = [...live.entries()].filter(([, s]) => s.transport && s.lastSeen < cutoff);
+    for (const [id, s] of idle) {
+      live.delete(id);
+      metrics.expired += 1;
+      try {
+        await s.transport!.close();
+      } catch {
+        /* already closed */
+      }
+      // The payment session of this MCP session, if any: closed like close_session would (never charged for failures).
+      try {
+        await meter.closeFor(id);
+      } catch {
+        /* the meter's own idle sweep retries */
+      }
+    }
+    return idle.map(([id]) => id);
+  };
 
   /** `authInfo`: what the HTTP layer established about this request (hosted mode: a valid demo code). */
-  const handle = async (req: Request, authInfo?: AuthInfo): Promise<Response> => {
+  const handle = async (req: Request, authInfo?: AuthInfo, ip = 'local'): Promise<Response> => {
     const opts = authInfo ? { authInfo } : undefined;
     const sid = req.headers.get('mcp-session-id');
     if (sid) {
-      const t = transports.get(sid);
-      return t ? t.handleRequest(req, opts) : rpcError(404, 'Unknown MCP session');
+      const s = live.get(sid);
+      if (!s?.transport) return rpcError(404, 'Unknown MCP session');
+      s.lastSeen = now();
+      return s.transport.handleRequest(req, opts);
     }
     if (req.method !== 'POST') return rpcError(400, 'No MCP session');
     let body: unknown;
@@ -98,25 +152,44 @@ export function createMcpEndpoint(meter: Meter, policy?: BudgetPolicy) {
       return rpcError(400, 'Invalid JSON');
     }
     if (!isInitializeRequest(body)) return rpcError(400, 'No MCP session: initialize first');
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      enableJsonResponse: true,
-      onsessioninitialized: (id) => void transports.set(id, transport),
-      onsessionclosed: (id) => void transports.delete(id),
-    });
-    transport.onclose = () => {
-      if (transport.sessionId) transports.delete(transport.sessionId);
-    };
-    await buildServer(meter, policy).connect(transport);
-    return transport.handleRequest(req, { parsedBody: body, ...opts });
+    await sweepIdle();
+    // Reserve the slot in this synchronous step: the caps hold under concurrent initializations.
+    const fromIp = [...live.values()].filter((s) => s.ip === ip).length;
+    if (live.size >= L.maxSessions || fromIp >= L.maxPerIp) {
+      metrics.rejected += 1;
+      return rpcError(503, live.size >= L.maxSessions ? 'Too many live MCP sessions on this server; try again later' : 'Too many live MCP sessions from this address; close one or try again later');
+    }
+    const id = randomUUID();
+    live.set(id, { transport: null, ip, lastSeen: now() });
+    try {
+      const transport = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: () => id,
+        enableJsonResponse: true,
+        onsessionclosed: (closed) => drop(closed),
+      });
+      transport.onclose = () => drop(id);
+      await buildServer(meter, policy).connect(transport);
+      const entry = live.get(id);
+      if (!entry) return rpcError(503, 'MCP session closed during setup');
+      entry.transport = transport;
+      const res = await transport.handleRequest(req, { parsedBody: body, ...opts });
+      if (!res.ok || transport.sessionId !== id) drop(id);
+      return res;
+    } catch (e) {
+      drop(id);
+      throw e;
+    }
   };
 
   return {
     handle,
-    sessions: () => transports.size,
+    sweepIdle,
+    sessions: () => live.size,
+    metrics: (): McpMetrics => ({ live: live.size, ...metrics }),
     closeAll: async () => {
-      await Promise.all([...transports.values()].map((t) => t.close()));
-      transports.clear();
+      const all = [...live.values()];
+      live.clear();
+      await Promise.all(all.map((s) => s.transport?.close()));
     },
   };
 }

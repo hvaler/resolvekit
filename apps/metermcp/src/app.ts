@@ -16,7 +16,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { KeyedLimiter, clientIp, hostOf, sameSecret as sameCode, withSecurityHeaders, type DailyCounters } from '@resolvekit/hosting';
 import type { PayPalEnv } from '@resolvekit/paypal';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { createMcpEndpoint, type BudgetPolicy } from './mcp.ts';
+import { createMcpEndpoint, type BudgetPolicy, type McpLimits, type McpMetrics } from './mcp.ts';
 import { SESSION_ID, answer, type Meter } from './meter.ts';
 import { receiptPdf } from './receipt.ts';
 
@@ -58,9 +58,17 @@ export interface AppOptions {
   log?: (line: string) => void;
   /** Present in hosted mode; replaces the local Host check. */
   hosted?: HostedMeterOptions | null;
+  /** Caps and idle timeout of live MCP sessions (defaults: 200 in all, 20 per IP, 15 min idle). */
+  mcpLimits?: Partial<McpLimits>;
 }
 
-export type Handler = ((req: Request) => Promise<Response>) & { close: () => Promise<void> };
+export type Handler = ((req: Request) => Promise<Response>) & {
+  close: () => Promise<void>;
+  /** Close MCP sessions idle past the limit (main.ts runs it on a timer). */
+  sweepMcp: () => Promise<string[]>;
+  /** Live MCP sessions and how many were refused or expired. */
+  metrics: () => McpMetrics;
+};
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
@@ -112,7 +120,7 @@ export function createApp(opts: AppOptions): Handler {
         return { ok: true, release: () => h.budgets.release('budget', day) };
       }
     : undefined;
-  const mcp = createMcpEndpoint(meter, policy);
+  const mcp = createMcpEndpoint(meter, policy, opts.mcpLimits ?? {});
   const admin = (req: Request) => {
     const t = req.headers.get(TOKEN_HEADER);
     return !!opts.token && !!t && sameSecret(t, opts.token);
@@ -122,7 +130,7 @@ export function createApp(opts: AppOptions): Handler {
     const url = new URL(req.url);
     const path = url.pathname;
     if (path === '/mcp') {
-      if (!h) return mcp.handle(req);
+      if (!h) return mcp.handle(req, undefined, 'local');
       const ip = clientIp(req, h.trustedHops ?? 1);
       const lim = mcpLimit.take(ip);
       if (!lim.ok) return json(429, { jsonrpc: '2.0', error: { code: -32000, message: `Too many requests; retry in ${lim.retryAfterSec} s` }, id: null });
@@ -138,9 +146,12 @@ export function createApp(opts: AppOptions): Handler {
         }
         auth = { token: 'demo-code', clientId: 'demo', scopes: ['open_budget'] };
       }
-      return mcp.handle(req, auth);
+      return mcp.handle(req, auth, ip);
     }
-    if (req.method === 'GET' && path === '/health') return json(200, { ok: true, paypal: opts.env, mcpSessions: mcp.sessions() });
+    if (req.method === 'GET' && path === '/health') {
+      const m = mcp.metrics();
+      return json(200, { ok: true, paypal: opts.env, mcpSessions: m.live, mcpRejected: m.rejected, mcpExpired: m.expired });
+    }
 
     if (req.method === 'GET' && (path === '/approved' || path === '/cancelled')) {
       // PayPal appends ?token=<order id>. The order is re-read from PayPal; the URL itself proves nothing.
@@ -216,5 +227,5 @@ export function createApp(opts: AppOptions): Handler {
     log(`${req.method} ${new URL(req.url).pathname} → ${res.status} · ${Date.now() - t} ms`);
     return h ? withSecurityHeaders(res, { hsts: h.https }) : res;
   };
-  return Object.assign(handler, { close: mcp.closeAll });
+  return Object.assign(handler, { close: mcp.closeAll, sweepMcp: mcp.sweepIdle, metrics: mcp.metrics });
 }

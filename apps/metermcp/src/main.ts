@@ -81,6 +81,11 @@ const sweep = setInterval(() => {
   void meter.sweepIdle(idleMs).catch((e) => log(`idle sweep failed: ${String(e)}`));
   // Captures PayPal reported PENDING: read them back until they complete or are declined.
   void meter.reconcilePending().catch((e) => log(`capture reconciliation failed: ${String(e)}`));
+  // Idle MCP sessions: free their transports (and close their payment sessions); log the counters when it acts.
+  void app
+    .sweepMcp()
+    .then((closed) => closed.length && log(`mcp sessions: closed ${closed.length} idle · ${JSON.stringify(app.metrics())}`))
+    .catch((e) => log(`mcp idle sweep failed: ${String(e)}`));
 }, 30_000);
 
 const stop = () => {
