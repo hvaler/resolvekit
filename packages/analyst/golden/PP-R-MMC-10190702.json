@@ -1,24 +1,24 @@
 {
   "caseId": "PP-R-MMC-10190702",
-  "key": "d7adb88686e978981f373578f09ad12cf84e736d71c37631c3d7933867deaf0e",
-  "promptVersion": "rk-analyst-2026-10-09.6",
+  "key": "24a4476b5c25d94f4df7851719d02946f29cb4a439b78b52f91e1387bab9e9fa",
+  "promptVersion": "rk-analyst-2026-10-09.7",
   "requestedModel": "gemini-3.8-flash",
   "provider": "gemini",
   "model": "gemini-3.8-flash",
-  "createdAt": "2026-10-09T06:32:20.253Z",
+  "createdAt": "2026-10-09T07:09:55.895Z",
   "facts": [
     {
       "id": "F1",
       "doc": "D",
       "quote": "Dispute PP-R-MMC-10190702 · reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
-      "statement": "Dispute PP-R-MMC-10190702 was opened for reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED.",
+      "statement": "The dispute reason is MERCHANDISE_OR_SERVICE_NOT_RECEIVED for dispute PP-R-MMC-10190702.",
       "at": null
     },
     {
       "id": "F2",
       "doc": "D",
       "quote": "Reason as shown to the merchant: Buyer says: \"I didn’t receive any confirmation of the service\"",
-      "statement": "The buyer claims they did not receive any confirmation of the service.",
+      "statement": "The buyer stated they did not receive any confirmation of the service.",
       "at": null
     },
     {
@@ -46,7 +46,7 @@
       "id": "F6",
       "doc": "D",
       "quote": "Stage: INQUIRY",
-      "statement": "The dispute is at the INQUIRY stage.",
+      "statement": "The dispute stage is INQUIRY.",
       "at": null
     },
     {
@@ -67,14 +67,14 @@
       "id": "F9",
       "doc": "E1",
       "quote": "Approved: 8 Oct 2026 09:12 UTC by the buyer in PayPal",
-      "statement": "The buyer approved the session in PayPal on 8 October 2026 at 09:12 UTC.",
+      "statement": "The budget was approved by the buyer on 8 October 2026 at 09:12 UTC.",
       "at": "2026-10-08T09:12:00.000Z"
     },
     {
       "id": "F10",
       "doc": "E1",
       "quote": "PayPal order: 5UX02876PL4419203",
-      "statement": "The PayPal order ID is 5UX02876PL4419203.",
+      "statement": "The PayPal order number is 5UX02876PL4419203.",
       "at": null
     },
     {
@@ -88,7 +88,7 @@
       "id": "F12",
       "doc": "E1",
       "quote": "Hard cap: 5.00 USD · MeterMCP tools only",
-      "statement": "There was a 5.00 USD hard cap for MeterMCP tools only.",
+      "statement": "The hard cap is 5.00 USD for MeterMCP tools only.",
       "at": null
     },
     {
@@ -130,7 +130,7 @@
       "id": "F18",
       "doc": "E3",
       "quote": "Captured 1.37 of 5.00 USD · remainder released",
-      "statement": "1.37 USD of the 5.00 USD was captured, and the remainder was released.",
+      "statement": "1.37 of 5.00 USD was captured, and the remainder was released.",
       "at": null
     },
     {
@@ -144,28 +144,28 @@
       "id": "F20",
       "doc": "E3",
       "quote": "Captured: 1.37 USD (3 OK calls)",
-      "statement": "1.37 USD was captured across 3 successful calls.",
+      "statement": "1.37 USD was captured for 3 successful calls.",
       "at": null
     },
     {
       "id": "F21",
       "doc": "E3",
       "quote": "Released: 3.63 USD authorization remainder",
-      "statement": "3.63 USD of authorization remainder was released.",
+      "statement": "The remaining authorization of 3.63 USD was released.",
       "at": null
     },
     {
       "id": "F22",
       "doc": "E4",
       "quote": "Session mm-sess-20261008-01 · 4 calls · 3 charged",
-      "statement": "Session mm-sess-20261008-01 had 4 calls, of which 3 were charged.",
+      "statement": "Session mm-sess-20261008-01 had 4 calls with 3 charged.",
       "at": null
     },
     {
       "id": "F23",
       "doc": "E4",
       "quote": "Total charged 1.37 USD of 5.00 USD budget",
-      "statement": "A total of 1.37 USD was charged out of the 5.00 USD budget.",
+      "statement": "Total charged was 1.37 USD out of the 5.00 USD budget.",
       "at": null
     },
     {
@@ -180,48 +180,48 @@
   "timeline": [
     {
       "at": "2026-10-08T09:12:00.000Z",
-      "title": "Session approved",
-      "sub": "Approved budget of 5.00 USD",
+      "title": "Budget approved",
+      "sub": "5.00 USD approved by buyer",
       "doc": "E1",
       "quote": "Approved: 8 Oct 2026 09:12 UTC by the buyer in PayPal",
       "negated": false
     },
     {
       "at": "2026-10-08T09:14:03.000Z",
-      "title": "Call #1 succeeded",
-      "sub": "quote_lookup 0.05 USD OK",
+      "title": "Call 1 quote lookup",
+      "sub": "0.05 USD OK",
       "doc": "E2",
       "quote": "#1 09:14:03 quote_lookup 0.05 USD OK · request a3f1…9c20",
       "negated": false
     },
     {
       "at": "2026-10-08T09:15:40.000Z",
-      "title": "Call #2 failed",
-      "sub": "deep_report 0.40 USD FAILED",
+      "title": "Call 2 deep report",
+      "sub": "FAILED not charged",
       "doc": "E2",
       "quote": "#2 09:15:40 deep_report 0.40 USD FAILED · not charged · request 7be0…41d7",
       "negated": true
     },
     {
       "at": "2026-10-08T09:16:12.000Z",
-      "title": "Call #3 succeeded",
-      "sub": "deep_report 0.40 USD OK",
+      "title": "Call 3 deep report",
+      "sub": "0.40 USD OK",
       "doc": "E2",
       "quote": "#3 09:16:12 deep_report 0.40 USD OK · request 0c9e…b85a",
       "negated": false
     },
     {
       "at": "2026-10-08T09:18:55.000Z",
-      "title": "Call #4 succeeded",
-      "sub": "bulk_export 0.92 USD OK",
+      "title": "Call 4 bulk export",
+      "sub": "0.92 USD OK",
       "doc": "E2",
       "quote": "#4 09:18:55 bulk_export 0.92 USD OK · request e4d2…6f13",
       "negated": false
     },
     {
       "at": "2026-10-08T09:25:00.000Z",
-      "title": "Capture completed",
-      "sub": "Captured 1.37 USD remainder released",
+      "title": "Settlement capture",
+      "sub": "1.37 USD captured 7HF40211KM3390816",
       "doc": "E3",
       "quote": "Capture: 7HF40211KM3390816 · 8 Oct 2026 09:25 UTC",
       "negated": false
@@ -229,7 +229,7 @@
     {
       "at": "2026-10-08T17:40:11.000Z",
       "title": "Dispute opened",
-      "sub": "Disputed amount 1.37 USD",
+      "sub": "1.37 USD inquiry opened",
       "doc": "D",
       "quote": "Opened: 8 Oct 2026 17:40:11 UTC",
       "negated": false
@@ -397,7 +397,7 @@
   "sentences": [
     {
       "id": "S1",
-      "text": "The buyer approved a budget of 5.00 USD in PayPal under order 5UX02876PL4419203 and authorization 0VF52814937998046 for agent session mm-sess-20261008-01.",
+      "text": "The buyer approved a budget of 5.00 USD for session mm-sess-20261008-01 under PayPal order 5UX02876PL4419203 and authorization 0VF52814937998046.",
       "noteId": null,
       "citations": [
         {
@@ -438,29 +438,9 @@
     },
     {
       "id": "S2",
-      "text": "The session executed four calls, where call #1, #3, and #4 succeeded with request hashes, and call #2 failed and was not charged.",
+      "text": "The session ran four calls with each call recorded by time, tool, price, status, and request hash.",
       "noteId": null,
       "citations": [
-        {
-          "doc": "E2",
-          "quote": "#1 09:14:03 quote_lookup 0.05 USD OK · request a3f1…9c20",
-          "valid": true
-        },
-        {
-          "doc": "E2",
-          "quote": "#2 09:15:40 deep_report 0.40 USD FAILED · not charged · request 7be0…41d7",
-          "valid": true
-        },
-        {
-          "doc": "E2",
-          "quote": "#3 09:16:12 deep_report 0.40 USD OK · request 0c9e…b85a",
-          "valid": true
-        },
-        {
-          "doc": "E2",
-          "quote": "#4 09:18:55 bulk_export 0.92 USD OK · request e4d2…6f13",
-          "valid": true
-        },
         {
           "doc": "E4",
           "quote": "Session mm-sess-20261008-01 · 4 calls · 3 charged",
@@ -479,7 +459,49 @@
     },
     {
       "id": "S3",
-      "text": "Only the three successful calls totaling 1.37 USD were captured under capture 7HF40211KM3390816, while the remaining 3.63 USD authorization was released.",
+      "text": "Call #1 succeeded for 0.05 USD, Call #3 succeeded for 0.40 USD, and Call #4 succeeded for 0.92 USD, each returning request hashes.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E2",
+          "quote": "#1 09:14:03 quote_lookup 0.05 USD OK · request a3f1…9c20",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "#3 09:16:12 deep_report 0.40 USD OK · request 0c9e…b85a",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "#4 09:18:55 bulk_export 0.92 USD OK · request e4d2…6f13",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S4",
+      "text": "Call #2 failed at 09:15:40 and was not charged.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E2",
+          "quote": "#2 09:15:40 deep_report 0.40 USD FAILED · not charged · request 7be0…41d7",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S5",
+      "text": "We captured exactly 1.37 USD for the three successful calls and released the remaining authorization of 3.63 USD.",
       "noteId": null,
       "citations": [
         {
@@ -514,7 +536,7 @@
       "rewrite": null
     },
     {
-      "id": "S4",
+      "id": "S6",
       "text": "All four tool calls completed successfully.",
       "noteId": "N1",
       "citations": [
@@ -539,18 +561,23 @@
           "valid": true
         },
         {
+          "doc": "E3",
+          "quote": "Captured: 1.37 USD (3 OK calls)",
+          "valid": true
+        },
+        {
           "doc": "E4",
           "quote": "Session mm-sess-20261008-01 · 4 calls · 3 charged",
           "valid": true
         }
       ],
       "verdict": "rejected",
-      "reason": "Removed: The cited text contradicts the claim, showing tool call #2 'FAILED · not charged' and only three out of four calls completed with 'OK'. It will not be sent.",
+      "reason": "Removed: The cited text contradicts the claim, recording call \"#2 09:15:40 deep_report 0.40 USD FAILED · not charged\" and only \"3 OK calls\". It will not be sent.",
       "decidedBy": "model",
       "rewrite": "Three of the four tool calls completed successfully, while one failed."
     },
     {
-      "id": "S5",
+      "id": "S7",
       "text": "The buyer received a confirmation for every completed call.",
       "noteId": "N2",
       "citations": [
@@ -558,24 +585,19 @@
           "doc": "D",
           "quote": "Reason as shown to the merchant: Buyer says: \"I didn’t receive any confirmation of the service\"",
           "valid": true
-        },
-        {
-          "doc": "E4",
-          "quote": "Each call listed with time, tool, price, status and request hash",
-          "valid": true
         }
       ],
       "verdict": "rejected",
-      "reason": "Removed: The cited text does not confirm receipt of confirmations; document D records the buyer stating \"I didn’t receive any confirmation of the service\" and E4 lists call details. It will not be sent.",
+      "reason": "Removed: The cited text contradicts the claim, stating \"Buyer says: \\\"I didn’t receive any confirmation of the service\\\"\". It will not be sent.",
       "decidedBy": "model",
-      "rewrite": "Calls are recorded with time, tool, price, status, and request hash, though the buyer states \"I didn’t receive any confirmation of the service\"."
+      "rewrite": "The buyer claims they did not receive any confirmation of the service."
     }
   ],
   "injections": [],
   "recommendation": {
     "action": "provide_evidence",
-    "rule": "PayPal requests PROOF_OF_FULFILLMENT; the case file has what it needs, no critical requirement is missing, and 3 sentence(s) are supported",
-    "explanation": "You have documented records showing the buyer approved a 5.00 USD budget under authorization 0VF52814937998046 and that only the three successful calls totaling 1.37 USD were captured under capture 7HF40211KM3390816 while the remaining 3.63 USD was released. Submitting this proof directly addresses PayPal's request for proof of fulfillment. The decision is yours, and PayPal decides the outcome."
+    "rule": "PayPal requests PROOF_OF_FULFILLMENT; the case file has what it needs, no critical requirement is missing, and 5 sentence(s) are supported",
+    "explanation": "You have complete proof of fulfillment showing the session records, individual call timestamps and request hashes, and evidence that only the 1.37 USD for the three successful calls was captured while the rest was released. The decision is yours, and PayPal decides the outcome."
   },
   "usage": {
     "calls": [
@@ -583,86 +605,104 @@
         "stage": "screen",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 977,
+        "inputTokens": 967,
         "outputTokens": 4,
-        "thinkingTokens": 101,
-        "ms": 2734
+        "thinkingTokens": 0,
+        "ms": 1462
       },
       {
         "stage": "extract",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 1316,
-        "outputTokens": 2147,
+        "inputTokens": 1328,
+        "outputTokens": 2139,
         "thinkingTokens": 0,
-        "ms": 13056
+        "ms": 12527
       },
       {
         "stage": "analyze",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 2861,
-        "outputTokens": 1354,
+        "inputTokens": 2872,
+        "outputTokens": 1443,
         "thinkingTokens": 0,
-        "ms": 9526
+        "ms": 9705
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 694,
+        "inputTokens": 547,
         "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 1843
+        "ms": 1456
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 645,
+        "inputTokens": 533,
         "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 1981
+        "ms": 2323
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 718,
+        "inputTokens": 692,
         "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 2371
+        "ms": 2434
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 671,
-        "outputTokens": 92,
+        "inputTokens": 631,
+        "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 3110
+        "ms": 2683
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 532,
-        "outputTokens": 116,
+        "inputTokens": 626,
+        "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 2486
+        "ms": 1959
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 691,
+        "outputTokens": 106,
+        "thinkingTokens": 0,
+        "ms": 2087
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 510,
+        "outputTokens": 89,
+        "thinkingTokens": 0,
+        "ms": 3836
       },
       {
         "stage": "explain",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 510,
-        "outputTokens": 116,
+        "inputTokens": 544,
+        "outputTokens": 62,
         "thinkingTokens": 0,
-        "ms": 2614
+        "ms": 2278
       }
     ],
-    "inputTokens": 8924,
-    "outputTokens": 3973,
-    "thinkingTokens": 101
+    "inputTokens": 9941,
+    "outputTokens": 4083,
+    "thinkingTokens": 0
   }
 }
