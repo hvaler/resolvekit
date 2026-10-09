@@ -1,4 +1,4 @@
-import { hasSellerEvidence, newSellerEvidence } from './recorded';
+import { hasSellerEvidence, newSellerEvidence, submissionMismatch } from './recorded';
 import { utcStamp } from './time';
 import type { ActionCode, DisputeSnapshot, DisputeStatus, EvidenceSubmission, RecordedEvidence } from './types';
 
@@ -24,7 +24,18 @@ export type SendPhase = 'checking' | 'sending' | 'awaiting' | 'rereading';
 
 export type SendResult =
   | { kind: 'recorded'; snapshot: DisputeSnapshot; recorded: RecordedEvidence; resent: boolean; baseline: DisputeSnapshot }
-  | { kind: 'not_recorded'; snapshot: DisputeSnapshot; error: string; baseline: DisputeSnapshot };
+  | { kind: 'not_recorded'; snapshot: DisputeSnapshot; error: string; baseline: DisputeSnapshot }
+  /**
+   * PayPal shows new seller evidence that is not what we sent (another operator or process, or PayPal stored something
+   * else). Never reported as "recorded"; no automatic retry: a person reviews it.
+   */
+  | { kind: 'mismatch'; snapshot: DisputeSnapshot; recorded: RecordedEvidence; differs: string[]; baseline: DisputeSnapshot };
+
+/** A new seller entry is ours only if it matches what we sent field by field. */
+function classify(submission: EvidenceSubmission, snapshot: DisputeSnapshot, recorded: RecordedEvidence, baseline: DisputeSnapshot, resent: boolean): SendResult {
+  const differs = submissionMismatch(submission, recorded);
+  return differs.length ? { kind: 'mismatch', snapshot, recorded, differs, baseline } : { kind: 'recorded', snapshot, recorded, resent, baseline };
+}
 
 export interface SendOptions {
   requestId: string;
@@ -71,7 +82,7 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
     snapshot = await gw.getDispute(id);
     recorded = newSellerEvidence(snapshot, baseline);
   }
-  if (recorded) return { kind: 'recorded', snapshot, recorded, resent: false, baseline };
+  if (recorded) return classify(submission, snapshot, recorded, baseline, false);
   return { kind: 'not_recorded', snapshot, error: error ?? 'PayPal shows no evidence recorded', baseline };
 }
 
@@ -89,7 +100,8 @@ export async function safeRetry(
   const now = await gw.getDispute(submission.disputeId);
   const { baseline } = opts;
   const already = newSellerEvidence(now, baseline);
-  if (already) return { kind: 'recorded', snapshot: now, recorded: already, resent: false, baseline };
+  // Something new is there: ours (recorded) or someone else's (mismatch). Either way, nothing is sent again.
+  if (already) return classify(submission, now, already, baseline, false);
   const r = await submitWithReadBack(gw, submission, opts);
   return r.kind === 'recorded' ? { ...r, resent: true } : r;
 }

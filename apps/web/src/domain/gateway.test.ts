@@ -123,3 +123,40 @@ describe('simulated PayPal in the claim stage', () => {
     if (r.kind === 'recorded') expect(r.recorded).toMatchObject({ evidenceType: 'OTHER', carrier: '', tracking: '' });
   });
 });
+
+describe('M1: the read-back must match what we sent', () => {
+  it('evidence another operator sent (different notes) is not reported as ours, and stops the retry', async () => {
+    const g = gw('timeout'); // our first send times out: nothing stored
+    const first = await submitWithReadBack(g, submission, { requestId: 'rk-1' });
+    expect(first.kind).toBe('not_recorded');
+    // Meanwhile another operator (or process) submits different evidence on the same dispute.
+    await g.provideEvidence({ ...submission, notes: 'Someone else’s notes.' }, { requestId: 'other' });
+    const r = await safeRetry(g, submission, { requestId: 'rk-1', baseline: first.baseline });
+    expect(r.kind).toBe('mismatch');
+    if (r.kind === 'mismatch') expect(r.differs).toEqual(['notes']);
+    // Nothing of ours was sent again.
+    expect(g.sent.map((x) => x.requestId)).toEqual(['other']);
+  });
+
+  it('a new entry with other files, tracking or type is a mismatch; an exact one is recorded', async () => {
+    const base = { ...initial, readAt: 'x' };
+    const entry = (over: Partial<EvidenceSubmission>) => {
+      const s = { ...submission, ...over };
+      return { evidenceType: s.evidenceType, source: 'SUBMITTED_BY_SELLER', action: 'PROVIDE_EVIDENCE', date: '2026-10-09T00:00:00Z', carrier: s.carrier, tracking: s.tracking, notes: s.notes, files: s.files.map((f) => f.name), storedAt: '' };
+    };
+    const reading = (over: Partial<EvidenceSubmission>) => ({
+      getDispute: async () => ({ ...base, evidences: [entry(over)] }),
+      provideEvidence: async () => {},
+    });
+    for (const [over, field] of [
+      [{ files: [{ name: 'b.pdf', size: '1 KB' }] }, 'files'],
+      [{ tracking: '1Z-OTHER' }, 'tracking'],
+      [{ evidenceType: 'OTHER' as const }, 'evidence type'],
+    ] as Array<[Partial<EvidenceSubmission>, string]>) {
+      const r = await submitWithReadBack(reading(over), submission, { requestId: 'r', baseline: base });
+      expect(r.kind).toBe('mismatch');
+      if (r.kind === 'mismatch') expect(r.differs).toEqual([field]);
+    }
+    expect((await submitWithReadBack(reading({}), submission, { requestId: 'r', baseline: base })).kind).toBe('recorded');
+  });
+});

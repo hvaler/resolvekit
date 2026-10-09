@@ -284,7 +284,11 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
     addAudit(
       id,
       mode.kind === 'paypal' ? 'PayPal re-read' : 'Simulator re-read',
-      r.kind === 'recorded' ? `Status ${r.snapshot.status} · evidence stored` : `Status ${r.snapshot.status} · no evidence recorded`,
+      r.kind === 'recorded'
+        ? `Status ${r.snapshot.status} · evidence stored`
+        : r.kind === 'mismatch'
+          ? `Status ${r.snapshot.status} · new seller evidence that does not match what was sent (${r.differs.join(', ')})`
+          : `Status ${r.snapshot.status} · no evidence recorded`,
     );
     if (!mounted.current) return;
     setResult(r);
@@ -557,7 +561,32 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
           </div>
         )}
 
-        {flow === 'error' && (
+        {flow === 'error' && result?.kind === 'mismatch' && (
+          <div className="flex flex-1 items-center justify-center max-md:px-4">
+            <div className="flex w-[580px] flex-col gap-4 max-md:w-full">
+              <div role="alert" data-testid="readback-mismatch" className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-2xl border border-bad-line bg-bad-soft px-[18px] py-4">
+                <span aria-hidden="true" className="grid h-6 w-6 place-items-center rounded-full bg-bad text-body font-bold text-white">
+                  !
+                </span>
+                <div className="flex flex-col gap-[5px]">
+                  <strong className="text-[15px] font-semibold">New seller evidence that doesn&apos;t match what we sent</strong>
+                  <span className="text-body-lg leading-normal">
+                    {mode.kind === 'paypal' ? 'PayPal' : 'The simulator'} shows new seller evidence on this dispute, but its {result.differs.join(', ')}{' '}
+                    {result.differs.length === 1 ? 'differs' : 'differ'} from this submission. It is not reported as ours, and nothing will be sent again
+                    automatically: review the dispute in PayPal before doing anything else.
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button className="h-[42px]" onClick={onClose}>
+                  Back to case
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {flow === 'error' && result?.kind !== 'mismatch' && (
           <div className="flex flex-1 items-center justify-center max-md:px-4">
             <div className="flex w-[580px] flex-col gap-4 max-md:w-full">
               <div role="alert" className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-2xl border border-warn-line bg-warn-soft px-[18px] py-4">

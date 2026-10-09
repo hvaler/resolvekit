@@ -1,4 +1,4 @@
-import type { DisputeSnapshot, RecordedEvidence, TimelineItem } from './types';
+import type { DisputeSnapshot, EvidenceSubmission, RecordedEvidence, TimelineItem } from './types';
 
 /**
  * Evidence the merchant submitted, as PayPal reports it. A real dispute also lists the buyer's own entry
@@ -29,6 +29,20 @@ export function newSellerEvidence(after: DisputeSnapshot, before: DisputeSnapsho
   const seen = new Set(sellerEvidence(before).map(key));
   const fresh = sellerEvidence(after).filter((e) => !seen.has(key(e)));
   return fresh.length ? (fresh[fresh.length - 1] ?? null) : null;
+}
+
+/**
+ * Which fields of a seller entry differ from what we sent: evidence type, notes (full text), tracking (when we sent a
+ * carrier and a reference) and file names. Empty: the entry is our submission as PayPal stored it.
+ */
+export function submissionMismatch(sent: EvidenceSubmission, e: RecordedEvidence): string[] {
+  const out: string[] = [];
+  if (e.evidenceType !== sent.evidenceType) out.push('evidence type');
+  if (e.notes !== sent.notes) out.push('notes');
+  if (sent.carrier && sent.tracking && (e.tracking !== sent.tracking || e.carrier !== sent.carrier)) out.push('tracking');
+  const files = sent.files.map((f) => f.name);
+  if (files.length !== e.files.length || !files.every((f) => e.files.includes(f))) out.push('files');
+  return out;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
