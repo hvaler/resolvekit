@@ -41,7 +41,7 @@ services:
         sync: false
       - key: DEMO_CODE # given to judges in the Devpost testing instructions
         sync: false
-      - key: BINDINGS_JSON # {"<web case id>":"<PayPal sandbox dispute id>"}; see apps/server/bindings.example.json
+      - key: BINDINGS_JSON # {"<web case id>":{"dispute":"<PayPal sandbox dispute id>","capture":"<its capture id>"}}; npm run demo:prepare prints it
         sync: false
       - key: RESOLVEKIT_SESSION_SECRET # signs the demo-unlock cookie
         generateValue: true

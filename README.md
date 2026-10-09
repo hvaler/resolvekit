@@ -29,13 +29,58 @@ client in `packages/paypal`:
 
 | Route | What it does |
 |---|---|
-| `GET /api/health` | `{ paypal: "sandbox" \| "live" \| "unconfigured", bound: [case ids] }` after a lazy OAuth check |
+| `GET /api/health` | `{ paypal: "sandbox" \| "live" \| "unconfigured", bound: [case ids], bindings: { case: { status, reasons } } }` after a lazy OAuth check; status is `verified`, `invalid`, `unavailable` or `unchecked` |
 | `GET /api/disputes/{case}` | Reads the real dispute bound to the case and maps it: status, stage, reason, buyer-declared item type, allowed seller actions, evidence PayPal requests, every evidence entry with its source, response due date. For the agent case, also the MeterMCP session of the disputed capture (see [MeterMCP](#metermcp)) |
-| `POST /api/disputes/{case}/evidence` | Reads the dispute first, then checks: `provide_evidence` is offered now, the type is the one PayPal requests, notes ≤ 2,000 characters, tracking for proof of fulfillment. Builds the PDFs on the server from the case's synthetic documents (headed "SYNTHETIC TEST DOCUMENT") and sends them; for the agent case with a MeterMCP session, the PDF of the real session receipt instead. Answers `202 { sent: true }` or `{ error, paypalIssue }` (e.g. `EVIDENCE_TYPE_IS_NOT_ALLOWED`) |
+| `POST /api/disputes/{case}/intent` | Composes the **submission intent**: exactly what PayPal would receive, built on the server (see [How sending works](#how-sending-works-the-security-model)). Body: `{ evidenceType, edits, resolutions }` only |
+| `POST /api/disputes/{case}/intent/{id}/approve` | The merchant approves that exact content: `{ contentHash }` |
+| `POST /api/disputes/{case}/evidence` | `{ intentId }` and nothing else. Sends the approved intent after re-checking it on a fresh PayPal read. Builds the PDFs on the server from the case's synthetic documents (headed "SYNTHETIC TEST DOCUMENT"); for the agent case with a MeterMCP session, the PDF of the real session receipt instead. Answers `202 { sent: true }` or `{ error, paypalIssue }` (e.g. `EVIDENCE_TYPE_IS_NOT_ALLOWED`) |
+| `GET /api/disputes/{case}/audit` | The server's audit trail of the case: intents composed, approvals (who, when, content hash), sends (PayPal-Request-Id, PayPal's answer), refusals |
 
 The send never reports "recorded". The web app reads the dispute back and only shows **Recorded by PayPal** when PayPal
-lists new evidence `SUBMITTED_BY_SELLER` (`PROVIDE_EVIDENCE`) that was not there before sending. The buyer's own entry
-and PayPal's request never count.
+lists new evidence `SUBMITTED_BY_SELLER` (`PROVIDE_EVIDENCE`) that was not there before sending **and** that matches
+what was sent (evidence type, full notes, carrier and tracking, file names). New seller evidence that does not match
+(another operator, another process) is shown as such, is never reported as ours, and stops any automatic retry. The
+buyer's own entry and PayPal's request never count.
+
+### How sending works (the security model)
+
+"Nothing unsupported reaches PayPal; nothing is sent without the merchant's approval" is enforced **on the server**,
+not only in the browser:
+
+1. **The server composes the intent.** `POST …/intent` reads the dispute fresh from PayPal, verifies the binding (below),
+   rebuilds the case documents itself, takes *its own* stored analysis of exactly those documents and composes the notes
+   from the **supported** sentences only, with the same rules as the review screen (every contradiction resolved, the
+   evidence type allowed and satisfied, PayPal offering `provide_evidence`, ≤ 2,000 characters). A merchant edit counts
+   only if *this server* re-checked that exact text with the analyst (`/analysis/verify`) and found it supported. The
+   intent binds the case, the PayPal dispute, a hash of the documents, the analysis key, evidence type, carrier,
+   tracking, file names and the exact notes, under a content hash. Notes, files or tracking in any request body are
+   refused.
+2. **The merchant approves that content.** The review screen shows the server's intent (its id and hash included);
+   confirming sends `{ contentHash }`, and the server records the approver (the hosted demo session, or the local
+   operator), the time and the hash, persisted on the data dir.
+3. **Only the approved intent is sent.** `POST …/evidence { intentId }`: `approved → sending` is one synchronous
+   transition (two confirmations send once); right before sending the dispute is read fresh, the binding verified again
+   and the intent composed again: a different document hash or content hash refuses the send (409), as do a changed
+   binding or PayPal no longer offering `provide_evidence`. Every send of an intent carries the same PayPal-Request-Id.
+   A failed send can be retried with that same intent; a sent one cannot be sent again.
+4. **Approvals are invalidated, not trusted forever.** Editing a sentence, composing a newer intent, changing the
+   bindings, or 30 minutes passing ends an intent.
+5. **Intents belong to their session.** In hosted mode composing, reading, approving, cancelling or sending an intent
+   needs the demo unlock; each intent belongs to the demo session that composed it and does not exist for any other
+   (404). One session's actions never invalidate another's intents; when one session's evidence is in, the others'
+   sends fail with "PayPal already has seller evidence for this dispute". The store is bounded: one open intent per
+   session and case, 10 per session, 20 per client IP (whatever the number of sessions), 1,000 open / 2,000 stored as
+   a safety net (new ones are refused, existing ones never evicted), 20 compositions per IP per 10 minutes, 128-bit
+   ids, and an audit file compacted beyond 4 MB. A refused creation changes nothing.
+
+**Bindings are verified before any send, and fail closed.** A binding is
+`{ "<case id>": { "dispute": "PP-R-…", "capture": "<capture id>" } }`; `npm run demo:prepare` prints it with the
+capture it created. On a fresh read the dispute must be the bound one, with exactly one disputed transaction that is
+the bound capture, and the disputed amount (and the transaction's gross amount) equal to the case's amount and
+currency. Missing data fails. The old string form `"<case id>": "PP-R-…"` is still read and shown, but has no capture:
+it passes only if the dispute is about the demo case's own capture record, which a real sandbox payment never is, so
+it cannot send. An unreadable dispute answers `409 BINDING_UNAVAILABLE`, a mismatch `409 BINDING_INVALID` with the
+reasons, which the review screen shows. `/api/health` reports each binding's status; changing the bindings forgets it.
 
 **Real or simulated, per case.** A case runs on real PayPal only when it is bound to a real dispute in
 `apps/server/bindings.json` *and* `/api/health` reports the sandbox (or live) connected. Every other case runs on the
@@ -46,7 +91,8 @@ On a bound case every PayPal field (amount, reason, buyer-declared item type, st
 transaction, requested evidence, allowed actions) comes from the latest PayPal read, in the case header and the inbox
 row alike; only the merchant side (order and documents) comes from the demo case, and the analyst reads the documents as shown, PayPal's capture included. Before
 the first read, or if PayPal cannot be reached, those fields show "—" with the reason, never demo values. If the bound
-dispute's amount differs from the demo case's order, the case header says so, and the server logs it at startup.
+dispute's amount differs from the demo case's order, the case header says so, the server logs it at startup, and
+sending is blocked (see the binding check above).
 
 The API only answers the local web app. It listens on `127.0.0.1`, refuses other `Host` headers (DNS rebinding) and
 foreign `Origin`s, needs a per-launch token that the Vite proxy adds on the server side (the browser never sees it),
@@ -73,7 +119,7 @@ npm test               # packages/* (incl. the analyst, fake model, hosting) + a
 To use real sandbox disputes, bind cases to them and run the server next to the web app:
 
 ```bash
-cp apps/server/bindings.example.json apps/server/bindings.json   # git-ignored: { "<web case id>": "<PayPal dispute id>" }
+cp apps/server/bindings.example.json apps/server/bindings.json   # git-ignored: { "<case id>": { "dispute": "PP-R-…", "capture": "…" } }
 npm run server         # http://127.0.0.1:8787, loads .env, logs no secrets
 npm run dev            # or: npm run build && (cd apps/web && npx vite preview --port 4173)
 ```
@@ -163,7 +209,14 @@ demo is injected by a test switch; the receipt says both.
    sum of the OK calls with `final_capture: true` (`invoice_id` `<session>-settle`, a `note_to_payer` listing the
    calls); the rest of the authorization is released. Nothing used: the authorization is voided. If PayPal fails or
    answers anything unexpected the session stays `settlement_failed`, never charged; closing again retries with the
-   same `PayPal-Request-Id`.
+   same `PayPal-Request-Id`. If PayPal answers the capture **`PENDING`**, the session is `capture_pending`, not
+   settled: the receipt says the capture is pending and not a final charge (no "captured", `remainder_released:
+   false`), and ResolveKit will not use it as evidence. MeterMCP reads the capture back
+   (`GET /v2/payments/captures/{id}`) every 30 s, on demand and on a close retry: `COMPLETED` settles it once,
+   `DECLINED`/`FAILED` makes it `capture_declined` (the attempt stays on the receipt; nothing is claimed as charged).
+5. **Live MCP sessions are capped**: 200 in all and 20 per client IP (each initialize reserves its slot before the
+   session is set up), and a session idle for 15 minutes is closed (transport freed, its payment session closed like
+   `close_session`). `/health` reports live, rejected and expired MCP sessions.
 
 **Endpoints** (127.0.0.1:8790 only; `Host` must be this server, a browser `Origin` is refused, POST takes JSON only)
 
@@ -173,7 +226,8 @@ demo is injected by a test switch; the receipt says both.
 | `GET /approved`, `GET /cancelled` | the buyer's browser, from PayPal | Re-read the order from PayPal; the query string proves nothing |
 | `GET /sessions?capture=<id>` | apps/server | The session whose PayPal capture is `<id>` |
 | `GET /sessions/<id>/receipt.json`, `.pdf` | apps/server | Mandate (order, authorization, cap, approval time), every call (time, tool, price, status, request hash), totals, capture id, remainder released |
-| `POST /sessions/<id>/close` | admin | Close and settle (or retry a failed settlement) |
+| `POST /sessions/<id>/close` | admin | Close and settle (or retry a failed settlement; for a pending capture, reconcile it) |
+| `POST /sessions/<id>/reconcile` | admin | Read a `PENDING` capture back from PayPal now |
 
 The `/sessions` routes need the per-launch admin token (`x-metermcp-token`, written to `apps/metermcp/.runtime-token`,
 git-ignored); a session id (128 random bits) is never a credential. The ledger lives in `apps/metermcp/data/`
@@ -285,9 +339,12 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
    `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (the PayPal **sandbox** app, developer.paypal.com → Apps & Credentials),
    `GEMINI_API_KEY` (Google AI Studio), `GROQ_API_KEY` (console.groq.com; optional fallback), `DEMO_CODE` (12+
    random characters; it goes into the Devpost testing instructions) and `BINDINGS_JSON`:
-   `{"PP-R-TVH-10190665":"<sandbox dispute id>","PP-R-MMC-10190702":"<sandbox dispute id>"}` (see
-   `apps/server/bindings.example.json`). Bindings are validated at start; a bad one stops the service. Without
-   `BINDINGS_JSON` the server reads `/var/data/bindings.json`.
+   `{"PP-R-TVH-10190665":{"dispute":"<sandbox dispute id>","capture":"<its capture id>"},"PP-R-MMC-10190702":{…}}`
+   (exactly what `npm run demo:prepare` prints; see `apps/server/bindings.example.json`). Bindings are validated at
+   start; a bad one stops the service. A binding without the capture (the old string form) is read and shown but
+   cannot send. Without `BINDINGS_JSON` the server reads `/var/data/bindings.json`.
+   `PAYPAL_ENV` is `sandbox` in `render.yaml`: in hosted mode both services **refuse to start** on anything else;
+   `live` would additionally need `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, which the blueprint never sets.
 3. Render generates `RESOLVEKIT_SESSION_SECRET` (signs the unlock cookie) and `METERMCP_ADMIN_TOKEN` (given to
    `resolvekit` with `fromService`), and passes MeterMCP's private-network `host:port` as `METERMCP_URL`.
    `RENDER_EXTERNAL_URL` / `PORT` come from Render. A custom domain goes in `RESOLVEKIT_CUSTOM_DOMAINS` /
@@ -347,7 +404,10 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
   model except an edited sentence of a re-check.
 - Requests: `Host` must be the public host (`/healthz` excepted, for Render's health check); `/api` writes must
   carry the service's own `Origin`; POST is JSON only; per-IP limits (300 `/api` requests and 60 PayPal reads per 5
-  min); the client IP is the last `X-Forwarded-For` entry (one trusted proxy hop, `TRUSTED_PROXY_HOPS`).
+  min, 20 submission intents per 10 min); the client IP is the last `X-Forwarded-For` entry (one trusted proxy hop,
+  `TRUSTED_PROXY_HOPS`). Submission intents, approvals and sends need the demo unlock and belong to the demo session
+  that made them (see [How sending works](#how-sending-works-the-security-model)); an already unlocked browser keeps its
+  session when it unlocks again.
 - Headers on every answer: CSP (own scripts only; Google Fonts; `frame-ancestors 'none'`), HSTS, `nosniff`,
   `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`.
 - MeterMCP: `/mcp` is public for judges' own MCP clients. Free tools work for anyone; **creating a budget** (the

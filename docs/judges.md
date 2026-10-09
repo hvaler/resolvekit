@@ -31,10 +31,15 @@ says which model made the analysis and when ("cached" = stored; "live" = just ru
 **3. The contradiction.** The order and the shipping label say "Apt 4"; the carrier's delivery record says "Apt 4B". ResolveKit
 shows both values side by side, neutrally (no fraud accusation), and the affected sentences need your review.
 
-**4. Approve and send to real PayPal.** Click **Review what will be sent →**, check the claim ↔ proof list, then
-**Continue to confirm**. Unlock with the demo code if you have not yet, tick the approval box and **Submit evidence
-to PayPal**. ResolveKit reads the dispute back from PayPal and only says **Recorded by PayPal** when PayPal lists the
-new seller evidence; it shows what PayPal stored next to what was sent. PayPal accepts evidence once per dispute: if
+**4. Approve and send to real PayPal.** Click **Review what will be sent →** (unlock with the demo code first: on a
+real PayPal case the review is composed by the server for your session). The review shows exactly what the server
+will send, composed on the server from its own copy of the documents and the analysis (supported sentences only,
+with the intent id and content hash), next to the claim ↔ proof list. **Continue to confirm**, tick the approval box
+and **Submit evidence to PayPal**: the server records your approval of that exact content, checks again on a fresh
+PayPal read that the dispute is still this case's payment and that nothing changed, and only then sends it. Edit a
+sentence afterwards and the approval no longer counts. ResolveKit reads the dispute back from PayPal and only says
+**Recorded by PayPal** when PayPal lists new seller evidence that matches what was sent; it shows what PayPal stored
+next to what was sent, and the audit log recorded by the server. PayPal accepts evidence once per dispute: if
 the case already shows **Evidence recorded by PayPal**, another judge sent it first; you can still see the read-back,
 and the simulated cases let you walk the whole flow.
 
@@ -58,7 +63,8 @@ Transport "Streamable HTTP", URL above, header under Authentication/Headers). Fr
 uncharged failure; the receipt says it was injected). Call `quote_lookup`: it answers `payment_required`
 with an `approval_url`; open it, log in with the sandbox buyer account and approve the 5.00 USD budget. Then call
 `get_balance` (status `active`), use the paid tools, and `close_session`: MeterMCP captures only the successful calls
-and releases the rest, and `get_receipt` shows each call with its request hash. Without the header a paid tool answers
+and releases the rest, and `get_receipt` shows each call with its request hash. (If PayPal reports the capture
+`PENDING`, the session says `capture_pending` and claims no charge until PayPal completes it.) Without the header a paid tool answers
 `demo_code_required`. Or from the repo: `METERMCP_URL=<METERMCP_URL>/mcp METERMCP_DEMO_CODE=<DEMO_CODE> npm run demo-agent`.
 
 **Limits.** To keep the shared demo usable: per day, 60 live AI runs, 200 AI re-checks, 20 evidence sends and 20
