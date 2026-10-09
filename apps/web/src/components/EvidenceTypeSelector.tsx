@@ -16,7 +16,7 @@ export function EvidenceTypeSelector({
   options: EvidenceTypeOption[];
   selected: EvidenceType | null;
   onSelect: (t: EvidenceType) => void;
-  requested: EvidenceType;
+  requested: EvidenceType | null;
   requestedNote: string;
 }) {
   return (
@@ -24,8 +24,14 @@ export function EvidenceTypeSelector({
       <h3 className="m-0 text-[12.5px] font-semibold">Evidence type</h3>
       <div className="flex flex-wrap items-center gap-2 rounded-[7px] border border-info-line bg-info-soft px-[11px] py-2 text-[12.5px]">
         <span className="text-info">PayPal is asking for:</span>
-        <strong className="font-semibold">{EVIDENCE_TYPE_LABEL[requested]}</strong>
-        <span className="font-mono text-[10px] leading-[1.2] text-ink-3">{requested}</span>
+        {requested ? (
+          <>
+            <strong className="font-semibold">{EVIDENCE_TYPE_LABEL[requested]}</strong>
+            <span className="font-mono text-[10px] leading-[1.2] text-ink-3">{requested}</span>
+          </>
+        ) : (
+          <strong className="font-semibold text-ink-3">no evidence requested now</strong>
+        )}
         <span className="flex-1" />
         <span className="text-[11.5px] text-ink-3">{requestedNote}</span>
       </div>

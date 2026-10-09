@@ -147,12 +147,20 @@ export function AmountCell(p: P) {
     return t ? (
       <Stack align="end">
         <Money value={centsToMoney(t.cents)} currency="USD" size="total" />
-        <Sub>at risk</Sub>
+        <Sub>{t.unread ? `at risk · ${t.unread} not read` : 'at risk'}</Sub>
       </Stack>
     ) : null;
   }
   const r = dispute(p);
   if (!r) return null;
+  if (r.amount == null) {
+    return (
+      <Stack align="end">
+        <span className="font-mono text-label text-ink-3">—</span>
+        <Sub>{r.paypal === 'loading' ? 'Reading PayPal' : r.paypal === 'unavailable' ? 'PayPal unreachable' : 'Not reported'}</Sub>
+      </Stack>
+    );
+  }
   return (
     <span className={processing(r) ? 'text-ink-2' : 'text-ink'}>
       <Money value={money(r.amount)} currency={r.currency} size="row" />
@@ -205,10 +213,23 @@ export function StatusCell(p: P) {
   }
   const r = dispute(p);
   if (!r) return null;
+  if (r.paypal === 'loading' || r.paypal === 'unavailable') {
+    return (
+      <Stack>
+        <span className={cx('flex items-center gap-1.5 text-[12px]', r.paypal === 'unavailable' ? 'text-bad' : 'text-ink-3')}>
+          {r.paypal === 'loading' && (
+            <span aria-hidden="true" className="box-border h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-line-2 border-t-info" />
+          )}
+          {r.statusLabel}
+        </span>
+        <Sub>{r.paypal === 'loading' ? 'Real PayPal dispute' : 'No saved PayPal data'}</Sub>
+      </Stack>
+    );
+  }
   return (
     <Stack>
       <StatusBadge status={r.status} />
-      <Sub mono>{r.status}</Sub>
+      <Sub mono>{r.paypal === 'saved' ? `${r.status} · saved, PayPal unreachable` : r.status}</Sub>
     </Stack>
   );
 }

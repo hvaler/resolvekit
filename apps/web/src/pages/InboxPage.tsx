@@ -5,18 +5,32 @@ import { AppBar } from '../components/AppBar';
 import { InboxGrid } from '../components/inbox/InboxGrid';
 import { cx } from '../components/ui';
 import { CHIPS, applySnapshot, chipCounts, inboxSummary, toGridRow, type ChipKey, type InboxGridRow } from '../domain/inbox';
+import { boundInboxRow, payPalSource } from '../domain/paypalView';
 import { DEMO_NOW, inbox } from '../fixtures';
 
-/** Inbox rows: the synthetic disputes with the latest PayPal read applied (status, evidence recorded, opened). */
+/**
+ * Inbox rows. A dispute bound to real PayPal takes every PayPal field from PayPal (or "—" while reading / when
+ * unreachable) and its due time from the real clock; the synthetic ones take the simulator's read on the demo clock.
+ */
 function useRows(): InboxGridRow[] {
-  const { snapshots } = useServices();
-  return useMemo(() => inbox.map((d) => toGridRow(applySnapshot(d, snapshots[d.id]), DEMO_NOW)), [snapshots]);
+  const { snapshots, modeOf, modeKnown, readErrors } = useServices();
+  return useMemo(
+    () =>
+      inbox.map((d) => {
+        const src = payPalSource(modeKnown ? modeOf(d.id) : null, snapshots[d.id], readErrors[d.id]);
+        if (src.kind === 'simulated' || src.kind === 'checking') return toGridRow(applySnapshot(d, snapshots[d.id]), DEMO_NOW);
+        return toGridRow(boundInboxRow(d, src), new Date());
+      }),
+    [snapshots, modeOf, modeKnown, readErrors],
+  );
 }
 
 export function InboxPage() {
   const rows = useRows();
   const navigate = useNavigate();
-  const { snapshots, sync, refreshAll } = useServices();
+  const { snapshots, sync, refreshAll, modeKnown } = useServices();
+  // Rows are hidden until it is known which disputes are real PayPal ones, so no demo value stands in for PayPal's.
+  const loading = !sync.loaded || !modeKnown;
   const tracked = useMemo(() => inbox.map((r) => r.id).filter((id) => snapshots[id]), [snapshots]);
   usePolling(tracked);
   const lastChecked = Math.max(...Object.values(snapshots).map((s) => s.checkedAt));
@@ -41,7 +55,7 @@ export function InboxPage() {
         <div className="flex items-end justify-between gap-5">
           <div className="flex flex-col gap-[3px]">
             <h1 className="m-0 text-title-lg">Disputes</h1>
-            <span className="text-[13.5px] text-ink-2">{inboxSummary(rows)}</span>
+            <span className="text-[13.5px] text-ink-2">{modeKnown ? inboxSummary(rows) : 'Loading disputes…'}</span>
           </div>
           <span className="text-[12.5px] text-ink-3">Sorted by due date. New disputes can take a few minutes to appear and to open.</span>
         </div>
@@ -101,7 +115,7 @@ export function InboxPage() {
         <div role="region" aria-label="Disputes grid">
           <InboxGrid
             rows={rows}
-            loading={!sync.loaded}
+            loading={loading}
             quickFilter={q}
             chips={chips}
             resetToken={resetToken}

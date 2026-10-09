@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
-import { usePolling, useSecondsSince, useServices } from '../app/services';
+import { usePayPalSource, usePolling, useSecondsSince, useServices } from '../app/services';
 import { useCaseDraft } from '../app/useCaseDraft';
 import { AnalysisBar } from '../components/AnalysisBar';
 import { AppBar } from '../components/AppBar';
@@ -13,6 +13,7 @@ import { EvidenceCard } from '../components/EvidenceCard';
 import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
+import { caseAllowedActions, caseHeaderView, withPayPal } from '../domain/paypalView';
 import { hasSellerEvidence } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
@@ -32,18 +33,24 @@ export function CasePage() {
   return <NotInDemo id={id} />;
 }
 
-function CaseFileScreen({ c }: { c: CaseFile }) {
-  const id = c.summary.id;
+function CaseFileScreen({ c: demo }: { c: CaseFile }) {
+  const id = demo.summary.id;
   const { snapshots, addAudit } = useServices();
   usePolling([id]);
-  const snap = snapshots[id];
+  const source = usePayPalSource(id);
+  // A bound case only uses a snapshot read from PayPal; a simulated one uses the simulator's.
+  const snap = source.kind === 'live' || source.kind === 'simulated' ? snapshots[id] : undefined;
   const navigate = useNavigate();
   const approveMatch = useMatch('/cases/:id/approve');
   const secs = useSecondsSince(snap?.checkedAt ?? null);
+  // PayPal's fields (amount, reason, status, requested evidence…) from PayPal for a bound case; demo data otherwise.
+  const liveSnap = source.kind === 'live' ? source.snap : null;
+  // `source` is rebuilt every render; its kind and PayPal snapshot are what matter.
+  const c = useMemo(() => withPayPal(demo, source), [demo, source.kind, liveSnap]);
 
   const submitted = !!snap && hasSellerEvidence(snap);
-  const allowed: readonly ActionCode[] = snap?.allowedActions ?? c.allowedActions;
-  const status = snap?.status ?? c.summary.status;
+  const allowed: readonly ActionCode[] = caseAllowedActions(source, snapshots[id], demo.allowedActions);
+  const status = snap?.status ?? demo.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
   const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit });
 
@@ -75,9 +82,7 @@ function CaseFileScreen({ c }: { c: CaseFile }) {
           }
         />
         <CaseHeader
-          summary={c.summary}
-          status={status}
-          statusDetail={statusDetail}
+          view={caseHeaderView({ summary: demo.summary, source, simulatedStatus: status, statusDetail, now: new Date() })}
           statusHighlight={submitted}
           wide={c.kind === 'agent'}
           className="border-b border-line"
@@ -163,9 +168,13 @@ function ProcessingScreen() {
         </Link>
         <div className="overflow-hidden rounded-2xl border border-line bg-surface">
           <CaseHeader
-            summary={s}
-            status={status}
-            statusDetail={`${status} · ${opened ? 'opened by PayPal' : s.statusReadAgo}`}
+            view={caseHeaderView({
+              summary: s,
+              source: { kind: 'simulated' },
+              simulatedStatus: status,
+              statusDetail: `${status} · ${opened ? 'opened by PayPal' : s.statusReadAgo}`,
+              now: new Date(),
+            })}
             statusHighlight
             processing={!opened}
             className="border-b border-line"

@@ -243,7 +243,8 @@ export interface CaseFile {
     rejectionStep: number;
     note: string;
   };
-  requestedEvidenceType: EvidenceType;
+  /** What PayPal asks the seller for; null when PayPal requests nothing (e.g. once the seller's evidence is in). */
+  requestedEvidenceType: EvidenceType | null;
   requestedNote: string;
   evidenceTypes: EvidenceTypeCandidate[];
   fulfillment: Fulfillment;

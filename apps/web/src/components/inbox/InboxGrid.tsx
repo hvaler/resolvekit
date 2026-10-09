@@ -188,6 +188,8 @@ export function InboxGrid({ rows, loading, quickFilter, chips, resetToken, onOpe
     const focusedId = focused && !focused.rowPinned ? api.getDisplayedRowAtIndex(focused.rowIndex)?.id : undefined;
     api.applyTransaction({ update, add });
     const nodes = update.map((r) => api.getRowNode(r.id)).filter((n) => n != null);
+    // A cell only redraws when its own field changes; renderers also read other fields (reason, due note…), so force it.
+    api.refreshCells({ rowNodes: nodes, force: true });
     api.flashCells({ rowNodes: nodes, columns: ['status', 'next', 'due'], flashDuration: 1200 });
     if (focused && focusedId && gridHasFocus) {
       const node = api.getRowNode(focusedId);

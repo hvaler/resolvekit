@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SimulatedDisputeGateway, type DisputeGateway, type SimulatedOutcome } from '../domain/gateway';
 import { HttpDisputeGateway, RoutingDisputeGateway, modeFor, type GatewayMode, type ServerHealth } from '../domain/httpGateway';
+import { payPalSource, type PayPalSource } from '../domain/paypalView';
 import { utcHm } from '../domain/time';
 import type { AuditEntry, DisputeSnapshot } from '../domain/types';
 import { initialSnapshots, processingDispute, processingOpening } from '../fixtures';
@@ -29,6 +30,10 @@ interface Services {
   modeOf: (caseId: string) => GatewayMode;
   /** The server's PayPal connection, once checked (null while checking). */
   health: ServerHealth | null;
+  /** Whether each case is real or simulated is known (the server answered, or there is no server). */
+  modeKnown: boolean;
+  /** Why the latest read of a case failed; cleared by the next successful read. */
+  readErrors: Readonly<Record<string, string>>;
   /** The simulated PayPal behind {@link gateway}, for the demo controls. */
   simulator: SimulatedDisputeGateway;
   sync: SyncState;
@@ -97,6 +102,7 @@ export function ServicesProvider({
   }, []);
 
   const [sync, setSync] = useState<SyncState>({ syncing: false, failed: false, loaded: false });
+  const [readErrors, setReadErrors] = useState<Record<string, string>>({});
   const inFlight = useRef(0);
   const refreshAll = useCallback(
     async (ids: readonly string[]) => {
@@ -105,14 +111,31 @@ export function ServicesProvider({
       const results = await Promise.allSettled(ids.map((id) => gateway.getDispute(id)));
       // A failed read keeps the last known state; the sync indicator says so and shows its age.
       let failed = false;
-      for (const r of results) {
-        if (r.status === 'fulfilled') applySnapshot(r.value);
-        else failed = true;
-      }
+      const errors: Record<string, string | null> = {};
+      results.forEach((r, i) => {
+        const id = ids[i]!;
+        if (r.status === 'fulfilled') {
+          // A simulator read that was in flight when the case turned out to be bound must not replace PayPal's data.
+          if (modeOf(id).kind === 'paypal' && r.value.origin?.kind !== 'paypal') return;
+          applySnapshot(r.value);
+          errors[id] = null;
+        } else {
+          failed = true;
+          errors[id] = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        }
+      });
+      setReadErrors((all) => {
+        const next = { ...all };
+        for (const [id, e] of Object.entries(errors)) {
+          if (e == null) delete next[id];
+          else next[id] = e;
+        }
+        return next;
+      });
       inFlight.current -= 1;
       setSync({ syncing: inFlight.current > 0, failed, loaded: true });
     },
-    [gateway, applySnapshot],
+    [gateway, applySnapshot, modeOf],
   );
   const refresh = useCallback((id: string) => refreshAll([id]), [refreshAll]);
 
@@ -135,9 +158,10 @@ export function ServicesProvider({
     setAudit((all) => ({ ...all, [id]: [...(all[id] ?? []), { time: utcHm(new Date()), who, what }] }));
   }, []);
 
+  const modeKnown = !http || health != null;
   const value = useMemo<Services>(
-    () => ({ gateway, gatewayFor, modeOf, health, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit }),
-    [gateway, gatewayFor, modeOf, health, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit],
+    () => ({ gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit }),
+    [gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit],
   );
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }
@@ -146,6 +170,12 @@ export function useServices(): Services {
   const v = useContext(ServicesContext);
   if (!v) throw new Error('useServices must be used inside ServicesProvider');
   return v;
+}
+
+/** Where this case's PayPal fields come from now: demo/simulator, or PayPal (reading, live, saved, unreachable). */
+export function usePayPalSource(caseId: string): PayPalSource {
+  const { modeOf, modeKnown, snapshots, readErrors } = useServices();
+  return payPalSource(modeKnown ? modeOf(caseId) : null, snapshots[caseId], readErrors[caseId]);
 }
 
 /** Re-read the dispute from PayPal every 30 s while the page is open. */

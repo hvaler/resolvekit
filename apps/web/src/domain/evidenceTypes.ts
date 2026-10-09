@@ -35,7 +35,7 @@ export function isEvidenceTypeAllowed(reason: DisputeReason, type: EvidenceType)
 
 export function evidenceTypeOptions(
   reason: DisputeReason,
-  requested: EvidenceType,
+  requested: EvidenceType | null,
   candidates: readonly EvidenceTypeCandidate[],
 ): EvidenceTypeOption[] {
   return candidates.map((c) => {

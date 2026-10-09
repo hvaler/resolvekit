@@ -15,8 +15,10 @@ export interface InboxDispute {
   id: string;
   /** Plain-language reason. */
   reason: string;
-  item: BuyerItemType;
-  amount: number;
+  /** Buyer-declared item type label ("—" when PayPal reports none). */
+  item: BuyerItemType | (string & {});
+  /** Disputed amount; null when it could not be read from PayPal (bound dispute). */
+  amount: number | null;
   currency: string;
   /** PayPal stage code (INQUIRY, CHARGEBACK…); null until PayPal opens the dispute. */
   stage: string | null;
@@ -31,6 +33,11 @@ export interface InboxDispute {
   respondBy: string | null;
   /** Shown instead of a due time when {@link respondBy} is null. */
   dueNote: string | null;
+  /**
+   * Bound to a real PayPal dispute: where its PayPal fields stand. `saved` = the last good read, the latest failed.
+   * Absent for demo/simulated disputes.
+   */
+  paypal?: 'loading' | 'live' | 'saved' | 'unavailable';
 }
 
 /** What the grid shows: the dispute plus the values its columns sort and filter on. */
@@ -53,6 +60,8 @@ export interface TotalsRow {
   byStatus: Record<string, number>;
   /** Cents in resolved disputes that pass the filters (not counted). */
   resolvedCents: number;
+  /** Open disputes whose amount could not be read from PayPal (not in {@link cents}). */
+  unread: number;
 }
 
 export type GridRow = InboxGridRow | TotalsRow;
@@ -128,7 +137,7 @@ export function toGridRow(d: InboxDispute, now: Date): InboxGridRow {
     ...d,
     kind: 'dispute',
     dueH: dueHours(d.respondBy, now),
-    statusLabel: INBOX_STATUS_LABEL[d.status],
+    statusLabel: d.paypal === 'loading' ? 'Reading PayPal…' : d.paypal === 'unavailable' ? 'PayPal unreachable' : INBOX_STATUS_LABEL[d.status],
     stageLabel: d.stage ? (STAGE_LABEL[d.stage] ?? d.stage) : null,
   };
 }
@@ -139,7 +148,7 @@ export function toGridRow(d: InboxDispute, now: Date): InboxGridRow {
 export const quickFilterText = {
   due: (): string => '',
   dispute: (r: InboxGridRow): string => `${r.id} ${r.reason}`,
-  amount: (r: InboxGridRow): string => money(r.amount),
+  amount: (r: InboxGridRow): string => (r.amount == null ? '' : money(r.amount)),
   status: (r: InboxGridRow): string => `${r.statusLabel} ${r.status}`,
   ready: (): string => '',
   next: (r: InboxGridRow): string => `${r.next} ${r.nextSub ?? ''}`.trim(),
@@ -208,8 +217,15 @@ export function chipCounts(rows: readonly InboxGridRow[]): Record<ChipKey, numbe
 // Totals at risk (pinned row), computed from the rows that pass the filters. Resolved disputes are excluded.
 
 export function computeTotals(rows: Iterable<InboxGridRow>): TotalsRow {
-  const t: TotalsRow = { kind: 'totals', id: '__totals', n: 0, cents: 0, byStatus: {}, resolvedCents: 0 };
+  const t: TotalsRow = { kind: 'totals', id: '__totals', n: 0, cents: 0, byStatus: {}, resolvedCents: 0, unread: 0 };
   for (const r of rows) {
+    if (r.amount == null) {
+      if (r.status !== 'RESOLVED') {
+        t.n++;
+        t.unread++;
+      }
+      continue;
+    }
     const c = Math.round(r.amount * 100);
     if (r.status === 'RESOLVED') {
       t.resolvedCents += c;

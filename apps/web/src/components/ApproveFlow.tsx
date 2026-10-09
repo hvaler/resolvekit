@@ -293,8 +293,10 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                     </span>
                     {submission.evidenceType === c.requestedEvidenceType ? (
                       <span className="text-[12px] text-ok">✓ Matches what PayPal is asking for</span>
-                    ) : (
+                    ) : c.requestedEvidenceType ? (
                       <span className="text-[12px] text-warn">! PayPal is asking for {EVIDENCE_TYPE_LABEL[c.requestedEvidenceType]}</span>
+                    ) : (
+                      <span className="text-[12px] text-warn">! PayPal is not requesting evidence now</span>
                     )}
                   </Row>
                   <Row k="Carrier" ddClass="font-mono text-body font-medium leading-[1.4]">
