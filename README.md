@@ -24,6 +24,28 @@ ResolveKit runs on the PayPal **Customer Disputes API (v1)** against the free sa
 Every behaviour above was verified in the sandbox before building on it. See
 [`docs/sandbox-findings.md`](docs/sandbox-findings.md).
 
+The browser never talks to PayPal. `apps/server` (Node 24, no framework) holds the credentials and uses the typed
+client in `packages/paypal`:
+
+| Route | What it does |
+|---|---|
+| `GET /api/health` | `{ paypal: "sandbox" \| "live" \| "unconfigured", bound: [case ids] }` after a lazy OAuth check |
+| `GET /api/disputes/{case}` | Reads the real dispute bound to the case and maps it: status, stage, reason, buyer-declared item type, allowed seller actions, evidence PayPal requests, every evidence entry with its source, response due date |
+| `POST /api/disputes/{case}/evidence` | Reads the dispute first, then checks: `provide_evidence` is offered now, the type is the one PayPal requests, notes ≤ 2,000 characters, tracking for proof of fulfillment. Builds the PDFs on the server from the case's synthetic documents (headed "SYNTHETIC TEST DOCUMENT") and sends them. Answers `202 { sent: true }` or `{ error, paypalIssue }` (e.g. `EVIDENCE_TYPE_IS_NOT_ALLOWED`) |
+
+The send never reports "recorded". The web app reads the dispute back and only shows **Recorded by PayPal** when PayPal
+lists new evidence `SUBMITTED_BY_SELLER` (`PROVIDE_EVIDENCE`) that was not there before sending. The buyer's own entry
+and PayPal's request never count.
+
+**Real or simulated, per case.** A case runs on real PayPal only when it is bound to a real dispute in
+`apps/server/bindings.json` *and* `/api/health` reports the sandbox (or live) connected. Every other case runs on the
+in-browser simulator and is never sent to PayPal. The app bar says which: **PayPal sandbox · live `PP-R-…`** or
+**Simulated PayPal**. Simulated read-backs say *Recorded by the PayPal simulator*.
+
+The API only answers the local web app. It listens on `127.0.0.1`, refuses other `Host` headers (DNS rebinding) and
+foreign `Origin`s, needs a per-launch token that the Vite proxy adds on the server side (the browser never sees it),
+and takes JSON only for writes. The Vite dev/preview proxy also refuses cross-site requests before adding the token.
+
 ## Principles
 
 1. **Nothing is claimed without evidence.** Every sentence links to its source; unsupported sentences are not sent.
@@ -36,16 +58,27 @@ Every behaviour above was verified in the sandbox before building on it. See
 Requires Node.js 24+ (TypeScript runs natively, no build step).
 
 ```bash
-cp .env.example .env   # PayPal sandbox app credentials
-npm test
+cp .env.example .env   # PayPal sandbox app credentials (never committed)
+npm install
+npm test               # packages/paypal + apps/server (node --test, no network) + apps/web (vitest)
 ```
+
+To use real sandbox disputes, bind cases to them and run the server next to the web app:
+
+```bash
+cp apps/server/bindings.example.json apps/server/bindings.json   # git-ignored: { "<web case id>": "<PayPal dispute id>" }
+npm run server         # http://127.0.0.1:8787, loads .env, logs no secrets
+npm run dev            # or: npm run build && (cd apps/web && npx vite preview --port 4173)
+```
+
+Without the server, or without credentials, every case runs on the simulator.
 
 ## Web app
 
 `apps/web` is the merchant workspace (Vite + React 18 + TypeScript + Tailwind CSS): inbox, case file
 (timeline · evidence · response draft), approve-and-send with the PayPal re-read, the agent-purchase case and the
-"PayPal is still processing" state. It runs on synthetic data and a simulated `DisputeGateway`; the browser never
-calls PayPal (the real client in `packages/paypal` will sit behind a server).
+"PayPal is still processing" state. Case documents are synthetic. Cases bound to a real sandbox dispute read and write
+PayPal through `apps/server` (`HttpDisputeGateway`); the others use the simulated `DisputeGateway`.
 
 The inbox and the agent case's per-call receipt are built on **[AG Grid](https://www.ag-grid.com/) Community**
 (hackathon sponsor tool; `ag-grid-community` + `ag-grid-react` 33.3.2, no Enterprise modules). The inbox grid does the
@@ -60,10 +93,10 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # type-checks, then builds apps/web/dist
 npm run typecheck
-npm test           # packages/paypal (node --test) + apps/web (vitest)
+npm test           # packages/paypal + apps/server (node --test) + apps/web (vitest)
 ```
 
-In development a small **Dev** control (bottom left) picks what the simulated PayPal does after evidence is
+In development a small **Dev · simulator** control (bottom left; hidden on cases running on real PayPal) picks what the simulated PayPal does after evidence is
 submitted: *Waiting for buyer*, *Under review*, or *Timeout* (read back, then safe retry). It can also make PayPal
 open the new dispute now (otherwise it opens after ~75 s) or simulate PayPal being unreachable. In other builds add
 `?dev` to the URL, or `?outcome=under_review|timeout` to preselect it.
