@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
@@ -297,6 +297,83 @@ test('M3: approvals and sends are persisted on the data dir and listed by the au
   // The audit route answers the same events.
   const r = await app(get(`/api/disputes/${CASE}/audit`));
   assert.deepEqual(((await r.json()) as { events: Array<{ kind: string }> }).events.map((e) => e.kind), events.map((e) => e.kind));
+});
+
+/**
+ * A data dir whose disk can fail on demand: `break()` moves the directory aside (keeping what was written) and puts a
+ * plain file in its place, so every later write fails; `restore()` moves it back.
+ */
+function fragileDir(t: { after: (fn: () => void) => void }) {
+  const root = mkdtempSync(join(tmpdir(), 'rk-fragile-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dir = join(root, 'data');
+  const kept = join(root, 'kept');
+  mkdirSync(dir);
+  const at = (d: string) => ({ file: join(d, 'intents.json'), eventsFile: join(d, 'audit-events.jsonl') });
+  return {
+    files: at(dir),
+    kept: at(kept),
+    break: () => {
+      renameSync(dir, kept);
+      writeFileSync(dir, 'not a directory');
+    },
+    restore: () => {
+      rmSync(dir, { force: true });
+      renameSync(kept, dir);
+    },
+  };
+}
+
+test('M3: when the approval cannot be written durably, nothing goes to PayPal (503) and the intent stays approved', async (t) => {
+  const disk = fragileDir(t);
+  const { app, pp } = await setup({ intents: new IntentStore({ ...disk.files, now: () => NOW }) });
+  const i = await propose(app);
+  assert.equal((await approve(app, i)).status, 200);
+  disk.break();
+  const r = await app(post(evidencePath, { intentId: i.id }));
+  assert.equal(r.status, 503);
+  assert.equal((await r.json()).error, 'AUDIT_UNAVAILABLE');
+  assert.equal(pp.sends.length, 0);
+  assert.equal(((await (await app(get(`${intentPath}/${i.id}`))).json()) as Intent).status, 'approved');
+  // Once the disk is back, the same approved intent sends.
+  disk.restore();
+  assert.equal((await app(post(evidencePath, { intentId: i.id }))).status, 202);
+  assert.equal(pp.sends.length, 1);
+});
+
+test('M3: when the send log cannot be written, the send is refused before PayPal is called', async (t) => {
+  const disk = fragileDir(t);
+  const root = mkdtempSync(join(tmpdir(), 'rk-state-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // State on a good disk; audit events and the send log beside them on the failing one.
+  const { app, pp, lines } = await setup({ intents: new IntentStore({ file: join(root, 'intents.json'), eventsFile: disk.files.eventsFile, now: () => NOW }) });
+  const i = await propose(app);
+  assert.equal((await approve(app, i)).status, 200);
+  disk.break();
+  const r = await app(post(evidencePath, { intentId: i.id }));
+  assert.equal(r.status, 503);
+  assert.equal((await r.json()).error, 'AUDIT_UNAVAILABLE');
+  assert.equal(pp.sends.length, 0);
+  assert.ok(lines.some((l) => l.startsWith('AUDIT UNAVAILABLE')));
+  assert.equal(((await (await app(get(`${intentPath}/${i.id}`))).json()) as Intent).status, 'approved');
+});
+
+test('M3: a write that fails after PayPal accepted is reported, and a restart finds an unfinished send, not an unsent approval', async (t) => {
+  const disk = fragileDir(t);
+  const { app, pp, lines } = await setup({ sendDelayMs: 100, intents: new IntentStore({ ...disk.files, now: () => NOW }) });
+  const i = await propose(app);
+  assert.equal((await approve(app, i)).status, 200);
+  const pending = app(post(evidencePath, { intentId: i.id }));
+  while (pp.sends.length === 0) await new Promise((r) => setTimeout(r, 5));
+  disk.break();
+  assert.equal((await pending).status, 202);
+  assert.ok(lines.some((l) => l.startsWith(`AUDIT NOT DURABLE: outcome of intent ${i.id}`)));
+  // What reached the disk before PayPal was called: the "sending" state and send_started.
+  const reloaded = new IntentStore(disk.kept);
+  assert.deepEqual(reloaded.events(CASE).map((e) => e.kind), ['intent_created', 'intent_approved', 'send_started']);
+  const after = reloaded.peek(i.id)!;
+  assert.equal(after.status, 'failed');
+  assert.match(after.reason!, /restarted during the send/);
 });
 
 test('ordering: a creation that fails (PayPal unreadable, blocked draft) retires nothing: the approved intent still sends', async () => {

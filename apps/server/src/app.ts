@@ -612,8 +612,14 @@ export function createApi(opts: ApiOptions): Api {
         }
       }
 
+      // The send_started line must be on disk before PayPal is called: an evidence submission is never missing from
+      // the trail.
+      const started = intents.recordChecked({ caseId, kind: 'send_started', actor: who.actor, disputeId: boundId, intentId, contentHash: intent.contentHash, requestId: intent.requestId });
+      if (!started.durable) {
+        log(`AUDIT UNAVAILABLE: send_started not written · case ${caseId} · intent ${intentId}; nothing sent`);
+        return refuse(json(503, { error: 'AUDIT_UNAVAILABLE', detail: 'The send could not be recorded durably, so nothing was sent; try again later' }), 'audit log unavailable', false);
+      }
       sending = true;
-      intents.record({ caseId, kind: 'send_started', actor: who.actor, disputeId: boundId, intentId, contentHash: intent.contentHash, requestId: intent.requestId });
       const tracking = { carrier_name: intent.carrier, tracking_number: intent.tracking, ...(intent.carrier === 'OTHER' ? { carrier_name_other: 'Digital delivery' } : {}) };
       try {
         await paypal.disputes.provideEvidence(
@@ -630,7 +636,11 @@ export function createApi(opts: ApiOptions): Api {
         intents.failed(intentId, who.actor, failureText(e));
         return fromPayPalError(e);
       }
-      intents.sent(intentId, who.actor, 'accepted by PayPal (read back to confirm)');
+      if (!intents.sent(intentId, who.actor, 'accepted by PayPal (read back to confirm)')) {
+        // PayPal has the evidence; only our record of the outcome is not durable. send_started is on disk, so after a
+        // restart the intent reads PayPal back (seller evidence present) instead of sending again.
+        log(`AUDIT NOT DURABLE: outcome of intent ${intentId} (case ${caseId} -> ${boundId}) not written; PayPal accepted it`);
+      }
       log(`provide-evidence sent · case ${caseId} → ${boundId} · ${intent.evidenceType} · ${files.length} file(s)${sid ? ` · MeterMCP receipt ${sid}` : ''} · intent ${intentId} · request ${intent.requestId}`);
       // Accepted by PayPal is not "recorded": the client reads the dispute back to find out what PayPal stored.
       return json(202, { sent: true, intent: publicIntent(intents.get(intentId, who.actor)!) });

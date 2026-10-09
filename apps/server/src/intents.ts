@@ -26,7 +26,10 @@
  * about sends (started, sent, failed: bounded by the daily send cap) go to a separate append-only log that is never
  * evicted or compacted.
  *
- * Persisted on the data dir when given files. What is written: the intents (including the notes text the merchant
+ * Persisted on the data dir when given files. A send is durable or does not happen: the "sending" state (with the
+ * approval it rests on) and the send_started event must reach the disk before anything goes to PayPal, or the send is
+ * refused (503); other writes stay best effort, and a write that fails after PayPal accepted is reported to the caller.
+ * What is written: the intents (including the notes text the merchant
  * approved, which is composed from the case's documents), the analysis hashes and the audit events (codes, hashes,
  * ids; no document text). No secrets.
  */
@@ -191,27 +194,32 @@ export class IntentStore {
 
   // ---------------------------------------------------------------------------------------------------- persistence
 
-  private writeNow() {
+  /** Whether the state reached the disk (true without a file: nothing to persist). */
+  private writeNow(): boolean {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    if (!this.file) return;
+    if (!this.file) return true;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
       const tmp = `${this.file}.tmp`;
       writeFileSync(tmp, JSON.stringify({ intents: [...this.intents.values()], sentDisputes: Object.fromEntries(this.sentDisputes) }));
       renameSync(tmp, this.file);
+      return true;
     } catch {
-      /* best effort: the in-memory state still holds */
+      // Ordinary transitions: best effort, the in-memory state still holds. Sends check the result.
+      return false;
     }
   }
 
   /** Ordinary transitions are written shortly after (batched); sends and their outcomes are written at once. */
-  private save(now = false) {
-    if (!this.file) return;
+  private save(now = false): boolean {
+    if (!this.file) return true;
     if (now) return this.writeNow();
-    if (this.saveTimer) return;
-    this.saveTimer = setTimeout(() => this.writeNow(), 200);
-    this.saveTimer.unref?.();
+    if (!this.saveTimer) {
+      this.saveTimer = setTimeout(() => this.writeNow(), 200);
+      this.saveTimer.unref?.();
+    }
+    return true;
   }
 
   /** Write any pending state now (shutdown, tests). */
@@ -234,6 +242,11 @@ export class IntentStore {
   }
 
   record(e: Omit<AuditEvent, 'at'> & { at?: string }): AuditEvent {
+    return this.recordChecked(e).event;
+  }
+
+  /** {@link record}, saying whether the event reached the disk (true without a file). */
+  recordChecked(e: Omit<AuditEvent, 'at'> & { at?: string }): { event: AuditEvent; durable: boolean } {
     const ev: AuditEvent = { at: e.at ?? this.iso(), ...e } as AuditEvent;
     if (SEND_KINDS.includes(ev.kind)) {
       // Sends: append-only, never evicted (bounded by the daily send cap).
@@ -243,12 +256,14 @@ export class IntentStore {
           mkdirSync(dirname(this.sendsFile), { recursive: true });
           appendFileSync(this.sendsFile, JSON.stringify(ev) + '\n');
         } catch {
-          /* the in-memory log still has it */
+          // The in-memory log still has it; the caller decides whether that is enough.
+          return { event: ev, durable: false };
         }
       }
-      return ev;
+      return { event: ev, durable: true };
     }
     this.bucketPush(ev);
+    let durable = true;
     if (this.eventsFile) {
       try {
         mkdirSync(dirname(this.eventsFile), { recursive: true });
@@ -260,10 +275,11 @@ export class IntentStore {
           this.eventsBytes += bytes;
         }
       } catch {
-        /* the in-memory log still has it */
+        // The in-memory log still has it.
+        durable = false;
       }
     }
-    return ev;
+    return { event: ev, durable };
   }
 
   /** Rewrite the events file within half its budget, taking every session's newest events in turn (fair share). */
@@ -514,7 +530,13 @@ export class IntentStore {
     }
     const previous = i.status;
     i.status = 'sending';
-    this.save(true);
+    // Nothing goes to PayPal unless the approval and the "sending" state are on disk: a restart then finds the send
+    // and reads PayPal before any retry, and the trail cannot lose an evidence submission.
+    if (!this.save(true)) {
+      i.status = previous;
+      this.unlock(i);
+      return { ok: false, status: 503, error: 'AUDIT_UNAVAILABLE', detail: 'The approval could not be recorded durably, so nothing was sent; try again later', intent: i };
+    }
     return { ok: true, intent: i, previous };
   }
 
@@ -546,16 +568,18 @@ export class IntentStore {
     this.save(true);
   }
 
-  sent(id: string, actor: string, detail: string) {
+  /** sending → sent. False when the outcome did not reach the disk (PayPal has it anyway: the caller reports it). */
+  sent(id: string, actor: string, detail: string): boolean {
     const i = this.intents.get(id);
-    if (!i) return;
+    if (!i) return false;
     this.unlock(i);
     i.status = 'sent';
     i.sentAt = this.iso();
     i.reason = null;
     if (i.disputeId) this.sentDisputes.set(i.disputeId, { intentId: id, at: i.sentAt });
-    this.save(true);
-    this.record({ caseId: i.caseId, kind: 'sent', actor, owner: i.createdBy, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId, detail });
+    const saved = this.save(true);
+    const logged = this.recordChecked({ caseId: i.caseId, kind: 'sent', actor, owner: i.createdBy, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId, detail }).durable;
+    return saved && logged;
   }
 
   failed(id: string, actor: string, reason: string) {

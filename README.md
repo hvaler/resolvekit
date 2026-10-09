@@ -76,8 +76,11 @@ not only in the browser:
    addresses); 20 open per client address (IPv6 per /64), 20 compositions per address per 10 minutes; 1,000 open /
    2,000 stored as a safety net (new ones are refused with the real time until one frees up; existing ones are never
    evicted). Replaced, cancelled and expired intents leave the store at once. Audit events are kept per session
-   (one session cannot push out another's trail) and sends go to an append-only log that is never evicted. 128-bit
-   ids. A refused creation changes nothing.
+   (one session cannot push out another's trail) and sends go to an append-only log that is never evicted. A send is
+   recorded or it does not happen: if the approved intent and its `send_started` line cannot be written to the disk,
+   nothing goes to PayPal (503 `AUDIT_UNAVAILABLE`); a write that fails after PayPal accepted is logged as
+   `AUDIT NOT DURABLE`, and a restart finds the send unfinished and reads PayPal back. 128-bit ids. A refused
+   creation changes nothing.
 
 **Bindings are verified before any send, and fail closed.** A binding is
 `{ "<case id>": { "dispute": "PP-R-…", "capture": "<capture id>" } }`; `npm run demo:prepare` prints it with the
