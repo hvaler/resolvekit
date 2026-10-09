@@ -12,8 +12,9 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run test:paypal && npm run test:analyst && npm run test:server && npm run test:metermcp && npm run test:web",
+    "test": "npm run test:paypal && npm run test:hosting && npm run test:analyst && npm run test:server && npm run test:metermcp && npm run test:web",
     "test:paypal": "node --test \"packages/paypal/test/*.test.ts\"",
+    "test:hosting": "npm run test --workspace @resolvekit/hosting",
     "test:analyst": "npm run test --workspace @resolvekit/analyst",
     "test:server": "npm run test --workspace @resolvekit/server",
     "test:metermcp": "npm run test --workspace @resolvekit/metermcp",
@@ -26,6 +27,6 @@
     "dev": "npm run dev --workspace @resolvekit/web",
     "build": "npm run build --workspace @resolvekit/web",
     "preview": "npm run preview --workspace @resolvekit/web",
-    "typecheck": "npm run typecheck --workspace @resolvekit/web && npm run typecheck --workspace @resolvekit/server && npm run typecheck --workspace @resolvekit/metermcp && npm run typecheck --workspace @resolvekit/analyst"
+    "typecheck": "npm run typecheck --workspace @resolvekit/web && npm run typecheck --workspace @resolvekit/server && npm run typecheck --workspace @resolvekit/metermcp && npm run typecheck --workspace @resolvekit/analyst && npm run typecheck --workspace @resolvekit/hosting"
   }
 }
