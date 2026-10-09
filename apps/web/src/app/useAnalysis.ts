@@ -1,4 +1,5 @@
-import { analysisKey, canonicalJson, type AnalysisInput, type CaseAnalysis, type Progress } from '@resolvekit/analyst';
+import { analysisKey, type AnalysisInput, type CaseAnalysis, type Progress } from '@resolvekit/analyst';
+import { documentsSignature } from '@resolvekit/cases';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalysisRequestError, AnalysisUnreachableError, type AnalysisAnswer, type AnalysisClient, type AnalysisOrigin, type LiveState, type VerifyAnswer } from '../domain/analysisClient';
 import { goldenAnalyses } from '../fixtures/golden';
@@ -29,8 +30,7 @@ export interface AnalysisHandle {
   recheck: (text: string) => Promise<VerifyAnswer>;
 }
 
-/** The input with the dispute's allowed actions blanked: what decides whether documents changed. */
-const docsSignature = (i: AnalysisInput) => canonicalJson({ ...i, dispute: { ...i.dispute, allowedActions: [] } });
+const docsSignature = documentsSignature;
 
 /**
  * The real analysis for a case: the server's stored one (cached live run or golden) or a live run with progress;
@@ -103,9 +103,10 @@ export function useAnalysis(caseId: string, input: AnalysisInput | null, client:
       };
       if (!client) return fallback('No analysis for these documents: the analyst runs on the ResolveKit server, which is not connected');
       try {
-        const a = await client.analyse(caseId, inp, refresh);
+        const a = await client.analyse(caseId, refresh);
         setServerUp(true);
-        await follow(a, myRun, inp);
+        // The server built the documents itself; the analysis maps onto exactly those (the same the app shows).
+        await follow(a, myRun, a.input ?? inp);
       } catch (e) {
         if (run.current !== myRun) return;
         if (e instanceof AnalysisUnreachableError) {
@@ -159,7 +160,7 @@ export function useAnalysis(caseId: string, input: AnalysisInput | null, client:
     async (text: string): Promise<VerifyAnswer> => {
       if (!client || !fixed) throw new Error('the AI verifier runs on the ResolveKit server, which is not connected');
       if (locked.recheck) throw new Error(`demo code required: ${locked.recheck} Unlock demo actions in the app bar`);
-      return client.verify(caseId, fixed, text);
+      return client.verify(caseId, text);
     },
     [caseId, client, fixed, locked.recheck],
   );

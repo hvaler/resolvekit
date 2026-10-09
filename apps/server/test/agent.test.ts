@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PayPalClient } from '@resolvekit/paypal';
 import { writePdf } from '@resolvekit/pdf';
+import { MemoryAnalysisStore, type AnalysisInput } from '@resolvekit/analyst/node';
+import { agentCase, caseInput } from '@resolvekit/cases';
+import { AnalystService, InputPins } from '../src/analysis.ts';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
 import { MeterMcpClient, MeterMcpError, toMeteredSession, type MeterMcpSource, type Receipt } from '../src/metermcp.ts';
 import { fakePayPal, waitingDispute } from './fixtures.ts';
@@ -203,4 +206,36 @@ test('MeterMcpClient sends the per-launch token from the token file and maps err
   const down = new MeterMcpClient({ base: 'http://127.0.0.1:8790', tokenFile, fetch: (async () => new Response('{}', { status: 401 })) as typeof globalThis.fetch });
   await assert.rejects(down.receipt(SID), /answered 401/);
   t.after(async () => (await import('node:fs')).rmSync(dir, { recursive: true, force: true }));
+});
+
+test('analysis input of the bound agent case: built by the server from its own PayPal read and MeterMCP receipt, equal to what the web app shows', async () => {
+  const { meter } = fakeMeter();
+  const pp = fakePayPal([{ status: 200, body: waitingDispute() }]);
+  const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
+  const analyst = new AnalystService({ model: null, primaryModel: 'gemini-3.8-flash', store: new MemoryAnalysisStore() });
+  const app = createApp({ paypal, env: 'sandbox', bindings: { [CASE]: REAL }, port: 8787, token: TOKEN, allowedOrigins: DEFAULT_ORIGINS, meterMcp: meter, analyst });
+  const snap = await (await app(get(`/api/disputes/${CASE}`))).json();
+  const web = caseInput(agentCase, { kind: 'live', snap, failed: null });
+  // A client that sends its own receipt lines is ignored; the read above is reused (one PayPal call in all).
+  const forged = { ...web, documents: web.documents.map((d) => (d.id === 'E2' ? { ...d, lines: [{ text: '#2 deep_report 0.40 USD OK' }] } : d)) };
+  const r = await app(post(`/api/cases/${CASE}/analysis`, { input: forged }));
+  const input = ((await r.json()) as { input: AnalysisInput }).input;
+  assert.deepEqual(input, web);
+  assert.equal(pp.apiCalls().length, 1);
+  const e2 = input.documents.find((d) => d.id === 'E2')!.lines.map((l) => l.text);
+  assert.ok(e2.some((t) => t.includes('#2') && t.includes('deep_report') && t.includes('FAILED')), e2.join('\n'));
+  assert.ok(input.documents.find((d) => d.id === 'E1')!.lines.some((l) => l.text.includes(SID)));
+});
+
+test('pinned input: once PayPal shows the seller’s evidence, the analysis input stays the one from before sending', () => {
+  const pins = new InputPins();
+  const before = caseInput(agentCase, { kind: 'simulated' });
+  const after = { ...before, dispute: { ...before.dispute, allowedActions: ['send_message'] } };
+  assert.equal(pins.resolve(CASE, before, false), before);
+  assert.equal(pins.resolve(CASE, after, true), before);
+  // Different documents (e.g. a new stage) are not covered by the pin.
+  const changed = { ...after, documents: after.documents.slice(1) };
+  assert.equal(pins.resolve(CASE, changed, true), changed);
+  // Before sending, the latest input is used (and pinned).
+  assert.equal(pins.resolve(CASE, after, false), after);
 });

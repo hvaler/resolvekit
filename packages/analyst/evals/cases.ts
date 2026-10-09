@@ -3,7 +3,7 @@
  * analysis must do: which merchant notes are true (must not be rejected) or bait (must not be sent), which
  * contradictions exist, which document carries an injected instruction and which clean case it must match.
  */
-import { agentCase } from '../../../apps/web/src/fixtures/agentCase.ts';
+import { agentCase } from '../../cases/src/fixtures/agentCase.ts';
 import { buildInput } from '../src/input.ts';
 import type { AnalysisDocument, AnalysisInput } from '../src/types.ts';
 

@@ -1,6 +1,7 @@
 /**
- * The analyst API on the ResolveKit server (`/api/cases/:id/analysis…`). The browser only sends the documents it
- * shows; the model keys and the model calls stay on the server.
+ * The analyst API on the ResolveKit server (`/api/cases/:id/analysis…`). The browser sends only the case id (and, for
+ * a re-check, the edited sentence): the server builds the documents itself from its own demo case, PayPal read and
+ * MeterMCP read, and answers with the input it analysed. The model keys and the model calls stay on the server.
  */
 import type { AnalysisInput, CaseAnalysis, CitationCheck, Progress, Verdict } from '@resolvekit/analyst';
 
@@ -14,10 +15,14 @@ export interface LiveState {
   resetInSec: number;
 }
 
-export type AnalysisAnswer =
+export type AnalysisAnswer = (
   | { status: 'ready'; key: string; origin: AnalysisOrigin; analysis: CaseAnalysis; live?: LiveState }
   | { status: 'running'; key: string; progress: Progress[]; live?: LiveState }
-  | { status: 'failed'; key: string; error: string; progress?: Progress[]; live?: LiveState };
+  | { status: 'failed'; key: string; error: string; progress?: Progress[]; live?: LiveState }
+) & {
+  /** The documents the server analysed (built on the server); present on the answer to the POST. */
+  input?: AnalysisInput;
+};
 
 export class AnalysisRequestError extends Error {
   readonly status: number;
@@ -74,20 +79,20 @@ export class AnalysisClient {
     return body as T;
   }
 
-  /** Stored analysis for these documents, or a live run (`refresh` forces one). */
-  analyse(caseId: string, input: AnalysisInput, refresh = false): Promise<AnalysisAnswer> {
+  /** Stored analysis of the case's documents, or a live run (`refresh` forces one). */
+  analyse(caseId: string, refresh = false): Promise<AnalysisAnswer> {
     const q = refresh ? '?refresh=1' : '';
-    return this.call(`/cases/${encodeURIComponent(caseId)}/analysis${q}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ input }) }, 20_000);
+    return this.call(`/cases/${encodeURIComponent(caseId)}/analysis${q}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }, 30_000);
   }
 
   progress(caseId: string, key: string): Promise<AnalysisAnswer> {
     return this.call(`/cases/${encodeURIComponent(caseId)}/analysis/progress?key=${key}`, { method: 'GET' }, 10_000);
   }
 
-  verify(caseId: string, input: AnalysisInput, text: string): Promise<VerifyAnswer> {
+  verify(caseId: string, text: string): Promise<VerifyAnswer> {
     return this.call(
       `/cases/${encodeURIComponent(caseId)}/analysis/verify`,
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ input, text }) },
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) },
       120_000,
     );
   }

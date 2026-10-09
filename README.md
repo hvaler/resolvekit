@@ -218,12 +218,17 @@ they finish.
 
 | Route | What it does |
 |---|---|
-| `POST /api/cases/{case}/analysis` | `{ input }` → the stored analysis for these documents (`200`), or a live run (`202`, then poll); `?refresh=1` forces a live run; `429` with the reset time when rate-limited |
+| `POST /api/cases/{case}/analysis` | `{}` → the stored analysis of the case's documents (`200`), or a live run (`202`, then poll), with the `input` the server analysed; `?refresh=1` forces a live run; `429` with the reset time when rate-limited |
 | `GET /api/cases/{case}/analysis/progress?key=` | Stages done so far, then the result |
-| `POST /api/cases/{case}/analysis/verify` | `{ input, text }` → the verifier's verdict and citations for an edited sentence |
+| `POST /api/cases/{case}/analysis/verify` | `{ text }` → the verifier's verdict and citations for an edited sentence |
 
-Same guards as the rest of the API (Host, Origin, per-launch token, JSON only); the input is validated and rebuilt
-field by field.
+Same guards as the rest of the API (Host, Origin, per-launch token, JSON only). **The server builds the analyst's
+input itself**: the demo case from `packages/cases` (fixtures plus the assembly the web app uses to show them), its
+own PayPal read of the bound dispute (reused for 60 s) and, for the agent case, its own MeterMCP read. The browser
+sends only the case id, and for a re-check the edited sentence (validated, and delimited as untrusted data); any
+document data in a request is ignored. Once PayPal shows the seller's evidence, the case keeps the input it was
+analysed with before sending (same documents; only PayPal's allowed actions changed), so sending does not need a new
+model run (`InputPins`, persisted in the data directory).
 
 **Evals** ([docs/evals.md](docs/evals.md), raw results committed): 18 synthetic cases — normal delivery, missing
 tracking, address/postcode/amount contradictions, fabricated-claim bait, 10 prompt-injection styles, agent receipts.
@@ -285,9 +290,9 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
   app bar; locked actions say **Demo code required** and why.
 - Global **daily caps**, persisted on the disk and reserved atomically before the work starts (refunded when it did
   not happen): `DAILY_LIVE_ANALYSES` (60), `DAILY_RECHECKS` (200), `DAILY_EVIDENCE_SENDS` (20), on top of the
-  hourly limits (`LIVE_ANALYSES_PER_HOUR` 6, `RECHECKS_PER_HOUR` 30). Live runs and re-checks only run on the demo
-  cases' own documents (`apps/server/src/anchor.ts`): the merchant documents and notes must be the server's fixture
-  line for line; only PayPal/MeterMCP data fields come from the latest read.
+  hourly limits (`LIVE_ANALYSES_PER_HOUR` 6, `RECHECKS_PER_HOUR` 30). Live runs and re-checks only analyse inputs the server
+  builds itself from its own fixtures and its own PayPal and MeterMCP reads; nothing a visitor sends reaches the
+  model except an edited sentence of a re-check.
 - Requests: `Host` must be the public host (`/healthz` excepted, for Render's health check); `/api` writes must
   carry the service's own `Origin`; POST is JSON only; per-IP limits (300 `/api` requests and 60 PayPal reads per 5
   min); the client IP is the last `X-Forwarded-For` entry (one trusted proxy hop, `TRUSTED_PROXY_HOPS`).

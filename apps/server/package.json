@@ -11,6 +11,7 @@
     "@resolvekit/paypal": "*",
     "@resolvekit/pdf": "*",
     "@resolvekit/analyst": "*",
+    "@resolvekit/cases": "*",
     "@resolvekit/hosting": "*"
   },
   "devDependencies": {

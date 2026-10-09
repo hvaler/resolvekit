@@ -1,4 +1,4 @@
-import type { CaseFile } from '../domain/types';
+import type { CaseFile } from '../../../../apps/web/src/domain/types.ts';
 
 /**
  * Synthetic agent-purchase case: a buyer's AI agent spent part of an approved budget on paid tool

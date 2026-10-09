@@ -16,6 +16,10 @@ import {
   type CaseAnalysis,
   type Progress,
 } from '@resolvekit/analyst/node';
+import { canonicalJson } from '@resolvekit/analyst';
+import { documentsSignature } from '@resolvekit/cases';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 export interface LiveState {
   configured: boolean;
@@ -172,48 +176,48 @@ export class AnalystService {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Input validation (the input comes from the web app: bounded, typed, content only)
+// Pinned inputs
 
-const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
-const isArr = (v: unknown, max: number): v is unknown[] => Array.isArray(v) && v.length <= max;
-
-export function parseInput(v: unknown): AnalysisInput | string {
-  const x = v as Partial<AnalysisInput> | null;
-  if (!x || typeof x !== 'object') return 'input must be an object';
-  if (!isStr(x.caseId, 64) || (x.caseKind !== 'standard' && x.caseKind !== 'agent')) return 'caseId / caseKind';
-  const d = x.dispute as Partial<AnalysisInput['dispute']> | undefined;
-  if (!d || !isStr(d.id, 64) || !isStr(d.reason, 80) || !isStr(d.buyerItemType, 80) || !isStr(d.amount, 32) || !isStr(d.currency, 8)) return 'dispute';
-  if (!isArr(d.allowedActions, 10) || !d.allowedActions.every((a) => isStr(a, 40))) return 'dispute.allowedActions';
-  if (d.requestedEvidence !== null && !isStr(d.requestedEvidence, 80)) return 'dispute.requestedEvidence';
-  if (!isArr(d.evidenceOptions, 10) || !d.evidenceOptions.every((o) => o && isStr((o as { type: unknown }).type, 80) && typeof (o as { satisfied: unknown }).satisfied === 'boolean')) return 'dispute.evidenceOptions';
-  if (!isArr(x.documents, 20) || x.documents.length === 0) return 'documents';
-  for (const doc of x.documents) {
-    if (!doc || !isStr(doc.id, 8) || !/^(?:D|E\d{1,2})$/.test(doc.id) || !isStr(doc.title, 200) || !isStr(doc.type, 100) || !isStr(doc.source, 200) || !isStr(doc.tag, 8)) return 'document fields';
-    if (!isArr(doc.lines, 200) || !doc.lines.every((l) => l && isStr(l.text, 1000) && (l.fragment === undefined || isStr(l.fragment, 40)))) return `document ${doc.id} lines`;
+/**
+ * The input each case was last analysed with, while PayPal still waited for the seller. Once the seller's evidence is
+ * in, PayPal's allowed actions change but the documents do not: the case keeps the analysis of its pinned input (same
+ * documents), as the merchant saw it before sending, instead of needing a new model run. Persisted when given a file.
+ */
+export class InputPins {
+  private readonly file: string | null;
+  private readonly pins = new Map<string, AnalysisInput>();
+  constructor(o: { file?: string } = {}) {
+    this.file = o.file ?? null;
+    if (!this.file) return;
+    try {
+      const saved = JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, AnalysisInput>;
+      for (const [k, v] of Object.entries(saved)) if (v && typeof v === 'object') this.pins.set(k, v);
+    } catch {
+      /* no pins yet */
+    }
   }
-  if (!isArr(x.merchantNotes, 10) || !x.merchantNotes.every((n) => n && isStr(n.id, 8) && isStr(n.text, 500))) return 'merchantNotes';
-  // Rebuild: only known fields go to the model and into the key.
-  return {
-    caseId: x.caseId,
-    caseKind: x.caseKind,
-    dispute: {
-      id: d.id,
-      reason: d.reason,
-      buyerItemType: d.buyerItemType,
-      amount: d.amount,
-      currency: d.currency,
-      allowedActions: [...d.allowedActions] as string[],
-      requestedEvidence: d.requestedEvidence ?? null,
-      evidenceOptions: d.evidenceOptions.map((o) => ({ type: (o as { type: string }).type, satisfied: (o as { satisfied: boolean }).satisfied })),
-    },
-    documents: x.documents.map((doc) => ({
-      id: doc.id,
-      title: doc.title,
-      type: doc.type,
-      source: doc.source,
-      tag: doc.tag,
-      lines: doc.lines.map((l) => (l.fragment === undefined ? { text: l.text } : { text: l.text, fragment: l.fragment })),
-    })),
-    merchantNotes: x.merchantNotes.map((n) => ({ id: n.id, text: n.text })),
-  };
+
+  /**
+   * The input to analyse for a case. `submitted`: PayPal shows the seller's evidence; then the pinned input of the same
+   * documents is used, if there is one. Otherwise `input` is used and becomes the pin.
+   */
+  resolve(caseId: string, input: AnalysisInput, submitted: boolean): AnalysisInput {
+    const pinned = this.pins.get(caseId);
+    if (submitted) return pinned && documentsSignature(pinned) === documentsSignature(input) ? pinned : input;
+    if (!pinned || canonicalJson(pinned) !== canonicalJson(input)) {
+      this.pins.set(caseId, input);
+      this.save();
+    }
+    return input;
+  }
+
+  private save() {
+    if (!this.file) return;
+    try {
+      mkdirSync(dirname(this.file), { recursive: true });
+      writeFileSync(this.file, JSON.stringify(Object.fromEntries(this.pins)));
+    } catch {
+      /* best effort: without it, a restart needs one new run after sending */
+    }
+  }
 }

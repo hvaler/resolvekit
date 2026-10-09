@@ -10,8 +10,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentCase } from '../../../apps/web/src/fixtures/agentCase.ts';
-import { standardCase } from '../../../apps/web/src/fixtures/standardCase.ts';
+import { agentCase } from '../../cases/src/fixtures/agentCase.ts';
+import { standardCase } from '../../cases/src/fixtures/standardCase.ts';
 import { GOLDEN_DIR } from '../src/cache.ts';
 import { buildInput } from '../src/input.ts';
 import { analysisKey } from '../src/key.ts';

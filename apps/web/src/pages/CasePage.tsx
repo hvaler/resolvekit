@@ -1,4 +1,5 @@
 import { buildInput, withAnalysis } from '@resolvekit/analyst';
+import { caseView, documentsFinal } from '@resolvekit/cases';
 import { useCallback, useMemo, useRef } from 'react';
 import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
@@ -15,9 +16,8 @@ import { EvidenceCard } from '../components/EvidenceCard';
 import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
-import { withMeterMcp } from '../domain/agentSession';
 import { lockedReason } from '../domain/demoClient';
-import { caseAllowedActions, caseHeaderView, withPayPal } from '../domain/paypalView';
+import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
 import { hasSellerEvidence } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
@@ -56,14 +56,15 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   // PayPal's fields (amount, reason, status, requested evidence…) from PayPal for a bound case; demo data otherwise.
   const liveSnap = source.kind === 'live' ? source.snap : null;
   // `source` is rebuilt every render; its kind and PayPal snapshot are what matter.
-  // The agent case's mandate/receipt/settlement from the real MeterMCP session when the server found one.
-  const docs = useMemo(() => withMeterMcp(withPayPal(demo, source), source), [demo, source.kind, liveSnap]);
+  // The agent case's mandate/receipt/settlement from the real MeterMCP session when the server found one. The same
+  // assembly (@resolvekit/cases) builds the analyst's input on the server.
+  const docs = useMemo(() => caseView(demo, source), [demo, source.kind, liveSnap]);
 
   const submitted = !!snap && hasSellerEvidence(snap);
   const allowed: readonly ActionCode[] = caseAllowedActions(source, snapshots[id], demo.allowedActions);
 
   // The analyst reads the documents exactly as shown: once PayPal's (and MeterMCP's) data is in for a bound case.
-  const docsFinal = source.kind === 'simulated' || source.kind === 'live';
+  const docsFinal = documentsFinal(source);
   const input = useMemo(() => (docsFinal ? buildInput(docs, { allowedActions: allowed }) : null), [docsFinal, docs, allowed.join(',')]);
   const locked = useMemo(() => ({ live: lockedReason(demoLock, 'live-analysis'), recheck: lockedReason(demoLock, 'recheck') }), [demoLock]);
   const analysis = useAnalysis(id, input, analysisClient, locked);

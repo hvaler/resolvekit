@@ -1,0 +1,19 @@
+{
+  "name": "@resolvekit/cases",
+  "private": true,
+  "type": "module",
+  "description": "The demo cases and their assembly from PayPal's and MeterMCP's data into the documents the analyst reads. Pure, React-free, importable by Node and the web app.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@resolvekit/analyst": "*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.5"
+  }
+}

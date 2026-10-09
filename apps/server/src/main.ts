@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { DailyCounters, StaticSite, envInt, publicOrigins } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { FileAnalysisStore, RateLimiter, modelFromEnv } from '@resolvekit/analyst/node';
-import { AnalystService } from './analysis.ts';
+import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
 import { checkBindings, parseBindings } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
@@ -98,6 +98,9 @@ const analyst = new AnalystService({
   },
 });
 
+// The input each case was analysed with before the seller's evidence went in (see InputPins).
+const pins = new InputPins({ file: join(dataDir, 'analysis-inputs.json') });
+
 let app: Handler;
 let tokenFile: string | null = null;
 if (hosted) {
@@ -123,7 +126,7 @@ if (hosted) {
   });
   const site = StaticSite.load(dist);
   app = createHostedApp({
-    paypal, env, bindings, log, meterMcp, analyst, site, counters, demoCode, sessionSecret,
+    paypal, env, bindings, log, meterMcp, analyst, pins, site, counters, demoCode, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
@@ -137,7 +140,7 @@ if (hosted) {
   tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('../.runtime-token', import.meta.url));
   writeFileSync(tokenFile, token, { mode: 0o600 });
   const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
-  app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins, meterMcp, analyst });
+  app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins, meterMcp, analyst, pins });
 }
 
 const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`));

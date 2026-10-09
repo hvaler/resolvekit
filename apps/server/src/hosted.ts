@@ -28,7 +28,6 @@ import {
   type DailyCounters,
   type StaticSite,
 } from '@resolvekit/hosting';
-import { unanchoredInput } from './anchor.ts';
 import { createApi, json, withLog, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 
 export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
@@ -121,8 +120,8 @@ export function createHostedApp(o: HostedOptions): Handler {
     },
   };
 
-  // Live runs and re-checks only on the demo cases' own documents (anchor.ts), behind the demo code and the caps.
-  const api = createApi({ ...o, gate, anchor: o.anchor === undefined ? unanchoredInput : o.anchor });
+  // Live runs and re-checks analyse inputs the server builds itself (app.ts), behind the demo code and the caps.
+  const api = createApi({ ...o, gate });
 
   const demoState = (req: Request) => {
     const s = session(req);

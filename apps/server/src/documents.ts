@@ -3,17 +3,13 @@
  * only names the files; it never uploads bytes, so what reaches PayPal is exactly the case's own document.
  */
 import type { EvidenceFile } from '@resolvekit/paypal';
-import type { CaseFile, Evidence, SubmissionFile } from '../../web/src/domain/types.ts';
-import { agentCase } from '../../web/src/fixtures/agentCase.ts';
-import { standardCase } from '../../web/src/fixtures/standardCase.ts';
+import type { Evidence, SubmissionFile } from '../../web/src/domain/types.ts';
+import { CASE_FILES } from '@resolvekit/cases';
 import { writePdf } from '@resolvekit/pdf';
 
 export const SYNTHETIC_HEADER = 'SYNTHETIC TEST DOCUMENT';
 
-export const CASE_FILES: Readonly<Record<string, CaseFile>> = {
-  [standardCase.summary.id]: standardCase,
-  [agentCase.summary.id]: agentCase,
-};
+export { CASE_FILES };
 
 /** The document's content as plain text lines, whatever its layout in the web app. */
 export function evidenceLines(e: Evidence): string[] {

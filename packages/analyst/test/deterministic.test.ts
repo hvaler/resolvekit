@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { agentCase } from '../../../apps/web/src/fixtures/agentCase.ts';
+import { agentCase } from '../../cases/src/fixtures/agentCase.ts';
 import { scanForInjection } from '../src/injection.ts';
 import { buildInput } from '../src/input.ts';
 import { analysisKey, canonicalJson } from '../src/key.ts';

@@ -1,7 +1,6 @@
 import type { CaseFile, DisputeSnapshot } from '../domain/types';
-import { agentCase } from './agentCase';
+import { agentCase, standardCase } from '@resolvekit/cases';
 import { DEMO_NOW, inbox, processingDispute, processingOpening } from './inbox';
-import { standardCase } from './standardCase';
 
 export { agentCase, DEMO_NOW, inbox, processingDispute, processingOpening, standardCase };
 

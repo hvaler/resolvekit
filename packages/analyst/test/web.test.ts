@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { standardCase } from '../../../apps/web/src/fixtures/standardCase.ts';
+import { standardCase } from '../../cases/src/fixtures/standardCase.ts';
 import { analyzeCase } from '../src/pipeline.ts';
 import { analysisSteps, withAnalysis } from '../src/web.ts';
 import { fakeModel, input, standardScript } from './fake.ts';

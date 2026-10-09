@@ -1,4 +1,4 @@
-import { standardCase } from '../../../apps/web/src/fixtures/standardCase.ts';
+import { standardCase } from '../../cases/src/fixtures/standardCase.ts';
 import { buildInput } from '../src/input.ts';
 import type { AnalystModel, ModelRequest } from '../src/model.ts';
 import type { AnalysisInput } from '../src/types.ts';

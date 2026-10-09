@@ -1,4 +1,4 @@
-import type { CaseFile, Evidence } from '../domain/types';
+import type { CaseFile, Evidence } from '../../../../apps/web/src/domain/types.ts';
 
 /**
  * Synthetic standard case: physical product, "not received", inquiry stage. All names, addresses and
