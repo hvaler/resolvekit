@@ -148,6 +148,30 @@ export function capFlagged(
   return { ...v, verdict: 'needs_review', reason: `Why: it cites ${docs.join(', ')}, a document that contains instructions; confirm it yourself.`, decidedBy: 'deterministic' };
 }
 
+/**
+ * A sentence citing one side of a detected contradiction but not the other is never "supported" automatically: its
+ * cited quotes agree with it only because the conflicting document was left out. Citing both sides (stating both
+ * values) is fine.
+ */
+export function capContested(
+  v: Pick<Sentence, 'verdict' | 'reason' | 'decidedBy' | 'rewrite'>,
+  citations: readonly CitationCheck[],
+  contradictions: readonly Contradiction[],
+): Pick<Sentence, 'verdict' | 'reason' | 'decidedBy' | 'rewrite'> {
+  if (v.verdict !== 'supported') return v;
+  const cites = (side: Contradiction['a']) => citations.some((c) => c.valid && c.doc === side.doc && normalize(c.quote) === normalize(side.quote));
+  for (const k of contradictions) {
+    const [one, other] = cites(k.a) && !cites(k.b) ? [k.a, k.b] : cites(k.b) && !cites(k.a) ? [k.b, k.a] : [null, null];
+    if (one && other) {
+      return { ...v, verdict: 'needs_review', reason: `Why: it relies on ${one.doc} ("${one.value}"), which ${other.doc} contradicts ("${other.value}"). State both or resolve the contradiction.`, decidedBy: 'deterministic' };
+    }
+  }
+  return v;
+}
+
+/** Remove fact/note id references a model may write into a sentence ("… (F5, F6)"): ids are not evidence text. */
+export const stripIdRefs = (t: string) => normalize(t.replace(/\s*[([]\s*(?:[FNSE]\d{1,3}\s*[,;]?\s*)+[)\]]/g, '')).replace(/\s+([.,;:])/g, '$1');
+
 function parseVerdict(r: Record<string, unknown>): ModelVerdict {
   const v = r.verdict;
   return {
@@ -280,7 +304,7 @@ export async function analyzeCase(input: AnalysisInput, o: RunOptions): Promise<
 
   const drafted = rawSentences.map((s, i) => ({
     id: sentenceIds[i]!,
-    text: normalize(s.text as string),
+    text: stripIdRefs(s.text as string),
     noteId: isStr(s.note) && input.merchantNotes.some((n) => n.id === s.note) ? (s.note as string) : null,
     citations: cite(facts, s.facts),
   }));
@@ -300,7 +324,10 @@ export async function analyzeCase(input: AnalysisInput, o: RunOptions): Promise<
       /* no verdict: settleVerdict keeps it in review */
     }
   });
-  const sentences: Sentence[] = drafted.map((s) => ({ ...s, ...capFlagged(settleVerdict(s.text, s.citations, verdicts.get(s.id) ?? null), s.citations, flagged) }));
+  const sentences: Sentence[] = drafted.map((s) => ({
+    ...s,
+    ...capContested(capFlagged(settleVerdict(s.text, s.citations, verdicts.get(s.id) ?? null), s.citations, flagged), s.citations, contradictions),
+  }));
   const removed = sentences.filter((s) => s.verdict === 'rejected').length;
   progress('verify', removed ? `Removed ${plural(removed, 'unsupported claim')}` : 'Every claim checked');
 
@@ -344,7 +371,7 @@ export async function analyzeCase(input: AnalysisInput, o: RunOptions): Promise<
 
 /** Re-check one edited sentence against the analysis's facts: the model picks citations and judges support. */
 export async function recheckSentence(
-  analysis: Pick<CaseAnalysis, 'facts' | 'injections'>,
+  analysis: Pick<CaseAnalysis, 'facts' | 'injections'> & { contradictions?: CaseAnalysis['contradictions'] },
   input: Pick<AnalysisInput, 'documents'>,
   text: string,
   o: Pick<RunOptions, 'model' | 'onUsage'>,
@@ -355,6 +382,7 @@ export async function recheckSentence(
   const j = rec(r.json);
   // Facts are re-verified against the documents: a cached analysis could be stale.
   const citations = cite(analysis.facts, j.facts).map((c) => ({ ...c, valid: isVerbatim(input.documents, c.doc, c.quote) }));
-  return { citations, usage: r.usage, ...capFlagged(settleVerdict(normalize(text), citations, parseVerdict(j)), citations, flagged) };
+  const settled = capFlagged(settleVerdict(normalize(text), citations, parseVerdict(j)), citations, flagged);
+  return { citations, usage: r.usage, ...capContested(settled, citations, analysis.contradictions ?? []) };
 }
 

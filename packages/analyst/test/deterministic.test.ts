@@ -109,3 +109,21 @@ test('rules: requirements by reason and item type; the action is only ever one P
   assert.equal(decideAction({ dispute: { ...dispute, allowedActions: ['accept_claim'] }, checklist: [item('tracking', 'missing')], sentences: [] })!.action, 'accept_claim');
   assert.equal(decideAction({ dispute: { ...dispute, allowedActions: [] }, checklist: [], sentences: [sentence('supported')] }), null);
 });
+
+test('verifier: a sentence citing one side of a contradiction (not the other) is not supported automatically', async () => {
+  const { capContested } = await import('../src/pipeline.ts');
+  const k = { id: 'C1', title: 't', shortName: 'address contradiction', explanation: '', sentenceId: null, rewrite: null, a: { doc: 'E1', quote: 'Ship to: 12 Example Street, Apt 4', value: 'Apt 4' }, b: { doc: 'E3', quote: 'Delivered to: 12 Example Street, Apt 4B', value: 'Apt 4B' } };
+  const ok = { verdict: 'supported' as const, reason: null, decidedBy: 'model' as const, rewrite: null };
+  const one = capContested(ok, [{ doc: 'E1', quote: 'Ship to: 12 Example Street, Apt 4', valid: true }], [k]);
+  assert.equal(one.verdict, 'needs_review');
+  assert.match(one.reason!, /relies on E1 \("Apt 4"\), which E3 contradicts \("Apt 4B"\)/);
+  const both = capContested(ok, [{ doc: 'E1', quote: k.a.quote, valid: true }, { doc: 'E3', quote: k.b.quote, valid: true }], [k]);
+  assert.equal(both.verdict, 'supported');
+});
+
+test('drafting: fact and note ids written into a sentence are removed (they are not evidence text)', async () => {
+  const { stripIdRefs } = await import('../src/pipeline.ts');
+  assert.equal(stripIdRefs('We received an order for 24.00 USD (F5, F6).'), 'We received an order for 24.00 USD.');
+  assert.equal(stripIdRefs('Royal Example Mail delivered it (N1) on 13 September [F14].'), 'Royal Example Mail delivered it on 13 September.');
+  assert.equal(stripIdRefs('Order #10482 (paid in full).'), 'Order #10482 (paid in full).');
+});
