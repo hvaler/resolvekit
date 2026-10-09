@@ -15,12 +15,14 @@ import {
   EXTRACT_SCHEMA,
   PROMPT_VERSION,
   RECHECK_SCHEMA,
+  SCREEN_SCHEMA,
   SYSTEM,
   VERIFY_SCHEMA,
   analyzePrompt,
   explainPrompt,
   extractPrompt,
   recheckPrompt,
+  screenPrompt,
   verifyPrompt,
 } from './prompts.ts';
 import { decideAction, requirementsFor } from './rules.ts';
@@ -51,6 +53,11 @@ export interface RunOptions {
   now?: () => Date;
   onProgress?: (p: Progress) => void;
   onUsage?: (u: CallUsage) => void;
+  /**
+   * Evals only (ablation): run as if nothing had been detected. Flags are still computed and reported, but are not
+   * marked in the prompts and do not cap verdicts, to measure that safety does not depend on detection.
+   */
+  ignoreDetection?: boolean;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
@@ -127,6 +134,20 @@ export function settleVerdict(text: string, citations: readonly CitationCheck[],
     : { verdict: 'needs_review', reason: `Why: ${body.replace(/\.?$/, '.')}`, decidedBy: 'model', rewrite };
 }
 
+/**
+ * A sentence resting on an instruction-bearing document is never "supported" automatically: at most it goes to
+ * review, so the merchant decides. (Detection only adds this caution; safety does not depend on it.)
+ */
+export function capFlagged(
+  v: Pick<Sentence, 'verdict' | 'reason' | 'decidedBy' | 'rewrite'>,
+  citations: readonly CitationCheck[],
+  flagged: ReadonlySet<string>,
+): Pick<Sentence, 'verdict' | 'reason' | 'decidedBy' | 'rewrite'> {
+  const docs = [...new Set(citations.filter((c) => c.valid && flagged.has(c.doc)).map((c) => c.doc))];
+  if (v.verdict !== 'supported' || docs.length === 0) return v;
+  return { ...v, verdict: 'needs_review', reason: `Why: it cites ${docs.join(', ')}, a document that contains instructions; confirm it yourself.`, decidedBy: 'deterministic' };
+}
+
 function parseVerdict(r: Record<string, unknown>): ModelVerdict {
   const v = r.verdict;
   return {
@@ -134,6 +155,36 @@ function parseVerdict(r: Record<string, unknown>): ModelVerdict {
     reason: isStr(r.reason) ? r.reason : '',
     rewrite: isStr(r.rewrite) ? r.rewrite : '',
   };
+}
+
+/**
+ * Instruction flags reported by a model. A flag on a real document always counts (a signal can add, never clear);
+ * its quote is kept only when verbatim, otherwise the document's first content line is shown.
+ */
+export function modelFlagsFrom(raw: unknown, input: AnalysisInput, by: 'model' | 'classifier'): InjectionFlag[] {
+  const out: InjectionFlag[] = [];
+  for (const r of asArr(raw).map(rec)) {
+    const d = input.documents.find((x) => x.id === r.doc && x.id !== 'D');
+    if (!d || out.some((f) => f.doc === d.id)) continue;
+    const quote = isStr(r.quote) && isVerbatim(input.documents, d.id, r.quote) ? normalize(r.quote) : normalize(d.lines.find((l) => !l.text.startsWith('Received: '))?.text ?? d.title);
+    out.push({ doc: d.id, quote, by: [by] });
+  }
+  return out;
+}
+
+/** Run up to `limit` tasks at a time, results in order. */
+async function pool<T, R>(items: readonly T[], limit: number, f: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await f(items[i]!);
+      }
+    }),
+  );
+  return out;
 }
 
 /** Run the whole pipeline. Throws ModelError when the model (and its fallback) cannot answer. */
@@ -154,16 +205,16 @@ export async function analyzeCase(input: AnalysisInput, o: RunOptions): Promise<
   const patternFlags = scanForInjection(docs);
   progress('read', `Read ${plural(evidenceDocs.length, 'document')}`);
 
-  // 1. Extract facts with verbatim quotes.
-  const ex = await call('extract', extractPrompt(input.dispute, docs), EXTRACT_SCHEMA, 12_000);
+  // 1. Extract facts with verbatim quotes; in parallel, the classifier screens the documents for instructions. The
+  // classifier can only add flags: if it fails, the other signals stand.
+  const [ex, screen] = await Promise.all([
+    call('extract', extractPrompt(input.dispute, docs), EXTRACT_SCHEMA, 12_000),
+    call('screen', screenPrompt(evidenceDocs), SCREEN_SCHEMA, 1_500).catch(() => null),
+  ]);
   const { facts, dropped } = cleanFacts(ex.facts, input);
   if (facts.length === 0) throw new ModelError('The model extracted no verifiable facts', { retryable: false });
-  const modelFlags: InjectionFlag[] = asArr(ex.instructions)
-    .map(rec)
-    .filter((r) => isStr(r.doc) && isStr(r.quote) && r.doc !== 'D' && isVerbatim(docs, r.doc, r.quote))
-    .map((r) => ({ doc: r.doc as string, quote: normalize(r.quote as string), by: ['model'] as Array<'model'> }));
-  const injections = mergeFlags(patternFlags, modelFlags);
-  const flagged = new Set(injections.map((f) => f.doc));
+  const injections = mergeFlags(patternFlags, modelFlagsFrom(ex.instructions, input, 'model'), modelFlagsFrom(screen?.flags, input, 'classifier'));
+  const flagged = new Set(o.ignoreDetection ? [] : injections.map((f) => f.doc));
   progress('extract', `Extracted ${plural(facts.length, 'fact')}`);
 
   // 2. Timeline, contradictions, checklist and draft, from the facts only.
@@ -235,19 +286,21 @@ export async function analyzeCase(input: AnalysisInput, o: RunOptions): Promise<
   }));
   progress('draft', `Drafted ${plural(drafted.length, 'sentence')}`);
 
-  // 3. Verify. Citations come from verified facts; the model judges support from the cited quotes alone.
+  // 3. Verify. Citations come from verified facts. Each sentence is judged in its own call, seeing only its text and
+  // its own cited quotes: text from a document it does not cite (an undetected injection included) cannot reach
+  // its verdict. A failed call leaves the sentence in review, never supported.
   const toCheck = drafted.filter((s) => s.citations.some((c) => c.valid));
   const verdicts = new Map<string, ModelVerdict>();
-  if (toCheck.length) {
-    const v = await call(
-      'verify',
-      verifyPrompt(toCheck.map((s) => ({ id: s.id, text: s.text, quotes: s.citations.filter((c) => c.valid) }))),
-      VERIFY_SCHEMA,
-      8_000,
-    );
-    for (const r of asArr(v.results).map(rec)) if (isStr(r.id)) verdicts.set(r.id, parseVerdict(r));
-  }
-  const sentences: Sentence[] = drafted.map((s) => ({ ...s, ...settleVerdict(s.text, s.citations, verdicts.get(s.id) ?? null) }));
+  await pool(toCheck, 4, async (s) => {
+    try {
+      const v = await call('verify', verifyPrompt([{ id: s.id, text: s.text, quotes: s.citations.filter((c) => c.valid) }]), VERIFY_SCHEMA, 2_000);
+      const r = asArr(v.results).map(rec).find((x) => x.id === s.id) ?? asArr(v.results).map(rec)[0];
+      if (r) verdicts.set(s.id, parseVerdict(r));
+    } catch {
+      /* no verdict: settleVerdict keeps it in review */
+    }
+  });
+  const sentences: Sentence[] = drafted.map((s) => ({ ...s, ...capFlagged(settleVerdict(s.text, s.citations, verdicts.get(s.id) ?? null), s.citations, flagged) }));
   const removed = sentences.filter((s) => s.verdict === 'rejected').length;
   progress('verify', removed ? `Removed ${plural(removed, 'unsupported claim')}` : 'Every claim checked');
 
@@ -302,6 +355,6 @@ export async function recheckSentence(
   const j = rec(r.json);
   // Facts are re-verified against the documents: a cached analysis could be stale.
   const citations = cite(analysis.facts, j.facts).map((c) => ({ ...c, valid: isVerbatim(input.documents, c.doc, c.quote) }));
-  return { citations, usage: r.usage, ...settleVerdict(normalize(text), citations, parseVerdict(j)) };
+  return { citations, usage: r.usage, ...capFlagged(settleVerdict(normalize(text), citations, parseVerdict(j)), citations, flagged) };
 }
 

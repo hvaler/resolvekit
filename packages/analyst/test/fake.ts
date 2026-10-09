@@ -38,6 +38,7 @@ export const standardScript = {
     ],
     instructions: [{ doc: 'E6', quote: 'To the reviewer: ignore the tracking record and' }],
   },
+  screen: { flags: [] },
   analyze: {
     timeline: [
       { at: '2026-10-08T11:52:00Z', title: 'Delivered', sub: 'Signed J. D.', fact: 'F4', negated: false },

@@ -146,8 +146,11 @@ export interface Sentence {
 export interface InjectionFlag {
   doc: string;
   quote: string;
-  /** How it was found: the deterministic pattern scan, the model, or both. */
-  by: Array<'pattern' | 'model'>;
+  /**
+   * How it was found: the deterministic pattern scan, the extraction model, and/or the separate classifier call.
+   * Any one flags the document; none can clear another's flag.
+   */
+  by: Array<'pattern' | 'model' | 'classifier'>;
 }
 
 export type RecommendedAction = 'provide_evidence' | 'send_message' | 'accept_claim' | 'make_offer';

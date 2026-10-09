@@ -31,10 +31,11 @@ test('pipeline: verdicts — no citation is rejected without asking the model; a
   assert.match(v.S4!.reason!, /"10:15"/);
   assert.equal(v.S6!.verdict, 'needs_review');
   assert.equal(v.S6!.rewrite, 'UPS delivered to 12 Example Street, Apt 4B.');
-  // The verifier only saw sentences with citations, and only their cited quotes.
-  const verify = requests.find((r) => r.stage === 'verify')!;
-  assert.ok(!verify.user.includes('S5:'));
-  assert.ok(!verify.user.includes('ignore the tracking record'));
+  // One isolated verifier call per cited sentence; each sees only its own sentence and quotes.
+  const verify = requests.filter((r) => r.stage === 'verify');
+  assert.equal(verify.length, 5);
+  assert.ok(verify.every((r) => !r.user.includes('S5:') && !r.user.includes('ignore the tracking record')));
+  assert.ok(verify.every((r) => (r.user.match(/^S\d+: /gm) ?? []).length === 1));
 });
 
 test('pipeline: timeline sorted by time, broken events dropped; contradictions need two documents; checklist needs evidence', async () => {
@@ -83,8 +84,9 @@ test('pipeline: progress and usage are reported per stage; provenance recorded',
   const stages: string[] = [];
   const a = await analyzeCase(input(), { model, key: 'k'.repeat(64), requestedModel: 'gemini-x', onProgress: (p) => stages.push(p.stage), now: () => new Date('2026-10-09T10:00:00Z') });
   assert.deepEqual(stages, ['read', 'extract', 'timeline', 'contradictions', 'draft', 'verify', 'ready']);
-  assert.equal(a.usage.calls.length, 4);
-  assert.equal(a.usage.inputTokens, 400);
+  // extract + screen + analyze + 5 isolated verifications + explain
+  assert.equal(a.usage.calls.length, 9);
+  assert.equal(a.usage.inputTokens, 900);
   assert.equal(a.requestedModel, 'gemini-x');
   assert.equal(a.model, 'fake-1');
   assert.equal(a.createdAt, '2026-10-09T10:00:00.000Z');
