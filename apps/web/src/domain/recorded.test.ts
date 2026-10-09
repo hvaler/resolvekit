@@ -127,10 +127,16 @@ describe('read-back against a real-shaped dispute', () => {
     expect(g1.sends).toBe(1);
     expect(r1.kind).toBe('not_recorded');
 
-    const g2 = scripted([snap([buyerCreate, old, sellerEntry('2026-10-09T08:00:00Z', '1ZNEW')], 'UNDER_REVIEW')]);
+    const g2 = scripted([snap([buyerCreate, old, sellerEntry('2026-10-09T08:00:00Z')], 'UNDER_REVIEW')]);
     const r2 = await safeRetry(g2, submission, { requestId: 'rk-1', baseline: base });
     expect(g2.sends).toBe(0);
-    expect(r2).toMatchObject({ kind: 'recorded', resent: false, recorded: { tracking: '1ZNEW' } });
+    expect(r2).toMatchObject({ kind: 'recorded', resent: false, recorded: { date: '2026-10-09T08:00:00Z' } });
+
+    // M1: new seller evidence with another tracking is someone else's: not "recorded", and still nothing is sent.
+    const g3 = scripted([snap([buyerCreate, old, sellerEntry('2026-10-09T08:00:00Z', '1ZNEW')], 'UNDER_REVIEW')]);
+    const r3 = await safeRetry(g3, submission, { requestId: 'rk-1', baseline: base });
+    expect(g3.sends).toBe(0);
+    expect(r3).toMatchObject({ kind: 'mismatch', differs: ['tracking'], recorded: { tracking: '1ZNEW' } });
   });
 });
 
