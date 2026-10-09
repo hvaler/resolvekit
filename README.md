@@ -30,8 +30,8 @@ client in `packages/paypal`:
 | Route | What it does |
 |---|---|
 | `GET /api/health` | `{ paypal: "sandbox" \| "live" \| "unconfigured", bound: [case ids] }` after a lazy OAuth check |
-| `GET /api/disputes/{case}` | Reads the real dispute bound to the case and maps it: status, stage, reason, buyer-declared item type, allowed seller actions, evidence PayPal requests, every evidence entry with its source, response due date |
-| `POST /api/disputes/{case}/evidence` | Reads the dispute first, then checks: `provide_evidence` is offered now, the type is the one PayPal requests, notes ≤ 2,000 characters, tracking for proof of fulfillment. Builds the PDFs on the server from the case's synthetic documents (headed "SYNTHETIC TEST DOCUMENT") and sends them. Answers `202 { sent: true }` or `{ error, paypalIssue }` (e.g. `EVIDENCE_TYPE_IS_NOT_ALLOWED`) |
+| `GET /api/disputes/{case}` | Reads the real dispute bound to the case and maps it: status, stage, reason, buyer-declared item type, allowed seller actions, evidence PayPal requests, every evidence entry with its source, response due date. For the agent case, also the MeterMCP session of the disputed capture (see [MeterMCP](#metermcp)) |
+| `POST /api/disputes/{case}/evidence` | Reads the dispute first, then checks: `provide_evidence` is offered now, the type is the one PayPal requests, notes ≤ 2,000 characters, tracking for proof of fulfillment. Builds the PDFs on the server from the case's synthetic documents (headed "SYNTHETIC TEST DOCUMENT") and sends them; for the agent case with a MeterMCP session, the PDF of the real session receipt instead. Answers `202 { sent: true }` or `{ error, paypalIssue }` (e.g. `EVIDENCE_TYPE_IS_NOT_ALLOWED`) |
 
 The send never reports "recorded". The web app reads the dispute back and only shows **Recorded by PayPal** when PayPal
 lists new evidence `SUBMITTED_BY_SELLER` (`PROVIDE_EVIDENCE`) that was not there before sending. The buyer's own entry
@@ -66,7 +66,7 @@ Requires Node.js 24+ (TypeScript runs natively, no build step).
 ```bash
 cp .env.example .env   # PayPal sandbox app credentials (never committed)
 npm install
-npm test               # packages/paypal + apps/server (node --test, no network) + apps/web (vitest)
+npm test               # packages/* + apps/server + apps/metermcp (node --test, no network) + apps/web (vitest)
 ```
 
 To use real sandbox disputes, bind cases to them and run the server next to the web app:
@@ -99,13 +99,79 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # type-checks, then builds apps/web/dist
 npm run typecheck
-npm test           # packages/paypal + apps/server (node --test) + apps/web (vitest)
+npm test           # packages/* + apps/server + apps/metermcp (node --test) + apps/web (vitest)
 ```
 
 In development a small **Dev · simulator** control (bottom left; hidden on cases running on real PayPal) picks what the simulated PayPal does after evidence is
 submitted: *Waiting for buyer*, *Under review*, or *Timeout* (read back, then safe retry). It can also make PayPal
 open the new dispute now (otherwise it opens after ~75 s) or simulate PayPal being unreachable. In other builds add
 `?dev` to the URL, or `?outcome=under_review|timeout` to preselect it.
+
+## MeterMCP
+
+`apps/metermcp` is a minimal, **real** metered MCP gateway: the seller behind the agent-purchase case. An AI agent
+calls paid tools over MCP; the user approves a budget once in PayPal; MeterMCP charges only the calls that succeed and
+releases the rest. It is a single seller (the PayPal sandbox app in `.env` is paid directly); no marketplace, no payouts.
+
+**What is real and what is synthetic.** The PayPal side is real sandbox money flow: the budget is a PayPal Orders v2
+`AUTHORIZE` order the buyer approves, its authorization is the hard cap, and closing the session is a real partial
+capture with `final_capture` (or a void). The ledger, the request hashes and the receipts are real records of what
+happened. The **tools' outputs are synthetic** (deterministic demo data), and the failed `deep_report` call in the
+demo is injected by a test switch; the receipt says both.
+
+**Flow**
+
+1. A paid call without an approved budget answers an MCP tool error `payment_required` with the price, the budget
+   proposal (default 5.00 USD) and an `approval_url`. Behind it MeterMCP created an `AUTHORIZE` order for the budget
+   with one `DIGITAL_GOODS` item ("MeterMCP agent session (metered tool calls)"), `custom_id` = session id,
+   `NO_SHIPPING`, and return/cancel URLs on MeterMCP itself (`/approved`, `/cancelled`).
+2. The user approves in PayPal. MeterMCP notices (browser return to `/approved`, or the agent polling `get_balance`),
+   re-reads the order, authorizes it, and opens the session only if PayPal reports exactly one authorization in status
+   `CREATED` for exactly the cap, for this session's order, with a future expiry.
+3. Each paid call (`quote_lookup` 0.05, `deep_report` 0.40, `bulk_export` 0.92 USD; prices in the tool description,
+   title and `_meta["metermcp/price"]`) reserves its price in one SQLite transaction before the tool runs. A call that
+   would exceed the cap is refused before forwarding (`budget_exceeded`, with remaining, price and a top-up hint);
+   concurrent calls cannot both take the last of the budget. A successful call is committed (charged); a failed one is
+   released and never charged. Each call records `sha256` of canonical `{session, n, tool, args}` and of the response.
+4. `close_session` (or the admin endpoint, or 15 idle minutes) re-reads the authorization and captures exactly the
+   sum of the OK calls with `final_capture: true` (`invoice_id` `<session>-settle`, a `note_to_payer` listing the
+   calls); the rest of the authorization is released. Nothing used: the authorization is voided. If PayPal fails or
+   answers anything unexpected the session stays `settlement_failed`, never charged; closing again retries with the
+   same `PayPal-Request-Id`.
+
+**Endpoints** (127.0.0.1:8790 only; `Host` must be this server, a browser `Origin` is refused, POST takes JSON only)
+
+| Route | Who | What |
+|---|---|---|
+| `POST/GET/DELETE /mcp` | MCP clients | Streamable HTTP. Tools: the three paid ones, `price_list`, `get_balance`, `close_session`, `get_receipt`. Each MCP session reaches only its own payment session. |
+| `GET /approved`, `GET /cancelled` | the buyer's browser, from PayPal | Re-read the order from PayPal; the query string proves nothing |
+| `GET /sessions?capture=<id>` | apps/server | The session whose PayPal capture is `<id>` |
+| `GET /sessions/<id>/receipt.json`, `.pdf` | apps/server | Mandate (order, authorization, cap, approval time), every call (time, tool, price, status, request hash), totals, capture id, remainder released |
+| `POST /sessions/<id>/close` | admin | Close and settle (or retry a failed settlement) |
+
+The `/sessions` routes need the per-launch admin token (`x-metermcp-token`, written to `apps/metermcp/.runtime-token`,
+git-ignored); a session id (128 random bits) is never a credential. The ledger lives in `apps/metermcp/data/`
+(git-ignored).
+
+**ResolveKit uses the real receipt.** For the agent case bound to a real dispute, `apps/server` asks MeterMCP for the
+session of the dispute's disputed capture and adds it to the case. The web app then shows the real mandate, per-call
+receipt (AG Grid), settlement and timeline, each card labelled **From MeterMCP · session …**; without a session the
+cards say **Demo data** and the case says why. The evidence goes as `PROOF_OF_FULFILLMENT`, carrier `OTHER`
+("Digital delivery"), tracking = session id, with the PDF MeterMCP builds from the real receipt.
+
+**Run the demo agent** (`apps/metermcp/scripts/demo-agent.ts`, scripted MCP client; the planner is pluggable):
+
+```bash
+METERMCP_FAIL_FIRST=deep_report npm run metermcp   # PowerShell: $env:METERMCP_FAIL_FIRST='deep_report'; npm run metermcp
+npm run demo-agent                                  # prints the approval URL, waits, makes the calls, closes
+npm run demo-agent -- --no-wait                     # stop after printing the approval URL
+```
+
+Approve with the sandbox **personal** (buyer) account. The agent then calls `quote_lookup`, `deep_report` (fails
+once: test switch, not charged), `deep_report` again, `bulk_export`, closes the session (captures 1.37 of 5.00 USD)
+and prints the PayPal capture id. `METERMCP_FAIL_FIRST` makes the first call of the named tools in each session fail;
+leave it unset for normal operation. Other settings: `METERMCP_PORT` (8790), `METERMCP_BUDGET` (5.00),
+`METERMCP_IDLE_MINUTES` (15), `METERMCP_PUBLIC_URL`. Stop MeterMCP with Ctrl+C (it removes its token file).
 
 ## AI tools
 
