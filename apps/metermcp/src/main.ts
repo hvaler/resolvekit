@@ -69,6 +69,7 @@ if (hosted) {
     demoCode,
     budgets: new DailyCounters({ file: join(dataDir, 'daily-caps.json'), limits: { budget: envInt(process.env, 'DAILY_BUDGETS', 20) } }),
     trustedHops: envInt(process.env, 'TRUSTED_PROXY_HOPS', 1),
+    proxyTrust: process.env.TRUSTED_PROXY_PEERS === 'any' ? 'any' : process.env.TRUSTED_PROXY_PEERS === 'none' ? 'none' : 'private',
   };
 } else {
   token = randomBytes(32).toString('hex');

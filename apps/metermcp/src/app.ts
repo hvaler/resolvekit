@@ -13,7 +13,7 @@
  * other sites are refused); POST bodies must be application/json.
  */
 import { timingSafeEqual } from 'node:crypto';
-import { KeyedLimiter, clientIp, hostOf, sameSecret as sameCode, withSecurityHeaders, type DailyCounters } from '@resolvekit/hosting';
+import { KeyedLimiter, clientIp, describeClientIp, hostOf, sameSecret as sameCode, withSecurityHeaders, type DailyCounters, type ProxyTrust } from '@resolvekit/hosting';
 import type { PayPalEnv } from '@resolvekit/paypal';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { createMcpEndpoint, type BudgetPolicy, type McpLimits, type McpMetrics } from './mcp.ts';
@@ -38,6 +38,8 @@ export interface HostedMeterOptions {
   /** Daily cap `budget`: budgets (PayPal orders) created per UTC day, persisted on the disk. */
   budgets: DailyCounters;
   trustedHops?: number;
+  /** Whose X-Forwarded-For is believed (default: a proxy on a private address). */
+  proxyTrust?: ProxyTrust;
   /** /mcp requests per IP. */
   mcpPerIp?: { limit: number; windowMs: number };
   /** Wrong demo codes per IP before even the right one is refused for a while. */
@@ -105,6 +107,7 @@ export function createApp(opts: AppOptions): Handler {
   const now = h?.now ?? Date.now;
   const mcpLimit = new KeyedLimiter({ limit: 600, windowMs: 5 * 60_000, ...h?.mcpPerIp, now });
   const badCodes = new KeyedLimiter({ limit: 5, windowMs: 15 * 60_000, ...h?.badCodesPerIp, now });
+  let derivationLogged = false;
   const publicHosts = new Set((h?.publicHosts ?? []).map((x) => x.toLowerCase()));
 
   // Hosted: a budget opens only for a request that carried the demo code, within today's cap (reserved atomically,
@@ -131,7 +134,11 @@ export function createApp(opts: AppOptions): Handler {
     const path = url.pathname;
     if (path === '/mcp') {
       if (!h) return mcp.handle(req, undefined, 'local');
-      const ip = clientIp(req, h.trustedHops ?? 1);
+      const ip = clientIp(req, h.trustedHops ?? 1, h.proxyTrust ?? 'private');
+      if (!derivationLogged) {
+        derivationLogged = true;
+        log(`client address derivation · ${describeClientIp(req, h.trustedHops ?? 1, h.proxyTrust ?? 'private')}`);
+      }
       const lim = mcpLimit.take(ip);
       if (!lim.ok) return json(429, { jsonrpc: '2.0', error: { code: -32000, message: `Too many requests; retry in ${lim.retryAfterSec} s` }, id: null });
       const code = req.headers.get(DEMO_CODE_HEADER);

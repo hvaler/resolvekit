@@ -8,6 +8,8 @@ import {
   DailyCounters,
   KeyedLimiter,
   LIVE_OPT_IN,
+  describeClientIp,
+  isPrivateAddress,
   paypalEnvFor,
   PEER_HEADER,
   StaticSite,
@@ -27,10 +29,29 @@ test('clientIp: one trusted hop takes the last X-Forwarded-For entry; client-wri
   assert.equal(clientIp(req({ 'x-forwarded-for': '203.0.113.9' })), '203.0.113.9');
   assert.equal(clientIp(req({ 'x-forwarded-for': '1.1.1.1, 6.6.6.6, 203.0.113.9' })), '203.0.113.9');
   assert.equal(clientIp(req({ 'x-forwarded-for': '1.1.1.1, 203.0.113.9' }), 2), '1.1.1.1');
-  assert.equal(clientIp(req({ 'x-forwarded-for': '2001:db8::1' })), '2001:db8::1');
+  // IPv6 is keyed per /64 (one subscriber's prefix), IPv4-mapped addresses unwrapped.
+  assert.equal(clientIp(req({ 'x-forwarded-for': '2001:db8::1' })), '2001:db8:0:0::/64');
+  assert.equal(clientIp(req({ 'x-forwarded-for': '2001:db8:0:0:ffff:1:2:3' })), '2001:db8:0:0::/64');
+  assert.equal(clientIp(req({ 'x-forwarded-for': '::ffff:203.0.113.9' })), '203.0.113.9');
   assert.equal(clientIp(req({ 'x-forwarded-for': 'evil<script>' })), 'invalid');
   assert.equal(clientIp(req({ [PEER_HEADER]: '127.0.0.1' })), '127.0.0.1');
   assert.equal(clientIp(req()), 'unknown');
+});
+
+test('clientIp: X-Forwarded-For is believed only from a proxy on a private address (review 7)', () => {
+  // Render's proxy connects from a private address: its header is used.
+  assert.equal(clientIp(req({ [PEER_HEADER]: '10.0.3.7', 'x-forwarded-for': '1.1.1.1, 203.0.113.9' })), '203.0.113.9');
+  assert.equal(clientIp(req({ [PEER_HEADER]: '::ffff:10.0.3.7', 'x-forwarded-for': '203.0.113.9' })), '203.0.113.9');
+  // Straight from the internet: a forged header is ignored; the TCP address is the key.
+  assert.equal(clientIp(req({ [PEER_HEADER]: '198.51.100.20', 'x-forwarded-for': '203.0.113.9' })), '198.51.100.20');
+  assert.equal(clientIp(req({ [PEER_HEADER]: '198.51.100.20', 'x-forwarded-for': '203.0.113.9' }), 1, 'any'), '203.0.113.9');
+  assert.equal(clientIp(req({ [PEER_HEADER]: '10.0.3.7', 'x-forwarded-for': '203.0.113.9' }), 1, 'none'), '10.0.3.7');
+  for (const a of ['10.1.2.3', '172.16.0.1', '192.168.1.1', '100.64.0.1', '127.0.0.1', '::1', 'fd00::1']) assert.equal(isPrivateAddress(a), true, a);
+  for (const a of ['8.8.8.8', '172.32.0.1', '2001:db8::1']) assert.equal(isPrivateAddress(a), false, a);
+  // The startup log line hides host parts.
+  const line = describeClientIp(req({ [PEER_HEADER]: '10.0.3.7', 'x-forwarded-for': '1.2.3.4, 203.0.113.9' }));
+  assert.match(line, /peer 10\.0\.3\.x \(private\) · X-Forwarded-For 2 entries \[1\.2\.3\.x, 203\.0\.113\.x\] believed · trusted hops 1 · client key 203\.0\.113\.x/);
+  assert.ok(!line.includes('203.0.113.9') && !line.includes('10.0.3.7'));
 });
 
 test('KeyedLimiter: per key, fixed window, retry-after', () => {

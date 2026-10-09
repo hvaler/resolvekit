@@ -29,21 +29,75 @@ export const PEER_HEADER = 'x-resolvekit-peer';
 
 const IP_CHARS = /^[0-9A-Fa-f:.]{2,45}$/;
 
+/** Whose X-Forwarded-For is believed: a proxy on a private/loopback address (default), any peer, or none. */
+export type ProxyTrust = 'private' | 'any' | 'none';
+
+const v4 = (ip: string): number[] | null => {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  return m ? m.slice(1).map(Number) : null;
+};
+const unmap = (ip: string) => ip.replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, '');
+
+/** Loopback, private (RFC 1918), shared/CGNAT (100.64/10), link-local, IPv6 unique-local: where a platform proxy sits. */
+export function isPrivateAddress(raw: string): boolean {
+  const ip = unmap(raw.trim());
+  const a = v4(ip);
+  if (a) {
+    const [x, y] = a as [number, number];
+    return x === 10 || x === 127 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 100 && y >= 64 && y <= 127) || (x === 169 && y === 254);
+  }
+  const l = ip.toLowerCase();
+  return l === '::1' || /^f[cd][0-9a-f]{2}:/.test(l) || /^fe[89ab][0-9a-f]:/.test(l);
+}
+
+/** The key limits use for an address: IPv4 as is (IPv4-mapped unwrapped), IPv6 per /64 (one subscriber's prefix). */
+export function addressKey(raw: string): string {
+  const ip = unmap(raw.trim());
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.toLowerCase().split('::') as [string, string | undefined];
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const full = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  return `${full.slice(0, 4).map((h) => h.replace(/^0+(?=.)/, '') || '0').join(':')}::/64`;
+}
+
 /**
- * The client's address. Each proxy appends the address it received the connection from to X-Forwarded-For, so with
- * `trustedHops` proxies in front (Render: 1) the client is the entry that many places from the end; anything before it
- * was written by the client and is ignored. Without X-Forwarded-For (no proxy in front) it is the TCP peer.
+ * The client's address, as the key limits use ({@link addressKey}: IPv6 per /64). Each proxy appends the address it
+ * received the connection from to X-Forwarded-For, so with `trustedHops` proxies in front (Render: 1) the client is
+ * the entry that many places from the end; anything before it was written by the client and is ignored. That header
+ * is believed only when the TCP peer is a proxy we trust (default: a private/loopback address, which is where a
+ * platform proxy connects from); a request straight from the internet is keyed on its own TCP address, whatever
+ * X-Forwarded-For it sends. (Requests built in-process, without the peer header, are tests: the header is used.)
  */
-export function clientIp(req: Request, trustedHops = 1): string {
+export function clientIp(req: Request, trustedHops = 1, trust: ProxyTrust = 'private'): string {
+  const peer = req.headers.get(PEER_HEADER);
+  const believe = trust === 'any' || (trust === 'private' && (peer == null || isPrivateAddress(peer)));
   const xff = req.headers.get('x-forwarded-for');
-  if (xff && trustedHops > 0) {
+  if (believe && xff && trustedHops > 0) {
     const hops = xff.split(',').map((s) => s.trim()).filter(Boolean);
     if (hops.length) {
       const ip = hops[Math.max(0, hops.length - trustedHops)]!;
-      return IP_CHARS.test(ip) ? ip : 'invalid';
+      return IP_CHARS.test(ip) ? addressKey(ip) : 'invalid';
     }
   }
-  return req.headers.get(PEER_HEADER) ?? 'unknown';
+  return peer && IP_CHARS.test(peer) ? addressKey(peer) : 'unknown';
+}
+
+/** An address with its host part hidden (for logs): 203.0.113.x, 2001:db8:…. */
+export function maskAddress(raw: string | null | undefined): string {
+  if (!raw) return 'none';
+  const ip = unmap(raw.trim());
+  const a = v4(ip);
+  if (a) return `${a[0]}.${a[1]}.${a[2]}.x`;
+  return ip.includes(':') ? `${ip.split(':').slice(0, 2).join(':')}:…` : 'invalid';
+}
+
+/** How the client address of this request was derived, masked, for a one-time startup log line. */
+export function describeClientIp(req: Request, trustedHops = 1, trust: ProxyTrust = 'private'): string {
+  const peer = req.headers.get(PEER_HEADER);
+  const xff = (req.headers.get('x-forwarded-for') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const believed = trust === 'any' || (trust === 'private' && (peer == null || isPrivateAddress(peer)));
+  return `peer ${maskAddress(peer)} (${peer ? (isPrivateAddress(peer) ? 'private' : 'public') : 'none'}) · X-Forwarded-For ${xff.length} entr${xff.length === 1 ? 'y' : 'ies'} [${xff.map(maskAddress).join(', ')}] ${believed ? 'believed' : 'ignored'} · trusted hops ${trustedHops} · client key ${maskAddress(clientIp(req, trustedHops, trust).replace(/::\/64$/, ''))}`;
 }
 
 /** The Host the request was sent to (lower-cased). */
@@ -73,6 +127,18 @@ export class KeyedLimiter {
     if (h.count >= this.o.limit) return { ok: false, retryAfterSec: Math.max(1, Math.ceil((h.start + this.o.windowMs - t) / 1000)) };
     h.count++;
     return { ok: true, remaining: this.o.limit - h.count };
+  }
+
+  /** How many requests `key` has used in its current window (0 when none). */
+  used(key: string): number {
+    const h = this.hits.get(key);
+    return h && this.o.now() - h.start < this.o.windowMs ? h.count : 0;
+  }
+
+  /** Seconds until `key`'s window ends (1 at least). */
+  retryAfterSec(key: string): number {
+    const h = this.hits.get(key);
+    return h ? Math.max(1, Math.ceil((h.start + this.o.windowMs - this.o.now()) / 1000)) : 1;
   }
 
   /** Give back one request taken in the current window (the action it counted for did not happen). */

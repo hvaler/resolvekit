@@ -144,6 +144,8 @@ if (hosted) {
     hosts: pub.hosts,
     https: pub.https,
     trustedHops: envInt(process.env, 'TRUSTED_PROXY_HOPS', 1),
+    // X-Forwarded-For is believed only from a proxy on a private address (Render's), unless set to "any" or "none".
+    proxyTrust: process.env.TRUSTED_PROXY_PEERS === 'any' ? 'any' : process.env.TRUSTED_PROXY_PEERS === 'none' ? 'none' : 'private',
   });
   log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · demo code ${demoCode ? 'set' : 'NOT set'} · data in ${dataDir}`);
 } else {

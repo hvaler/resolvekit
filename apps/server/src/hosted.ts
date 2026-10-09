@@ -18,6 +18,8 @@ import {
   DEMO_COOKIE,
   KeyedLimiter,
   clientIp,
+  describeClientIp,
+  type ProxyTrust,
   demoCookie,
   hostOf,
   readCookie,
@@ -65,6 +67,8 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
   site: StaticSite | null;
   /** Proxies in front that append to X-Forwarded-For (Render: 1). */
   trustedHops?: number;
+  /** Whose X-Forwarded-For is believed (default: a proxy on a private address; env TRUSTED_PROXY_PEERS). */
+  proxyTrust?: ProxyTrust;
   limits?: Partial<HostedLimits>;
 }
 
@@ -73,12 +77,14 @@ export interface HostedLimits {
   api: { limit: number; windowMs: number };
   /** Reads that go to PayPal (GET /api/disputes/…), per IP. */
   paypalReads: { limit: number; windowMs: number };
-  /** Unlock attempts per IP (brute force). */
+  /** Wrong demo codes per IP (brute force); a correct code is never counted. */
   unlockPerIp: { limit: number; windowMs: number };
-  /** Unlock attempts from everyone together (distributed brute force). */
+  /** Wrong demo codes from everyone together (distributed brute force): beyond it, addresses that already guessed wrong wait. */
   unlockGlobal: { limit: number; windowMs: number };
   /** Submission intents composed, per IP (a flood from one address cannot fill the server's intent store). */
   intentsPerIp: { limit: number; windowMs: number };
+  /** Demo sessions minted (correct unlocks) per IP. */
+  sessionsPerIp: { limit: number; windowMs: number };
 }
 
 const MIN = 60_000;
@@ -88,6 +94,7 @@ export const DEFAULT_LIMITS: HostedLimits = {
   unlockPerIp: { limit: 5, windowMs: 15 * MIN },
   unlockGlobal: { limit: 60, windowMs: 60 * MIN },
   intentsPerIp: { limit: 20, windowMs: 10 * MIN },
+  sessionsPerIp: { limit: 10, windowMs: 60 * MIN },
 };
 
 export const SESSION_TTL_MS = 12 * 60 * MIN;
@@ -113,12 +120,15 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const now = o.now ?? (() => new Date());
   const ttl = o.sessionTtlMs ?? SESSION_TTL_MS;
   const hops = o.trustedHops ?? 1;
+  const trust: ProxyTrust = o.proxyTrust ?? 'private';
+  let derivationLogged = false;
   const L: HostedLimits = { ...DEFAULT_LIMITS, ...o.limits };
   const apiLimit = new KeyedLimiter({ ...L.api, now: () => now().getTime() });
   const readLimit = new KeyedLimiter({ ...L.paypalReads, now: () => now().getTime() });
   const unlockIp = new KeyedLimiter({ ...L.unlockPerIp, now: () => now().getTime() });
   const unlockAll = new KeyedLimiter({ ...L.unlockGlobal, now: () => now().getTime() });
   const intentLimit = new KeyedLimiter({ ...L.intentsPerIp, now: () => now().getTime() });
+  const sessionsIp = new KeyedLimiter({ ...L.sessionsPerIp, now: () => now().getTime() });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
   const session = (req: Request) => verifyDemoSession(o.sessionSecret, readCookie(req, DEMO_COOKIE), now().getTime(), ttl);
@@ -143,7 +153,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     // the simulator records a visitor without the code as such.
     actor(req: Request, unlocked: boolean): Actor {
       const cookie = readCookie(req, DEMO_COOKIE);
-      const client = clientIp(req, hops);
+      const client = clientIp(req, hops, trust);
       if (cookie && session(req).ok) return { ok: true, actor: `demo session ${createHash('sha256').update(cookie).digest('hex').slice(0, 12)}`, client };
       if (!unlocked) return { ok: true, actor: 'visitor (no demo code)', client };
       return { ok: false, refusal: { status: 403, body: { error: 'DEMO_CODE_REQUIRED', detail: LOCKED_REASON.evidence, action: 'evidence' } } };
@@ -170,19 +180,35 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     if (!o.demoCode) return json(503, { error: 'DEMO_DISABLED', detail: 'No demo code is configured on this server' });
     // A browser that is already unlocked keeps its session: no new one is minted (and no attempt is counted).
     if (session(req).ok) return json(200, demoState(req));
-    // Count the attempt before looking at the code (both limits, atomically): guesses are capped per IP and overall.
-    const perIp = unlockIp.take(ip);
-    if (!perIp.ok) return tooMany(perIp.retryAfterSec, `Too many attempts; try again in ${Math.ceil(perIp.retryAfterSec / 60)} min`);
-    const all = unlockAll.take('*');
-    if (!all.ok) return tooMany(all.retryAfterSec, `Too many attempts on this demo; try again in ${Math.ceil(all.retryAfterSec / 60)} min`);
     let body: { code?: unknown } | null;
     try {
       body = (await req.json()) as typeof body;
     } catch {
       return json(400, { error: 'INVALID_JSON' });
     }
+    // From here to the answer nothing awaits: check, compare and count happen in one step (concurrent guesses cannot
+    // get past the limits). Only WRONG codes are counted (failures-only limiters), so guessing without the code can
+    // never lock out someone who has it: an address is blocked only by its own wrong guesses; and when wrong guesses
+    // from everywhere pass the global limit, addresses that already guessed wrong wait while a first try (a judge
+    // pasting the right code) is still checked.
+    if (unlockIp.blocked(ip)) {
+      const sec = unlockIp.retryAfterSec(ip);
+      return tooMany(sec, `Too many wrong codes from this address; try again in ${Math.ceil(sec / 60)} min`);
+    }
+    if (unlockAll.blocked('*') && unlockIp.used(ip) > 0) {
+      const sec = unlockAll.retryAfterSec('*');
+      return tooMany(sec, `Too many wrong codes on this demo; try again in ${Math.ceil(sec / 60)} min`);
+    }
     const code = typeof body?.code === 'string' ? body.code.trim() : '';
-    if (!code || code.length > 200 || !sameSecret(code, o.demoCode)) return json(403, { error: 'BAD_DEMO_CODE', detail: 'That is not the demo code' });
+    if (!code || code.length > 200 || !sameSecret(code, o.demoCode)) {
+      unlockIp.take(ip);
+      unlockAll.take('*');
+      return json(403, { error: 'BAD_DEMO_CODE', detail: 'That is not the demo code' });
+    }
+    // The right code: one more demo session for this address, within its own limit (sessions also count against the
+    // per-session caps, and an already unlocked browser keeps its session above).
+    const minted = sessionsIp.take(ip);
+    if (!minted.ok) return tooMany(minted.retryAfterSec, `Too many demo sessions from this address; try again in ${Math.ceil(minted.retryAfterSec / 60)} min`);
     const exp = now().getTime() + ttl;
     const r = json(200, { ...demoState(req), unlocked: true, expiresAt: new Date(exp).toISOString() });
     r.headers.set('set-cookie', demoCookie(signDemoSession(o.sessionSecret, exp), ttl / 1000));
@@ -204,7 +230,12 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') ?? '')) {
         return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json' });
       }
-      const ip = clientIp(req, hops);
+      const ip = clientIp(req, hops, trust);
+      if (!derivationLogged) {
+        // Once: how the client address is derived on this deployment (masked), to confirm the proxy's header shape.
+        derivationLogged = true;
+        o.log?.(`client address derivation · ${describeClientIp(req, hops, trust)}`);
+      }
       const a = apiLimit.take(ip);
       if (!a.ok) return tooMany(a.retryAfterSec, `Too many requests; try again in ${a.retryAfterSec} s`);
       if (path === '/api/demo' || path.startsWith('/api/demo/')) return demoRoute(req, path, ip);

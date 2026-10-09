@@ -211,16 +211,41 @@ test('unlock: the cookie expires after 12 h, and a tampered or foreign-secret co
   assert.equal(pp.sends(), 0);
 });
 
-test('unlock: brute force is limited per IP (counted before the code is compared) and overall', async () => {
+test('unlock: wrong codes are limited per IP and overall; the right code from an address that did not guess still works', async () => {
   const { app } = setup({ limits: { unlockPerIp: { limit: 3, windowMs: 900_000 }, unlockGlobal: { limit: 5, windowMs: 3_600_000 } } });
   for (let i = 0; i < 3; i++) assert.equal((await unlock(app, `guess-${i}`)).status, 403);
   const limited = await unlock(app); // even the right code: this IP is out of attempts
   assert.equal(limited.status, 429);
   assert.equal(limited.cookie, null);
-  // Another IP still has attempts, until the global limit.
+  // Correct codes are never counted.
   assert.equal((await unlock(app, CODE, '198.51.100.1')).status, 200);
   assert.equal((await unlock(app, 'x', '198.51.100.2')).status, 403);
-  assert.equal((await unlock(app, CODE, '198.51.100.3')).status, 429);
+  assert.equal((await unlock(app, 'y', '198.51.100.4')).status, 403);
+  // Past the global limit of wrong codes: an address that already guessed wrong waits…
+  assert.equal((await unlock(app, CODE, '198.51.100.2')).status, 429);
+  // …a first try with the right code is still accepted (review 3: guessing cannot lock judges out).
+  assert.equal((await unlock(app, CODE, '198.51.100.3')).status, 200);
+});
+
+test('unlock: 60 wrong guesses from 12 addresses do not lock out a judge with the right code (review 3)', async () => {
+  const { app } = setup();
+  const codes: Record<number, number> = {};
+  for (let n = 0; n < 60; n++) {
+    const r = await unlock(app, 'wrong', `192.0.2.${Math.floor(n / 5)}`);
+    codes[r.status] = (codes[r.status] ?? 0) + 1;
+  }
+  assert.equal(codes[200] ?? 0, 0);
+  const judge = await unlock(app, CODE, '198.51.100.50');
+  assert.equal(judge.status, 200);
+  assert.ok(judge.cookie);
+});
+
+test('unlock: one address cannot mint unlimited demo sessions with the right code', async () => {
+  const { app } = setup({ limits: { sessionsPerIp: { limit: 2, windowMs: 3_600_000 } } });
+  assert.equal((await unlock(app, CODE, '198.51.100.60')).status, 200);
+  assert.equal((await unlock(app, CODE, '198.51.100.60')).status, 200);
+  assert.equal((await unlock(app, CODE, '198.51.100.60')).status, 429);
+  assert.equal((await unlock(app, CODE, '198.51.100.61')).status, 200);
 });
 
 test('unlock: concurrent guesses never exceed the per-IP limit', async () => {
