@@ -133,3 +133,24 @@ describe('read-back against a real-shaped dispute', () => {
     expect(r2).toMatchObject({ kind: 'recorded', resent: false, recorded: { tracking: '1ZNEW' } });
   });
 });
+
+describe('PayPal events after the documents', () => {
+  it('the seller’s evidence and the outcome, in the timeline’s format, labelled by who recorded them', async () => {
+    const { payPalEvents } = await import('./recorded');
+    const s = {
+      id: 'X',
+      status: 'RESOLVED' as const,
+      allowedActions: [],
+      readAt: '',
+      outcome: { code: 'RESOLVED_SELLER_FAVOUR', closedAt: '2026-10-02T16:00:00Z' },
+      evidences: [
+        { evidenceType: 'CREATE', source: 'SUBMITTED_BY_BUYER', date: '2026-09-25T09:00:00Z', carrier: '', tracking: '', notes: '', files: [], storedAt: '' },
+        { evidenceType: 'PROOF_OF_FULFILLMENT', source: 'SUBMITTED_BY_SELLER', action: 'PROVIDE_EVIDENCE', date: '2026-09-26T11:05:00Z', carrier: 'USPS', tracking: '9', notes: 'n', files: [], storedAt: '' },
+      ],
+    };
+    expect(payPalEvents(s, 'the simulator').map((e) => (e.kind === 'event' ? [e.time, e.title, e.sub] : null))).toEqual([
+      ['26 Sep 11:05', 'Evidence sent', 'PROOF_OF_FULFILLMENT · recorded by the simulator'],
+      ['2 Oct 16:00', 'Dispute closed', 'RESOLVED_SELLER_FAVOUR · the simulator'],
+    ]);
+  });
+});

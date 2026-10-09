@@ -18,7 +18,7 @@ import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
 import { lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
-import { hasSellerEvidence } from '../domain/recorded';
+import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
@@ -69,7 +69,13 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const locked = useMemo(() => ({ live: lockedReason(demoLock, 'live-analysis'), recheck: lockedReason(demoLock, 'recheck') }), [demoLock]);
   const analysis = useAnalysis(id, input, analysisClient, locked);
   const an = analysis.state;
-  const c = useMemo(() => (an.kind === 'ready' ? withAnalysis(docs, an.analysis, an.input) : docs), [docs, an]);
+  // A case that starts further on (evidence recorded, closed) also shows what happened at PayPal after the documents.
+  const later = demo.simulatedPayPal && snap ? payPalEvents(snap, snap.origin?.kind === 'paypal' ? 'PayPal' : 'the simulator') : [];
+  const c = useMemo(() => {
+    if (an.kind !== 'ready') return docs;
+    const withA = withAnalysis(docs, an.analysis, an.input);
+    return later.length ? { ...withA, timeline: [...withA.timeline, ...later], timelineCaption: withA.timelineCaption.replace(/^(\d+) events/, (_, n: string) => `${Number(n) + later.length} events`) } : withA;
+  }, [docs, an, later.length]);
   const status = snap?.status ?? demo.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
   const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, analysis });

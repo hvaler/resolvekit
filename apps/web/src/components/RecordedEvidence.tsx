@@ -72,7 +72,7 @@ export function RecordedEvidence({ snapshot, realPayPal }: { snapshot: DisputeSn
             </dd>
           </dl>
           <span className="text-[11.5px] text-ink-3">
-            Read back from {by}. The draft below is the analysis it was built from: supported sentences went as the notes, removed ones were never sent.
+            Read back from {by}. The draft below is the analysis it was built from: only its supported sentences went as the notes; sentences that needed review or were removed were not sent.
           </span>
         </>
       ) : (
