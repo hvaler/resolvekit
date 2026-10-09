@@ -61,8 +61,10 @@ services:
         value: 200
       - key: DAILY_EVIDENCE_SENDS
         value: 20
-      - key: TRUSTED_PROXY_HOPS # Render's proxy appends the client to X-Forwarded-For
-        value: 1
+      # Two hops in front of *.onrender.com: Cloudflare appends the visitor, then Render's proxy appends Cloudflare.
+      # Verified on the deployed service 2026-10-09: X-Forwarded-For had 2 entries [visitor, Cloudflare edge].
+      - key: TRUSTED_PROXY_HOPS
+        value: 2
 
   - type: web
     name: resolvekit-metermcp
@@ -100,5 +102,5 @@ services:
         value: deep_report
       - key: DAILY_BUDGETS
         value: 20
-      - key: TRUSTED_PROXY_HOPS
-        value: 1
+      - key: TRUSTED_PROXY_HOPS # same two hops as resolvekit (Cloudflare, then Render)
+        value: 2
