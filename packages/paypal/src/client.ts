@@ -62,8 +62,8 @@ export class PayPalClient {
     return this.token.value;
   }
 
-  // JSON or multipart request. Every POST carries a PayPal-Request-Id so a retry cannot duplicate an action;
-  // pass the caller's own id to make a retry of the same approved action reuse it.
+  // JSON or multipart request. Every POST carries a PayPal-Request-Id (the caller's own id when given). Whether
+  // the Disputes API deduplicates on it is NOT verified, so callers must read the dispute back before any retry.
   async request<T>(method: 'GET' | 'POST', path: string, body?: unknown | FormData, opts: { requestId?: string } = {}): Promise<T> {
     const headers: Record<string, string> = { Authorization: `Bearer ${await this.accessToken()}` };
     let payload: BodyInit | undefined;

@@ -67,7 +67,8 @@ export class DisputesApi {
   }
 
   // Irreversible: PayPal accepts one submission; afterwards provide_evidence is gone. Re-read with get().
-  // `requestId` becomes the PayPal-Request-Id header, so a retry of the same approval is not a second action.
+  // `requestId` becomes the PayPal-Request-Id header. Deduplication by it is not verified for disputes: read back
+  // before retrying (see safeRetry in the web app).
   provideEvidence(disputeId: string, evidence: EvidenceInput, files: EvidenceFile[], opts: { requestId?: string } = {}): Promise<unknown> {
     const form = new FormData();
     form.append('input', new Blob([JSON.stringify({ evidences: [evidence] })], { type: 'application/json' }), 'input.json');
