@@ -50,13 +50,13 @@ export interface AnalystServiceOptions {
 export type ServiceAnswer = { status: number; body: unknown };
 
 /**
- * Hosted mode: asked right before a model call would start. `check` may refuse (demo code, daily cap); `commit`
- * counts the run once it starts. Stored analyses never reach it.
+ * A quota reservation: taken atomically (check and count in one synchronous step, so concurrent requests can never
+ * overshoot a cap) before the costly work starts; `release` refunds it when the work did not happen.
  */
-export interface LiveGate {
-  check(): ServiceAnswer | null;
-  commit(): void;
-}
+export type Reservation = { ok: true; release: () => void } | { ok: false; refusal: ServiceAnswer };
+
+/** Hosted mode: reserves a live model run (demo code, daily cap) right before it would start. Stored analyses never reach it. */
+export type LiveGate = () => Reservation;
 
 const HOUR = 3_600_000;
 
@@ -102,10 +102,10 @@ export class AnalystService {
     if (s.remaining <= 0) {
       return { status: 429, body: { error: 'RATE_LIMITED', detail: `Live analyses are limited to ${s.limit} per hour on this server; try again in ${Math.ceil(s.resetInSec / 60)} min`, key, live: s } };
     }
-    const refused = gate?.check();
-    if (refused) return { status: refused.status, body: { ...(refused.body as object), key, live: s } };
+    // From here to start() nothing awaits: the hourly slot and the gate's reservation are taken together.
+    const r = gate?.();
+    if (r && !r.ok) return { status: r.refusal.status, body: { ...(r.refusal.body as object), key, live: s } };
     this.live.take();
-    gate?.commit();
     this.start(key, caseId, input);
     return { status: 202, body: { status: 'running', key, progress: [], live: live() } };
   }
@@ -158,14 +158,14 @@ export class AnalystService {
     if (vs.remaining <= 0) {
       return { status: 429, body: { error: 'RATE_LIMITED', detail: `Re-checks are limited to ${vs.limit} per hour on this server`, resetInSec: vs.resetInSec } };
     }
-    const refused = gate?.check();
-    if (refused) return refused;
+    const r = gate?.();
+    if (r && !r.ok) return r.refusal;
     this.verifies.take();
-    gate?.commit();
     try {
       const r = await recheckSentence(analysis, input, text, { model: this.o.model, onUsage: (u) => this.o.onUsage?.(input.caseId, u) });
       return { status: 200, body: { verdict: r.verdict, reason: r.reason, rewrite: r.rewrite, decidedBy: r.decidedBy, citations: r.citations, model: r.usage.model, provider: r.usage.provider } };
     } catch (e) {
+      if (r?.ok) r.release(); // the re-check did not happen: refund the daily reservation
       return { status: 502, body: { error: 'ANALYST_FAILED', detail: e instanceof ModelError ? e.message : 'The re-check failed' } };
     }
   }

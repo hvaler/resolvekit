@@ -5,7 +5,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import type { AgentReceiptSource } from '../../web/src/domain/types.ts';
-import type { AnalystService, LiveGate } from './analysis.ts';
+import type { AnalystService, LiveGate, Reservation } from './analysis.ts';
 import { parseInput } from './analysis.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
@@ -22,13 +22,15 @@ export interface Refusal {
 }
 
 /**
- * Asked right before a costly action, with the request that asks for it: `check` refuses (demo code missing, daily
- * cap reached) or allows; `commit` counts the action once it actually starts. Local mode has no gate.
+ * Asked right before a costly action, with the request that asks for it. `reserve` refuses (demo code missing,
+ * daily cap reached) or reserves one unit atomically (check and count in one synchronous step, so concurrent requests
+ * cannot overshoot a cap); the caller releases it when the action did not happen. Local mode has no gate.
  */
 export interface CostGate {
-  check(req: Request, action: CostlyAction): Refusal | null;
-  commit(action: CostlyAction): void;
+  reserve(req: Request, action: CostlyAction): Reservation;
 }
+
+export type { Reservation };
 
 /** What the API routes need, in local and hosted mode alike. */
 export interface ApiOptions {
@@ -150,7 +152,7 @@ export function createApi(opts: ApiOptions): Handler {
   /** For the analyst: asked right before it would call the model (nothing stored for these documents, or a refresh). */
   const liveGate = (req: Request, action: CostlyAction): LiveGate | undefined => {
     const gate = opts.gate;
-    return gate ? { check: () => gate.check(req, action), commit: () => gate.commit(action) } : undefined;
+    return gate ? () => gate.reserve(req, action) : undefined;
   };
 
   let health: Promise<{ paypal: PayPalEnv | 'unconfigured'; error?: string }> | null = null;
@@ -253,75 +255,81 @@ export function createApi(opts: ApiOptions): Handler {
       if (isProblem(sub)) return json(sub.status, { error: sub.error, detail: sub.detail });
       if (sub.disputeId && sub.disputeId !== caseId) return json(400, { error: 'INVALID_SUBMISSION', detail: 'disputeId does not match the URL' });
       // Hosted demo: sending to real PayPal needs the demo code and stays within the daily cap.
-      const refused = opts.gate?.check(req, 'evidence');
-      if (refused) return json(refused.status, refused.body);
-
-      const demoFiles = (): EvidenceFile[] | Response => {
-        try {
-          return buildAttachments(caseId, sub.files);
-        } catch (e) {
-          if (e instanceof UnknownFileError) return json(422, { error: 'UNKNOWN_FILE', detail: e.message });
-          throw e;
-        }
-      };
-      let files: EvidenceFile[] | Response | null = isAgentCase(caseId) ? null : demoFiles();
-      if (files instanceof Response) return files;
-
-      // Read first: the rules depend on what PayPal shows now, not on what the browser last saw.
-      let dispute;
-      try {
-        dispute = await paypal.disputes.get(disputeId);
-      } catch (e) {
-        return fromPayPalError(e);
-      }
-      const problem = checkAgainstDispute(sub, dispute);
-      if (problem) return json(problem.status, { error: problem.error, detail: problem.detail });
-
-      // Agent case: when MeterMCP has the session of the disputed capture, the evidence is that session: digital
-      // delivery (carrier OTHER) referenced by the session id, with the PDF of the real receipt. Without a session
-      // the demo documents go, as for any bound case. If MeterMCP cannot be asked, nothing is sent.
-      let sessionRef: string | null = null;
-      if (files === null) {
-        let found: AgentReceiptSource;
-        try {
-          found = await agentReceipt(dispute);
-        } catch (e) {
-          return json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' });
-        }
-        if (found.kind === 'metermcp') {
-          const sid = found.session.sessionId;
-          if (sub.carrier !== 'OTHER' || sub.tracking !== sid) {
-            return json(422, { error: 'TRACKING_MISMATCH', detail: `Digital delivery of session ${sid}: carrier OTHER and tracking ${sid}` });
-          }
-          const wrong = sub.files.find((f) => f.name !== receiptFileName(sid));
-          if (wrong) return json(422, { error: 'UNKNOWN_FILE', detail: `File ${wrong.name} is not the receipt of session ${sid}` });
+      const reserved = opts.gate?.reserve(req, 'evidence');
+      if (reserved && !reserved.ok) return json(reserved.refusal.status, reserved.refusal.body);
+      // Refunded on every path that returns before PayPal is asked to record the evidence.
+      let sending = false;
+      const send = async (): Promise<Response> => {
+        const demoFiles = (): EvidenceFile[] | Response => {
           try {
-            files = sub.files.length ? [{ name: receiptFileName(sid), type: 'application/pdf', data: await opts.meterMcp!.receiptPdf(sid) }] : [];
+            return buildAttachments(caseId, sub.files);
+          } catch (e) {
+            if (e instanceof UnknownFileError) return json(422, { error: 'UNKNOWN_FILE', detail: e.message });
+            throw e;
+          }
+        };
+        let files: EvidenceFile[] | Response | null = isAgentCase(caseId) ? null : demoFiles();
+        if (files instanceof Response) return files;
+
+        // Read first: the rules depend on what PayPal shows now, not on what the browser last saw.
+        let dispute;
+        try {
+          dispute = await paypal.disputes.get(disputeId);
+        } catch (e) {
+          return fromPayPalError(e);
+        }
+        const problem = checkAgainstDispute(sub, dispute);
+        if (problem) return json(problem.status, { error: problem.error, detail: problem.detail });
+
+        // Agent case: when MeterMCP has the session of the disputed capture, the evidence is that session: digital
+        // delivery (carrier OTHER) referenced by the session id, with the PDF of the real receipt. Without a session
+        // the demo documents go, as for any bound case. If MeterMCP cannot be asked, nothing is sent.
+        let sessionRef: string | null = null;
+        if (files === null) {
+          let found: AgentReceiptSource;
+          try {
+            found = await agentReceipt(dispute);
           } catch (e) {
             return json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' });
           }
-          sessionRef = sid;
-        } else {
-          files = demoFiles();
-          if (files instanceof Response) return files;
+          if (found.kind === 'metermcp') {
+            const sid = found.session.sessionId;
+            if (sub.carrier !== 'OTHER' || sub.tracking !== sid) {
+              return json(422, { error: 'TRACKING_MISMATCH', detail: `Digital delivery of session ${sid}: carrier OTHER and tracking ${sid}` });
+            }
+            const wrong = sub.files.find((f) => f.name !== receiptFileName(sid));
+            if (wrong) return json(422, { error: 'UNKNOWN_FILE', detail: `File ${wrong.name} is not the receipt of session ${sid}` });
+            try {
+              files = sub.files.length ? [{ name: receiptFileName(sid), type: 'application/pdf', data: await opts.meterMcp!.receiptPdf(sid) }] : [];
+            } catch (e) {
+              return json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' });
+            }
+            sessionRef = sid;
+          } else {
+            files = demoFiles();
+            if (files instanceof Response) return files;
+          }
         }
-      }
 
-      opts.gate?.commit('evidence');
-      const tracking = { carrier_name: sub.carrier, tracking_number: sub.tracking, ...(sub.carrier === 'OTHER' ? { carrier_name_other: 'Digital delivery' } : {}) };
-      try {
-        await paypal.disputes.provideEvidence(
-          disputeId,
-          { evidence_type: sub.evidenceType, evidence_info: { tracking_info: [tracking] }, notes: sub.notes },
-          files,
-          { requestId: sub.requestId },
-        );
-      } catch (e) {
-        return fromPayPalError(e);
-      }
-      log(`provide-evidence sent · case ${caseId} → ${disputeId} · ${sub.evidenceType} · ${files.length} file(s)${sessionRef ? ` · MeterMCP receipt ${sessionRef}` : ''} · request ${sub.requestId}`);
-      // Accepted by PayPal is not "recorded": the client reads the dispute back to find out what PayPal stored.
-      return json(202, { sent: true });
+        sending = true;
+        const tracking = { carrier_name: sub.carrier, tracking_number: sub.tracking, ...(sub.carrier === 'OTHER' ? { carrier_name_other: 'Digital delivery' } : {}) };
+        try {
+          await paypal.disputes.provideEvidence(
+            disputeId,
+            { evidence_type: sub.evidenceType, evidence_info: { tracking_info: [tracking] }, notes: sub.notes },
+            files,
+            { requestId: sub.requestId },
+          );
+        } catch (e) {
+          return fromPayPalError(e);
+        }
+        log(`provide-evidence sent · case ${caseId} → ${disputeId} · ${sub.evidenceType} · ${files.length} file(s)${sessionRef ? ` · MeterMCP receipt ${sessionRef}` : ''} · request ${sub.requestId}`);
+        // Accepted by PayPal is not "recorded": the client reads the dispute back to find out what PayPal stored.
+        return json(202, { sent: true });
+      };
+      return send().finally(() => {
+        if (!sending && reserved?.ok) reserved.release();
+      });
     }
     return json(405, { error: 'METHOD_NOT_ALLOWED' });
   };
