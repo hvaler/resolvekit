@@ -44,7 +44,7 @@ in-browser simulator and is never sent to PayPal. The app bar says which: **PayP
 
 On a bound case every PayPal field (amount, reason, buyer-declared item type, stage, status, due date, disputed
 transaction, requested evidence, allowed actions) comes from the latest PayPal read, in the case header and the inbox
-row alike; only the merchant side (order, documents, timeline, the analyst's draft) comes from the demo case. Before
+row alike; only the merchant side (order and documents) comes from the demo case, and the analyst reads the documents as shown, PayPal's capture included. Before
 the first read, or if PayPal cannot be reached, those fields show "—" with the reason, never demo values. If the bound
 dispute's amount differs from the demo case's order, the case header says so, and the server logs it at startup.
 
@@ -66,7 +66,7 @@ Requires Node.js 24+ (TypeScript runs natively, no build step).
 ```bash
 cp .env.example .env   # PayPal sandbox app credentials (never committed)
 npm install
-npm test               # packages/* + apps/server + apps/metermcp (node --test, no network) + apps/web (vitest)
+npm test               # packages/* (incl. the analyst, fake model) + apps/server + apps/metermcp (node --test, no network) + apps/web (vitest)
 ```
 
 To use real sandbox disputes, bind cases to them and run the server next to the web app:
@@ -100,6 +100,7 @@ npm run dev        # http://localhost:5173
 npm run build      # type-checks, then builds apps/web/dist
 npm run typecheck
 npm test           # packages/* + apps/server + apps/metermcp (node --test) + apps/web (vitest)
+npm run evals -- --provider gemini   # the analyst against the real model (see docs/evals.md)
 ```
 
 In development a small **Dev · simulator** control (bottom left; hidden on cases running on real PayPal) picks what the simulated PayPal does after evidence is
@@ -175,7 +176,64 @@ leave it unset for normal operation. Other settings: `METERMCP_PORT` (8790), `ME
 
 ## AI tools
 
-To be documented as the analyst is built: model, what it does, and how its output is checked.
+**Models.** The analyst (`packages/analyst`, called by `apps/server`) uses **Google Gemini `gemini-3.8-flash`** through
+the Gemini API (`generateContent`, JSON-schema output, `thinkingLevel: low`, temperature 0) as the primary model, and
+**`openai/gpt-oss-120b` on Groq** (OpenAI-compatible API, strict `json_schema`) as the automatic fallback when Gemini
+errors or rate-limits. `ANALYST_PROVIDER=gemini|groq` picks the primary; keys come from `GEMINI_API_KEY` /
+`GROQ_API_KEY` in the server's environment and never reach the browser. Every call has a timeout, retries with
+backoff (honouring `Retry-After`), an output-token cap, and a usage log with token counts and timings only — never
+prompt or document text. No SDK: plain `fetch`.
+
+**What the AI does, step by step** (and what it does not):
+
+| Step | Model | Deterministic code |
+|---|---|---|
+| Read | — | Builds the input from the documents exactly as shown (PayPal's capture when bound, MeterMCP's real receipt for the agent case); pattern scan for instructions |
+| 1. Extract | Lists the facts in every document, each with a **verbatim quote**; flags instruction-bearing passages. A separate small **classifier** call screens the documents for instructions | Drops every quote that is not an exact substring of its document (whitespace-normalised only) |
+| 2. Timeline, contradictions, checklist, draft | From the extracted facts only: orders events, finds documents that disagree (with a neutral explanation, never a fraud accusation), assesses each requirement, drafts English sentences citing facts; the merchant's own notes are drafted with the facts that bear on them | Checklist requirements per dispute reason; amounts and addresses listed side by side for comparison; contradictions need two different documents and verbatim values; timeline sorted by time |
+| 3. Verify | Each sentence in **its own call**, judged only against its own cited quotes: *supported* / *needs review* (with the reason and a rewrite) / *rejected* | No valid citation → **rejected without asking the model**. A "supported" sentence stating a number none of its quotes contain → *needs review*. A sentence resting on a flagged document → at most *needs review* |
+| 4. Recommendation | Explains the chosen action in two sentences, from supported sentences only | **Rules choose the action** from what PayPal allows now and the evidence PayPal requests; the model never picks the action or the evidence type |
+
+Only *supported* sentences go into what can be sent; rejected ones stay visible, struck through, with the reason.
+Editing a sentence sends it back to the model (it re-chooses citations from the facts, then the same checks apply).
+Nothing is sent to PayPal without the merchant's approval.
+
+**Documents are content, never instructions.** Documents are wrapped in delimiters with a random per-call tag, and
+every prompt says their text is data. Instructions are flagged by three signals (pattern scan on normalised text —
+NFKC, zero-width/bidi characters removed, homoglyphs and leetspeak mapped, EN/ES/FR/DE/PT, fake role lines and
+markup, base64/hex payloads — plus the extraction model and the classifier call); the flag is shown on the document
+(E6 in the demo). Detection is a warning, not the defence: the analysis is built so that an undetected injection
+cannot change the action, the evidence type or what counts as supported
+(see [docs/evals.md](docs/evals.md#prompt-injection-detection-vs-safety)).
+
+**Caching and golden analyses.** Results are keyed by sha256 of (documents + notes + dispute data, prompt version,
+model). Live runs are cached in `apps/server/data/analysis-cache/` (git-ignored). The two demo cases also have
+**golden analyses** made by `gemini-3.8-flash` and committed with their model id, date, prompt version and token usage
+(`packages/analyst/golden/`), so the demo works without a key or quota; the app uses one only when its key matches
+the documents on screen. The analysis bar always says which: **"Analysis by gemini-3.8-flash · 9 Oct 2026 · cached"**
+or **"… · live"** (hover for prompt version and token counts). *Replay analysis* replays the steps; *Re-run with AI*
+runs the model again (6 live runs per hour per server, re-checks 30 per hour), showing the pipeline's real stages as
+they finish.
+
+| Route | What it does |
+|---|---|
+| `POST /api/cases/{case}/analysis` | `{ input }` → the stored analysis for these documents (`200`), or a live run (`202`, then poll); `?refresh=1` forces a live run; `429` with the reset time when rate-limited |
+| `GET /api/cases/{case}/analysis/progress?key=` | Stages done so far, then the result |
+| `POST /api/cases/{case}/analysis/verify` | `{ input, text }` → the verifier's verdict and citations for an edited sentence |
+
+Same guards as the rest of the API (Host, Origin, per-launch token, JSON only); the input is validated and rebuilt
+field by field.
+
+**Evals** ([docs/evals.md](docs/evals.md), raw results committed): 18 synthetic cases — normal delivery, missing
+tracking, address/postcode/amount contradictions, fabricated-claim bait, 10 prompt-injection styles, agent receipts.
+`gemini-3.8-flash`, final prompt: citation validity **100%** (372/372), unsupported claims rejected **100%** (17/17),
+false rejection **0%** (0/15), contradiction recall **100%** (13/13), injection detected **10/10** (pattern scan alone
+8/10), outcome unchanged **10/10** — and still 10/10 with detection ignored. The first full run missed an amount
+contradiction (86% recall); the earlier versions and the remaining misses are in the doc, with the Groq numbers.
+`npm run evals -- --provider gemini|groq` reruns them (not part of `npm test`, which uses a fake model).
+
+**Data.** Only the synthetic demo documents (fictional names, addresses and identifiers) and, for bound cases, PayPal
+sandbox data are sent to the model. No real customer data.
 
 ## License
 
