@@ -33,8 +33,12 @@ export function normalizeForScan(text: string): string {
   return mapped.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-/** Leetspeak undone (separate variant: digits are normal in documents). "1gn0r3 4ll" → "ignore all". */
-const unleet = (t: string) => t.replace(/[013457@$!]/g, (c) => LEET[c] ?? c);
+/**
+ * Leetspeak undone (separate variant: digits are normal in documents). "1gn0r3 4ll" → "ignore all". Only words that
+ * mix in letters, and one- or two-character leet tokens ("4" for "a", "70" for "to"), are mapped: times, amounts and counts ("#4 14:05:30") stay
+ * numbers, so a receipt line does not turn into "a ia:" (as in "to the AI:").
+ */
+const unleet = (t: string) => t.replace(/\S+/g, (w) => (/[a-z]/.test(w) || /^[013457@$!]{1,2}$/.test(w) ? w.replace(/[013457@$!]/g, (c) => LEET[c] ?? c) : w));
 
 const AI = '(?:reviewer|analyst|ai|a\\.i\\.|assistant|model|llm|chatbot|bot|gpt|moderator|adjudicator|revisor|analista|asistente|modelo|ia|evaluateur|relecteur|assistant ia|ki|pruefer|prufer|gutachter|assistent|modell|avaliador|assistente)';
 
