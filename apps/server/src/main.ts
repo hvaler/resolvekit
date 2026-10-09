@@ -10,6 +10,7 @@ import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { createApp, DEFAULT_ORIGINS } from './app.ts';
 import { checkBindings } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
+import { MeterMcpClient } from './metermcp.ts';
 import { toNodeListener } from './node.ts';
 
 const env: PayPalEnv = process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox';
@@ -40,7 +41,13 @@ const tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('..
 writeFileSync(tokenFile, token, { mode: 0o600 });
 const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
 
-const app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins });
+// MeterMCP on this machine (apps/metermcp): the agent case's real session receipt, read server-to-server.
+const meterMcp = new MeterMcpClient({
+  base: process.env.METERMCP_URL ?? 'http://127.0.0.1:8790',
+  tokenFile: process.env.METERMCP_TOKEN_FILE ?? fileURLToPath(new URL('../../metermcp/.runtime-token', import.meta.url)),
+});
+
+const app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins, meterMcp });
 const server = createServer(toNodeListener(app, `http://${host}:${port}`));
 server.listen(port, host, () => {
   log(`ResolveKit server on http://${host}:${port} · PayPal ${paypal ? env : 'unconfigured'} · ${Object.keys(bindings).length} bound case(s)`);

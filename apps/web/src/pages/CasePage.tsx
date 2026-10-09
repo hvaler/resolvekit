@@ -13,6 +13,7 @@ import { EvidenceCard } from '../components/EvidenceCard';
 import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
+import { withMeterMcp } from '../domain/agentSession';
 import { caseAllowedActions, caseHeaderView, withPayPal } from '../domain/paypalView';
 import { hasSellerEvidence } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
@@ -46,7 +47,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   // PayPal's fields (amount, reason, status, requested evidence…) from PayPal for a bound case; demo data otherwise.
   const liveSnap = source.kind === 'live' ? source.snap : null;
   // `source` is rebuilt every render; its kind and PayPal snapshot are what matter.
-  const c = useMemo(() => withPayPal(demo, source), [demo, source.kind, liveSnap]);
+  // The agent case's mandate/receipt/settlement from the real MeterMCP session when the server found one.
+  const c = useMemo(() => withMeterMcp(withPayPal(demo, source), source), [demo, source.kind, liveSnap]);
 
   const submitted = !!snap && hasSellerEvidence(snap);
   const allowed: readonly ActionCode[] = caseAllowedActions(source, snapshots[id], demo.allowedActions);
@@ -124,6 +126,18 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                 </button>
               )}
             </div>
+            {c.notice && (
+              <p
+                role="note"
+                className={
+                  c.notice.tone === 'warn'
+                    ? 'm-0 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn'
+                    : 'm-0 rounded-lg border border-info-line bg-info-soft px-3 py-2 text-[12.5px] text-info'
+                }
+              >
+                {c.notice.text}
+              </p>
+            )}
             {c.checklist && <ChecklistCard title={c.checklist.title} items={c.checklist.items} states={d.checklistStates} />}
             {c.evidence.map((e) => (
               <EvidenceCard

@@ -3,8 +3,10 @@
  * PayPal fetch. Credentials and tokens stay inside the PayPal client: no response or log line carries them.
  */
 import { timingSafeEqual } from 'node:crypto';
-import { PayPalError, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
-import { buildAttachments, UnknownFileError } from './documents.ts';
+import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
+import type { AgentReceiptSource } from '../../web/src/domain/types.ts';
+import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
+import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
 import { checkAgainstDispute, isProblem, parseSubmission } from './validate.ts';
 
@@ -22,6 +24,8 @@ export interface AppOptions {
   token: string;
   /** Browser origins allowed to call the API when an Origin header is present. */
   allowedOrigins: readonly string[];
+  /** MeterMCP on this machine: the agent case's session receipt, found by the disputed capture. null = not used. */
+  meterMcp?: MeterMcpSource | null;
 }
 
 export const TOKEN_HEADER = 'x-resolvekit-token';
@@ -78,6 +82,20 @@ function fromPayPalError(e: unknown): Response {
 export function createApp(opts: AppOptions): Handler {
   const now = opts.now ?? (() => new Date());
   const log = opts.log ?? (() => {});
+  const isAgentCase = (caseId: string) => CASE_FILES[caseId]?.kind === 'agent';
+
+  /**
+   * The MeterMCP session behind the dispute's disputed capture. `none` (with the reason) when there is no capture,
+   * no MeterMCP, or no session for it; throws MeterMcpError when MeterMCP cannot be asked.
+   */
+  const agentReceipt = async (d: Dispute): Promise<AgentReceiptSource> => {
+    const capture = d.disputed_transactions?.[0]?.seller_transaction_id;
+    if (!capture) return { kind: 'none', reason: 'PayPal reports no disputed capture' };
+    if (!opts.meterMcp) return { kind: 'none', reason: 'MeterMCP is not configured on this server' };
+    const sessionId = await opts.meterMcp.findByCapture(capture);
+    if (!sessionId) return { kind: 'none', reason: `MeterMCP has no session for capture ${capture}` };
+    return { kind: 'metermcp', session: toMeteredSession(await opts.meterMcp.receipt(sessionId)) };
+  };
   let health: Promise<{ paypal: PayPalEnv | 'unconfigured'; error?: string }> | null = null;
 
   const checkHealth = () => {
@@ -112,11 +130,21 @@ export function createApp(opts: AppOptions): Handler {
     if (!paypal) return json(503, { error: 'PAYPAL_UNCONFIGURED' });
 
     if (!m[2] && req.method === 'GET') {
+      let d: Dispute;
       try {
-        return json(200, toSnapshot(await paypal.disputes.get(disputeId), caseId, opts.env, now()));
+        d = await paypal.disputes.get(disputeId);
       } catch (e) {
         return fromPayPalError(e);
       }
+      const snap = toSnapshot(d, caseId, opts.env, now());
+      if (!isAgentCase(caseId)) return json(200, snap);
+      let receipt: AgentReceiptSource;
+      try {
+        receipt = await agentReceipt(d);
+      } catch (e) {
+        receipt = { kind: 'none', reason: e instanceof MeterMcpError ? e.message : 'MeterMCP could not be read' };
+      }
+      return json(200, { ...snap, agentReceipt: receipt });
     }
 
     if (m[2] && req.method === 'POST') {
@@ -130,13 +158,16 @@ export function createApp(opts: AppOptions): Handler {
       if (isProblem(sub)) return json(sub.status, { error: sub.error, detail: sub.detail });
       if (sub.disputeId && sub.disputeId !== caseId) return json(400, { error: 'INVALID_SUBMISSION', detail: 'disputeId does not match the URL' });
 
-      let files;
-      try {
-        files = buildAttachments(caseId, sub.files);
-      } catch (e) {
-        if (e instanceof UnknownFileError) return json(422, { error: 'UNKNOWN_FILE', detail: e.message });
-        throw e;
-      }
+      const demoFiles = (): EvidenceFile[] | Response => {
+        try {
+          return buildAttachments(caseId, sub.files);
+        } catch (e) {
+          if (e instanceof UnknownFileError) return json(422, { error: 'UNKNOWN_FILE', detail: e.message });
+          throw e;
+        }
+      };
+      let files: EvidenceFile[] | Response | null = isAgentCase(caseId) ? null : demoFiles();
+      if (files instanceof Response) return files;
 
       // Read first: the rules depend on what PayPal shows now, not on what the browser last saw.
       let dispute;
@@ -147,6 +178,36 @@ export function createApp(opts: AppOptions): Handler {
       }
       const problem = checkAgainstDispute(sub, dispute);
       if (problem) return json(problem.status, { error: problem.error, detail: problem.detail });
+
+      // Agent case: when MeterMCP has the session of the disputed capture, the evidence is that session: digital
+      // delivery (carrier OTHER) referenced by the session id, with the PDF of the real receipt. Without a session
+      // the demo documents go, as for any bound case. If MeterMCP cannot be asked, nothing is sent.
+      let sessionRef: string | null = null;
+      if (files === null) {
+        let found: AgentReceiptSource;
+        try {
+          found = await agentReceipt(dispute);
+        } catch (e) {
+          return json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' });
+        }
+        if (found.kind === 'metermcp') {
+          const sid = found.session.sessionId;
+          if (sub.carrier !== 'OTHER' || sub.tracking !== sid) {
+            return json(422, { error: 'TRACKING_MISMATCH', detail: `Digital delivery of session ${sid}: carrier OTHER and tracking ${sid}` });
+          }
+          const wrong = sub.files.find((f) => f.name !== receiptFileName(sid));
+          if (wrong) return json(422, { error: 'UNKNOWN_FILE', detail: `File ${wrong.name} is not the receipt of session ${sid}` });
+          try {
+            files = sub.files.length ? [{ name: receiptFileName(sid), type: 'application/pdf', data: await opts.meterMcp!.receiptPdf(sid) }] : [];
+          } catch (e) {
+            return json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' });
+          }
+          sessionRef = sid;
+        } else {
+          files = demoFiles();
+          if (files instanceof Response) return files;
+        }
+      }
 
       const tracking = { carrier_name: sub.carrier, tracking_number: sub.tracking, ...(sub.carrier === 'OTHER' ? { carrier_name_other: 'Digital delivery' } : {}) };
       try {
@@ -159,7 +220,7 @@ export function createApp(opts: AppOptions): Handler {
       } catch (e) {
         return fromPayPalError(e);
       }
-      log(`provide-evidence sent · case ${caseId} → ${disputeId} · ${sub.evidenceType} · ${files.length} file(s) · request ${sub.requestId}`);
+      log(`provide-evidence sent · case ${caseId} → ${disputeId} · ${sub.evidenceType} · ${files.length} file(s)${sessionRef ? ` · MeterMCP receipt ${sessionRef}` : ''} · request ${sub.requestId}`);
       // Accepted by PayPal is not "recorded": the client reads the dispute back to find out what PayPal stored.
       return json(202, { sent: true });
     }

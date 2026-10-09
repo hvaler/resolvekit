@@ -14,8 +14,9 @@ export function buildSubmission(c: CaseFile, views: readonly SentenceView[], evi
   };
 }
 
-/** Sum of file sizes written like "112 KB". */
+/** Sum of file sizes written like "112 KB"; "size set when sent" when a file's size is not known yet. */
 export function totalSize(files: readonly { size: string }[]): string {
-  const kb = files.reduce((n, f) => n + (Number.parseFloat(f.size) || 0), 0);
+  if (files.some((f) => !Number.isFinite(Number.parseFloat(f.size)))) return 'size set when sent';
+  const kb = files.reduce((n, f) => n + Number.parseFloat(f.size), 0);
   return `${kb} KB`;
 }

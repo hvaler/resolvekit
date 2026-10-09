@@ -86,6 +86,8 @@ export interface Evidence {
    * the PayPal read (see domain/paypalView `withPayPal`); on a simulated case it is demo data and says so.
    */
   paypalRecord?: 'capture';
+  /** Where an agent-case document comes from: the real MeterMCP session, or the demo case. Shown on the card. */
+  sourceLabel?: { kind: 'metermcp' | 'demo'; text: string };
   body: EvidenceBody;
 }
 
@@ -259,7 +261,50 @@ export interface CaseFile {
   actionDetails: Partial<Record<ActionCode, { label: string; sub: string }>>;
   refundText: string;
   audit: AuditEntry[];
+  /** A note shown above the evidence (e.g. the agent case's documents are demo data, and why). */
+  notice?: { tone: 'info' | 'warn'; text: string } | null;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Agent purchase: the MeterMCP session behind a disputed capture (read by apps/server from MeterMCP)
+
+export interface MeteredCall {
+  n: number;
+  /** ISO 8601 */
+  time: string;
+  tool: string;
+  price: string;
+  status: 'OK' | 'FAILED' | 'PENDING';
+  requestHash: string;
+}
+
+export interface MeteredSession {
+  sessionId: string;
+  currency: string;
+  receiptSha256: string;
+  mandate: {
+    cap: string;
+    orderId: string | null;
+    authorizationId: string | null;
+    authorizationStatus: string | null;
+    approvedAt: string | null;
+    authorizedAt: string | null;
+  };
+  calls: MeteredCall[];
+  totals: { calls: number; ok: number; failed: number; charged: string; cap: string };
+  settlement: {
+    status: 'open' | 'captured' | 'voided' | 'failed' | 'not_approved';
+    captureId: string | null;
+    captureStatus: string | null;
+    captured: string | null;
+    released: string | null;
+    remainderReleased: boolean;
+    settledAt: string | null;
+  };
+}
+
+/** The agent case's session as found in MeterMCP by the disputed capture, or why there is none. */
+export type AgentReceiptSource = { kind: 'metermcp'; session: MeteredSession } | { kind: 'none'; reason: string };
 
 // ---------------------------------------------------------------------------------------------
 // Sending
@@ -331,6 +376,8 @@ export interface DisputeSnapshot {
   /** Buyer response due date (ISO 8601), when PayPal is waiting for the buyer. */
   buyerRespondBy?: string | null;
   /** The disputed transaction as PayPal reports it: the seller-side id (the capture), its time, gross amount and status. */
+  /** Agent cases only: the MeterMCP session of the disputed capture (absent for other cases and the simulator). */
+  agentReceipt?: AgentReceiptSource | null;
   transaction?: {
     id: string;
     createdAt: string | null;

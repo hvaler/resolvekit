@@ -1,0 +1,206 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { PayPalClient } from '@resolvekit/paypal';
+import { writePdf } from '@resolvekit/pdf';
+import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
+import { MeterMcpClient, MeterMcpError, toMeteredSession, type MeterMcpSource, type Receipt } from '../src/metermcp.ts';
+import { fakePayPal, waitingDispute } from './fixtures.ts';
+
+const CASE = 'PP-R-MMC-10190702';
+const REAL = 'PP-R-REAL-1';
+const TOKEN = 'a'.repeat(64);
+const BASE = 'http://127.0.0.1:8787';
+const SID = 'mm-sess-0123456789abcdef0123456789abcdef';
+const CAPTURE = '4FT237453Y5353014';
+
+/** A settled MeterMCP receipt for the bound dispute's capture (shape of apps/metermcp/src/receipt.ts). */
+function receipt(): Receipt {
+  const call = (n: number, tool: string, price: string, status: 'OK' | 'FAILED') => ({
+    n,
+    time: `2026-10-08T19:1${n}:00.000Z`,
+    tool,
+    price,
+    status,
+    request_hash: `${n}`.repeat(64),
+    response_hash: status === 'OK' ? 'f'.repeat(64) : null,
+    error: status === 'OK' ? null : 'UPSTREAM_UNAVAILABLE',
+  });
+  return {
+    kind: 'metermcp.session_receipt',
+    version: 1,
+    paypal_env: 'sandbox',
+    session: { id: SID, status: 'settled', currency: 'USD', created_at: '2026-10-08T19:09:00.000Z', closed_at: '2026-10-08T19:20:00.000Z' },
+    mandate: {
+      item: 'MeterMCP agent session (metered tool calls)',
+      category: 'DIGITAL_GOODS',
+      cap: '5.00',
+      order_id: 'ORDER1',
+      authorization_id: 'AUTH1',
+      authorization_status: 'CAPTURED',
+      authorization_expires_at: '2026-11-06T19:10:00Z',
+      approved_at: '2026-10-08T19:10:00.000Z',
+      authorized_at: '2026-10-08T19:10:00Z',
+    },
+    calls: [call(1, 'quote_lookup', '0.05', 'OK'), call(2, 'deep_report', '0.40', 'FAILED'), call(3, 'deep_report', '0.40', 'OK'), call(4, 'bulk_export', '0.92', 'OK')],
+    totals: { calls: 4, ok: 3, failed: 1, pending: 0, charged: '1.37', cap: '5.00' },
+    settlement: {
+      status: 'captured',
+      capture_id: CAPTURE,
+      capture_status: 'COMPLETED',
+      invoice_id: `${SID}-settle`,
+      captured: '1.37',
+      released: '3.63',
+      remainder_released: true,
+      settled_at: '2026-10-08T19:20:01.000Z',
+      error: null,
+    },
+    note: 'Tool outputs are synthetic demo data.',
+    receipt_sha256: 'e'.repeat(64),
+  };
+}
+
+const RECEIPT_PDF = writePdf({ title: 'Session receipt', lines: [`Session ${SID}`, 'REAL RECEIPT MARKER'] });
+
+function fakeMeter(o: { session?: boolean; down?: boolean } = {}) {
+  const asked: string[] = [];
+  const meter: MeterMcpSource = {
+    findByCapture: async (c) => {
+      asked.push(c);
+      if (o.down) throw new MeterMcpError('MeterMCP unreachable');
+      return o.session === false || c !== CAPTURE ? null : SID;
+    },
+    receipt: async () => receipt(),
+    receiptPdf: async () => RECEIPT_PDF,
+  };
+  return { meter, asked };
+}
+
+function setup(replies: Parameters<typeof fakePayPal>[0], meterMcp: MeterMcpSource | null) {
+  const pp = fakePayPal(replies);
+  const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
+  const app = createApp({ paypal, env: 'sandbox', bindings: { [CASE]: REAL }, port: 8787, token: TOKEN, allowedOrigins: DEFAULT_ORIGINS, meterMcp });
+  return { pp, app };
+}
+
+const get = (path: string) => new Request(BASE + path, { headers: { [TOKEN_HEADER]: TOKEN } });
+const post = (path: string, body: unknown) =>
+  new Request(BASE + path, { method: 'POST', headers: { [TOKEN_HEADER]: TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+const submission = (over: Record<string, unknown> = {}) => ({
+  disputeId: CASE,
+  action: 'provide_evidence',
+  evidenceType: 'PROOF_OF_FULFILLMENT',
+  carrier: 'OTHER',
+  tracking: SID,
+  notes: 'The buyer approved a budget; three calls completed and were charged.',
+  files: [{ name: `session-receipt-${SID}.pdf`, size: 'PDF' }],
+  requestId: 'rk-req-agent-1',
+  ...over,
+});
+
+test('receipt → MeteredSession keeps mandate, every call and the settlement', () => {
+  const s = toMeteredSession(receipt());
+  assert.equal(s.sessionId, SID);
+  assert.deepEqual(s.mandate, { cap: '5.00', orderId: 'ORDER1', authorizationId: 'AUTH1', authorizationStatus: 'CAPTURED', approvedAt: '2026-10-08T19:10:00.000Z', authorizedAt: '2026-10-08T19:10:00Z' });
+  assert.deepEqual(s.calls.map((c) => [c.n, c.tool, c.price, c.status]), [
+    [1, 'quote_lookup', '0.05', 'OK'],
+    [2, 'deep_report', '0.40', 'FAILED'],
+    [3, 'deep_report', '0.40', 'OK'],
+    [4, 'bulk_export', '0.92', 'OK'],
+  ]);
+  assert.deepEqual(s.settlement, { status: 'captured', captureId: CAPTURE, captureStatus: 'COMPLETED', captured: '1.37', released: '3.63', remainderReleased: true, settledAt: '2026-10-08T19:20:01.000Z' });
+});
+
+test('GET of the bound agent case adds the MeterMCP session found by the disputed capture', async () => {
+  const { meter, asked } = fakeMeter();
+  const { app } = setup([{ status: 200, body: waitingDispute() }], meter);
+  const s = await (await app(get(`/api/disputes/${CASE}`))).json();
+  assert.deepEqual(asked, [CAPTURE]);
+  assert.equal(s.agentReceipt.kind, 'metermcp');
+  assert.equal(s.agentReceipt.session.sessionId, SID);
+  assert.equal(s.agentReceipt.session.totals.charged, '1.37');
+});
+
+test('GET of the agent case without a session (or with MeterMCP down) says why, and still returns PayPal’s dispute', async () => {
+  for (const [m, why] of [
+    [fakeMeter({ session: false }).meter, `MeterMCP has no session for capture ${CAPTURE}`],
+    [fakeMeter({ down: true }).meter, 'MeterMCP unreachable'],
+    [null, 'MeterMCP is not configured on this server'],
+  ] as const) {
+    const { app } = setup([{ status: 200, body: waitingDispute() }], m);
+    const r = await app(get(`/api/disputes/${CASE}`));
+    assert.equal(r.status, 200);
+    const s = await r.json();
+    assert.deepEqual(s.agentReceipt, { kind: 'none', reason: why });
+    assert.equal(s.status, 'WAITING_FOR_SELLER_RESPONSE');
+  }
+});
+
+test('POST for the agent case with a session sends digital delivery (OTHER, session id) and the real receipt PDF', async () => {
+  const { meter } = fakeMeter();
+  const { app, pp } = setup([{ status: 200, body: waitingDispute() }, { status: 200, body: {} }], meter);
+  const r = await app(post(`/api/disputes/${CASE}/evidence`, submission()));
+  assert.equal(r.status, 202);
+  const send = pp.apiCalls()[1]!;
+  const form = send.init.body as FormData;
+  const input = JSON.parse(await (form.get('input') as Blob).text());
+  assert.deepEqual(input.evidences[0].evidence_info.tracking_info, [{ carrier_name: 'OTHER', tracking_number: SID, carrier_name_other: 'Digital delivery' }]);
+  assert.equal(input.evidences[0].evidence_type, 'PROOF_OF_FULFILLMENT');
+  const files = form.getAll('evidence-file') as File[];
+  assert.deepEqual(files.map((f) => f.name), [`session-receipt-${SID}.pdf`]);
+  const text = Buffer.from(await files[0]!.arrayBuffer()).toString('latin1');
+  assert.ok(text.includes('REAL RECEIPT MARKER'));
+  assert.ok(!text.includes('SYNTHETIC TEST DOCUMENT'));
+});
+
+test('POST for the agent case with a session refuses another reference or another file, and nothing is sent', async () => {
+  for (const [over, code] of [
+    [{ tracking: 'mm-sess-20261008-01' }, 'TRACKING_MISMATCH'],
+    [{ carrier: 'UPS' }, 'TRACKING_MISMATCH'],
+    [{ files: [{ name: 'session-receipt-mm-sess-20261008-01.pdf', size: '46 KB' }] }, 'UNKNOWN_FILE'],
+  ] as const) {
+    const { app, pp } = setup([{ status: 200, body: waitingDispute() }], fakeMeter().meter);
+    const r = await app(post(`/api/disputes/${CASE}/evidence`, submission(over)));
+    assert.equal(r.status, 422);
+    assert.equal((await r.json()).error, code);
+    assert.equal(pp.apiCalls().length, 1); // the read only
+  }
+});
+
+test('POST for the agent case: no session → the demo documents; MeterMCP down → nothing sent', async () => {
+  {
+    const { app, pp } = setup([{ status: 200, body: waitingDispute() }, { status: 200, body: {} }], fakeMeter({ session: false }).meter);
+    const r = await app(post(`/api/disputes/${CASE}/evidence`, submission({ tracking: 'mm-sess-20261008-01', files: [{ name: 'session-receipt-mm-sess-20261008-01.pdf', size: '46 KB' }] })));
+    assert.equal(r.status, 202);
+    const files = (pp.apiCalls()[1]!.init.body as FormData).getAll('evidence-file') as File[];
+    assert.ok(Buffer.from(await files[0]!.arrayBuffer()).toString('latin1').includes('SYNTHETIC TEST DOCUMENT'));
+  }
+  {
+    const { app, pp } = setup([{ status: 200, body: waitingDispute() }], fakeMeter({ down: true }).meter);
+    const r = await app(post(`/api/disputes/${CASE}/evidence`, submission()));
+    assert.equal(r.status, 502);
+    assert.equal((await r.json()).error, 'METERMCP_UNAVAILABLE');
+    assert.equal(pp.apiCalls().length, 1);
+  }
+});
+
+test('MeterMcpClient sends the per-launch token from the token file and maps errors', async (t) => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'rk-mm-'));
+  const tokenFile = join(dir, '.runtime-token');
+  const seen: Array<{ url: string; token: string | null }> = [];
+  const fetch = (async (url: string | URL, init: RequestInit = {}) => {
+    seen.push({ url: String(url), token: new Headers(init.headers).get('x-metermcp-token') });
+    return new Response(JSON.stringify({ sessions: [{ id: SID }] }), { status: 200 });
+  }) as typeof globalThis.fetch;
+  const c = new MeterMcpClient({ base: 'http://127.0.0.1:8790/', tokenFile, fetch });
+  await assert.rejects(c.findByCapture(CAPTURE), /not running/);
+  writeFileSync(tokenFile, 'tok123\n');
+  assert.equal(await c.findByCapture(CAPTURE), SID);
+  assert.deepEqual(seen, [{ url: `http://127.0.0.1:8790/sessions?capture=${CAPTURE}`, token: 'tok123' }]);
+  const down = new MeterMcpClient({ base: 'http://127.0.0.1:8790', tokenFile, fetch: (async () => new Response('{}', { status: 401 })) as typeof globalThis.fetch });
+  await assert.rejects(down.receipt(SID), /answered 401/);
+  t.after(async () => (await import('node:fs')).rmSync(dir, { recursive: true, force: true }));
+});

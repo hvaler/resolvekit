@@ -77,6 +77,17 @@ export function EvidenceCard({ evidence: e, used, contradictionOpen }: { evidenc
             Address differs
           </span>
         )}
+        {e.sourceLabel && (
+          <span
+            data-testid="source-label"
+            className={cx(
+              'whitespace-nowrap rounded-sm px-[7px] py-0.5 text-[11.5px] font-medium',
+              e.sourceLabel.kind === 'metermcp' ? 'border border-ok-line bg-ok-soft text-ok' : 'border border-dashed border-info-line bg-info-soft text-info',
+            )}
+          >
+            {e.sourceLabel.text}
+          </span>
+        )}
         <span className={cx('text-[12px]', used ? 'text-ink-2' : 'text-ink-3')}>
           {usedText(used, e.caption)}
         </span>
