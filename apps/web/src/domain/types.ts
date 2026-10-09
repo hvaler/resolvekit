@@ -95,6 +95,8 @@ export interface Citation {
   evidenceId: string;
   /** Cited fragment keys. Empty means the whole document (e.g. an attachment). */
   fragments: string[];
+  /** The exact text quoted from the document (verified verbatim by the analyst's deterministic check). */
+  quotes?: string[];
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -112,11 +114,8 @@ export interface DraftSentence {
   citations: Citation[];
   /** Why it needs review / why it was removed. */
   reason?: string;
-  /**
-   * Simulated re-check for edits of a needs-review sentence: if the new text matches `supportedIf`
-   * (case-insensitive regular expression) the sentence becomes supported.
-   */
-  recheck?: { supportedIf: string; supportedNote: string };
+  /** Drafted by the analyst, or one of the merchant's own notes (verified the same way). */
+  origin?: 'analyst' | 'merchant_note';
   /** One-click rewrite proposed by the analyst. */
   suggestion?: { label: string; text: string };
 }
@@ -130,6 +129,8 @@ export interface SentenceView {
   reason: string | null;
   note: string | null;
   edited: boolean;
+  /** One of the merchant's own notes (verified like any sentence). */
+  fromNote?: boolean;
 }
 
 export interface ContradictionSide {
@@ -201,6 +202,8 @@ export interface DisputeSummary {
   timeLeft: string | null;
   transactionId: string;
   captureText: string;
+  /** When PayPal opened the dispute (ISO 8601), when known. */
+  openedAt?: string | null;
 }
 
 export interface EvidenceTypeCandidate {
@@ -261,6 +264,8 @@ export interface CaseFile {
   actionDetails: Partial<Record<ActionCode, { label: string; sub: string }>>;
   refundText: string;
   audit: AuditEntry[];
+  /** Statements the merchant wants in the response. The analyst drafts and verifies them like its own sentences. */
+  merchantNotes?: string[];
   /** A note shown above the evidence (e.g. the agent case's documents are demo data, and why). */
   notice?: { tone: 'info' | 'warn'; text: string } | null;
 }

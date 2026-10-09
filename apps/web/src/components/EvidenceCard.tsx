@@ -51,7 +51,18 @@ function KeyValues({ id, rows, hl }: { id: string; rows: KeyValueRow[]; hl: High
 }
 
 /** One document in the case file: provenance, hash, and its content with cited fragments lit. */
-export function EvidenceCard({ evidence: e, used, contradictionOpen }: { evidence: Evidence; used: number; contradictionOpen: boolean }) {
+export function EvidenceCard({
+  evidence: e,
+  used,
+  contradictionOpen,
+  contradictionLabel = 'Contradiction',
+}: {
+  evidence: Evidence;
+  used: number;
+  contradictionOpen: boolean;
+  /** Badge text while the contradiction this document is part of is open, e.g. "Address contradiction". */
+  contradictionLabel?: string;
+}) {
   const { hl } = useHighlight();
   const hover = useHoverHighlight();
   const on = hl?.ev === e.id;
@@ -74,7 +85,7 @@ export function EvidenceCard({ evidence: e, used, contradictionOpen }: { evidenc
         {contradictionOpen && (
           <span className="inline-flex items-center gap-[5px] rounded-sm bg-warn-soft px-[7px] py-0.5 text-[11.5px] font-medium text-warn">
             <span aria-hidden="true" className="h-1.5 w-1.5 rotate-45 bg-warn" />
-            Address differs
+            {contradictionLabel}
           </span>
         )}
         {e.sourceLabel && (

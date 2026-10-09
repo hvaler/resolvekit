@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { App } from './App';
 import { ServicesProvider } from './app/services';
+import { goldenAnalyses } from './fixtures/golden';
 import { ThemeProvider } from './theme/ThemeProvider';
 
 function render(path: string): string {
@@ -32,7 +33,14 @@ describe('routes render without errors', () => {
     expect(html).toContain('Response draft');
     expect(html).toContain('PayPal is asking for:');
     expect(html).toContain('EVIDENCE_TYPE_IS_NOT_ALLOWED');
-    expect(html).toContain('Delivery address differs from order address');
+    // The real analysis: the golden one made by the model, labelled as such (no server in this test).
+    const golden = goldenAnalyses['PP-R-TVH-10190665']!;
+    expect(html).toContain(`Analysis by ${golden.model}`);
+    expect(html).toContain('· cached');
+    expect(html).toContain(golden.contradictions[0]!.title);
+    expect(html).toContain('This document contains instructions');
+    expect(html).toContain('The customer confirmed receipt by phone.');
+    expect(html).toContain('From your notes');
     // Without the server reporting PayPal connected, the case runs on the simulator and says so.
     expect(html).toContain('Simulated PayPal');
     expect(html).not.toContain('PayPal sandbox · live');
@@ -42,6 +50,8 @@ describe('routes render without errors', () => {
     const html = render('/cases/PP-R-MMC-10190702');
     expect(html).toContain('Per-call receipt');
     expect(html).toContain('How this goes to PayPal as digital delivery');
+    expect(html).toContain(`Analysis by ${goldenAnalyses['PP-R-MMC-10190702']!.model}`);
+    expect(html).toContain('All four tool calls completed successfully.');
   });
 
   it('processing state', () => {

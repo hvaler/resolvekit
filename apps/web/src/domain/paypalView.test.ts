@@ -171,7 +171,7 @@ describe('case rules from PayPal', () => {
     const c = withPayPal(standardCase, live(waiting()));
     expect(c.summary).toMatchObject({ id: 'PP-R-TVH-10190665', amount: '1.37', currency: 'USD', transactionId: '4FT237453Y5353014' });
     expect(c.evidence.filter((e) => !e.paypalRecord)).toEqual(standardCase.evidence.filter((e) => !e.paypalRecord));
-    expect(c.sentences).toBe(standardCase.sentences);
+    expect(c.summary.openedAt).toBe(waiting().createdAt ?? null);
     expect(withPayPal(standardCase, { kind: 'simulated' })).toBe(standardCase);
     expect(withPayPal(standardCase, { kind: 'loading' }).summary.amount).toBe('—');
   });
@@ -198,8 +198,7 @@ describe('the payment-capture document', () => {
     });
     expect(e.meta).toMatchObject({ source: 'PayPal sandbox · dispute PP-R-VIJ-10190671', received: 'read 9 Oct 2026 08:00:00 UTC', hash: '' });
     for (const v of ['7.00', '2CY26152YH817252P', '14:03', '41d0']) expect(text(c)).not.toContain(v);
-    const ev = c.timeline.find((t) => t.kind === 'event' && t.evidenceId === 'E2');
-    expect(ev).toMatchObject({ time: '8 Oct 19:30', sub: '4FT237453Y5353014 · from PayPal' });
+    // The analyst reads this document as shown (see packages/analyst input.ts), so its timeline uses PayPal's data.
   });
 
   it('without a status from PayPal shows amount only; without a transaction says so', () => {

@@ -69,8 +69,6 @@ describe('agent case documents from MeterMCP', () => {
     expect(e3!.caption).toBe('PayPal capture · recorded by MeterMCP');
     // Nothing of the demo session remains anywhere.
     for (const v of ['mm-sess-20261008-01', '5UX02876PL4419203', '0VF52814937998046', '7HF40211KM3390816', '09:15:40', '8 October 2026']) expect(allText(c)).not.toContain(v);
-    expect(c.sentences.find((x) => x.id === 'G1')!.text).toBe(`On 10 October 2026 the buyer approved a budget of up to 5.00 USD for agent session ${SID}.`);
-    expect(c.sentences.find((x) => x.id === 'G4')!.text).toBe('The failed deep_report call at 11:04:05 UTC was not charged.');
     expect(c.timeline.map((t) => (t.kind === 'event' ? `${t.time} ${t.title}` : ''))).toEqual([
       '11:02:03 Budget approved',
       '11:03:00 quote_lookup',
@@ -90,11 +88,11 @@ describe('agent case documents from MeterMCP', () => {
     expect(sub).toMatchObject({ carrier: 'OTHER', tracking: SID, files: [{ name: `session-receipt-${SID}.pdf` }] });
   });
 
-  it('a session with other numbers than the demo draft says so', () => {
+  it('a session with other numbers needs no warning: the analyst reads these very documents', () => {
     const s = session({ totals: { calls: 2, ok: 2, failed: 0, charged: '0.45', cap: '5.00' } });
     const c = withMeterMcp(agentCase, live(snap({ kind: 'metermcp', session: s })));
-    expect(c.notice?.tone).toBe('warn');
-    expect(c.notice?.text).toContain('differs from the session the demo draft was written for');
+    expect(c.notice).toBeNull();
+    expect(c.sentences).toEqual([]);
   });
 
   it('without a session the documents are the demo’s, labelled Demo data, and a bound case says why', () => {

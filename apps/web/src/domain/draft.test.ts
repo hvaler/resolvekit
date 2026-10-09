@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { agentCase, standardCase } from '../fixtures';
+import { standardCase } from '../fixtures';
+import { standardTestChecklist, standardTestContradictions, standardTestSentences } from '../fixtures/testDrafts';
 import {
   NOTES_LIMIT,
   blockerSentence,
@@ -11,16 +12,18 @@ import {
   draftCounts,
   notesCountLabel,
   notesText,
-  recheckEdit,
   type BlockerInput,
   type DraftContext,
+  type Recheck,
 } from './draft';
 import type { ContradictionResolution, DraftSentence, SentenceView } from './types';
 
 const done: DraftContext = { edits: {}, checking: null, analysisStep: 6, rejectionStep: 4 };
-const S = standardCase.sentences;
+const S = standardTestSentences;
 const byId = (views: SentenceView[], id: string) => views.find((v) => v.id === id)!;
-const explain = standardCase.contradictions[0]!.explainText;
+const explain = standardTestContradictions[0]!.explainText;
+// What the verifier answers for the explained address sentence (the real check runs on the server).
+const explainedOk: Record<string, Recheck> = { S4: { state: 'supported', reason: null, note: 'Edited · re-checked by gemini-3.8-flash: supported' } };
 
 describe('deriveSentences', () => {
   it('keeps the analyst verdicts once the analysis is complete', () => {
@@ -38,29 +41,33 @@ describe('deriveSentences', () => {
     expect(byId(deriveSentences(S, { ...done, checking: 'S2' }), 'S2').state).toBe('checking');
   });
 
-  it('turns the address sentence supported when the edit names the delivered unit', () => {
-    const v = byId(deriveSentences(S, { ...done, edits: { S4: explain } }), 'S4');
+  it('takes the verifier verdict for an edit, and its citations when it chose new ones', () => {
+    const cites = [{ evidenceId: 'E3', fragments: ['E3.addr'], quotes: ['Delivered to: 12 Example Street, Apt 4B'] }];
+    const v = byId(deriveSentences(S, { ...done, edits: { S4: explain }, rechecks: { S4: { ...explainedOk.S4!, citations: cites } } }), 'S4');
     expect(v.state).toBe('supported');
     expect(v.reason).toBeNull();
     expect(v.note).toMatch(/supported/);
     expect(v.edited).toBe(true);
+    expect(v.citations).toEqual(cites);
   });
 
-  it('keeps needs review when the edit does not resolve it', () => {
-    const v = byId(deriveSentences(S, { ...done, edits: { S4: 'It was delivered.' } }), 'S4');
+  it('never trusts an edit before the verifier has answered', () => {
+    const v = byId(deriveSentences(S, { ...done, edits: { S2: 'We shipped it by drone.' } }), 'S2');
+    expect(v.state).toBe('checking');
+    expect(v.text).toBe('We shipped it by drone.');
+  });
+
+  it('keeps needs review (with the reason) when the verifier says so', () => {
+    const r: Recheck = { state: 'needs_review', reason: 'Why: the delivered unit is not stated.', note: 'Edited · re-checked by gemini-3.8-flash: needs review' };
+    const v = byId(deriveSentences(S, { ...done, edits: { S4: 'It was delivered.' }, rechecks: { S4: r } }), 'S4');
     expect(v.state).toBe('needs_review');
-    expect(v.note).toBe('Edited · re-checked: still needs review');
+    expect(v.reason).toBe('Why: the delivered unit is not stated.');
   });
 
   it('ignores edits to rejected sentences', () => {
     const v = byId(deriveSentences(S, { ...done, edits: { S5: 'Something else' } }), 'S5');
     expect(v.state).toBe('rejected');
     expect(v.text).toBe('The customer confirmed receipt by phone.');
-  });
-
-  it('accepts the analyst suggestion for the agent case', () => {
-    const g6 = agentCase.sentences.find((s) => s.id === 'G6')!;
-    expect(recheckEdit(g6, g6.suggestion!.text).state).toBe('supported');
   });
 });
 
@@ -74,8 +81,8 @@ describe('notesText', () => {
   });
 
   it('includes an edited sentence once it is supported, but not while re-checking', () => {
-    expect(notesText(deriveSentences(S, { ...done, edits: { S4: explain } }))).toContain('Apt 4B');
-    expect(notesText(deriveSentences(S, { ...done, edits: { S4: explain }, checking: 'S4' }))).not.toContain('Apt 4B');
+    expect(notesText(deriveSentences(S, { ...done, edits: { S4: explain }, rechecks: explainedOk }))).toContain('Apt 4B');
+    expect(notesText(deriveSentences(S, { ...done, edits: { S4: explain }, rechecks: explainedOk, checking: 'S4' }))).not.toContain('Apt 4B');
   });
 
   it('formats the count against the 2,000-character limit', () => {
@@ -95,7 +102,7 @@ describe('citationUse and counts', () => {
 describe('draftBlockers', () => {
   const base = (over: Partial<BlockerInput> = {}): BlockerInput => ({
     sentences: deriveSentences(S, done),
-    contradictions: standardCase.contradictions,
+    contradictions: standardTestContradictions,
     resolutions: {},
     analysisComplete: true,
     action: 'provide_evidence',
@@ -113,7 +120,7 @@ describe('draftBlockers', () => {
   });
 
   it('is empty once the contradiction is explained and sentence 4 re-checked', () => {
-    const b = draftBlockers(base({ sentences: deriveSentences(S, { ...done, edits: { S4: explain } }), resolutions: explained }));
+    const b = draftBlockers(base({ sentences: deriveSentences(S, { ...done, edits: { S4: explain }, rechecks: explainedOk }), resolutions: explained }));
     expect(b).toEqual([]);
   });
 
@@ -135,7 +142,7 @@ describe('draftBlockers', () => {
   });
 
   it('blocks a disallowed or unmet evidence type', () => {
-    const ready = { sentences: deriveSentences(S, { ...done, edits: { S4: 'Apt 4B' } }), resolutions: explained };
+    const ready = { sentences: deriveSentences(S, { ...done, edits: { S4: 'Apt 4B' }, rechecks: explainedOk }), resolutions: explained };
     expect(draftBlockers(base({ ...ready, evidenceType: { allowed: false, satisfied: false, label: 'X' } }))[0]!.kind).toBe('evidence_type');
     expect(draftBlockers(base({ ...ready, evidenceType: { allowed: true, satisfied: false, label: 'Proof of refund' } }))[0]!.kind).toBe('evidence_type');
   });
@@ -148,7 +155,7 @@ describe('draftBlockers', () => {
 
 describe('checklist', () => {
   it('reflects the contradiction state', () => {
-    const items = standardCase.checklist!.items;
+    const items = standardTestChecklist;
     const open = items.map((i) => checklistState(i, {}));
     expect(open[2]).toBe('contradicts');
     expect(checklistSummary(open)).toBe('4 of 5 present · 1 contradicts');

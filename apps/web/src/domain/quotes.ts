@@ -25,6 +25,8 @@ export function fragmentTexts(e: Evidence): Record<string, string> {
 export function quoteFor(evidence: readonly Evidence[], c: Citation, wholeDocSuffix = '(attached)'): string {
   const e = evidence.find((x) => x.id === c.evidenceId);
   if (!e) return `${c.evidenceId} (missing from the case file)`;
+  // The analyst's citations carry the exact quoted text (checked verbatim against the document).
+  if (c.quotes?.length) return c.quotes.join('  ·  ');
   if (c.fragments.length === 0) return `${e.title} ${wholeDocSuffix}`;
   const t = fragmentTexts(e);
   return c.fragments.map((f) => t[f] ?? f).join('  ·  ');

@@ -1,5 +1,6 @@
 import type {
   ActionCode,
+  Citation,
   ChecklistItem,
   ChecklistState,
   Contradiction,
@@ -12,30 +13,26 @@ import type {
 /** PayPal limits the provide-evidence `notes` field to 2,000 characters. */
 export const NOTES_LIMIT = 2000;
 
+/** Result of re-verifying an edited sentence (the analyst's live check, or why it could not run). */
+export interface Recheck {
+  state: 'supported' | 'needs_review' | 'rejected';
+  reason: string | null;
+  note: string;
+  /** Citations the verifier chose for the new text; absent keeps the original ones. */
+  citations?: Citation[];
+}
+
 export interface DraftContext {
   /** Merchant edits by sentence id (already trimmed, non-empty). */
   edits: Readonly<Record<string, string>>;
+  /** Verifier results for the current edits, by sentence id. An edit without one is still being checked. */
+  rechecks?: Readonly<Record<string, Recheck>>;
   /** Sentence currently being re-checked after an edit. */
   checking: string | null;
   /** Analysis replay progress: number of completed steps. */
   analysisStep: number;
   /** Step index at which rejected sentences are revealed. Before that they read "Checking support…". */
   rejectionStep: number;
-}
-
-/** Re-check an edited sentence against the case file (simulated rule from the fixture). */
-export function recheckEdit(
-  sentence: DraftSentence,
-  text: string,
-): { state: SentenceState; reason: string | null; note: string } {
-  if (sentence.verdict === 'needs_review') {
-    const rule = sentence.recheck;
-    if (rule && new RegExp(rule.supportedIf, 'i').test(text)) {
-      return { state: 'supported', reason: null, note: rule.supportedNote };
-    }
-    return { state: 'needs_review', reason: sentence.reason ?? null, note: 'Edited · re-checked: still needs review' };
-  }
-  return { state: sentence.verdict, reason: sentence.reason ?? null, note: 'Edited · re-checked: still supported' };
 }
 
 /** Derive what each sentence shows: verdict, edits, re-check in progress, analysis still running. */
@@ -46,19 +43,26 @@ export function deriveSentences(base: readonly DraftSentence[], ctx: DraftContex
     let text = s.text;
     let reason: string | null = s.reason ?? null;
     let note: string | null = null;
+    let citations: Citation[] = s.citations;
 
-    // Rejected sentences cannot be edited; an edit only applies to supported / needs-review ones.
+    // Rejected sentences cannot be edited; an edit only applies to supported / needs-review ones. An edit is never
+    // trusted before the verifier has checked it.
     if (edit !== undefined && s.verdict !== 'rejected') {
-      const r = recheckEdit(s, edit);
+      const r = ctx.rechecks?.[s.id];
       text = edit;
-      state = r.state;
-      reason = r.reason;
-      note = r.note;
+      if (r) {
+        state = r.state;
+        reason = r.reason;
+        note = r.note;
+        if (r.citations) citations = r.citations;
+      } else {
+        state = 'checking';
+      }
     }
     if (ctx.checking === s.id) state = 'checking';
     if (s.verdict === 'rejected' && ctx.analysisStep < ctx.rejectionStep + 1) state = 'pending';
 
-    return { id: s.id, num: i + 1, text, state, citations: s.citations, reason, note, edited: edit !== undefined };
+    return { id: s.id, num: i + 1, text, state, citations, reason, note, edited: edit !== undefined, ...(s.origin === 'merchant_note' ? { fromNote: true } : {}) };
   });
 }
 
@@ -119,6 +123,8 @@ export interface BlockerInput {
   contradictions: readonly Contradiction[];
   resolutions: Readonly<Record<string, ContradictionResolution>>;
   analysisComplete: boolean;
+  /** Why the analysis is not complete, when it is not simply still running. */
+  analysisText?: string;
   action: ActionCode;
   allowedActions: readonly ActionCode[];
   evidenceType: { allowed: boolean; satisfied: boolean; label: string } | null;
@@ -136,7 +142,7 @@ export function draftBlockers(input: BlockerInput): Blocker[] {
     return out;
   }
   if (!input.analysisComplete) {
-    out.push({ kind: 'analysis', text: 'the analysis is still running' });
+    out.push({ kind: 'analysis', text: input.analysisText ?? 'the analysis is still running' });
     return out;
   }
   for (const s of input.sentences) {

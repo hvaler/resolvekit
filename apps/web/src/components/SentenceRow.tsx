@@ -81,6 +81,11 @@ export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCanc
           <span className="text-[11.5px] font-semibold" style={{ color: T.fg }}>
             {T.label}
           </span>
+          {s.fromNote && (
+            <span className="rounded-sm border border-line-2 px-[6px] py-px text-[10.5px] text-ink-3" title="One of your notes for the response, checked against the evidence like every sentence">
+              From your notes
+            </span>
+          )}
           <span className="flex-1" />
           {suggestion && s.state === 'needs_review' && !editing && (
             <button type="button" onClick={onApplySuggestion} className="rounded-sm border border-warn-line bg-surface px-2 py-0.5 text-[11.5px]">

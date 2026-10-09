@@ -2,8 +2,8 @@ import type { CaseFile, Evidence } from '../domain/types';
 
 /**
  * Synthetic standard case: physical product, "not received", inquiry stage. All names, addresses and
- * identifiers are fictional. E6 is a buyer attachment containing instructions: it is sample content for
- * the prompt-injection demo and is shown as content only.
+ * identifiers are fictional. E6 is a buyer attachment containing instructions: sample content for the
+ * prompt-injection demo. The analyst flags it and treats it as content only.
  */
 const evidence: Evidence[] = [
   {
@@ -11,7 +11,6 @@ const evidence: Evidence[] = [
     short: 'Order',
     title: 'Order #10482',
     meta: { type: 'Order record', tag: 'ORD', source: 'Order system', received: '6 Oct 2026 · 14:02', hash: '9f2c…a41e' },
-    contradictionId: 'C1',
     body: {
       kind: 'lines',
       lines: [
@@ -42,7 +41,6 @@ const evidence: Evidence[] = [
     short: 'UPS tracking',
     title: 'UPS tracking record',
     meta: { type: 'Carrier tracking', tag: 'CAR', source: 'Carrier (UPS)', received: '8 Oct 2026 · 12:05', hash: 'c7e5…02fd' },
-    contradictionId: 'C1',
     body: {
       kind: 'lines',
       lines: [
@@ -86,7 +84,6 @@ const evidence: Evidence[] = [
     short: 'note.txt',
     title: 'note.txt (buyer attachment)',
     meta: { type: 'Text file · 1 KB', tag: 'MSG', source: 'PayPal dispute', received: '8 Oct 2026 · 18:19', hash: '77b2…d914' },
-    warning: 'This document contains instructions. It is treated as content only.',
     body: {
       kind: 'lines',
       lines: [
@@ -114,112 +111,20 @@ export const standardCase: CaseFile = {
     timeLeft: '9 d 22 h left',
     transactionId: '2CY26152YH817252P',
     captureText: 'Captured 6 Oct 2026 · 7.00 USD · order #10482',
+    openedAt: '2026-10-08T18:19:00Z',
   },
   evidence,
   evidenceSources: '6 documents',
-  timeline: [
-    { kind: 'event', time: '6 Oct 14:02', title: 'Order placed', sub: '#10482 · 7.00 USD', tag: 'ORD', evidenceId: 'E1' },
-    { kind: 'event', time: '6 Oct 14:03', title: 'Payment captured', sub: '2CY26152YH817252P', tag: 'PP', evidenceId: 'E2' },
-    { kind: 'event', time: '7 Oct 08:15', title: 'Label created', sub: 'UPS Ground', tag: 'ORD', evidenceId: 'E4' },
-    { kind: 'event', time: '7 Oct 09:40', title: 'Shipped', sub: '1Z999AA10123456784', tag: 'CAR', evidenceId: 'E3' },
-    { kind: 'event', time: '8 Oct 07:10', title: 'Out for delivery', sub: 'Exampleton', tag: 'CAR', evidenceId: 'E3' },
-    { kind: 'event', time: '8 Oct 11:52', title: 'Delivered', sub: 'Signed "J. D."', tag: 'CAR', evidenceId: 'E3' },
-    { kind: 'contradiction', contradictionId: 'C1' },
-    { kind: 'event', time: '8 Oct 18:17', title: 'Buyer message', sub: '"Package never arrived."', tag: 'MSG', evidenceId: 'E5' },
-    { kind: 'event', time: '8 Oct 18:19', title: 'Dispute opened', sub: 'Inquiry · not received', tag: 'PP', evidenceId: null },
-    { kind: 'event', time: '8 Oct 18:19', title: 'Attachment received', sub: 'note.txt', tag: 'MSG', evidenceId: 'E6' },
-  ],
-  timelineCaption: '9 events · UTC',
-  sentences: [
-    {
-      id: 'S1',
-      text: 'Order #10482 was placed on 6 October 2026 and paid in full (7.00 USD).',
-      verdict: 'supported',
-      citations: [
-        { evidenceId: 'E1', fragments: ['E1.date', 'E1.amt'] },
-        { evidenceId: 'E2', fragments: ['E2.amt'] },
-      ],
-    },
-    {
-      id: 'S2',
-      text: 'We shipped it on 7 October 2026 with UPS, tracking number 1Z999AA10123456784.',
-      verdict: 'supported',
-      citations: [
-        { evidenceId: 'E3', fragments: ['E3.ship', 'E3.trk'] },
-        { evidenceId: 'E4', fragments: ['E4.trk'] },
-      ],
-    },
-    {
-      id: 'S3',
-      text: 'UPS recorded delivery on 8 October 2026 at 11:52 UTC, signed for by "J. D."',
-      verdict: 'supported',
-      citations: [{ evidenceId: 'E3', fragments: ['E3.deliv'] }],
-    },
-    {
-      id: 'S4',
-      text: 'The package was delivered to the address the buyer gave at checkout.',
-      verdict: 'needs_review',
-      citations: [
-        { evidenceId: 'E1', fragments: ['E1.addr'] },
-        { evidenceId: 'E3', fragments: ['E3.addr'] },
-      ],
-      reason: 'Why: the addresses differ. The order says "Apt 4" and the delivery says "Apt 4B".',
-      recheck: { supportedIf: '4B', supportedNote: 'Edited · re-checked against E1 and E3: supported' },
-    },
-    {
-      id: 'S5',
-      text: 'The customer confirmed receipt by phone.',
-      verdict: 'rejected',
-      citations: [],
-      reason: 'Removed: no call log, note or message in the case file records this call. It will not be sent.',
-    },
-    {
-      id: 'S6',
-      text: 'The buyer’s message saying the package never arrived was sent about six hours after the recorded delivery.',
-      verdict: 'supported',
-      citations: [
-        { evidenceId: 'E5', fragments: ['E5.msg', 'E5.date'] },
-        { evidenceId: 'E3', fragments: ['E3.deliv'] },
-      ],
-    },
-    {
-      id: 'S7',
-      text: 'The carrier tracking record and the shipping label are attached.',
-      verdict: 'supported',
-      citations: [
-        { evidenceId: 'E3', fragments: [] },
-        { evidenceId: 'E4', fragments: [] },
-      ],
-    },
-  ],
-  contradictions: [
-    {
-      id: 'C1',
-      title: 'Delivery address differs from order address',
-      a: { evidenceId: 'E1', fragment: 'E1.addr', label: 'E1 · Order', value: 'Apt 4' },
-      b: { evidenceId: 'E3', fragment: 'E3.addr', label: 'E3 · UPS delivered', value: 'Apt 4B' },
-      assessment: 'Street, number and postcode match. Probably the same unit written two ways. Your call, not a fraud signal.',
-      explainSentenceId: 'S4',
-      explainText: 'UPS delivered to 12 Example Street, Apt 4B. The order lists Apt 4. The street, number and postcode match.',
-      blockerName: 'the address contradiction',
-    },
-  ],
-  checklist: {
-    title: 'What "not received" disputes need',
-    items: [
-      { label: 'Tracking number with delivery confirmation', refs: 'E3', present: true },
-      { label: 'Carrier and ship date', refs: 'E3 · E4', present: true },
-      { label: 'Delivery address matches the order', refs: 'E1 ↔ E3', contradictionId: 'C1', present: true },
-      { label: 'Signature or proof of receipt', refs: 'E3', present: true },
-      { label: 'Payment record for the disputed amount', refs: 'E2', present: true },
-    ],
-  },
-  analysis: {
-    steps: ['Read 6 documents', 'Built timeline · 9 events', 'Found 1 contradiction', 'Drafted 7 sentences', 'Removed 1 unsupported', 'Ready for your review'],
-    contradictionStep: 2,
-    rejectionStep: 4,
-    note: 'Documents are read as content, never as instructions',
-  },
+  timeline: [],
+  timelineCaption: '',
+  // The analyst's outputs (timeline, draft, contradictions, checklist, recommendation) come from the real analysis
+  // (packages/analyst): a committed golden analysis or a live run. The merchant's own notes are drafted and verified
+  // like any other sentence.
+  merchantNotes: ['The customer confirmed receipt by phone.'],
+  sentences: [],
+  contradictions: [],
+  checklist: null,
+  analysis: { steps: [], contradictionStep: 3, rejectionStep: 5, note: 'Documents are read as content, never as instructions' },
   requestedEvidenceType: 'PROOF_OF_FULFILLMENT',
   requestedNote: 'Requested from seller',
   evidenceTypes: [
@@ -242,10 +147,7 @@ export const standardCase: CaseFile = {
     { name: 'ups-tracking-1Z999AA10123456784.pdf', size: '112 KB', fromEvidenceId: 'E3' },
     { name: 'shipping-label-10482.pdf', size: '84 KB', fromEvidenceId: 'E4' },
   ],
-  recommendation: {
-    title: 'Recommended: Provide evidence.',
-    body: 'The carrier record shows a signed delivery about six hours before the buyer’s message. That is what proof of fulfillment covers. The decision is yours, and PayPal decides the outcome.',
-  },
+  recommendation: null,
   allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim'],
   actionDetails: {
     provide_evidence: { label: 'Provide evidence', sub: 'Recommended' },
@@ -254,9 +156,5 @@ export const standardCase: CaseFile = {
     accept_claim: { label: 'Accept claim', sub: 'Refund 7.00 USD' },
   },
   refundText: '7.00 USD',
-  audit: [
-    { time: '18:21', who: 'Analyst', what: 'Read 6 documents, built the timeline, drafted 7 sentences' },
-    { time: '18:21', who: 'Analyst', what: 'Removed "The customer confirmed receipt by phone." No evidence' },
-    { time: '18:21', who: 'Analyst', what: 'Flagged E6 note.txt: contains instructions, treated as content' },
-  ],
+  audit: [],
 };

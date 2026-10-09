@@ -281,6 +281,7 @@ export function withPayPal(c: CaseFile, source: PayPalSource): CaseFile {
       respondBy: s ? utcDate(s.respondBy) : null,
       timeLeft: null,
       transactionId: s?.transaction?.id ?? '—',
+      openedAt: s?.createdAt ?? null,
     },
     requestedEvidenceType: caseRequestedEvidence(source, c.requestedEvidenceType),
     requestedNote: s ? 'Requested from seller · read from PayPal' : 'Not read from PayPal yet',

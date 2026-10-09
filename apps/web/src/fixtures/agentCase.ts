@@ -21,6 +21,7 @@ export const agentCase: CaseFile = {
     timeLeft: '9 d 23 h left',
     transactionId: '7HF40211KM3390816',
     captureText: 'Captured 8 Oct 2026 · 1.37 of 5.00 USD',
+    openedAt: '2026-10-08T17:40:11Z',
   },
   evidence: [
     {
@@ -91,85 +92,14 @@ export const agentCase: CaseFile = {
     },
   ],
   evidenceSources: '4 documents',
-  timeline: [
-    { kind: 'event', time: '09:12:30', title: 'Budget approved', sub: '5.00 USD cap · in PayPal', tag: 'PP', evidenceId: 'E1' },
-    { kind: 'event', time: '09:14:03', title: 'quote_lookup', sub: '0.05 USD · OK', tag: 'MCP', evidenceId: 'E2', fragment: 'r1' },
-    { kind: 'event', time: '09:15:40', title: 'deep_report', sub: '0.40 USD · failed, not charged', tag: 'MCP', evidenceId: 'E2', fragment: 'r2', struck: true },
-    { kind: 'event', time: '09:16:12', title: 'deep_report', sub: '0.40 USD · OK', tag: 'MCP', evidenceId: 'E2', fragment: 'r3' },
-    { kind: 'event', time: '09:18:55', title: 'bulk_export', sub: '0.92 USD · OK', tag: 'MCP', evidenceId: 'E2', fragment: 'r4' },
-    { kind: 'event', time: '09:25:00', title: 'Settled', sub: 'Captured 1.37 · 3.63 released', tag: 'PP', evidenceId: 'E3' },
-    { kind: 'event', time: '09:25:02', title: 'Session receipt issued', sub: 'PDF · 46 KB', tag: 'MCP', evidenceId: 'E4' },
-    { kind: 'event', time: '17:40:11', title: 'Dispute opened', sub: '"I didn’t receive any confirmation of the service"', tag: 'PP', evidenceId: null },
-  ],
-  timelineCaption: '8 Oct 2026 · UTC',
-  sentences: [
-    {
-      id: 'G1',
-      verdict: 'supported',
-      text: 'On 8 October 2026 the buyer approved a budget of up to 5.00 USD for agent session mm-sess-20261008-01.',
-      citations: [{ evidenceId: 'E1', fragments: ['m1', 'm2', 'm5'] }],
-    },
-    {
-      id: 'G2',
-      verdict: 'supported',
-      text: 'During the session the buyer’s agent made four tool calls. Three completed and one failed.',
-      citations: [{ evidenceId: 'E2', fragments: ['r1', 'r2', 'r3', 'r4'] }],
-    },
-    {
-      id: 'G3',
-      verdict: 'supported',
-      text: 'We charged only the three completed calls: 0.05 + 0.40 + 0.92 = 1.37 USD.',
-      citations: [
-        { evidenceId: 'E2', fragments: ['r1', 'r3', 'r4'] },
-        { evidenceId: 'E3', fragments: ['s2'] },
-      ],
-    },
-    {
-      id: 'G4',
-      verdict: 'supported',
-      text: 'The failed deep_report call at 09:15:40 UTC was not charged.',
-      citations: [{ evidenceId: 'E2', fragments: ['r2'] }],
-    },
-    {
-      id: 'G5',
-      verdict: 'supported',
-      text: 'The remaining 3.63 USD of the approved budget was released.',
-      citations: [{ evidenceId: 'E3', fragments: ['s3'] }],
-    },
-    {
-      id: 'G6',
-      verdict: 'needs_review',
-      text: 'The buyer received a confirmation for every completed call.',
-      citations: [{ evidenceId: 'E2', fragments: ['r1', 'r3', 'r4'] }],
-      reason: 'Why: the receipt shows status OK and a response hash for each call. It does not show what the buyer saw.',
-      recheck: { supportedIf: 'request hash', supportedNote: 'Rephrased · re-checked against E2: supported' },
-      suggestion: {
-        label: 'Rephrase to what the receipt shows',
-        text: 'Each completed call returned a response to the buyer’s agent, recorded with its request hash in the session receipt.',
-      },
-    },
-    {
-      id: 'G7',
-      verdict: 'rejected',
-      text: 'All four tool calls completed successfully.',
-      citations: [],
-      reason: 'Removed: contradicted by E2. Call 2 (deep_report, 09:15:40) FAILED and was not charged.',
-    },
-    {
-      id: 'G8',
-      verdict: 'supported',
-      text: 'The session receipt, listing every call with its price, status and request hash, is attached.',
-      citations: [{ evidenceId: 'E4', fragments: [] }],
-    },
-  ],
+  timeline: [],
+  timelineCaption: '',
+  // The analyst's outputs come from the real analysis (packages/analyst). The merchant's notes are verified too.
+  merchantNotes: ['All four tool calls completed successfully.', 'The buyer received a confirmation for every completed call.'],
+  sentences: [],
   contradictions: [],
   checklist: null,
-  analysis: {
-    steps: ['Read 4 documents', 'Built timeline · 8 events', 'Matched charges to calls · 1.37 = 0.05 + 0.40 + 0.92', 'Drafted 8 sentences', 'Removed 1 contradicted'],
-    contradictionStep: 2,
-    rejectionStep: 4,
-    note: 'Receipts are verified by request hash',
-  },
+  analysis: { steps: [], contradictionStep: 3, rejectionStep: 5, note: 'Documents are read as content, never as instructions' },
   requestedEvidenceType: 'PROOF_OF_FULFILLMENT',
   requestedNote: 'even though the buyer declared a Service',
   evidenceTypes: [
@@ -206,8 +136,5 @@ export const agentCase: CaseFile = {
     accept_claim: { label: 'Accept claim', sub: 'Refund 1.37 USD' },
   },
   refundText: '1.37 USD',
-  audit: [
-    { time: '17:46', who: 'Analyst', what: 'Read 4 documents, matched 3 charges to calls, drafted 8 sentences' },
-    { time: '17:46', who: 'Analyst', what: 'Removed "All four tool calls completed successfully." Contradicted by E2' },
-  ],
+  audit: [],
 };

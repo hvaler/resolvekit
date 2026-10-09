@@ -8,7 +8,8 @@ export interface ContradictionCardProps {
   resolution: ContradictionResolution;
   /** False until the analysis has found it (the card fades in). */
   visible: boolean;
-  onExplain: () => void;
+  /** Rewrite the sentence that relies on it to state both values; absent when no sentence does. */
+  onExplain?: (() => void) | undefined;
   onResolve: (note: string) => void;
 }
 
@@ -69,9 +70,11 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
       <div className="text-[12px] leading-[1.4] text-ink-2">{c.assessment}</div>
       {open && !noteOpen && (
         <div className="flex flex-wrap gap-1.5">
-          <MiniButton onClick={onExplain} className="border-warn-line font-medium text-ink">
-            Explain in response
-          </MiniButton>
+          {onExplain && (
+            <MiniButton onClick={onExplain} className="border-warn-line font-medium text-ink">
+              Explain in response
+            </MiniButton>
+          )}
           <MiniButton onClick={() => setNoteOpen(true)}>Mark resolved…</MiniButton>
         </div>
       )}

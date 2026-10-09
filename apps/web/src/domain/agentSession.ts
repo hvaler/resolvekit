@@ -12,7 +12,6 @@ import type { PayPalSource } from './paypalView';
 import type { AgentReceiptSource, CaseFile, Evidence, MeteredSession, TimelineItem } from './types';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
-const LONG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
 const pad = (n: number) => String(n).padStart(2, '0');
 const date = (iso: string | null | undefined): Date | null => {
   if (!iso) return null;
@@ -34,8 +33,6 @@ export const shortSession = (id: string) => (id.length > 20 ? `${id.slice(0, 16)
 /** The four documents of the agent case that MeterMCP provides. */
 export const AGENT_DOCS = ['E1', 'E2', 'E3', 'E4'] as const;
 
-// What the demo case's draft says; checked against the real session so a different session is said out loud.
-const DEMO = { sessionId: 'mm-sess-20261008-01', day: '8 October 2026', failedAt: '09:15:40', calls: 4, ok: 3, failed: 1, charged: '1.37', released: '3.63', cap: '5.00' };
 
 const demoLabel = { kind: 'demo', text: 'Demo data' } as const;
 
@@ -70,7 +67,6 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource): Case
   const st = s.settlement;
   const captured = st.captured ?? '0.00';
   const released = st.released ?? '—';
-  const failed = s.calls.find((x) => x.status === 'FAILED');
 
   const docs: Record<string, Evidence['body']> = {
     E1: {
@@ -145,13 +141,6 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource): Case
     ...(opened ? [{ kind: 'event', time: clock(opened), title: 'Dispute opened', sub: `${dayText(opened)} · read from PayPal`, tag: 'PP', evidenceId: null } as TimelineItem] : []),
   ];
 
-  // The draft is the demo's; carry the real session id, day and failed-call time into it, and say so if the
-  // session's numbers are not the ones the draft was written for.
-  const approvedDay = date(s.mandate.approvedAt);
-  const longDay = approvedDay ? `${approvedDay.getUTCDate()} ${LONG_MONTHS[approvedDay.getUTCMonth()]} ${approvedDay.getUTCFullYear()}` : DEMO.day;
-  const swap = (t: string) => t.split(DEMO.sessionId).join(s.sessionId).split(DEMO.day).join(longDay).split(DEMO.failedAt).join(failed ? clock(failed.time) : DEMO.failedAt);
-  const differs =
-    s.totals.calls !== DEMO.calls || s.totals.ok !== DEMO.ok || s.totals.failed !== DEMO.failed || s.totals.charged !== DEMO.charged || s.mandate.cap !== DEMO.cap || (st.remainderReleased && released !== DEMO.released);
   const fileName = `session-receipt-${s.sessionId}.pdf`;
 
   return {
@@ -159,22 +148,12 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource): Case
     evidence,
     timeline,
     timelineCaption: `${dayText(s.mandate.approvedAt)} · UTC`,
-    sentences: c.sentences.map((x) => ({
-      ...x,
-      text: swap(x.text),
-      ...(x.reason ? { reason: swap(x.reason) } : {}),
-      ...(x.suggestion ? { suggestion: { ...x.suggestion, text: swap(x.suggestion.text) } } : {}),
-    })),
     fulfillment: { ...c.fulfillment, carrier: 'OTHER', tracking: s.sessionId },
     evidenceTypes: c.evidenceTypes.map((t) =>
       t.type === 'PROOF_OF_FULFILLMENT' ? { ...t, requirement: `Sent as digital delivery: carrier Other, reference ${s.sessionId}` } : t,
     ),
     attachments: [{ name: fileName, size: 'PDF built from the receipt', fromEvidenceId: 'E4' }],
-    notice: differs
-      ? {
-          tone: 'warn',
-          text: `This MeterMCP session (${s.totals.calls} calls, ${s.totals.ok} OK, ${s.totals.charged} ${cur} charged) differs from the session the demo draft was written for (${DEMO.calls} calls, ${DEMO.ok} OK, ${DEMO.charged} ${cur}). Check every sentence against the receipt before sending.`,
-        }
-      : null,
+    // The analyst reads these very documents, so the draft is written for this session: no demo-draft notice.
+    notice: null,
   };
 }

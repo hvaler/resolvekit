@@ -1,9 +1,11 @@
+import { buildInput, withAnalysis } from '@resolvekit/analyst';
 import { useCallback, useMemo, useRef } from 'react';
 import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
 import { usePayPalSource, usePolling, useSecondsSince, useServices } from '../app/services';
+import { useAnalysis } from '../app/useAnalysis';
 import { useCaseDraft } from '../app/useCaseDraft';
-import { AnalysisBar } from '../components/AnalysisBar';
+import { AnalysisBar, analysisLabel } from '../components/AnalysisBar';
 import { AppBar } from '../components/AppBar';
 import { ApproveFlow } from '../components/ApproveFlow';
 import { CaseHeader } from '../components/CaseHeader';
@@ -21,6 +23,12 @@ import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
 import { caseFiles, inbox, processingDispute } from '../fixtures';
 
+/** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
+function contradictionLabel(blockerName: string | undefined): string {
+  const t = (blockerName ?? 'contradiction').replace(/^thes+/i, '');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 export function ago(secs: number | null): string {
   if (secs == null) return 'not read yet';
   return secs < 60 ? `read ${secs}s ago` : `read ${Math.round(secs / 60)} min ago`;
@@ -36,7 +44,7 @@ export function CasePage() {
 
 function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const id = demo.summary.id;
-  const { snapshots, addAudit } = useServices();
+  const { snapshots, addAudit, analysis: analysisClient } = useServices();
   usePolling([id]);
   const source = usePayPalSource(id);
   // A bound case only uses a snapshot read from PayPal; a simulated one uses the simulator's.
@@ -48,13 +56,20 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const liveSnap = source.kind === 'live' ? source.snap : null;
   // `source` is rebuilt every render; its kind and PayPal snapshot are what matter.
   // The agent case's mandate/receipt/settlement from the real MeterMCP session when the server found one.
-  const c = useMemo(() => withMeterMcp(withPayPal(demo, source), source), [demo, source.kind, liveSnap]);
+  const docs = useMemo(() => withMeterMcp(withPayPal(demo, source), source), [demo, source.kind, liveSnap]);
 
   const submitted = !!snap && hasSellerEvidence(snap);
   const allowed: readonly ActionCode[] = caseAllowedActions(source, snapshots[id], demo.allowedActions);
+
+  // The analyst reads the documents exactly as shown: once PayPal's (and MeterMCP's) data is in for a bound case.
+  const docsFinal = source.kind === 'simulated' || source.kind === 'live';
+  const input = useMemo(() => (docsFinal ? buildInput(docs, { allowedActions: allowed }) : null), [docsFinal, docs, allowed.join(',')]);
+  const analysis = useAnalysis(id, input, analysisClient);
+  const an = analysis.state;
+  const c = useMemo(() => (an.kind === 'ready' ? withAnalysis(docs, an.analysis, an.input) : docs), [docs, an]);
   const status = snap?.status ?? demo.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
-  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit });
+  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, analysis });
 
   // Keep the approve flow open once started, even after the case becomes "submitted".
   const flowOpen = useRef(false);
@@ -89,7 +104,17 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           wide={c.kind === 'agent'}
           className="border-b border-line"
         />
-        <AnalysisBar steps={c.analysis.steps} run={d.run} note={c.analysis.note} onReplay={submitted ? undefined : d.replay} />
+        <AnalysisBar
+          steps={d.steps}
+          run={d.run}
+          note={c.analysis.note}
+          label={analysisLabel(an)}
+          problem={d.analysisUnavailable ?? analysis.rerunError}
+          onReplay={submitted || an.kind !== 'ready' ? undefined : d.replay}
+          onRerun={submitted ? undefined : analysis.rerun}
+          rerunBlocked={analysis.rerunBlocked}
+          live={analysis.live}
+        />
         <main className="flex min-h-0 flex-1">
           <Timeline
             items={c.timeline}
@@ -102,7 +127,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                   contradiction={k}
                   resolution={d.resolutionOf(cid)}
                   visible={d.contradictionsVisible}
-                  onExplain={() => d.explain(cid)}
+                  onExplain={k.explainSentenceId ? () => d.explain(cid) : undefined}
                   onResolve={(note) => d.resolve(cid, note)}
                 />
               ) : null;
@@ -145,6 +170,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                 evidence={e}
                 used={d.used[e.id] ?? 0}
                 contradictionOpen={!!e.contradictionId && d.contradictionsVisible && d.resolutionOf(e.contradictionId).status === 'open'}
+                contradictionLabel={contradictionLabel(c.contradictions.find((k) => k.id === e.contradictionId)?.blockerName)}
               />
             ))}
           </section>
