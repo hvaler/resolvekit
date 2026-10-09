@@ -23,6 +23,7 @@ export interface Dispute {
   disputed_transactions?: Array<{
     seller_transaction_id?: string;
     create_time?: string;
+    transaction_status?: string;
     gross_amount?: { currency_code: string; value: string };
     items?: Array<{ item_type?: string }>;
   }>;

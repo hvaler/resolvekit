@@ -26,7 +26,8 @@ const evidence: Evidence[] = [
     id: 'E2',
     short: 'Capture',
     title: 'Payment capture',
-    meta: { type: 'Transaction record', tag: 'PP', source: 'PayPal', received: '6 Oct 2026 · 14:03', hash: '41d0…7b93' },
+    paypalRecord: 'capture',
+    meta: { type: 'Transaction record', tag: 'PP', source: 'Simulated PayPal · demo data', received: '6 Oct 2026 · 14:03', hash: '41d0…7b93' },
     body: {
       kind: 'lines',
       lines: [

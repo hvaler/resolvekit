@@ -37,7 +37,7 @@ function waiting(): DisputeSnapshot {
     buyerRespondBy: null,
     amount: { value: '1.37', currency: 'USD' },
     createdAt: '2026-10-08T19:31:23.864Z',
-    transaction: { id: '4FT237453Y5353014', createdAt: '2026-10-08T19:30:33.000Z', amount: { value: '1.37', currency: 'USD' } },
+    transaction: { id: '4FT237453Y5353014', createdAt: '2026-10-08T19:30:33.000Z', amount: { value: '1.37', currency: 'USD' }, status: 'HELD' },
     readAt: '9 Oct 2026 08:00:00 UTC',
     origin: { kind: 'paypal', env: 'sandbox', disputeId: 'PP-R-VIJ-10190671' },
   };
@@ -170,10 +170,58 @@ describe('case rules from PayPal', () => {
   it('the case seen by the draft and the approve flow carries PayPal’s amount and keeps the merchant-side data', () => {
     const c = withPayPal(standardCase, live(waiting()));
     expect(c.summary).toMatchObject({ id: 'PP-R-TVH-10190665', amount: '1.37', currency: 'USD', transactionId: '4FT237453Y5353014' });
-    expect(c.evidence).toBe(standardCase.evidence);
+    expect(c.evidence.filter((e) => !e.paypalRecord)).toEqual(standardCase.evidence.filter((e) => !e.paypalRecord));
     expect(c.sentences).toBe(standardCase.sentences);
     expect(withPayPal(standardCase, { kind: 'simulated' })).toBe(standardCase);
     expect(withPayPal(standardCase, { kind: 'loading' }).summary.amount).toBe('—');
+  });
+});
+
+describe('the payment-capture document', () => {
+  const capture = (c: ReturnType<typeof withPayPal>) => c.evidence.find((e) => e.paypalRecord === 'capture')!;
+  const text = (c: ReturnType<typeof withPayPal>) => {
+    const e = capture(c);
+    return [e.meta?.source, e.meta?.received, ...(e.body.kind === 'lines' ? e.body.lines.map((l) => l.text) : [])].join(' | ');
+  };
+
+  it('on a bound case is PayPal’s disputed transaction: capture id, gross amount, status and time, with the citable fragments kept', () => {
+    const c = withPayPal(standardCase, live(waiting()));
+    const e = capture(c);
+    expect(e.id).toBe('E2');
+    expect(e.body).toEqual({
+      kind: 'lines',
+      lines: [
+        { text: 'Capture 4FT237453Y5353014', fragment: 'E2.id' },
+        { text: '1.37 USD · HELD', fragment: 'E2.amt' },
+        { text: 'Transaction created 8 Oct 2026 19:30 UTC', fragment: 'E2.date' },
+      ],
+    });
+    expect(e.meta).toMatchObject({ source: 'PayPal sandbox · dispute PP-R-VIJ-10190671', received: 'read 9 Oct 2026 08:00:00 UTC', hash: '' });
+    for (const v of ['7.00', '2CY26152YH817252P', '14:03', '41d0']) expect(text(c)).not.toContain(v);
+    const ev = c.timeline.find((t) => t.kind === 'event' && t.evidenceId === 'E2');
+    expect(ev).toMatchObject({ time: '8 Oct 19:30', sub: '4FT237453Y5353014 · from PayPal' });
+  });
+
+  it('without a status from PayPal shows amount only; without a transaction says so', () => {
+    const noStatus = waiting();
+    noStatus.transaction = { ...noStatus.transaction!, status: undefined };
+    expect(text(withPayPal(standardCase, live(noStatus)))).toContain('| 1.37 USD |');
+    const none = { ...waiting(), transaction: null };
+    expect(text(withPayPal(standardCase, live(none)))).toContain('PayPal reports no disputed transaction');
+  });
+
+  it('before the first read and when PayPal is unreachable shows no demo values, only the reason', () => {
+    for (const src of [{ kind: 'loading' }, { kind: 'unavailable', error: 'down' }] as const) {
+      const t = text(withPayPal(standardCase, src));
+      for (const v of ['7.00', '2CY26152YH817252P', '41d0']) expect(t).not.toContain(v);
+      expect(t).toContain(src.kind === 'loading' ? 'Reading PayPal' : 'Couldn’t reach PayPal (down)');
+    }
+  });
+
+  it('on a simulated case keeps the demo capture and never calls it plain "PayPal"', () => {
+    const e = capture(withPayPal(standardCase, { kind: 'simulated' }));
+    expect(e.meta?.source).toBe('Simulated PayPal · demo data');
+    expect(e.body.kind === 'lines' && e.body.lines[0]!.text).toBe('Capture 2CY26152YH817252P');
   });
 });
 

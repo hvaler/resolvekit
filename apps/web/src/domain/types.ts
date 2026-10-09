@@ -81,6 +81,11 @@ export interface Evidence {
   warning?: string;
   /** Set when this document takes part in a contradiction. */
   contradictionId?: string;
+  /**
+   * The document is PayPal's record of the disputed payment (the capture). On a bound case its content comes from
+   * the PayPal read (see domain/paypalView `withPayPal`); on a simulated case it is demo data and says so.
+   */
+  paypalRecord?: 'capture';
   body: EvidenceBody;
 }
 
@@ -325,6 +330,12 @@ export interface DisputeSnapshot {
   createdAt?: string | null;
   /** Buyer response due date (ISO 8601), when PayPal is waiting for the buyer. */
   buyerRespondBy?: string | null;
-  /** The disputed transaction as PayPal reports it: the seller-side id (the capture), its time and gross amount. */
-  transaction?: { id: string; createdAt: string | null; amount: { value: string; currency: string } | null } | null;
+  /** The disputed transaction as PayPal reports it: the seller-side id (the capture), its time, gross amount and status. */
+  transaction?: {
+    id: string;
+    createdAt: string | null;
+    amount: { value: string; currency: string } | null;
+    /** PayPal's `transaction_status`, verbatim (e.g. HELD while disputed); absent on older reads. */
+    status?: string | null;
+  } | null;
 }

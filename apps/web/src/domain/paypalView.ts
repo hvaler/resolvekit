@@ -14,7 +14,7 @@ import { EVIDENCE_TYPE_LABEL } from './evidenceTypes';
 import type { GatewayMode } from './httpGateway';
 import { dueHours, formatDue, formatDueAt, type InboxDispute } from './inbox';
 import { hasSellerEvidence } from './recorded';
-import type { ActionCode, CaseFile, DisputeReason, DisputeSnapshot, DisputeStatus, DisputeSummary, EvidenceType } from './types';
+import type { ActionCode, CaseFile, DisputeReason, DisputeSnapshot, DisputeStatus, DisputeSummary, Evidence, EvidenceType, TimelineItem } from './types';
 
 /** Where a case's PayPal fields come from right now. */
 export type PayPalSource =
@@ -284,7 +284,66 @@ export function withPayPal(c: CaseFile, source: PayPalSource): CaseFile {
     },
     requestedEvidenceType: caseRequestedEvidence(source, c.requestedEvidenceType),
     requestedNote: s ? 'Requested from seller · read from PayPal' : 'Not read from PayPal yet',
+    evidence: c.evidence.map((e) => (e.paypalRecord === 'capture' ? captureEvidence(e, source) : e)),
+    timeline: c.timeline.map((t) => captureTimelineItem(t, c.evidence, source)),
   };
+}
+
+/** Why a bound case has no PayPal data to show yet. */
+function notReadYet(source: Exclude<PayPalSource, { kind: 'simulated' }>): string {
+  if (source.kind === 'unavailable') return `Couldn’t reach PayPal (${source.error})`;
+  if (source.kind === 'checking') return 'Checking the PayPal connection…';
+  return 'Reading PayPal…';
+}
+
+/** "6 Oct 14:03" (UTC), the timeline's format. */
+function dayTime(iso: string | null | undefined): string | null {
+  const d = parse(iso);
+  return d ? `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}` : null;
+}
+
+/**
+ * The payment-capture document of a bound case, built from PayPal's disputed transaction (capture id, gross amount,
+ * status, create time) as last read; fragment keys stay so the draft's citations still point at it. Before the
+ * first read, or when PayPal is unreachable, it says so instead of showing the demo capture.
+ */
+export function captureEvidence(e: Evidence, source: Exclude<PayPalSource, { kind: 'simulated' }>): Evidence {
+  const frag = (k: string) => `${e.id}.${k}`;
+  if (source.kind !== 'live') {
+    const why = notReadYet(source);
+    return {
+      ...e,
+      meta: { type: 'Disputed transaction', tag: 'PP', source: 'PayPal', received: '—', hash: '' },
+      body: { kind: 'lines', lines: [{ text: `— ${why}`, fragment: frag('id') }] },
+    };
+  }
+  const s = source.snap;
+  const tx = s.transaction;
+  const env = s.origin?.kind === 'paypal' ? s.origin.env : 'sandbox';
+  const disputeId = s.origin?.kind === 'paypal' ? s.origin.disputeId : '';
+  const meta = { type: 'Disputed transaction', tag: 'PP', source: `PayPal ${env}${disputeId ? ` · dispute ${disputeId}` : ''}`, received: `read ${s.readAt}`, hash: '' };
+  if (!tx) return { ...e, meta, body: { kind: 'lines', lines: [{ text: 'PayPal reports no disputed transaction', fragment: frag('id') }] } };
+  const created = utcDateTime(tx.createdAt);
+  return {
+    ...e,
+    meta,
+    body: {
+      kind: 'lines',
+      lines: [
+        { text: `Capture ${tx.id}`, fragment: frag('id') },
+        { text: [tx.amount ? moneyText(tx.amount) : 'PayPal reports no amount', tx.status ?? null].filter(Boolean).join(' · '), fragment: frag('amt') },
+        { text: created ? `Transaction created ${created}` : 'PayPal reports no transaction time', fragment: frag('date') },
+      ],
+    },
+  };
+}
+
+/** Timeline events that point at the capture document take its id and time from PayPal too. */
+function captureTimelineItem(t: TimelineItem, evidence: readonly Evidence[], source: Exclude<PayPalSource, { kind: 'simulated' }>): TimelineItem {
+  if (t.kind !== 'event' || !evidence.some((e) => e.id === t.evidenceId && e.paypalRecord === 'capture')) return t;
+  if (source.kind !== 'live') return { ...t, time: '—', sub: notReadYet(source) };
+  const tx = source.snap.transaction;
+  return { ...t, time: dayTime(tx?.createdAt) ?? '—', sub: tx ? `${tx.id} · from PayPal` : 'PayPal reports no transaction' };
 }
 
 // ---------------------------------------------------------------------------------------------

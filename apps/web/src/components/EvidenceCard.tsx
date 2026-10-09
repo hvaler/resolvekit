@@ -90,7 +90,7 @@ export function EvidenceCard({ evidence: e, used, contradictionOpen }: { evidenc
             {e.meta.source}
           </span>
           <span>Received {e.meta.received}</span>
-          <span className="font-mono text-[11px] leading-[1.4] text-ink-3">sha256 {e.meta.hash}</span>
+          {e.meta.hash && <span className="font-mono text-[11px] leading-[1.4] text-ink-3">sha256 {e.meta.hash}</span>}
         </div>
       )}
 

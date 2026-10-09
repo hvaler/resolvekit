@@ -22,7 +22,7 @@ test('maps a real-shaped dispute: status, stage, reason, item type, actions, req
   assert.equal(s.respondBy, '2026-10-28T19:31:23.864Z');
   assert.deepEqual(s.amount, { value: '1.37', currency: 'USD' });
   assert.equal(s.createdAt, '2026-10-08T19:31:23.864Z');
-  assert.deepEqual(s.transaction, { id: '4FT237453Y5353014', createdAt: '2026-10-08T19:30:33.000Z', amount: { value: '1.37', currency: 'USD' } });
+  assert.deepEqual(s.transaction, { id: '4FT237453Y5353014', createdAt: '2026-10-08T19:30:33.000Z', amount: { value: '1.37', currency: 'USD' }, status: 'HELD' });
   assert.equal(s.buyerRespondBy, null);
   assert.equal(s.readAt, '9 Oct 2026 08:00:00 UTC');
   assert.deepEqual(s.origin, { kind: 'paypal', env: 'sandbox', disputeId: 'PP-R-REAL-1' });

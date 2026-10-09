@@ -14,6 +14,7 @@ export function waitingDispute(): Dispute {
       {
         seller_transaction_id: '4FT237453Y5353014',
         create_time: '2026-10-08T19:30:33.000Z',
+        transaction_status: 'HELD',
         gross_amount: { currency_code: 'USD', value: '1.37' },
         items: [{ item_type: 'PRODUCT' }],
       },

@@ -52,7 +52,7 @@ export function toSnapshot(d: Dispute, caseId: string, env: PayPalEnv, readAt: D
     amount: money(d.dispute_amount),
     createdAt: d.create_time ?? null,
     transaction: tx?.seller_transaction_id
-      ? { id: tx.seller_transaction_id, createdAt: tx.create_time ?? null, amount: money(tx.gross_amount) }
+      ? { id: tx.seller_transaction_id, createdAt: tx.create_time ?? null, amount: money(tx.gross_amount), status: tx.transaction_status ?? null }
       : null,
     readAt: utcStamp(readAt),
     origin: { kind: 'paypal', env, disputeId: d.dispute_id ?? '' },
