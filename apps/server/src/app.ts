@@ -445,7 +445,11 @@ export function createApi(opts: ApiOptions): Api {
     const composed = await compose(caseId, st, ir);
     if (composed instanceof Response) return composed;
     const intent = intents.create({ ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor });
-    if ('ok' in intent) return json(intent.status, { error: intent.error, detail: intent.detail });
+    if ('ok' in intent) {
+      const r = json(intent.status, { error: intent.error, detail: intent.detail, ...(intent.retryAfterSec ? { retryAfterSec: intent.retryAfterSec } : {}) });
+      if (intent.retryAfterSec) r.headers.set('retry-after', String(intent.retryAfterSec));
+      return r;
+    }
     return json(201, publicIntent(intent));
   };
 

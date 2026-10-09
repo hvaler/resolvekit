@@ -12,7 +12,7 @@ import { DailyCounters } from '@resolvekit/hosting';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
 import { caseInput, standardCase } from '@resolvekit/cases';
 import { createHostedApp } from '../src/hosted.ts';
-import { INTENT_ID, IntentStore, MAX_EVENTS_FILE_BYTES, MAX_OPEN, MAX_OPEN_PER_OWNER_CASE, type StoredIntent } from '../src/intents.ts';
+import { INTENT_ID, IntentStore, MAX_EVENTS_FILE_BYTES, MAX_OPEN, MAX_OPEN_PER_OWNER, type StoredIntent } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
 import { RESOLVED, analystFor, standardDispute } from './kit.ts';
 
@@ -197,20 +197,58 @@ test('store: ids carry 128 random bits; intents expire after 30 minutes and then
   assert.ok(!t.ok && t.error === 'INTENT_EXPIRED');
 });
 
-test('store: open intents are capped per session and case, and in all (expired ones make room first)', () => {
+test('store: a flood from one session replaces only its own intents; another session’s intent is neither evicted nor blocked', () => {
+  const s = new IntentStore();
+  const victim = created(s.create(draft('victim')));
+  assert.ok(s.approve(victim.id, CASE, 'h', 'victim').ok);
+  const flood = Array.from({ length: 40 }, (_, k) => created(s.create(draft('flooder', `CASE-${k}`))));
+  // The flooder keeps at most MAX_OPEN_PER_OWNER open intents: its own oldest were replaced.
+  assert.equal(flood.filter((i) => s.get(i.id, 'flooder')!.status === 'proposed').length, MAX_OPEN_PER_OWNER);
+  // A newer intent of the same session for the same case replaces its older one (one open per session and case).
+  const again = created(s.create(draft('flooder', 'CASE-39')));
+  assert.equal(s.get(flood[39]!.id, 'flooder')!.status, 'invalidated');
+  assert.equal(s.get(again.id, 'flooder')!.status, 'proposed');
+  // The victim's approved intent is untouched and can still be sent.
+  assert.equal(s.get(victim.id, 'victim')!.status, 'approved');
+  assert.ok(s.beginSend(victim.id, CASE, 'victim').ok);
+});
+
+test('store: at the global cap new intents are refused (429 with a retry time), never evicting anyone’s; TTL frees room', () => {
   let now = new Date('2026-10-09T08:00:00Z');
   const s = new IntentStore({ now: () => now });
-  // A session's newer intent for a case replaces its older one, so it never holds more than one open per case.
-  const mine = Array.from({ length: MAX_OPEN_PER_OWNER_CASE + 3 }, () => created(s.create(draft('me'))));
-  assert.deepEqual(mine.map((i) => s.get(i.id, 'me')!.status).filter((st) => st === 'proposed'), ['proposed']);
-  // Globally: MAX_OPEN open intents, then refused…
-  for (let k = 0; k < MAX_OPEN - 1; k++) created(s.create(draft(`s${k}`, `CASE-${k % 7}`)));
+  const victim = created(s.create(draft('victim')));
+  for (let k = 1; k < MAX_OPEN; k++) created(s.create(draft(`s${k}`)));
   const refused = s.create(draft('late'));
-  assert.ok('ok' in refused && refused.status === 429);
-  // …until they expire.
+  assert.ok('ok' in refused && refused.status === 429 && refused.retryAfterSec! > 0 && refused.retryAfterSec! <= 1800);
+  // Existing intents are untouched and still approvable.
+  assert.ok(s.approve(victim.id, CASE, 'h', 'victim').ok);
+  // Only their lifetime ends them: after 30 min they expire, and new ones fit again.
   now = new Date('2026-10-09T08:31:00Z');
   created(s.create(draft('late')));
-  assert.ok(s.size() <= 500);
+});
+
+test('store: closed intents are pruned by TTL (an hour after expiry), so the persisted state stays bounded', () => {
+  let now = new Date('2026-10-09T08:00:00Z');
+  const s = new IntentStore({ now: () => now });
+  for (let k = 0; k < 50; k++) created(s.create(draft(`o${k}`)));
+  assert.equal(s.size(), 50);
+  now = new Date('2026-10-09T10:00:00Z');
+  created(s.create(draft('new')));
+  assert.equal(s.size(), 1);
+});
+
+test('hosted: a flood of compositions from one IP is rate-limited; another IP’s intent still composes, approves and sends', async () => {
+  const { app, pp } = await setup();
+  const victim = await unlock(app, '198.51.100.1');
+  const iv = await compose(app, victim);
+  assert.equal((await approve(app, iv, victim)).status, 200);
+  const flooder = await unlock(app, '198.51.100.66');
+  const statuses: number[] = [];
+  for (let k = 0; k < 25; k++) statuses.push((await app(req(`${base}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED }, cookie: flooder, ip: '198.51.100.66' }))).status);
+  assert.ok(statuses.includes(429));
+  assert.ok(statuses.filter((x) => x === 201).length <= 20);
+  assert.equal((await send(app, iv, victim)).status, 202);
+  assert.equal(pp.sends.length, 1);
 });
 
 test('store: a send cut short by a restart reloads as failed, retryable by its owner only', (t) => {

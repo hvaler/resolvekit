@@ -77,6 +77,8 @@ export interface HostedLimits {
   unlockPerIp: { limit: number; windowMs: number };
   /** Unlock attempts from everyone together (distributed brute force). */
   unlockGlobal: { limit: number; windowMs: number };
+  /** Submission intents composed, per IP (a flood from one address cannot fill the server's intent store). */
+  intentsPerIp: { limit: number; windowMs: number };
 }
 
 const MIN = 60_000;
@@ -85,6 +87,7 @@ export const DEFAULT_LIMITS: HostedLimits = {
   paypalReads: { limit: 60, windowMs: 5 * MIN },
   unlockPerIp: { limit: 5, windowMs: 15 * MIN },
   unlockGlobal: { limit: 60, windowMs: 60 * MIN },
+  intentsPerIp: { limit: 20, windowMs: 10 * MIN },
 };
 
 export const SESSION_TTL_MS = 12 * 60 * MIN;
@@ -115,6 +118,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const readLimit = new KeyedLimiter({ ...L.paypalReads, now: () => now().getTime() });
   const unlockIp = new KeyedLimiter({ ...L.unlockPerIp, now: () => now().getTime() });
   const unlockAll = new KeyedLimiter({ ...L.unlockGlobal, now: () => now().getTime() });
+  const intentLimit = new KeyedLimiter({ ...L.intentsPerIp, now: () => now().getTime() });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
   const session = (req: Request) => verifyDemoSession(o.sessionSecret, readCookie(req, DEMO_COOKIE), now().getTime(), ttl);
@@ -205,6 +209,10 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const paypalRead =
         (req.method === 'GET' && path.startsWith('/api/disputes/') && !path.endsWith('/audit') && !path.includes('/intent/')) ||
         (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path));
+      if (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path)) {
+        const t = intentLimit.take(ip);
+        if (!t.ok) return tooMany(t.retryAfterSec, `Too many submission intents from this address; try again in ${t.retryAfterSec} s`);
+      }
       if (paypalRead) {
         const r = readLimit.take(ip);
         if (!r.ok) return tooMany(r.retryAfterSec, `Too many PayPal reads; try again in ${r.retryAfterSec} s`);

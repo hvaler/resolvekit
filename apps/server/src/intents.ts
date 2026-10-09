@@ -10,9 +10,12 @@
  * session can read, approve, send or cancel it: for anyone else it does not exist (404). One session's actions (a new
  * intent, an edit) only ever invalidate that session's own intents. Ids carry 128 random bits.
  *
- * Bounded: at most {@link MAX_OPEN_PER_OWNER_CASE} open intents per session and case, {@link MAX_OPEN} open intents in
- * all (expired ones are dropped first), {@link MAX_INTENTS} stored, a {@link INTENT_TTL_MS} lifetime, and an audit
- * file that is compacted to its latest {@link MAX_EVENTS_IN_MEMORY} lines beyond {@link MAX_EVENTS_FILE_BYTES}.
+ * Bounded, without ever letting one session push out another's intents: a session holds at most one open intent per
+ * case and {@link MAX_OPEN_PER_OWNER} in all (beyond that its OWN oldest is replaced); when {@link MAX_OPEN} open (or
+ * {@link MAX_INTENTS} stored) intents exist, new ones are refused (429 with a retry time) and existing ones are not
+ * touched. Intents end only by their {@link INTENT_TTL_MS} lifetime (or their owner's actions); closed ones are pruned
+ * {@link CLOSED_RETENTION_MS} after they expire. Every scan is over at most {@link MAX_INTENTS} entries. The audit
+ * file is compacted to its latest events beyond {@link MAX_EVENTS_FILE_BYTES}. (Per-IP creation rates: hosted.ts.)
  * Persisted on the data dir when given files. No document text and no secrets go into either file.
  */
 import { randomBytes } from 'node:crypto';
@@ -23,7 +26,9 @@ import type { Recheck } from '../../web/src/domain/draft.ts';
 
 export const MAX_INTENTS = 500;
 export const MAX_OPEN = 200;
-export const MAX_OPEN_PER_OWNER_CASE = 5;
+export const MAX_OPEN_PER_OWNER_CASE = 1;
+export const MAX_OPEN_PER_OWNER = 10;
+export const CLOSED_RETENTION_MS = 60 * 60_000;
 export const MAX_EVENTS_IN_MEMORY = 5000;
 export const MAX_EVENTS_FILE_BYTES = 4 * 1024 * 1024;
 export const INTENT_TTL_MS = 30 * 60_000;
@@ -69,6 +74,8 @@ export interface Refused {
   status: number;
   error: string;
   detail: string;
+  /** For 429: when to try again. */
+  retryAfterSec?: number;
   intent?: StoredIntent;
 }
 export type Transition = { ok: true; intent: StoredIntent; previous: IntentStatus } | Refused;
@@ -198,8 +205,18 @@ export class IntentStore {
     return i;
   }
 
+  /** Expire by TTL, and forget closed intents {@link CLOSED_RETENTION_MS} after their expiry (bounded: ≤ MAX_INTENTS). */
   private sweep() {
-    for (const i of this.intents.values()) this.fresh(i);
+    const cutoff = this.now().getTime() - CLOSED_RETENTION_MS;
+    let pruned = false;
+    for (const i of this.intents.values()) {
+      this.fresh(i);
+      if (!(OPEN.includes(i.status) || i.status === 'sending') && Date.parse(i.expiresAt) < cutoff) {
+        this.intents.delete(i.id);
+        pruned = true;
+      }
+    }
+    if (pruned) this.save();
   }
 
   /** The intent, only for its owner (anyone else: null, as if it did not exist). */
@@ -225,13 +242,17 @@ export class IntentStore {
   create(i: Omit<StoredIntent, 'id' | 'status' | 'createdAt' | 'expiresAt' | 'approvedBy' | 'approvedAt' | 'sentAt' | 'reason' | 'requestId'>): StoredIntent | Refused {
     this.sweep();
     this.invalidateCase(i.caseId, 'replaced by a newer intent for this case', i.createdBy);
-    const mine = this.open().filter((x) => x.caseId === i.caseId && x.createdBy === i.createdBy);
-    if (mine.length >= MAX_OPEN_PER_OWNER_CASE) return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'This session has too many open intents for this case' };
-    if (this.open().length >= MAX_OPEN) return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'The server holds too many open submission intents; try again in a few minutes' };
-    // Make room: drop the oldest closed (sent, invalidated, expired, cancelled) intents first; open ones are never dropped.
-    if (this.intents.size >= MAX_INTENTS) {
-      const closed = [...this.intents.values()].filter((x) => !(OPEN.includes(x.status) || x.status === 'sending')).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      for (const o of closed.slice(0, this.intents.size - MAX_INTENTS + 1)) this.intents.delete(o.id);
+    // The session's own cap: its oldest open intent makes room (never anyone else's).
+    const mine = this.open()
+      .filter((x) => x.createdBy === i.createdBy && x.status !== 'sending')
+      .sort((x, y) => x.createdAt.localeCompare(y.createdAt));
+    for (const old of mine.slice(0, Math.max(0, mine.length - MAX_OPEN_PER_OWNER + 1))) this.invalidate(old.id, 'replaced: this session holds too many open intents', i.createdBy);
+    // Global caps: refuse, never evict. Existing intents stay approvable and sendable.
+    const open = this.open();
+    if (open.length >= MAX_OPEN || this.intents.size >= MAX_INTENTS) {
+      const soonest = Math.min(...open.map((x) => Date.parse(x.expiresAt)), this.now().getTime() + this.ttlMs);
+      const retryAfterSec = Math.max(1, Math.ceil((soonest - this.now().getTime()) / 1000));
+      return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'The server holds too many open submission intents; try again later', retryAfterSec };
     }
     const id = newIntentId();
     const now = this.now();
