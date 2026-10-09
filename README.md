@@ -87,6 +87,23 @@ Without the server, or without credentials, every case runs on the simulator.
 "PayPal is still processing" state. Case documents are synthetic. Cases bound to a real sandbox dispute read and write
 PayPal through `apps/server` (`HttpDisputeGateway`); the others use the simulated `DisputeGateway`.
 
+Every inbox row opens a full case file (`packages/cases`, shared with the server), each in the state PayPal would show:
+
+| Case | PayPal reason · stage | State | Evidence type |
+|---|---|---|---|
+| PP-R-TVH-10190665 | `MERCHANDISE_OR_SERVICE_NOT_RECEIVED` · inquiry | Waiting for the seller; address contradiction, injected buyer note | `PROOF_OF_FULFILLMENT` (UPS) |
+| PP-R-MMC-10190702 | `MERCHANDISE_OR_SERVICE_NOT_RECEIVED` · inquiry, agent purchase | Waiting for the seller; MeterMCP session | `PROOF_OF_FULFILLMENT` (digital delivery) |
+| PP-R-BLW-10187733 | `MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED` · claim | Waiting for the seller; listing says natural, buyer says navy, no packing photo | `OTHER` (listing, photos, return policy) |
+| PP-R-PLN-10189901 | `MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED` · claim | Waiting for the seller; height 45 cm (with shade) vs 35 cm | `OTHER` (listing, dispatch check) |
+| PP-R-KDA-10192258 | `INCORRECT_AMOUNT` · claim, agent purchase | Waiting for the seller; 3.20 of a 5.00 USD budget captured, hold released (demo MeterMCP data) | `OTHER` (mandate, receipt, settlement) |
+| PP-R-QZE-10181290 | `UNAUTHORISED` · inquiry, booking | Evidence recorded 6 Oct, buyer's turn: read-back, draft locked | `OTHER` (booking, check-in, earlier order) |
+| PP-R-HFA-10176021 | `MERCHANDISE_OR_SERVICE_NOT_RECEIVED` · inquiry | Resolved in the seller's favour 2 Oct: outcome, what was sent, no actions | `PROOF_OF_FULFILLMENT` (USPS) |
+| PP-R-NKQ-10194410 | `MERCHANDISE_OR_SERVICE_NOT_RECEIVED` · new | PayPal still processing (`UNDER_REVIEW`, no seller actions) | — |
+
+Evidence types follow PayPal's [dispute reasons and evidence](https://developer.paypal.com/disputes/reasons-evidence)
+table (e.g. notes and documents, `OTHER`, for "not as described" and "incorrect amount"); in the claim stage the
+seller gets no `send_message`, `make_offer` or `escalate` (inquiry-only in the Customer Disputes API).
+
 The inbox and the agent case's per-call receipt are built on **[AG Grid](https://www.ag-grid.com/) Community**
 (hackathon sponsor tool; `ag-grid-community` + `ag-grid-react` 33.3.2, no Enterprise modules). The inbox grid does the
 work: multi-sort (shift-click), quick-filter search, saved filter chips written to the grid's filter model, a pinned
@@ -215,8 +232,8 @@ cannot change the action, the evidence type or what counts as supported
 (see [docs/evals.md](docs/evals.md#prompt-injection-detection-vs-safety)).
 
 **Caching and golden analyses.** Results are keyed by sha256 of (documents + notes + dispute data, prompt version,
-model). Live runs are cached in `apps/server/data/analysis-cache/` (git-ignored). The two demo cases also have
-**golden analyses** made by `gemini-3.8-flash` and committed with their model id, date, prompt version and token usage
+model). Live runs are cached in `apps/server/data/analysis-cache/` (git-ignored). Every demo case also has a
+**golden analysis** made by `gemini-3.8-flash` and committed with their model id, date, prompt version and token usage
 (`packages/analyst/golden/`), so the demo works without a key or quota; the app uses one only when its key matches
 the documents on screen. The analysis bar always says which: **"Analysis by gemini-3.8-flash · 9 Oct 2026 · cached"**
 or **"… · live"** (hover for prompt version and token counts). *Replay analysis* replays the steps; *Re-run with AI*

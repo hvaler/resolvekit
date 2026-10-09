@@ -43,6 +43,11 @@ MeterMCP. The mandate, the per-call receipt (one failed call, not charged) and t
 ledger ("From MeterMCP · session …"); the evidence goes to PayPal as digital delivery referenced by the session id,
 with the receipt PDF.
 
+**More cases.** Every inbox row opens a full case file on the simulator: two "not as described" claims
+(PP-R-BLW-10187733, PP-R-PLN-10189901), an agent purchase disputed as "incorrect amount" (PP-R-KDA-10192258), an
+"unauthorised" booking whose evidence is already recorded (PP-R-QZE-10181290: read-back, draft locked) and a closed
+case resolved in the seller's favour (PP-R-HFA-10176021: outcome, what was sent, no actions).
+
 **6. Optional: re-run the AI.** With the demo code, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
 its stages; editing a sentence sends it to the AI verifier, which re-chooses its citations and judges it again.
 
