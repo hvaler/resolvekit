@@ -15,3 +15,6 @@ apps/server/.runtime-token
 # MeterMCP ledger and per-launch admin token
 apps/metermcp/data/
 apps/metermcp/.runtime-token
+
+# Analyst: cached live analyses and the usage log (golden analyses live in packages/analyst/golden)
+apps/server/data/

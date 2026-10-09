@@ -3,10 +3,12 @@
  * listens on 127.0.0.1 only, and serves /api for the web app (Vite proxies /api here in dev and preview).
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
+import { FileAnalysisStore, modelFromEnv } from '@resolvekit/analyst/node';
+import { AnalystService } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS } from './app.ts';
 import { checkBindings } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
@@ -47,10 +49,33 @@ const meterMcp = new MeterMcpClient({
   tokenFile: process.env.METERMCP_TOKEN_FILE ?? fileURLToPath(new URL('../../metermcp/.runtime-token', import.meta.url)),
 });
 
-const app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins, meterMcp });
+// The AI analyst: Gemini (primary) with Groq as automatic fallback, keys from the environment. Live runs are cached
+// in apps/server/data/analysis-cache (git-ignored); committed golden analyses answer for the demo documents.
+const dataDir = fileURLToPath(new URL('../data/', import.meta.url));
+const usageFile = fileURLToPath(new URL('../data/analyst-usage.jsonl', import.meta.url));
+const analystConfig = modelFromEnv(process.env, { onFallback: (why) => log(`analyst fallback · ${why}`) });
+const analyst = new AnalystService({
+  model: analystConfig?.model ?? null,
+  primaryModel: analystConfig?.primary.model ?? 'gemini-3.8-flash',
+  store: new FileAnalysisStore({ dir: fileURLToPath(new URL('../data/analysis-cache/', import.meta.url)) }),
+  log,
+  // Token counts and timings only: no prompt or document text.
+  onUsage: (caseId, u) => {
+    log(`analyst call · ${u.stage} · ${u.provider}/${u.model} · in ${u.inputTokens} out ${u.outputTokens} thinking ${u.thinkingTokens} · ${u.ms} ms`);
+    try {
+      mkdirSync(dataDir, { recursive: true });
+      appendFileSync(usageFile, JSON.stringify({ at: new Date().toISOString(), caseId, ...u }) + '\n');
+    } catch {
+      /* the usage log is best effort */
+    }
+  },
+});
+
+const app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins, meterMcp, analyst });
 const server = createServer(toNodeListener(app, `http://${host}:${port}`));
 server.listen(port, host, () => {
   log(`ResolveKit server on http://${host}:${port} · PayPal ${paypal ? env : 'unconfigured'} · ${Object.keys(bindings).length} bound case(s)`);
+  log(`Analyst: ${analystConfig ? `${analystConfig.primary.provider}/${analystConfig.primary.model} (providers: ${analystConfig.available.join(', ')})` : 'no model key: stored analyses only'}`);
   for (const [caseId, disputeId] of Object.entries(bindings)) log(`  ${caseId} → ${disputeId}`);
   // Read each bound dispute once in the background and warn if its amount is not the demo case's order amount.
   const caseOrders = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency }]));

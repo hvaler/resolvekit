@@ -5,6 +5,8 @@
 import { timingSafeEqual } from 'node:crypto';
 import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import type { AgentReceiptSource } from '../../web/src/domain/types.ts';
+import type { AnalystService } from './analysis.ts';
+import { parseInput } from './analysis.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
@@ -26,6 +28,8 @@ export interface AppOptions {
   allowedOrigins: readonly string[];
   /** MeterMCP on this machine: the agent case's session receipt, found by the disputed capture. null = not used. */
   meterMcp?: MeterMcpSource | null;
+  /** The AI analyst (packages/analyst). null/absent: the analysis routes answer 503. */
+  analyst?: AnalystService | null;
 }
 
 export const TOKEN_HEADER = 'x-resolvekit-token';
@@ -114,6 +118,42 @@ export function createApp(opts: AppOptions): Handler {
     return health;
   };
 
+  /**
+   * POST /api/cases/:id/analysis {input} (?refresh=1 forces a live run) → 200 ready | 202 running | 429 | 503
+   * GET  /api/cases/:id/analysis/progress?key=… → running (with the stages done) | ready | failed
+   * POST /api/cases/:id/analysis/verify {input, text} → the verifier's verdict on an edited sentence
+   */
+  const analysisRoute = async (req: Request, url: URL, caseId: string, sub: string): Promise<Response> => {
+    if (!CASE_FILES[caseId]) return json(404, { error: 'UNKNOWN_CASE' });
+    const analyst = opts.analyst;
+    if (!analyst) return json(503, { error: 'ANALYST_UNAVAILABLE', detail: 'The analyst is not set up on this server' });
+    if (sub === '/progress') {
+      if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+      const key = url.searchParams.get('key') ?? '';
+      if (!/^[0-9a-f]{64}$/.test(key)) return json(400, { error: 'INVALID_KEY' });
+      const r = analyst.progress(key);
+      return json(r.status, r.body);
+    }
+    if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+    let body: { input?: unknown; text?: unknown } | null;
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return json(400, { error: 'INVALID_JSON' });
+    }
+    const input = parseInput(body?.input);
+    if (typeof input === 'string') return json(400, { error: 'INVALID_INPUT', detail: input });
+    if (input.caseId !== caseId) return json(400, { error: 'INVALID_INPUT', detail: 'input.caseId does not match the URL' });
+    if (sub === '/verify') {
+      const text = typeof body?.text === 'string' ? body.text.trim() : '';
+      if (!text || text.length > 600) return json(400, { error: 'INVALID_TEXT', detail: 'text must be 1-600 characters' });
+      const r = await analyst.verify(input, text);
+      return json(r.status, r.body);
+    }
+    const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1');
+    return json(r.status, r.body);
+  };
+
   const route = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -121,6 +161,8 @@ export function createApp(opts: AppOptions): Handler {
       const h = await checkHealth();
       return json(200, { ...h, bound: h.paypal === 'unconfigured' ? [] : Object.keys(opts.bindings) });
     }
+    const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
+    if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
     const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(\/evidence)?$/.exec(path);
     if (!m) return json(404, { error: 'NOT_FOUND' });
     const caseId = m[1]!;
