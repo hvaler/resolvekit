@@ -385,3 +385,26 @@ test('bindings: validated; comments skipped; anything else refused', () => {
   assert.throws(() => parseBindings({ '../x': 'PP-R-VIJ-10190671' }), /invalid case id/);
   assert.throws(() => parseBindings({ [CASE]: 42 }), /PayPal dispute id/);
 });
+
+// ------------------------------------------------------------------------------------------------ client text
+
+test('client text: re-check sentences and evidence fields are validated server-side (length, control/bidi characters, ids)', async () => {
+  const { app, pp, counters } = setup();
+  const { cookie } = await unlock(app);
+  const input = buildInput(standardCase);
+  const verify = (text: string, path = `${analysisPath}/verify`) => app(req(path, { body: { input, text }, cookie: cookie! }));
+  assert.equal((await verify('x'.repeat(601))).status, 400);
+  assert.equal((await verify('Delivered.‮on time')).status, 400);
+  assert.equal((await verify('Delivered.\u0000')).status, 400);
+  assert.equal((await verify('Delivered.', '/api/cases/PP-R-NOT-A-CASE/analysis/verify')).status, 404);
+  const send = (over: Record<string, unknown>) => app(req(evidencePath, { body: { ...submission(), ...over }, cookie: cookie! }));
+  assert.equal((await send({ notes: 'Delivered.\u0007' })).status, 400);
+  assert.equal((await send({ tracking: '<script>alert(1)</script>' })).status, 400);
+  assert.equal((await send({ carrier: 'ups; drop' })).status, 400);
+  assert.equal((await send({ evidenceType: 'PROOF OF ANYTHING' })).status, 400);
+  assert.equal((await send({ notes: 'x'.repeat(2001) })).status, 422);
+  assert.equal((await send({ files: [{ name: 'not-a-case-file.pdf', size: '1 KB' }] })).status, 422);
+  assert.equal(pp.sends(), 0);
+  assert.equal(counters.state().caps.evidence!.used, 0);
+  assert.equal(counters.state().caps.recheck!.used, 0);
+});

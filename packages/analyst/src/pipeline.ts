@@ -7,7 +7,7 @@
  *
  * Every quote the model returns is checked against the documents; what does not match is dropped or invalid.
  */
-import { scanForInjection, mergeFlags } from './injection.ts';
+import { looksLikeInstruction, scanForInjection, mergeFlags } from './injection.ts';
 import { ModelError, type AnalystModel } from './model.ts';
 import {
   ANALYZE_SCHEMA,
@@ -377,12 +377,18 @@ export async function recheckSentence(
   o: Pick<RunOptions, 'model' | 'onUsage'>,
 ): Promise<{ citations: CitationCheck[]; usage: CallUsage } & Pick<Sentence, 'verdict' | 'reason' | 'decidedBy' | 'rewrite'>> {
   const flagged = new Set(analysis.injections.map((f) => f.doc));
-  const r = await o.model.generate({ stage: 'recheck', system: SYSTEM, user: recheckPrompt(normalize(text), analysis.facts, flagged), schema: RECHECK_SCHEMA, maxOutputTokens: 3_000 });
+  const sentence = normalize(text);
+  // The edited sentence is client text: scanned like the documents. An instruction-like sentence is never "supported".
+  const instruction = looksLikeInstruction(sentence);
+  const r = await o.model.generate({ stage: 'recheck', system: SYSTEM, user: recheckPrompt(sentence, analysis.facts, flagged), schema: RECHECK_SCHEMA, maxOutputTokens: 3_000 });
   o.onUsage?.(r.usage);
   const j = rec(r.json);
   // Facts are re-verified against the documents: a cached analysis could be stale.
   const citations = cite(analysis.facts, j.facts).map((c) => ({ ...c, valid: isVerbatim(input.documents, c.doc, c.quote) }));
-  const settled = capFlagged(settleVerdict(normalize(text), citations, parseVerdict(j)), citations, flagged);
-  return { citations, usage: r.usage, ...capContested(settled, citations, analysis.contradictions ?? []) };
+  const settled = capContested(capFlagged(settleVerdict(sentence, citations, parseVerdict(j)), citations, flagged), citations, analysis.contradictions ?? []);
+  if (instruction && settled.verdict === 'supported') {
+    return { citations, usage: r.usage, verdict: 'needs_review', reason: 'Why: this sentence reads like an instruction rather than a claim about the case; check it yourself.', decidedBy: 'deterministic', rewrite: null };
+  }
+  return { citations, usage: r.usage, ...settled };
 }
 
