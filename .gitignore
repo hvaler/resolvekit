@@ -11,3 +11,7 @@ coverage/
 # Real dispute bindings (apps/server/bindings.example.json is the template)
 apps/server/bindings.json
 apps/server/.runtime-token
+
+# MeterMCP ledger and per-launch admin token
+apps/metermcp/data/
+apps/metermcp/.runtime-token
