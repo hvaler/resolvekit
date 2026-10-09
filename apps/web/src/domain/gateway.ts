@@ -1,10 +1,11 @@
+import { hasSellerEvidence, newSellerEvidence } from './recorded';
 import { utcStamp } from './time';
 import type { ActionCode, DisputeSnapshot, DisputeStatus, EvidenceSubmission, RecordedEvidence } from './types';
 
 /**
- * Everything the web app needs from PayPal. The browser never talks to PayPal: the real
- * implementation will be a server endpoint backed by `packages/paypal`. For now the app runs on
- * {@link SimulatedDisputeGateway}.
+ * Everything the web app needs from PayPal. The browser never talks to PayPal: the real implementation
+ * ({@link HttpDisputeGateway} in `httpGateway.ts`) calls the ResolveKit server (`apps/server`), which uses
+ * `packages/paypal`. Cases not bound to a real dispute run on {@link SimulatedDisputeGateway}.
  */
 export interface DisputeGateway {
   getDispute(disputeId: string): Promise<DisputeSnapshot>;
@@ -22,28 +23,36 @@ export class GatewayTimeoutError extends Error {
 export type SendPhase = 'checking' | 'sending' | 'awaiting' | 'rereading';
 
 export type SendResult =
-  | { kind: 'recorded'; snapshot: DisputeSnapshot; recorded: RecordedEvidence; resent: boolean }
-  | { kind: 'not_recorded'; snapshot: DisputeSnapshot; error: string };
+  | { kind: 'recorded'; snapshot: DisputeSnapshot; recorded: RecordedEvidence; resent: boolean; baseline: DisputeSnapshot }
+  | { kind: 'not_recorded'; snapshot: DisputeSnapshot; error: string; baseline: DisputeSnapshot };
 
 export interface SendOptions {
   requestId: string;
   onPhase?: (phase: SendPhase) => void;
   /** Pause between PayPal's answer and the read-back. */
   confirmDelayMs?: number;
+  /**
+   * The dispute as read before the first attempt. Seller evidence already in it is never reported as
+   * recorded. When absent, the dispute is read before sending (nothing has been sent yet).
+   */
+  baseline?: DisputeSnapshot;
+  /** Extra read-backs when PayPal accepted the send but does not show the evidence yet. */
+  rereads?: number;
+  rereadDelayMs?: number;
 }
 
 const sleep = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
 
-function latestEvidence(s: DisputeSnapshot): RecordedEvidence | null {
-  return s.evidences.length ? (s.evidences[s.evidences.length - 1] ?? null) : null;
-}
-
 /**
- * Send the evidence, then read the dispute back. "Recorded" is only reported from the read-back,
- * never from the send call's answer. A timeout is not treated as success or failure: we read back
- * and report what PayPal shows.
+ * Send the evidence, then read the dispute back. "Recorded" is only reported from the read-back, never
+ * from the send call's answer, and only for seller evidence (SUBMITTED_BY_SELLER, PROVIDE_EVIDENCE) that
+ * was not on the dispute before sending: a real dispute always lists the buyer's entry and PayPal's
+ * request, and those are not this submission. A timeout is not treated as success or failure: we read
+ * back and report what PayPal shows.
  */
 export async function submitWithReadBack(gw: DisputeGateway, submission: EvidenceSubmission, opts: SendOptions): Promise<SendResult> {
+  const id = submission.disputeId;
+  const baseline = opts.baseline ?? (await gw.getDispute(id));
   let error: string | null = null;
   opts.onPhase?.('sending');
   try {
@@ -54,21 +63,33 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
     error = e instanceof Error ? e.message : String(e);
   }
   opts.onPhase?.('rereading');
-  const snapshot = await gw.getDispute(submission.disputeId);
-  const recorded = latestEvidence(snapshot);
-  if (recorded) return { kind: 'recorded', snapshot, recorded, resent: false };
-  return { kind: 'not_recorded', snapshot, error: error ?? 'PayPal shows no evidence recorded' };
+  let snapshot = await gw.getDispute(id);
+  let recorded = newSellerEvidence(snapshot, baseline);
+  // PayPal accepted the send: give it a moment to show the evidence before saying it is not there.
+  for (let i = 0; !recorded && error == null && i < (opts.rereads ?? 0); i++) {
+    await sleep(opts.rereadDelayMs ?? 0);
+    snapshot = await gw.getDispute(id);
+    recorded = newSellerEvidence(snapshot, baseline);
+  }
+  if (recorded) return { kind: 'recorded', snapshot, recorded, resent: false, baseline };
+  return { kind: 'not_recorded', snapshot, error: error ?? 'PayPal shows no evidence recorded', baseline };
 }
 
 /**
  * Retry after an unconfirmed submission: read the dispute back first and only send again if PayPal
- * shows no evidence recorded.
+ * shows no new seller evidence compared with `baseline` (the dispute as read before the first attempt,
+ * which is required: without it, evidence the first attempt did store could not be told apart).
  */
-export async function safeRetry(gw: DisputeGateway, submission: EvidenceSubmission, opts: SendOptions): Promise<SendResult> {
+export async function safeRetry(
+  gw: DisputeGateway,
+  submission: EvidenceSubmission,
+  opts: SendOptions & { baseline: DisputeSnapshot },
+): Promise<SendResult> {
   opts.onPhase?.('checking');
-  const before = await gw.getDispute(submission.disputeId);
-  const already = latestEvidence(before);
-  if (already) return { kind: 'recorded', snapshot: before, recorded: already, resent: false };
+  const now = await gw.getDispute(submission.disputeId);
+  const { baseline } = opts;
+  const already = newSellerEvidence(now, baseline);
+  if (already) return { kind: 'recorded', snapshot: now, recorded: already, resent: false, baseline };
   const r = await submitWithReadBack(gw, submission, opts);
   return r.kind === 'recorded' ? { ...r, resent: true } : r;
 }
@@ -139,7 +160,7 @@ export class SimulatedDisputeGateway implements DisputeGateway {
     const d = this.disputes.get(disputeId);
     if (!o || !d) return;
     this.pending.delete(disputeId);
-    if (d.status !== 'UNDER_REVIEW' || d.evidences.length) return;
+    if (d.status !== 'UNDER_REVIEW' || hasSellerEvidence(d)) return;
     d.status = o.status;
     d.stage = o.stage;
     d.respondBy = o.respondBy;
@@ -171,13 +192,17 @@ export class SimulatedDisputeGateway implements DisputeGateway {
     const allowed: ActionCode[] = status === 'UNDER_REVIEW' ? ['send_message'] : ['send_message', 'make_offer', 'accept_claim'];
     d.status = status;
     d.allowedActions = allowed;
+    const now = this.opts.now();
     d.evidences.push({
       evidenceType: submission.evidenceType,
+      source: 'SUBMITTED_BY_SELLER',
+      action: 'PROVIDE_EVIDENCE',
+      date: now.toISOString(),
       carrier: submission.carrier,
       tracking: submission.tracking,
       notes: submission.notes,
       files: submission.files.map((f) => f.name),
-      storedAt: utcStamp(this.opts.now()),
+      storedAt: utcStamp(now),
     });
   }
 }

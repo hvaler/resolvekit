@@ -7,7 +7,9 @@ export type DisputeStatus =
   | 'UNDER_REVIEW'
   | 'WAITING_FOR_SELLER_RESPONSE'
   | 'WAITING_FOR_BUYER_RESPONSE'
-  | 'RESOLVED';
+  | 'RESOLVED'
+  | 'OPEN'
+  | 'OTHER';
 
 export type DisputeReason =
   | 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED'
@@ -272,15 +274,31 @@ export interface EvidenceSubmission {
   files: SubmissionFile[];
 }
 
+/**
+ * Who put an evidence entry on the dispute, as PayPal reports it. A real dispute always carries the buyer's
+ * own entry (`CREATE`, SUBMITTED_BY_BUYER) and the evidence PayPal requests (REQUESTED_FROM_SELLER, no
+ * documents); only SUBMITTED_BY_SELLER entries are the merchant's evidence.
+ */
+export type EvidenceSource = 'SUBMITTED_BY_SELLER' | 'SUBMITTED_BY_BUYER' | 'REQUESTED_FROM_SELLER' | (string & {});
+
 /** Evidence as PayPal reports it when the dispute is read back. */
 export interface RecordedEvidence {
-  evidenceType: EvidenceType;
+  /** PayPal evidence type code, verbatim (also CREATE etc. for buyer entries). */
+  evidenceType: EvidenceType | (string & {});
+  source: EvidenceSource;
+  /** `action_info.action` when PayPal reports it, e.g. PROVIDE_EVIDENCE. */
+  action?: string | null;
+  /** PayPal's date for the entry (ISO 8601), used to tell entries apart. */
+  date?: string | null;
   carrier: string;
   tracking: string;
   notes: string;
   files: string[];
   storedAt: string;
 }
+
+/** Where a snapshot comes from: the real PayPal API (through the ResolveKit server) or the in-browser simulator. */
+export type SnapshotOrigin = { kind: 'simulator' } | { kind: 'paypal'; env: 'sandbox' | 'live'; disputeId: string };
 
 export interface DisputeSnapshot {
   id: string;
@@ -292,4 +310,14 @@ export interface DisputeSnapshot {
   stage?: string | null;
   /** Seller response due date (ISO 8601, UTC), once PayPal has set one. */
   respondBy?: string | null;
+  /** Read from PayPal or from the simulator. Absent means the simulator (or initial demo data). */
+  origin?: SnapshotOrigin;
+  /** PayPal reason code, verbatim. */
+  reason?: string | null;
+  /** Item type the buyer declared in PayPal's dispute form (PayPal code, e.g. PRODUCT, SERVICE). */
+  buyerItemType?: string | null;
+  /** Evidence types PayPal requests from the seller (source REQUESTED_FROM_SELLER). */
+  requestedEvidence?: string[];
+  /** Disputed amount as PayPal reports it. */
+  amount?: { value: string; currency: string } | null;
 }

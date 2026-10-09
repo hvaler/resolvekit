@@ -58,6 +58,8 @@ const STATUS_TONE: Readonly<Record<DisputeStatus, { badge: string; dot: string; 
   WAITING_FOR_BUYER_RESPONSE: { badge: 'border-info-line bg-info-soft text-info', dot: 'bg-info' },
   UNDER_REVIEW: { badge: 'border-dashed border-info-line text-info', dot: 'bg-info', pulse: true },
   RESOLVED: { badge: 'border-line-2 text-ink-3', dot: 'bg-ink-3' },
+  OPEN: { badge: 'border-info-line bg-info-soft text-info', dot: 'bg-info' },
+  OTHER: { badge: 'border-line-2 text-ink-3', dot: 'bg-ink-3' },
 };
 
 const isPinned = (p: P) => !!p.node.rowPinned;

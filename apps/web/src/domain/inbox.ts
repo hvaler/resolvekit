@@ -4,6 +4,7 @@
  * from PayPal changes a row.
  */
 import { STAGE_LABEL } from './status';
+import { hasSellerEvidence } from './recorded';
 import type { BuyerItemType, DisputeSnapshot, DisputeStatus } from './types';
 
 export type NextKind = 'approve' | 'contra' | 'work' | 'processing' | 'none';
@@ -65,6 +66,8 @@ export const INBOX_STATUS_LABEL: Readonly<Record<DisputeStatus, string>> = {
   WAITING_FOR_BUYER_RESPONSE: 'Waiting for buyer',
   UNDER_REVIEW: 'Under review by PayPal',
   RESOLVED: 'Resolved',
+  OPEN: 'Open',
+  OTHER: 'Other',
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
@@ -240,7 +243,7 @@ export function inboxSummary(rows: readonly InboxGridRow[]): string {
  */
 export function applySnapshot(d: InboxDispute, s: DisputeSnapshot | undefined): InboxDispute {
   if (!s) return d;
-  if (s.evidences.length > 0) {
+  if (hasSellerEvidence(s)) {
     const reviewing = s.status === 'UNDER_REVIEW';
     return {
       ...d,

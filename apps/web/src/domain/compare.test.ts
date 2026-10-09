@@ -16,6 +16,7 @@ const sent: EvidenceSubmission = {
 };
 const recorded: RecordedEvidence = {
   evidenceType: 'PROOF_OF_FULFILLMENT',
+  source: 'SUBMITTED_BY_SELLER',
   carrier: 'UPS',
   tracking: '1Z999AA10123456784',
   notes: 'Order #10482 was placed.',

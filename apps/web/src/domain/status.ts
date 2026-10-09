@@ -7,6 +7,8 @@ export const STATUS_DISPLAY: Readonly<Record<DisputeStatus, { label: string; ton
   WAITING_FOR_SELLER_RESPONSE: { label: 'Waiting for your response', tone: 'warn' },
   WAITING_FOR_BUYER_RESPONSE: { label: 'Waiting for buyer', tone: 'info' },
   RESOLVED: { label: 'Resolved', tone: 'muted' },
+  OPEN: { label: 'Open', tone: 'info' },
+  OTHER: { label: 'Other (see PayPal)', tone: 'muted' },
 };
 
 export const STAGE_LABEL: Readonly<Record<string, string>> = {
@@ -35,5 +37,9 @@ export function statusExplanation(status: DisputeStatus): string {
       return 'PayPal is waiting for your response.';
     case 'RESOLVED':
       return 'PayPal has closed this dispute.';
+    case 'OPEN':
+      return 'The dispute is open at PayPal.';
+    case 'OTHER':
+      return 'PayPal reports a status outside the usual flow. Check the dispute in PayPal.';
   }
 }

@@ -9,7 +9,7 @@ import { quoteFor } from '../domain/quotes';
 import { STATUS_DISPLAY, statusExplanation } from '../domain/status';
 import { totalSize } from '../domain/submission';
 import { utcClock, utcStamp } from '../domain/time';
-import type { ActionCode, CaseFile, EvidenceSubmission, SentenceView } from '../domain/types';
+import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView } from '../domain/types';
 import { MERCHANT } from './AppBar';
 import { Button, EvidenceTag, Spinner, cx } from './ui';
 
@@ -114,6 +114,8 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
   const mounted = useRef(true);
   /** After any attempt, every later submission reads the dispute back first (safe retry). */
   const attempted = useRef(false);
+  /** The dispute as read before the first attempt: evidence already on it is never reported as recorded. */
+  const baseline = useRef<DisputeSnapshot | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -150,8 +152,16 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
       setReached((r) => (r.includes(p) ? r : [...r, p]));
       if (p === 'sending') addAudit(id, 'ResolveKit', `Sent provide_evidence · request ${requestId}`);
     };
-    const opts = { requestId, onPhase, confirmDelayMs: 900 };
     let r: SendResult;
+    let base: DisputeSnapshot;
+    try {
+      // Read the dispute before the first send. If PayPal cannot be read, nothing is sent.
+      base = baseline.current ??= await gateway.getDispute(id);
+    } catch {
+      if (mounted.current) setFlow('error');
+      return;
+    }
+    const opts = { requestId, onPhase, confirmDelayMs: 900, baseline: base, rereads: 3, rereadDelayMs: 2000 };
     try {
       r = retry ? await safeRetry(gateway, submission, opts) : await submitWithReadBack(gateway, submission, opts);
     } catch (e) {
@@ -161,7 +171,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
         if (mounted.current) setFlow('error');
         return;
       }
-      r = { kind: 'not_recorded', snapshot: snap, error: e instanceof Error ? e.message : String(e) };
+      r = { kind: 'not_recorded', snapshot: snap, error: e instanceof Error ? e.message : String(e), baseline: base };
     }
     applySnapshot(r.snapshot);
     addAudit(

@@ -13,6 +13,7 @@ import { EvidenceCard } from '../components/EvidenceCard';
 import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
+import { hasSellerEvidence } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
@@ -40,7 +41,7 @@ function CaseFileScreen({ c }: { c: CaseFile }) {
   const approveMatch = useMatch('/cases/:id/approve');
   const secs = useSecondsSince(snap?.checkedAt ?? null);
 
-  const submitted = (snap?.evidences.length ?? 0) > 0;
+  const submitted = !!snap && hasSellerEvidence(snap);
   const allowed: readonly ActionCode[] = snap?.allowedActions ?? c.allowedActions;
   const status = snap?.status ?? c.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);

@@ -60,9 +60,9 @@ describe('submitWithReadBack', () => {
 describe('safeRetry', () => {
   it('reads back first and only re-sends when PayPal shows nothing recorded', async () => {
     const g = gw('timeout');
-    await submitWithReadBack(g, submission, { requestId: 'rk-1' });
+    const first = await submitWithReadBack(g, submission, { requestId: 'rk-1' });
     const phases: SendPhase[] = [];
-    const r = await safeRetry(g, submission, { requestId: 'rk-1', onPhase: (p) => phases.push(p) });
+    const r = await safeRetry(g, submission, { requestId: 'rk-1', baseline: first.baseline, onPhase: (p) => phases.push(p) });
     expect(phases[0]).toBe('checking');
     expect(r.kind === 'recorded' && r.resent).toBe(true);
     expect(g.sent).toHaveLength(1);
@@ -70,8 +70,9 @@ describe('safeRetry', () => {
 
   it('does not send again when evidence is already recorded', async () => {
     const g = gw('waiting_for_buyer');
-    await submitWithReadBack(g, submission, { requestId: 'rk-1' });
-    const r = await safeRetry(g, submission, { requestId: 'rk-1' });
+    const first = await submitWithReadBack(g, submission, { requestId: 'rk-1' });
+    const r = await safeRetry(g, submission, { requestId: 'rk-1', baseline: first.baseline });
+    expect(r.kind).toBe('recorded');
     expect(r.kind === 'recorded' && r.resent).toBe(false);
     expect(g.sent).toHaveLength(1);
   });
