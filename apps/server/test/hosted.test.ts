@@ -312,13 +312,22 @@ test('caps: concurrent confirmations send once; a further intent over the daily 
   const all = await Promise.all(Array.from({ length: 6 }, () => app(req(evidencePath, { body: { intentId: i.id }, cookie: cookie! }))));
   assert.equal(all.filter((r) => r.status === 202).length, 1);
   assert.equal(pp.sends(), 1);
-  // (The fake PayPal still offers provide_evidence.) The next intent is over the daily cap.
+  // (The fake PayPal still offers provide_evidence.) A further intent for the same dispute is refused: this server
+  // already had evidence accepted for it, whatever PayPal's read says yet.
   const j = await intentFor(app, cookie!);
-  const capped = await app(req(evidencePath, { body: { intentId: j.id }, cookie: cookie! }));
-  assert.equal(capped.status, 429);
-  assert.equal(((await capped.json()) as { error: string }).error, 'DAILY_CAP');
+  const again = await app(req(evidencePath, { body: { intentId: j.id }, cookie: cookie! }));
+  assert.equal(again.status, 409);
+  assert.equal(((await again.json()) as { error: string }).error, 'SELLER_EVIDENCE_EXISTS');
   assert.equal(pp.sends(), 1);
   assert.equal(counters.state().caps.evidence!.used, 1);
+  // Over the daily cap: refused, nothing sent, nothing reserved.
+  const capped = setup({ caps: { evidence: 0 }, store: await goldenStore() });
+  const c2 = (await unlock(capped.app)).cookie!;
+  const k = await intentFor(capped.app, c2);
+  const r = await capped.app(req(evidencePath, { body: { intentId: k.id }, cookie: c2 }));
+  assert.equal(r.status, 429);
+  assert.equal(((await r.json()) as { error: string }).error, 'DAILY_CAP');
+  assert.equal(capped.pp.sends(), 0);
 });
 
 test('caps: a send that fails before reaching PayPal (dispute read failed) is refunded', async () => {

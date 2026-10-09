@@ -201,12 +201,12 @@ test('store: a flood from one session replaces only its own intents; another ses
   const s = new IntentStore();
   const victim = created(s.create(draft('victim')));
   assert.ok(s.approve(victim.id, CASE, 'h', 'victim').ok);
-  const flood = Array.from({ length: 40 }, (_, k) => created(s.create(draft('flooder', `CASE-${k}`))));
+  const flood = Array.from({ length: 25 }, (_, k) => created(s.create(draft('flooder', `CASE-${k}`))));
   // The flooder keeps at most MAX_OPEN_PER_OWNER open intents: its own oldest were replaced.
   assert.equal(flood.filter((i) => s.get(i.id, 'flooder')!.status === 'proposed').length, MAX_OPEN_PER_OWNER);
   // A newer intent of the same session for the same case replaces its older one (one open per session and case).
-  const again = created(s.create(draft('flooder', 'CASE-39')));
-  assert.equal(s.get(flood[39]!.id, 'flooder')!.status, 'invalidated');
+  const again = created(s.create(draft('flooder', 'CASE-24')));
+  assert.equal(s.get(flood[24]!.id, 'flooder')!.status, 'invalidated');
   assert.equal(s.get(again.id, 'flooder')!.status, 'proposed');
   // The victim's approved intent is untouched and can still be sent.
   assert.equal(s.get(victim.id, 'victim')!.status, 'approved');
