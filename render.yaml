@@ -96,6 +96,8 @@ services:
         generateValue: true
       - key: METERMCP_BUDGET
         value: "5.00"
+      - key: METERMCP_FAIL_FIRST # demo test switch: the first deep_report call of each session fails (never charged; the receipt says so)
+        value: deep_report
       - key: DAILY_BUDGETS
         value: 20
       - key: TRUSTED_PROXY_HOPS

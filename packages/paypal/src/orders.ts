@@ -61,6 +61,24 @@ export interface CreateAuthorizeOrder {
   brandName?: string;
 }
 
+/** A plain checkout: the buyer approves, then the merchant captures the whole order at once (Orders v2 CAPTURE). */
+export interface CreateCaptureOrder {
+  amount: Money;
+  items: OrderItem[];
+  description: string;
+  returnUrl: string;
+  cancelUrl: string;
+  invoiceId?: string;
+  brandName?: string;
+  /** Physical goods ship to the buyer's PayPal address (GET_FROM_FILE); default NO_SHIPPING. */
+  shipping?: 'GET_FROM_FILE' | 'NO_SHIPPING';
+}
+
+/** The capture of a completed CAPTURE order (the payment a buyer can dispute). */
+export function orderCapture(o: Order): Capture | null {
+  return o.purchase_units?.[0]?.payments?.captures?.[0] ?? null;
+}
+
 /** The link the buyer opens to approve the order (`payer-action`, or `approve` on older answers). */
 export function approvalUrl(o: Order): string | null {
   return o.links?.find((l) => l.rel === 'payer-action' || l.rel === 'approve')?.href ?? null;
@@ -101,6 +119,38 @@ export class OrdersApi {
       },
     };
     return this.client.request<Order>('POST', '/v2/checkout/orders', body, { ...opts, headers: JSON_FULL });
+  }
+
+  /** A CAPTURE order the buyer approves in PayPal; nothing is charged until {@link capture}. */
+  createCapture(o: CreateCaptureOrder, opts: { requestId?: string } = {}): Promise<Order> {
+    const body = {
+      intent: 'CAPTURE',
+      purchase_units: [
+        {
+          amount: { ...o.amount, breakdown: { item_total: o.amount } },
+          items: o.items,
+          description: o.description,
+          ...(o.invoiceId ? { invoice_id: o.invoiceId } : {}),
+        },
+      ],
+      payment_source: {
+        paypal: {
+          experience_context: {
+            return_url: o.returnUrl,
+            cancel_url: o.cancelUrl,
+            user_action: 'PAY_NOW',
+            shipping_preference: o.shipping ?? 'NO_SHIPPING',
+            ...(o.brandName ? { brand_name: o.brandName } : {}),
+          },
+        },
+      },
+    };
+    return this.client.request<Order>('POST', '/v2/checkout/orders', body, { ...opts, headers: JSON_FULL });
+  }
+
+  /** Capture an APPROVED CAPTURE order. The answer holds the capture (see {@link orderCapture}). */
+  capture(orderId: string, opts: { requestId?: string } = {}): Promise<Order> {
+    return this.client.request<Order>('POST', `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, undefined, { ...opts, headers: JSON_FULL });
   }
 
   get(orderId: string): Promise<Order> {

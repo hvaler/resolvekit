@@ -49,15 +49,38 @@ export function scriptedPlanner(): Planner {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const say = (s: string) => console.log(`[agent] ${s}`);
 
-async function main() {
-  const url = process.env.METERMCP_URL ?? 'http://127.0.0.1:8790/mcp';
-  const noWait = process.argv.includes('--no-wait');
-  const timeoutMs = Number(process.env.APPROVAL_TIMEOUT_MINUTES ?? 15) * 60_000;
+export interface AgentRunOptions {
+  /** MeterMCP's MCP endpoint, e.g. http://127.0.0.1:8790/mcp. */
+  url: string;
+  /** Sent as the x-demo-code header (the hosted MeterMCP needs it to open a budget). Never printed. */
+  demoCode?: string | undefined;
+  /** Stop after printing the approval URL. */
+  noWait?: boolean;
+  /** How long to wait for the buyer's approval. */
+  approvalTimeoutMs?: number;
+  /** Progress lines (default: console, prefixed "[agent]"). */
+  say?: (line: string) => void;
+}
+
+export interface AgentRunResult {
+  /** The PayPal capture of the settled session (the payment the buyer disputes); null if none. */
+  captureId: string | null;
+  sessionId: string | null;
+  /** MeterMCP's receipt (get_receipt), when the run got that far. */
+  receipt: Record<string, any> | null;
+}
+
+/** Run the scripted agent against MeterMCP: payment_required → approval → paid calls → close → receipt. */
+export async function runDemoAgent(o: AgentRunOptions): Promise<AgentRunResult> {
+  const url = o.url;
+  const noWait = o.noWait ?? false;
+  const timeoutMs = o.approvalTimeoutMs ?? 15 * 60_000;
+  const say = o.say ?? ((s: string) => console.log(`[agent] ${s}`));
+  const out: AgentRunResult = { captureId: null, sessionId: null, receipt: null };
 
   const client = new Client({ name: 'metermcp-demo-agent', version: '0.1.0' });
-  const demoCode = process.env.METERMCP_DEMO_CODE;
+  const demoCode = o.demoCode;
   await client.connect(new StreamableHTTPClientTransport(new URL(url), demoCode ? { requestInit: { headers: { 'x-demo-code': demoCode } } } : {}));
   const callTool: CallTool = async (c) => {
     const r = await client.callTool(c);
@@ -74,10 +97,11 @@ async function main() {
     if (r.isError && r.body.error === 'payment_required') {
       say(`payment_required: ${first.name} costs ${r.body.price} ${r.body.currency}; MeterMCP proposes a budget of ${r.body.budget_proposal} ${r.body.currency}`);
       say(`session ${r.body.session_id} · PayPal order ${r.body.order_id}`);
-      console.log(`\n  Approve the budget in PayPal (sandbox buyer account):\n  ${r.body.approval_url}\n`);
+      out.sessionId = r.body.session_id ?? null;
+      say(`Approve the budget in PayPal (sandbox buyer account):\n\n  ${r.body.approval_url}\n`);
       if (noWait) {
         say('--no-wait: stopping here. The unapproved order expires on its own; nothing is authorized or charged.');
-        return;
+        return out;
       }
       const until = Date.now() + timeoutMs;
       for (;;) {
@@ -88,14 +112,14 @@ async function main() {
         }
         if (b.body.status !== 'pending_approval' || Date.now() > until) {
           say(`not approved (${b.body.status}); giving up`);
-          return;
+          return out;
         }
         await sleep(3000);
       }
       r = await callTool(first);
     } else if (r.isError) {
       say(`error: ${JSON.stringify(r.body)}`);
-      return;
+      return out;
     }
 
     let last: { call: ToolCall; result: ToolResult } | null = { call: first, result: r };
@@ -113,13 +137,26 @@ async function main() {
     const receipt = await callTool({ name: 'get_receipt', arguments: {} });
     const rc = receipt.body;
     say(`receipt: ${rc.totals?.ok} OK / ${rc.totals?.failed} failed · charged ${rc.totals?.charged} of ${rc.totals?.cap} · capture ${rc.settlement?.capture_id ?? '—'} · sha256 ${rc.receipt_sha256}`);
-    if (rc.settlement?.capture_id) console.log(`\n  PayPal capture id (the buyer disputes this one): ${rc.settlement.capture_id}\n`);
+    if (rc.settlement?.capture_id) say(`PayPal capture id (the buyer disputes this one): ${rc.settlement.capture_id}`);
+    out.receipt = rc;
+    out.sessionId = rc.session?.id ?? out.sessionId;
+    out.captureId = rc.settlement?.capture_id ?? null;
+    return out;
   } finally {
     await client.close();
   }
 }
 
-if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(/^\//, '')}` || process.argv[1]?.endsWith('demo-agent.ts')) {
+async function main() {
+  await runDemoAgent({
+    url: process.env.METERMCP_URL ?? 'http://127.0.0.1:8790/mcp',
+    demoCode: process.env.METERMCP_DEMO_CODE,
+    noWait: process.argv.includes('--no-wait'),
+    approvalTimeoutMs: Number(process.env.APPROVAL_TIMEOUT_MINUTES ?? 15) * 60_000,
+  });
+}
+
+if (process.argv[1]?.replace(/\\/g, '/').endsWith('/scripts/demo-agent.ts')) {
   main().catch((e) => {
     console.error(`[agent] failed: ${e instanceof Error ? e.message : String(e)}`);
     process.exitCode = 1;

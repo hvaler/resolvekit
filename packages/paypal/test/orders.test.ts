@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PayPalClient } from '../src/client.ts';
-import { approvalUrl } from '../src/orders.ts';
+import { approvalUrl, orderCapture } from '../src/orders.ts';
 
 function fake(body: unknown) {
   const calls: Array<{ url: string; init: RequestInit }> = [];
@@ -43,4 +43,23 @@ test('captures part of an authorization with final_capture, invoice id and note;
   assert.match(calls[2]!.url, /\/A1\/void$/);
   assert.equal(calls[2]!.init.body, undefined);
   assert.equal((calls[2]!.init.headers as Record<string, string>)['Content-Type'], 'application/json');
+});
+
+test('creates a CAPTURE order (physical goods ship to the buyer’s address) and captures it once approved', async () => {
+  const { client, calls } = fake({ id: 'O2', status: 'COMPLETED', purchase_units: [{ payments: { captures: [{ id: 'CAP2', status: 'COMPLETED' }] } }] });
+  const amount = { currency_code: 'USD', value: '7.00' };
+  await client.orders.createCapture(
+    { amount, items: [{ name: 'Linen tote, natural', quantity: '1', unit_amount: amount, category: 'PHYSICAL_GOODS' }], description: 'd', returnUrl: 'https://x/ok', cancelUrl: 'https://x/no', shipping: 'GET_FROM_FILE' },
+    { requestId: 'rk-demo-1' },
+  );
+  const b = JSON.parse(String(calls[1]!.init.body));
+  assert.equal(b.intent, 'CAPTURE');
+  assert.deepEqual(b.purchase_units[0].amount, { ...amount, breakdown: { item_total: amount } });
+  assert.equal(b.purchase_units[0].items[0].category, 'PHYSICAL_GOODS');
+  assert.equal(b.payment_source.paypal.experience_context.shipping_preference, 'GET_FROM_FILE');
+  assert.equal(b.payment_source.paypal.experience_context.user_action, 'PAY_NOW');
+  const done = await client.orders.capture('O2', { requestId: 'rk-demo-1-capture' });
+  assert.match(calls[2]!.url, /\/v2\/checkout\/orders\/O2\/capture$/);
+  assert.equal(orderCapture(done)?.id, 'CAP2');
+  assert.equal(orderCapture({ id: 'O3' }), null);
 });

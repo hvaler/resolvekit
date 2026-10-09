@@ -274,13 +274,37 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
    analysis. These are system runs: no demo code, but the same hourly limit and daily cap as a visitor's live run. The
    log says the outcome per case (`warm-up · case … · done | cached | skipped · why`), never document text or keys.
    Every visitor then sees the analysis without the code.
-5. The agent case shows the real MeterMCP receipt only if the hosted ledger has the session of the disputed capture:
+5. Fresh disputes for the demo: `npm run demo:prepare` (below) creates the payments, tells the sandbox buyer what to
+   click, waits for the disputes and prints the `BINDINGS_JSON` to paste.
+6. The agent case shows the real MeterMCP receipt only if the hosted ledger has the session of the disputed capture:
    run the demo agent against the hosted MeterMCP
    (`METERMCP_URL=https://<metermcp host>/mcp METERMCP_DEMO_CODE=<code> npm run demo-agent`), approve with the sandbox
    buyer, open the dispute on its capture as the buyer, and bind it. (Or copy the local `metermcp.sqlite` onto the
    disk.)
-6. PayPal accepts evidence once per dispute. To let the next judge send for real, open a fresh sandbox dispute and
+7. PayPal accepts evidence once per dispute. To let the next judge send for real, open a fresh sandbox dispute and
    update `BINDINGS_JSON` (the service restarts with the new binding).
+
+**Prepare fresh demo disputes** (`apps/server/scripts/demo-prepare.ts`; you are the sandbox buyer, nothing is faked):
+
+```bash
+npm run demo:prepare -- --dry-run          # checks the PayPal credentials and shows what it would create; creates nothing
+METERMCP_DEMO_CODE=<code> npm run demo:prepare   # PowerShell: $env:METERMCP_DEMO_CODE='<code>'; npm run demo:prepare
+```
+
+1. **Standard case**: an Orders v2 `CAPTURE` order for exactly the standard case's order (1 × "Linen tote, natural",
+   7.00 USD, `PHYSICAL_GOODS`). It prints the approval URL; approve with the sandbox **personal** account; it
+   captures and prints the capture id.
+2. **Agent case**: the demo agent against the **hosted** MeterMCP (`--metermcp URL` for another one), so the session
+   lives in the hosted ledger and the hosted agent case shows the real receipt. Approve the budget; it makes 4 calls
+   (the first `deep_report` fails: `METERMCP_FAIL_FIRST=deep_report` on that service, never charged), closes and
+   prints the capture id. `METERMCP_DEMO_CODE` is read from the environment and never printed.
+3. It prints what the buyer clicks: "Report a problem" on each payment → *I didn't receive an item* → item type
+   **Physical product** (standard) or **Service** with *"I didn't receive any confirmation of the service"* (agent).
+4. It polls PayPal until each dispute appears (~5 min) and reaches `WAITING_FOR_SELLER_RESPONSE`, then prints the
+   `BINDINGS_JSON` for Render.
+
+Steps run separately and resume: `--standard`, `--agent`, `--wait-disputes --captures <standard>,<agent>` (either may
+be empty), `--approval-minutes`, `--dispute-minutes`.
 
 **Hosted mode** (`apps/server/src/hosted.ts`, `apps/metermcp/src/app.ts`, `packages/hosting`)
 
