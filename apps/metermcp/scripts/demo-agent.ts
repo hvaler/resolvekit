@@ -6,7 +6,8 @@
  *   npm run demo-agent --workspace @resolvekit/metermcp            # full run (waits for approval)
  *   npm run demo-agent --workspace @resolvekit/metermcp -- --no-wait   # stop after printing the approval URL
  *
- * Env: METERMCP_URL (http://127.0.0.1:8790/mcp) · APPROVAL_TIMEOUT_MINUTES (15).
+ * Env: METERMCP_URL (http://127.0.0.1:8790/mcp) · APPROVAL_TIMEOUT_MINUTES (15) · METERMCP_DEMO_CODE (sent as the
+ * x-demo-code header: the hosted demo needs it to open a budget).
  * The agent is pluggable: `run(plan, tools)` takes any planner that yields tool calls; an LLM-driven one can replace
  * `SCRIPTED_PLAN` later without touching the MCP or payment handling.
  */
@@ -56,7 +57,8 @@ async function main() {
   const timeoutMs = Number(process.env.APPROVAL_TIMEOUT_MINUTES ?? 15) * 60_000;
 
   const client = new Client({ name: 'metermcp-demo-agent', version: '0.1.0' });
-  await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+  const demoCode = process.env.METERMCP_DEMO_CODE;
+  await client.connect(new StreamableHTTPClientTransport(new URL(url), demoCode ? { requestInit: { headers: { 'x-demo-code': demoCode } } } : {}));
   const callTool: CallTool = async (c) => {
     const r = await client.callTool(c);
     const text = (r.content as Array<{ type: string; text?: string }>).find((x) => x.type === 'text')?.text ?? '{}';

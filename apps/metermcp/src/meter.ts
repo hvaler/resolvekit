@@ -43,7 +43,14 @@ export type ToolAnswer = {
   content: Array<{ type: 'text'; text: string }>;
 };
 
-const answer = (body: unknown, isError = false): ToolAnswer => ({ ...(isError ? { isError: true } : {}), content: [{ type: 'text', text: JSON.stringify(body, null, 2) }] });
+/**
+ * Hosted mode: asked synchronously right before a new budget (a PayPal order) would be created. Refuses (demo code
+ * missing, daily cap reached) with a tool answer, or reserves one; the reservation is released if the order could not
+ * be created. Local mode has none.
+ */
+export type BudgetGate = () => { ok: true; release: () => void } | { ok: false; answer: ToolAnswer };
+
+export const answer = (body: unknown, isError = false): ToolAnswer => ({ ...(isError ? { isError: true } : {}), content: [{ type: 'text', text: JSON.stringify(body, null, 2) }] });
 
 /** Strict money parse: null (never a default) when the value is missing or malformed. */
 function cents(value: string | undefined): number | null {
@@ -149,12 +156,21 @@ export class Meter {
   }
 
   /** The MCP session's payment session, creating it (and its PayPal order) when there is none. */
-  private async sessionFor(mcpSession: string): Promise<SessionRow | ToolAnswer> {
+  private async sessionFor(mcpSession: string, gate?: BudgetGate): Promise<SessionRow | ToolAnswer> {
     const inFlight = this.opening.get(mcpSession);
     if (inFlight) return inFlight;
     const existing = this.o.ledger.openSessionFor(mcpSession);
     if (existing) return existing.status === 'pending_approval' ? this.checkApproval(existing) : existing;
-    const p = this.openSession(mcpSession).finally(() => this.opening.delete(mcpSession));
+    // No await between this reservation and registering the opening below: one budget per MCP session at a time,
+    // and concurrent sessions cannot overshoot the gate's cap.
+    const reserved = gate?.();
+    if (reserved && !reserved.ok) return reserved.answer;
+    const p = this.openSession(mcpSession)
+      .then((r) => {
+        if (isAnswer(r) && reserved?.ok) reserved.release(); // no order was created: refund
+        return r;
+      })
+      .finally(() => this.opening.delete(mcpSession));
     this.opening.set(mcpSession, p);
     return p;
   }
@@ -246,10 +262,10 @@ export class Meter {
   // -------------------------------------------------------------------------------------------
   // Paid calls
 
-  async call(mcpSession: string, toolName: string, args: Record<string, unknown>): Promise<ToolAnswer> {
+  async call(mcpSession: string, toolName: string, args: Record<string, unknown>, opts: { budgetGate?: BudgetGate } = {}): Promise<ToolAnswer> {
     const tool = toolByName(toolName);
     if (!tool) return answer({ error: 'unknown_tool', tool: toolName }, true);
-    const got = await this.sessionFor(mcpSession);
+    const got = await this.sessionFor(mcpSession, opts.budgetGate);
     if (isAnswer(got)) return got;
     const s = got;
     if (s.status === 'pending_approval') return this.paymentRequired(s, tool);

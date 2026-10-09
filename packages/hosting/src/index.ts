@@ -75,6 +75,15 @@ export class KeyedLimiter {
     return { ok: true, remaining: this.o.limit - h.count };
   }
 
+  /**
+   * Whether `key` has no requests left in its window, without counting one. With {@link take} in the same
+   * synchronous step (check, then count failures) it limits failures only, e.g. wrong demo codes.
+   */
+  blocked(key: string): boolean {
+    const h = this.hits.get(key);
+    return !!h && this.o.now() - h.start < this.o.windowMs && h.count >= this.o.limit;
+  }
+
   private prune(t: number) {
     if (this.hits.size < this.o.maxKeys) return;
     for (const [k, h] of this.hits) if (t - h.start >= this.o.windowMs) this.hits.delete(k);

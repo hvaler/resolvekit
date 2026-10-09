@@ -7,7 +7,8 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
-import type { Meter, ToolAnswer } from './meter.ts';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { BudgetGate, Meter, ToolAnswer } from './meter.ts';
 import { CURRENCY, PAID_TOOLS } from './tools.ts';
 
 const FREE = { 'metermcp/price': { amount: '0.00', currency: CURRENCY, per: 'call' } };
@@ -16,7 +17,13 @@ function noSession(): ToolAnswer {
   return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'no_mcp_session', message: 'MeterMCP needs a stateful MCP session (Mcp-Session-Id).' }) }] };
 }
 
-export function buildServer(meter: Meter): McpServer {
+/**
+ * Hosted mode: the gate for opening a new budget, given what the HTTP layer established about this request (the
+ * demo code it carried, as `authInfo`). Absent (local mode): budgets open freely.
+ */
+export type BudgetPolicy = (auth: AuthInfo | undefined) => BudgetGate;
+
+export function buildServer(meter: Meter, policy?: BudgetPolicy): McpServer {
   const server = new McpServer({ name: 'metermcp', version: '0.1.0' }, { instructions: 'Paid tools draw on a budget the user approves in PayPal. A paid call without one answers payment_required with an approval_url for the user. Failed calls are never charged. Call close_session when done: only successful calls are captured and the rest of the budget is released.' });
 
   for (const t of PAID_TOOLS) {
@@ -30,7 +37,8 @@ export function buildServer(meter: Meter): McpServer {
         annotations: { title, readOnlyHint: true, openWorldHint: false },
         _meta: { 'metermcp/price': { amount: t.price, currency: CURRENCY, per: 'successful call' } },
       },
-      async (args, extra) => (extra.sessionId ? meter.call(extra.sessionId, t.name, args as Record<string, unknown>) : noSession()),
+      async (args, extra) =>
+        extra.sessionId ? meter.call(extra.sessionId, t.name, args as Record<string, unknown>, policy ? { budgetGate: policy(extra.authInfo) } : {}) : noSession(),
     );
   }
 
@@ -71,14 +79,16 @@ const rpcError = (status: number, message: string) =>
   new Response(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message }, id: null }), { status, headers: { 'content-type': 'application/json' } });
 
 /** Handles /mcp requests (already past the HTTP guards). */
-export function createMcpEndpoint(meter: Meter) {
+export function createMcpEndpoint(meter: Meter, policy?: BudgetPolicy) {
   const transports = new Map<string, WebStandardStreamableHTTPServerTransport>();
 
-  const handle = async (req: Request): Promise<Response> => {
+  /** `authInfo`: what the HTTP layer established about this request (hosted mode: a valid demo code). */
+  const handle = async (req: Request, authInfo?: AuthInfo): Promise<Response> => {
+    const opts = authInfo ? { authInfo } : undefined;
     const sid = req.headers.get('mcp-session-id');
     if (sid) {
       const t = transports.get(sid);
-      return t ? t.handleRequest(req) : rpcError(404, 'Unknown MCP session');
+      return t ? t.handleRequest(req, opts) : rpcError(404, 'Unknown MCP session');
     }
     if (req.method !== 'POST') return rpcError(400, 'No MCP session');
     let body: unknown;
@@ -97,8 +107,8 @@ export function createMcpEndpoint(meter: Meter) {
     transport.onclose = () => {
       if (transport.sessionId) transports.delete(transport.sessionId);
     };
-    await buildServer(meter).connect(transport);
-    return transport.handleRequest(req, { parsedBody: body });
+    await buildServer(meter, policy).connect(transport);
+    return transport.handleRequest(req, { parsedBody: body, ...opts });
   };
 
   return {
