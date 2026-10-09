@@ -28,7 +28,23 @@ import {
   type DailyCounters,
   type StaticSite,
 } from '@resolvekit/hosting';
+import type { LiveGate } from './analysis.ts';
 import { createApi, json, withLog, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
+
+/** What the warm-up did for one bound case. */
+export interface WarmUpOutcome {
+  caseId: string;
+  outcome: 'cached' | 'done' | 'failed' | 'skipped';
+  detail: string;
+}
+
+/** The hosted handler, plus the warm-up of the bound cases' analyses. */
+export type HostedApp = Handler & {
+  /** Analyse each bound case once, in the background, as system runs (same hourly limit and daily cap). */
+  warmUp: () => Promise<WarmUpOutcome[]>;
+  /** The bindings object was changed in place: forget the old reads and warm up again. */
+  bindingsChanged: () => Promise<WarmUpOutcome[]>;
+};
 
 export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
   /** The service's own origins, e.g. https://resolvekit.onrender.com (+ custom domains). */
@@ -89,7 +105,7 @@ const tooMany = (retryAfterSec: number, detail: string) => {
   return r;
 };
 
-export function createHostedApp(o: HostedOptions): Handler {
+export function createHostedApp(o: HostedOptions): HostedApp {
   const now = o.now ?? (() => new Date());
   const ttl = o.sessionTtlMs ?? SESSION_TTL_MS;
   const hops = o.trustedHops ?? 1;
@@ -188,9 +204,68 @@ export function createHostedApp(o: HostedOptions): Handler {
   };
 
   const logged = withLog(o.log, handle);
-  return async (req) => {
+  const handler: Handler = async (req) => {
     const res = await logged(req);
     const html = (res.headers.get('content-type') ?? '').startsWith('text/html');
     return withSecurityHeaders(res, { hsts: o.https, ...(html ? { csp: APP_CSP } : {}) });
   };
+
+  // ---------------------------------------------------------------------------------------------- warm-up
+  // So that visitors without the demo code see an analysis of each bound case: after boot and whenever the bindings
+  // change, each bound case is analysed once (skipped when its documents already have a stored analysis). These are
+  // system runs: no demo code, but the same hourly limit and the same daily cap as a visitor's live run. The log says
+  // the outcome per case; no document text, no keys.
+  const log = o.log ?? (() => {});
+  const systemGate: LiveGate = () => {
+    const day = o.counters.today();
+    if (!o.counters.take('live-analysis')) {
+      return { ok: false, refusal: { status: 429, body: { error: 'DAILY_CAP', detail: 'the daily cap of live analyses is reached' } } };
+    }
+    return { ok: true, release: () => o.counters.release('live-analysis', day) };
+  };
+  const warmCase = async (caseId: string): Promise<WarmUpOutcome> => {
+    const analyst = o.analyst;
+    if (!analyst) return { caseId, outcome: 'skipped', detail: 'no analyst on this server' };
+    const input = await api.inputFor(caseId);
+    if (input instanceof Response) {
+      const b = (await input.json().catch(() => ({}))) as { error?: string };
+      return { caseId, outcome: 'skipped', detail: `PayPal could not be read (${input.status}${b.error ? ` ${b.error}` : ''})` };
+    }
+    const r = await analyst.request(caseId, input, false, systemGate);
+    const body = r.body as { status?: string; key?: string; origin?: string; error?: string; detail?: string };
+    if (r.status === 200) return { caseId, outcome: 'cached', detail: `already stored (${body.origin})` };
+    if (r.status !== 202 || !body.key) return { caseId, outcome: 'skipped', detail: `${body.error ?? r.status}: ${body.detail ?? ''}`.trim() };
+    const t = Date.now();
+    const end = (await analyst.settled(body.key)).body as { status?: string; error?: string };
+    return end.status === 'ready'
+      ? { caseId, outcome: 'done', detail: `system run · ${Date.now() - t} ms` }
+      : { caseId, outcome: 'failed', detail: `system run · ${end.error ?? end.status ?? 'unknown'}` };
+  };
+  let chain: Promise<WarmUpOutcome[]> = Promise.resolve([]);
+  const warmUp = (): Promise<WarmUpOutcome[]> => {
+    const run = async () => {
+      const out: WarmUpOutcome[] = [];
+      for (const caseId of Object.keys(o.bindings)) {
+        let w: WarmUpOutcome;
+        try {
+          w = await warmCase(caseId);
+        } catch {
+          w = { caseId, outcome: 'failed', detail: 'unexpected error' };
+        }
+        log(`warm-up · case ${caseId} · ${w.outcome} · ${w.detail}`);
+        out.push(w);
+      }
+      return out;
+    };
+    // One warm-up at a time; a request during one runs after it (the bindings may have changed meanwhile).
+    chain = chain.then(run, run);
+    return chain;
+  };
+  return Object.assign(handler, {
+    warmUp,
+    bindingsChanged: () => {
+      api.forgetReads();
+      return warmUp();
+    },
+  });
 }

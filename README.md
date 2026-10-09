@@ -267,10 +267,13 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
    `resolvekit` with `fromService`), and passes MeterMCP's private-network `host:port` as `METERMCP_URL`.
    `RENDER_EXTERNAL_URL` / `PORT` come from Render. A custom domain goes in `RESOLVEKIT_CUSTOM_DOMAINS` /
    `METERMCP_CUSTOM_DOMAINS`.
-4. After the first deploy: open the app, **Unlock demo actions**, and open each bound case once. A bound case's
-   documents include PayPal's (and MeterMCP's) live data, so the committed golden analyses do not match them; the
-   first unlocked visit runs the analyst live and caches the result on the disk, and every visitor sees it from then
-   on, without the code. (Or copy `apps/server/data/analysis-cache/*.json` onto the disk.)
+4. Nothing to do for the analyses: a bound case's documents include PayPal's (and MeterMCP's) live data, so the
+   committed golden analyses do not match them, and the server **warms up** instead. After boot, and whenever the
+   bindings change (a new `BINDINGS_JSON` restarts the service; a changed `/var/data/bindings.json` is picked up within
+   30 s), it analyses each bound case once in the background, skipping any whose documents already have a stored
+   analysis. These are system runs: no demo code, but the same hourly limit and daily cap as a visitor's live run. The
+   log says the outcome per case (`warm-up · case … · done | cached | skipped · why`), never document text or keys.
+   Every visitor then sees the analysis without the code.
 5. The agent case shows the real MeterMCP receipt only if the hosted ledger has the session of the disputed capture:
    run the demo agent against the hosted MeterMCP
    (`METERMCP_URL=https://<metermcp host>/mcp METERMCP_DEMO_CODE=<code> npm run demo-agent`), approve with the sandbox

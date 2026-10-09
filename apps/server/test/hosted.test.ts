@@ -410,3 +410,48 @@ test('client text: re-check sentences and evidence fields are validated server-s
   assert.equal(counters.state().caps.evidence!.used, 0);
   assert.equal(counters.state().caps.recheck!.used, 0);
 });
+
+// ------------------------------------------------------------------------------------------------ warm-up
+
+test('warm-up: each bound case is analysed once as a system run (no demo code), within the daily cap; then served to anyone', async () => {
+  const { app, model, counters, lines } = setup({ caps: { 'live-analysis': 2 } });
+  const first = await app.warmUp();
+  assert.deepEqual(first.map((w) => [w.caseId, w.outcome]), [[CASE, 'done']]);
+  assert.equal(model.requests.filter((r) => r.stage === 'extract').length, 1);
+  assert.equal(counters.state().caps['live-analysis']!.used, 1);
+  // Cached now: a second warm-up does not call the model or count.
+  const again = await app.warmUp();
+  assert.deepEqual(again.map((w) => w.outcome), ['cached']);
+  assert.equal(model.requests.filter((r) => r.stage === 'extract').length, 1);
+  assert.equal(counters.state().caps['live-analysis']!.used, 1);
+  // A visitor without the demo code sees it.
+  const r = await app(req(analysisPath, { body: {} }));
+  assert.equal(r.status, 200);
+  assert.equal(((await r.json()) as { origin: string }).origin, 'cache');
+  const log = lines.filter((l) => l.startsWith('warm-up'));
+  assert.equal(log.length, 2);
+  assert.match(log[0]!, /^warm-up · case PP-R-TVH-10190665 · done · system run/);
+  // The log carries no document text or code.
+  assert.ok(!lines.join('\n').includes('Linen tote') && !lines.join('\n').includes(CODE));
+});
+
+test('warm-up: skipped (and logged) when the daily cap is reached, PayPal cannot be read, or there is no model key', async () => {
+  const capped = setup({ caps: { 'live-analysis': 0 } });
+  assert.deepEqual((await capped.app.warmUp()).map((w) => [w.outcome, /DAILY_CAP/.test(w.detail)]), [['skipped', true]]);
+  assert.equal(capped.model.requests.length, 0);
+  const down = setup({ failRead: true });
+  const d = await down.app.warmUp();
+  assert.equal(d[0]!.outcome, 'skipped');
+  assert.match(d[0]!.detail, /PayPal could not be read/);
+  assert.equal(down.model.requests.length, 0);
+  assert.equal(down.counters.state().caps['live-analysis']!.used, 0);
+  const noKey = setup({ model: false });
+  assert.match((await noKey.app.warmUp())[0]!.detail, /ANALYST_UNCONFIGURED/);
+});
+
+test('warm-up: concurrent calls run one after the other (the second finds the analysis stored)', async () => {
+  const { app, model } = setup({ slowModelMs: 5 });
+  const [a, b] = await Promise.all([app.warmUp(), app.bindingsChanged()]);
+  assert.deepEqual([a[0]!.outcome, b[0]!.outcome], ['done', 'cached']);
+  assert.equal(model.requests.filter((r) => r.stage === 'extract').length, 1);
+});

@@ -36,6 +36,8 @@ interface Job {
   status: 'running' | 'done' | 'failed';
   error?: string;
   result?: CaseAnalysis;
+  /** Settles when the run is done or failed. */
+  done: Promise<void>;
 }
 
 export interface AnalystServiceOptions {
@@ -115,11 +117,11 @@ export class AnalystService {
   }
 
   private start(key: string, caseId: string, input: AnalysisInput) {
-    const job: Job = { key, caseId, progress: [], status: 'running' };
+    const job: Job = { key, caseId, progress: [], status: 'running', done: Promise.resolve() };
     this.jobs.set(key, job);
     const t = Date.now();
     this.log(`analysis started · case ${caseId} · ${key.slice(0, 12)} · ${this.primaryModel}`);
-    void analyzeCase(input, {
+    job.done = analyzeCase(input, {
       model: this.o.model!,
       requestedModel: this.primaryModel,
       key,
@@ -139,6 +141,12 @@ export class AnalystService {
         this.log(`analysis failed · case ${caseId} · ${job.error}`);
       },
     );
+  }
+
+  /** The answer once the run of `key` (if one is running) has finished. */
+  async settled(key: string): Promise<ServiceAnswer> {
+    await this.jobs.get(key)?.done;
+    return this.progress(key);
   }
 
   progress(key: string): ServiceAnswer {

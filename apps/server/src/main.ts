@@ -11,7 +11,7 @@
  * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · TRUSTED_PROXY_HOPS (1).
  */
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +22,7 @@ import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
 import { checkBindings, parseBindings } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
-import { createHostedApp } from './hosted.ts';
+import { createHostedApp, type HostedApp } from './hosted.ts';
 import { MeterMcpClient } from './metermcp.ts';
 import { toNodeListener } from './node.ts';
 
@@ -40,6 +40,8 @@ const fail = (why: string): never => {
 // Analysis cache, usage log and (hosted) daily caps. On Render this is the service's persistent disk.
 const dataDir = process.env.RESOLVEKIT_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
 
+const bindingsFile = process.env.RESOLVEKIT_BINDINGS ?? (hosted ? join(dataDir, 'bindings.json') : fileURLToPath(new URL('../bindings.json', import.meta.url)));
+
 function loadBindings(): Record<string, string> {
   // Hosted: BINDINGS_JSON (a secret env var) wins; otherwise a file. Never from a client.
   if (hosted && process.env.BINDINGS_JSON) {
@@ -49,7 +51,7 @@ function loadBindings(): Record<string, string> {
       return fail(`BINDINGS_JSON: ${(e as Error).message}`);
     }
   }
-  const file = process.env.RESOLVEKIT_BINDINGS ?? (hosted ? join(dataDir, 'bindings.json') : fileURLToPath(new URL('../bindings.json', import.meta.url)));
+  const file = bindingsFile;
   try {
     return parseBindings(JSON.parse(readFileSync(file, 'utf8')));
   } catch (e) {
@@ -102,6 +104,7 @@ const analyst = new AnalystService({
 const pins = new InputPins({ file: join(dataDir, 'analysis-inputs.json') });
 
 let app: Handler;
+let hostedApp: HostedApp | null = null;
 let tokenFile: string | null = null;
 if (hosted) {
   const pub = publicOrigins(process.env.RENDER_EXTERNAL_URL, process.env.RESOLVEKIT_CUSTOM_DOMAINS);
@@ -125,7 +128,7 @@ if (hosted) {
     },
   });
   const site = StaticSite.load(dist);
-  app = createHostedApp({
+  app = hostedApp = createHostedApp({
     paypal, env, bindings, log, meterMcp, analyst, pins, site, counters, demoCode, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
@@ -151,10 +154,34 @@ server.listen(port, host, () => {
   // Read each bound dispute once in the background and warn if its amount is not the demo case's order amount.
   const caseOrders = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency }]));
   void checkBindings({ paypal, bindings, caseOrders, log });
+  // Hosted: analyse each bound case once in the background, so visitors without the demo code see an analysis.
+  if (hostedApp) void hostedApp.warmUp();
 });
+
+// Hosted with bindings from a file (no BINDINGS_JSON): a changed file is picked up without a restart (BINDINGS_JSON
+// changes restart the service on Render anyway). Invalid content is logged and ignored; the old bindings stay.
+const watchBindings = hosted && !process.env.BINDINGS_JSON;
+if (watchBindings) {
+  watchFile(bindingsFile, { interval: 30_000 }, () => {
+    let next: Record<string, string>;
+    try {
+      next = parseBindings(JSON.parse(readFileSync(bindingsFile, 'utf8')));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') next = {};
+      else return log(`bindings file changed but is invalid, kept the old bindings: ${(e as Error).message}`);
+    }
+    if (JSON.stringify(next) === JSON.stringify(bindings)) return;
+    for (const k of Object.keys(bindings)) delete bindings[k];
+    Object.assign(bindings, next);
+    log(`bindings changed · ${Object.keys(bindings).length} bound case(s)`);
+    for (const [caseId, disputeId] of Object.entries(bindings)) log(`  ${caseId} → ${disputeId}`);
+    void hostedApp?.bindingsChanged();
+  });
+}
 
 const stop = () => {
   if (tokenFile) rmSync(tokenFile, { force: true });
+  if (watchBindings) unwatchFile(bindingsFile);
   server.close(() => process.exit(0));
   server.closeAllConnections();
 };
