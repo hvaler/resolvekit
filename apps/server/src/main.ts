@@ -15,7 +15,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, unwatchFil
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, StaticSite, envInt, publicOrigins } from '@resolvekit/hosting';
+import { DailyCounters, StaticSite, envInt, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { FileAnalysisStore, RateLimiter, modelFromEnv } from '@resolvekit/analyst/node';
 import { AnalystService, InputPins } from './analysis.ts';
@@ -28,7 +28,13 @@ import { MeterMcpClient } from './metermcp.ts';
 import { toNodeListener } from './node.ts';
 
 const hosted = process.env.RESOLVEKIT_MODE === 'hosted';
-const env: PayPalEnv = process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox';
+// Hosted (public) mode runs on the PayPal sandbox only: anything else refuses to start (live needs an explicit opt-in).
+const paypalEnv = paypalEnvFor(process.env, hosted);
+if (!paypalEnv.ok) {
+  console.error(`ResolveKit server not started: ${paypalEnv.error}`);
+  process.exit(1);
+}
+const env: PayPalEnv = paypalEnv.env;
 const clientId = process.env.PAYPAL_CLIENT_ID;
 const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
 const paypal = clientId && clientSecret ? new PayPalClient({ clientId, clientSecret, env, timeoutMs: 30_000 }) : null;

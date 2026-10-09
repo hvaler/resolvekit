@@ -7,6 +7,8 @@ import { gunzipSync } from 'node:zlib';
 import {
   DailyCounters,
   KeyedLimiter,
+  LIVE_OPT_IN,
+  paypalEnvFor,
   PEER_HEADER,
   StaticSite,
   clientIp,
@@ -170,4 +172,22 @@ test('DailyCounters: concurrent takes never exceed the cap; release refunds toda
   c.take('send');
   c.release('send', day); // yesterday's refund does not touch today's count
   assert.equal(c.remaining('send'), 2);
+});
+
+test('env guard: hosted mode starts only on PAYPAL_ENV=sandbox; live needs the explicit opt-in; render.yaml never sets it', async () => {
+  assert.deepEqual(paypalEnvFor({ PAYPAL_ENV: 'sandbox' }, true), { ok: true, env: 'sandbox' });
+  for (const v of [undefined, 'live', 'Sandbox', 'prod', '']) {
+    const r = paypalEnvFor(v === undefined ? {} : { PAYPAL_ENV: v }, true);
+    assert.equal(r.ok, false, String(v));
+  }
+  assert.equal(paypalEnvFor({ PAYPAL_ENV: 'live', [LIVE_OPT_IN.name]: 'yes' }, true).ok, false);
+  assert.deepEqual(paypalEnvFor({ PAYPAL_ENV: 'live', [LIVE_OPT_IN.name]: LIVE_OPT_IN.value }, true), { ok: true, env: 'live' });
+  // Local mode is unchanged.
+  assert.deepEqual(paypalEnvFor({}, false), { ok: true, env: 'sandbox' });
+  // The deploy blueprint: both services on the sandbox, and no live opt-in anywhere.
+  const { readFileSync } = await import('node:fs');
+  const yaml = readFileSync(new URL('../../../render.yaml', import.meta.url), 'utf8');
+  const values = [...yaml.matchAll(/key: PAYPAL_ENV\s*\n\s*value: (\S+)/g)].map((m) => m[1]);
+  assert.deepEqual(values, ['sandbox', 'sandbox']);
+  assert.ok(!yaml.includes(LIVE_OPT_IN.name));
 });

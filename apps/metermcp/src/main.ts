@@ -18,7 +18,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, envInt, publicOrigins } from '@resolvekit/hosting';
+import { DailyCounters, envInt, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { createApp, type HostedMeterOptions } from './app.ts';
 import { Ledger } from './ledger.ts';
@@ -26,7 +26,13 @@ import { Meter } from './meter.ts';
 import { toNodeListener } from './node.ts';
 
 const hosted = process.env.METERMCP_MODE === 'hosted';
-const env: PayPalEnv = process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox';
+// Hosted (public) mode runs on the PayPal sandbox only: anything else refuses to start (live needs an explicit opt-in).
+const paypalEnv = paypalEnvFor(process.env, hosted);
+if (!paypalEnv.ok) {
+  console.error(`MeterMCP not started: ${paypalEnv.error}`);
+  process.exit(1);
+}
+const env: PayPalEnv = paypalEnv.env;
 const clientId = process.env.PAYPAL_CLIENT_ID;
 const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
 const paypal = clientId && clientSecret ? new PayPalClient({ clientId, clientSecret, env, timeoutMs: 30_000 }) : null;

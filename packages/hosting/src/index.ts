@@ -364,6 +364,26 @@ export class StaticSite {
 // ---------------------------------------------------------------------------------------------------------------
 // Environment
 
+/** The explicit extra opt-in that lets a HOSTED service talk to live PayPal (never set in render.yaml). */
+export const LIVE_OPT_IN = { name: 'RESOLVEKIT_ALLOW_LIVE_PAYPAL', value: 'yes-real-money' } as const;
+
+/**
+ * Which PayPal environment a service may use. Hosted (public) mode refuses to start unless PAYPAL_ENV is exactly
+ * "sandbox", or "live" together with {@link LIVE_OPT_IN}: a missing, misspelt or changed value never silently becomes
+ * live (or sandbox). Local mode keeps its behaviour: "live" only when PAYPAL_ENV says so, sandbox otherwise.
+ */
+export function paypalEnvFor(env: NodeJS.ProcessEnv, hosted: boolean): { ok: true; env: 'sandbox' | 'live' } | { ok: false; error: string } {
+  const v = env.PAYPAL_ENV;
+  if (!hosted) return { ok: true, env: v === 'live' ? 'live' : 'sandbox' };
+  if (v === 'sandbox') return { ok: true, env: 'sandbox' };
+  if (v === 'live') {
+    return env[LIVE_OPT_IN.name] === LIVE_OPT_IN.value
+      ? { ok: true, env: 'live' }
+      : { ok: false, error: `PAYPAL_ENV=live in hosted mode needs ${LIVE_OPT_IN.name}=${LIVE_OPT_IN.value} as well (this demo runs on the PayPal sandbox)` };
+  }
+  return { ok: false, error: `hosted mode needs PAYPAL_ENV=sandbox (got ${v === undefined ? 'nothing' : JSON.stringify(v.slice(0, 20))})` };
+}
+
 /** A positive integer from the environment, or the default. */
 export function envInt(env: NodeJS.ProcessEnv, name: string, dflt: number): number {
   const v = Number(env[name]);
