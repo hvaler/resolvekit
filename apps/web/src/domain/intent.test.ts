@@ -84,3 +84,27 @@ describe('LocalIntentClient (no server: simulator only)', () => {
     expect((await l.approve(i)).status).toBe('approved');
   });
 });
+
+describe('M3: the audit log shows the server’s events', () => {
+  it('reads the case’s events from the server and words each one (who, what, request id, hash)', async () => {
+    const { HttpIntentClient, auditLine } = await import('./intentClient');
+    const events = [
+      { at: '2026-10-09T08:01:00Z', caseId: 'X', kind: 'intent_approved', actor: 'demo session abc123', intentId: 'int-0123456789abcdef', contentHash: 'f'.repeat(64) },
+      { at: '2026-10-09T08:02:00Z', caseId: 'X', kind: 'sent', actor: 'demo session abc123', requestId: 'rk-int-1', detail: 'accepted by PayPal' },
+    ];
+    const seen: string[] = [];
+    const fetch = (async (url: string) => {
+      seen.push(url);
+      return new Response(JSON.stringify({ events }), { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    const got = await new HttpIntentClient({ fetch }).events('X');
+    expect(seen).toEqual(['/api/disputes/X/audit']);
+    expect(got!.map(auditLine)).toEqual([
+      { time: '08:01', who: 'demo session abc123', what: 'Approved intent int-01234567… · content sha256 ffffffffffff…' },
+      { time: '08:02', who: 'demo session abc123', what: 'PayPal accepted the send · request rk-int-1' },
+    ]);
+    // A server that cannot answer: no server log (the flow falls back to this browser's, labelled as such).
+    const down = (async () => new Response('{}', { status: 403 })) as unknown as typeof globalThis.fetch;
+    expect(await new HttpIntentClient({ fetch: down }).events('X')).toBeNull();
+  });
+});

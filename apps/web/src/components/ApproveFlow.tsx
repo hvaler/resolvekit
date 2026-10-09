@@ -6,7 +6,7 @@ import { lockedReason } from '../domain/demoClient';
 import { formatCount, notesCountLabel } from '../domain/draft';
 import { EVIDENCE_TYPE_LABEL } from '../domain/evidenceTypes';
 import { intentSubmission, type IntentRequest, type SubmissionIntent } from '../domain/intent';
-import { IntentError, LocalIntentClient, type IntentSource } from '../domain/intentClient';
+import { IntentError, LocalIntentClient, auditLine, type IntentSource, type ServerAuditEvent } from '../domain/intentClient';
 import { safeRetry, submitWithReadBack, type SendPhase, type SendResult } from '../domain/gateway';
 import type { GatewayMode } from '../domain/httpGateway';
 import { quoteFor } from '../domain/quotes';
@@ -204,6 +204,8 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
   // Exactly the intent's content; the real gateway sends only its id.
   const submission = useMemo(() => intentSubmission(composed), [composed]);
   const [approveError, setApproveError] = useState<string | null>(null);
+  /** The server's audit trail of this case (approvals, sends, PayPal's answers): the record the log shows. */
+  const [serverEvents, setServerEvents] = useState<ServerAuditEvent[] | null>(null);
   const [approving, setApproving] = useState(false);
   const [flow, setFlow] = useState<Flow>('review');
   const [checked, setChecked] = useState(false);
@@ -292,6 +294,7 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
     );
     if (!mounted.current) return;
     setResult(r);
+    void source.events(id).then((ev) => mounted.current && setServerEvents(ev));
     setFlow(r.kind === 'recorded' ? 'recorded' : 'error');
   };
 
@@ -621,7 +624,10 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
         )}
 
         {flow === 'recorded' && result?.kind === 'recorded' && (
-          <Recorded mode={mode} result={result} submission={submission} approvedAt={approvedAt} actionsBefore={actionsBefore} audit={[...c.audit, ...(audit[id] ?? [])]} onClose={onClose} />
+          <Recorded mode={mode} result={result} submission={submission} approvedAt={approvedAt} actionsBefore={actionsBefore} audit={serverEvents ? [...c.audit, ...serverEvents.map(auditLine)] : [...c.audit, ...(audit[id] ?? [])]}
+            auditSource={serverEvents ? 'server' : 'browser'}
+            onClose={onClose}
+          />
         )}
       </div>
     </div>
@@ -666,6 +672,7 @@ function Recorded({
   approvedAt,
   actionsBefore,
   audit,
+  auditSource,
   onClose,
 }: {
   mode: GatewayMode;
@@ -674,6 +681,8 @@ function Recorded({
   approvedAt: Date | null;
   actionsBefore: readonly ActionCode[];
   audit: { time: string; who: string; what: string }[];
+  /** Where the log comes from: the server's persisted record, or (no server) this browser only. */
+  auditSource: 'server' | 'browser';
   onClose: () => void;
 }) {
   const snap = result.snapshot;
@@ -758,7 +767,12 @@ function Recorded({
               </ul>
             </div>
             <div className="flex flex-col gap-2">
-              <h3 className="m-0 text-[14px] font-semibold">Audit log</h3>
+              <h3 className="m-0 text-[14px] font-semibold">
+                Audit log{' '}
+                <span className="text-[12px] font-normal text-ink-3">
+                  {auditSource === 'server' ? '· recorded by the ResolveKit server' : '· this browser only (no server)'}
+                </span>
+              </h3>
               <ol className="m-0 flex list-none flex-col gap-1.5 border-l border-line-2 py-0 pl-3 pr-0">
                 {audit.map((l, i) => (
                   <li key={i} className="grid grid-cols-[40px_minmax(0,1fr)] gap-2 text-label">

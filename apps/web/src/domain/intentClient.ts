@@ -20,6 +20,27 @@ export interface ServerAuditEvent {
   detail?: string;
 }
 
+const short = (h: string | undefined) => (h ? `${h.slice(0, 12)}…` : '');
+
+/** One server audit event as a line of the audit log (UTC time, who, what). */
+export function auditLine(e: ServerAuditEvent): { time: string; who: string; what: string } {
+  const d = new Date(e.at);
+  const time = Number.isNaN(d.getTime()) ? '' : `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  const intent = e.intentId ? `intent ${e.intentId.slice(0, 12)}…` : '';
+  const what: Record<string, string> = {
+    intent_created: `Composed ${intent} · content sha256 ${short(e.contentHash)}`,
+    intent_approved: `Approved ${intent} · content sha256 ${short(e.contentHash)}`,
+    intent_cancelled: `Cancelled ${intent}`,
+    intent_invalidated: `${intent} no longer sendable: ${e.detail ?? ''}`,
+    send_started: `Sent provide_evidence${e.disputeId ? ` to dispute ${e.disputeId}` : ''} · request ${e.requestId ?? ''}`,
+    sent: `PayPal accepted the send · request ${e.requestId ?? ''}`,
+    send_failed: `Send failed: ${e.detail ?? ''} · request ${e.requestId ?? ''}`,
+    send_refused: `Send refused before PayPal: ${e.detail ?? ''}`,
+    edit_rechecked: `Re-checked an edited sentence · ${e.detail ?? ''}`,
+  };
+  return { time, who: e.actor, what: (what[e.kind] ?? `${e.kind}${e.detail ? `: ${e.detail}` : ''}`).trim() };
+}
+
 /** A refusal by the server, with the reasons it gave (blockers, binding problems). */
 export class IntentError extends Error {
   readonly status: number;
