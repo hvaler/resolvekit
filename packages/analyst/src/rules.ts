@@ -36,7 +36,7 @@ const SERVICE_NOT_RECEIVED: Requirement[] = [
  */
 const NOT_AS_DESCRIBED: Requirement[] = [
   { id: 'description', label: 'Listing as the buyer saw it', critical: true, hint: 'the listing or product description in force when the buyer paid' },
-  { id: 'match', label: 'Item sent matches the listing', critical: false, hint: 'a record of the very unit shipped (packing photo, measurement, batch) that matches the listing; catalogue photos alone do not show the unit sent' },
+  { id: 'match', label: 'Item sent matches the listing', critical: false, hint: 'a record of the very unit shipped (packing photo, pick list or warehouse scan, measurement, batch) that matches the listing; catalogue photos alone do not show the unit sent; a fulfilment record showing a different variant, SKU, colour or size than the listing or order: contradicts' },
   { id: 'complaint', label: 'What the buyer says differs', critical: false, hint: 'the buyer’s own description of the difference, compared with the listing (a conflicting value: contradicts)' },
   { id: 'returns', label: 'Return policy', critical: false, hint: 'the return policy that applies to the order' },
   { id: 'payment', label: 'Order and payment for the disputed amount', critical: false, hint: 'an order or capture record whose amount equals the disputed amount' },
@@ -88,6 +88,17 @@ export function requirementsFor(d: Pick<DisputeContext, 'reason' | 'buyerItemTyp
   return { title: 'What this dispute needs', items: GENERIC };
 }
 
+/**
+ * Requirements that decide the dispute on their own: when the case file contradicts one of them, the merchant's own
+ * records back the buyer, so no defence is recommended. Only where that is unambiguous: the unit sent against the
+ * listing ("not as described") and the capture against the approved amount ("incorrect amount"). A delivery-address
+ * difference in "not received" is not decisive (a unit written two ways does not undo a signed delivery).
+ */
+const DECISIVE: Record<string, readonly string[]> = {
+  MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED: ['match'],
+  INCORRECT_AMOUNT: ['within'],
+};
+
 export interface RecommendationInput {
   dispute: DisputeContext;
   checklist: readonly ChecklistItem[];
@@ -105,7 +116,16 @@ export function decideAction(x: RecommendationInput): { action: RecommendedActio
   const requested = x.dispute.requestedEvidence;
   const option = requested ? x.dispute.evidenceOptions.find((o) => o.type === requested) : undefined;
   const canProve = !!requested && !!option?.satisfied;
+  const decisive = DECISIVE[x.dispute.reason] ?? [];
+  const undermined = x.checklist.filter((i) => decisive.includes(i.id) && i.status === 'contradicts');
 
+  if (undermined.length > 0) {
+    const names = undermined.map((i) => i.label.toLowerCase()).join(', ');
+    const why = `The case file contradicts "${names}": the merchant's own records back the buyer`;
+    if (allowed('accept_claim')) return { action: 'accept_claim', rule: `${why}; accepting the claim refunds the buyer` };
+    if (allowed('make_offer')) return { action: 'make_offer', rule: `${why}; offer a refund` };
+    if (allowed('send_message')) return { action: 'send_message', rule: `${why}; explain and settle with the buyer` };
+  }
   if (allowed('provide_evidence') && canProve && missingCritical.length === 0 && supported > 0) {
     return { action: 'provide_evidence', rule: `PayPal requests ${requested}; the case file has what it needs, no critical requirement is missing, and ${supported} sentence(s) are supported` };
   }

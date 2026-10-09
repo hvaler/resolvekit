@@ -5,20 +5,20 @@
   "requestedModel": "gemini-3.8-flash",
   "provider": "gemini",
   "model": "gemini-3.8-flash",
-  "createdAt": "2026-10-09T19:30:43.344Z",
+  "createdAt": "2026-10-09T20:07:12.100Z",
   "facts": [
     {
       "id": "F1",
       "doc": "D",
       "quote": "Dispute PP-R-PLN-10189901 · reason MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
-      "statement": "The dispute identifier is PP-R-PLN-10189901, opened for merchandise or service not as described.",
+      "statement": "Dispute PP-R-PLN-10189901 was filed for merchandise or service not as described.",
       "at": null
     },
     {
       "id": "F2",
       "doc": "D",
       "quote": "Reason as shown to the merchant: Buyer says the lamp is smaller than described",
-      "statement": "The buyer claims the lamp is smaller than described.",
+      "statement": "The reason shown indicates the buyer says the lamp is smaller than described.",
       "at": null
     },
     {
@@ -67,21 +67,21 @@
       "id": "F9",
       "doc": "E1",
       "quote": "Base: 35 cm tall · shade Ø 30 cm, packed separately in the same box",
-      "statement": "The base is 35 cm tall and the shade is packed separately.",
+      "statement": "The base is 35 cm tall, and the shade is packed separately.",
       "at": null
     },
     {
       "id": "F10",
       "doc": "E1",
       "quote": "Price 86.00 USD · listed 12 Aug 2026",
-      "statement": "The item price was 86.00 USD, listed on 12 August 2026.",
+      "statement": "The item was listed on 12 August 2026 for 86.00 USD.",
       "at": null
     },
     {
       "id": "F11",
       "doc": "E1",
       "quote": "Snapshot taken at checkout, 24 Sep 2026 16:02 UTC",
-      "statement": "A listing snapshot was taken at checkout on 24 September 2026 at 16:02 UTC.",
+      "statement": "The listing snapshot was taken at checkout on 24 September 2026.",
       "at": "2026-09-24T16:02:00.000Z"
     },
     {
@@ -102,91 +102,91 @@
       "id": "F14",
       "doc": "E2",
       "quote": "Ship to: 21 Example Road, Exampleton EX4 •••",
-      "statement": "The shipping address is 21 Example Road, Exampleton EX4.",
+      "statement": "The shipping address is 21 Example Road, Exampleton.",
       "at": null
     },
     {
       "id": "F15",
       "doc": "E2",
       "quote": "Buyer: t•••@example.com",
-      "statement": "The buyer email address is t•••@example.com.",
+      "statement": "The buyer email is t•••@example.com.",
       "at": null
     },
     {
       "id": "F16",
       "doc": "E3",
       "quote": "Capture 1PL98901KD4410276",
-      "statement": "The payment capture identifier is 1PL98901KD4410276.",
+      "statement": "The payment capture ID is 1PL98901KD4410276.",
       "at": null
     },
     {
       "id": "F17",
       "doc": "E3",
       "quote": "86.00 USD · COMPLETED",
-      "statement": "Payment of 86.00 USD was completed.",
+      "statement": "The payment of 86.00 USD is completed.",
       "at": null
     },
     {
       "id": "F18",
       "doc": "E3",
       "quote": "Captured 24 Sep 2026 16:03 UTC",
-      "statement": "Payment was captured on 24 September 2026 at 16:03 UTC.",
+      "statement": "The payment was captured on 24 September 2026 at 16:03 UTC.",
       "at": "2026-09-24T16:03:00.000Z"
     },
     {
       "id": "F19",
       "doc": "E4",
       "quote": "Tracking 771234569981 · FedEx Ground · 1 box, 4.2 kg",
-      "statement": "FedEx Ground tracking number is 771234569981 for one 4.2 kg box.",
+      "statement": "FedEx Ground tracked one box weighing 4.2 kg under tracking 771234569981.",
       "at": null
     },
     {
       "id": "F20",
       "doc": "E4",
       "quote": "Shipped 25 Sep 2026 11:30 UTC",
-      "statement": "The package was shipped on 25 September 2026 at 11:30 UTC.",
+      "statement": "The shipment occurred on 25 September 2026 at 11:30 UTC.",
       "at": "2026-09-25T11:30:00.000Z"
     },
     {
       "id": "F21",
       "doc": "E4",
       "quote": "Delivered 29 Sep 2026 14:20 UTC · signed \"T. E.\"",
-      "statement": "The package was delivered on 29 September 2026 at 14:20 UTC, signed T. E.",
+      "statement": "Delivery occurred on 29 September 2026 at 14:20 UTC, signed T. E.",
       "at": "2026-09-29T14:20:00.000Z"
     },
     {
       "id": "F22",
       "doc": "E5",
       "quote": "\"The lamp is only 35 cm tall. The listing says 45 cm.\"",
-      "statement": "The buyer claims the lamp is only 35 cm tall, not 45 cm.",
+      "statement": "The buyer stated the lamp is 35 cm tall, while the listing states 45 cm.",
       "at": null
     },
     {
       "id": "F23",
       "doc": "E5",
       "quote": "Buyer photo lamp-tape.jpg: a tape measure against the lamp, no shade on it",
-      "statement": "Buyer provided a photo showing a tape measure against the lamp without a shade.",
+      "statement": "The buyer provided a photo showing a tape measure against the lamp without a shade.",
       "at": null
     },
     {
       "id": "F24",
       "doc": "E5",
       "quote": "From t•••@example.com · 1 Oct 2026 12:05 UTC",
-      "statement": "The buyer sent a message on 1 October 2026 at 12:05 UTC.",
+      "statement": "The message was sent by t•••@example.com on 1 October 2026 at 12:05 UTC.",
       "at": "2026-10-01T12:05:00.000Z"
     },
     {
       "id": "F25",
       "doc": "E6",
       "quote": "Dispatch check · order #10498 · 25 Sep 2026 09:10 UTC",
-      "statement": "A dispatch check for order 10498 occurred on 25 September 2026 at 09:10 UTC.",
+      "statement": "The dispatch check for order 10498 occurred on 25 September 2026 at 09:10 UTC.",
       "at": "2026-09-25T09:10:00.000Z"
     },
     {
       "id": "F26",
       "doc": "E6",
       "quote": "Base measured 35 cm; with shade fitted 45 cm",
-      "statement": "The base measured 35 cm and 45 cm with shade fitted.",
+      "statement": "Warehouse check measured base at 35 cm and 45 cm with shade fitted.",
       "at": null
     },
     {
@@ -200,7 +200,7 @@
       "id": "F28",
       "doc": "E6",
       "quote": "Packing photo PLN-10498-1.jpg on file: base and shade side by side",
-      "statement": "A packing photo is on file showing the base and shade side by side.",
+      "statement": "A packing photo on file shows the base and shade side by side.",
       "at": null
     }
   ],
@@ -209,7 +209,7 @@
     {
       "at": "2026-09-24T16:02:00.000Z",
       "title": "Listing snapshot taken",
-      "sub": "Snapshot at checkout",
+      "sub": "Checkout snapshot for listing #L-3140",
       "doc": "E1",
       "quote": "Snapshot taken at checkout, 24 Sep 2026 16:02 UTC",
       "negated": false
@@ -233,14 +233,14 @@
     {
       "at": "2026-09-25T09:10:00.000Z",
       "title": "Dispatch check completed",
-      "sub": "Order #10498 measured and checked",
+      "sub": "Order #10498 warehouse verification",
       "doc": "E6",
       "quote": "Dispatch check · order #10498 · 25 Sep 2026 09:10 UTC",
       "negated": false
     },
     {
       "at": "2026-09-25T11:30:00.000Z",
-      "title": "Package shipped",
+      "title": "Shipment dispatched",
       "sub": "FedEx Ground tracking 771234569981",
       "doc": "E4",
       "quote": "Shipped 25 Sep 2026 11:30 UTC",
@@ -249,15 +249,15 @@
     {
       "at": "2026-09-29T14:20:00.000Z",
       "title": "Package delivered",
-      "sub": "Signed by T. E.",
+      "sub": "Delivered and signed by T. E.",
       "doc": "E4",
       "quote": "Delivered 29 Sep 2026 14:20 UTC · signed \"T. E.\"",
       "negated": false
     },
     {
       "at": "2026-10-01T12:05:00.000Z",
-      "title": "Buyer sent message",
-      "sub": "Complaint regarding lamp height",
+      "title": "Buyer message sent",
+      "sub": "Dispute message regarding lamp height",
       "doc": "E5",
       "quote": "From t•••@example.com · 1 Oct 2026 12:05 UTC",
       "negated": false
@@ -265,32 +265,13 @@
     {
       "at": "2026-10-01T12:05:00.000Z",
       "title": "Dispute opened",
-      "sub": "Dispute PP-R-PLN-10189901 for 86.00 USD",
+      "sub": "Dispute PP-R-PLN-10189901 filed",
       "doc": "D",
       "quote": "Opened: 1 Oct 2026 12:05:00 UTC",
       "negated": false
     }
   ],
-  "contradictions": [
-    {
-      "id": "C1",
-      "title": "Disputed height of lamp",
-      "shortName": "lamp height contradiction",
-      "a": {
-        "doc": "E1",
-        "quote": "Height: 45 cm with shade fitted",
-        "value": "45 cm"
-      },
-      "b": {
-        "doc": "E5",
-        "quote": "\"The lamp is only 35 cm tall. The listing says 45 cm.\"",
-        "value": "35 cm"
-      },
-      "explanation": "Listing L-3140 specifies the height as 45 cm with shade fitted, whereas the buyer claims the lamp is only 35 cm tall. The dispatch check and buyer photo show the base alone is 35 cm, while 45 cm is reached with the shade fitted. It is the merchant's call.",
-      "sentenceId": "S3",
-      "rewrite": "The listing states the height is 45 cm with shade fitted, whereas the buyer claims it is only 35 cm tall."
-    }
-  ],
+  "contradictions": [],
   "checklist": {
     "title": "What \"not as described\" disputes need",
     "items": [
@@ -352,7 +333,7 @@
         "id": "complaint",
         "label": "What the buyer says differs",
         "critical": false,
-        "status": "contradicts",
+        "status": "present",
         "evidence": [
           {
             "doc": "D",
@@ -363,6 +344,10 @@
             "quote": "Height: 45 cm with shade fitted"
           },
           {
+            "doc": "E1",
+            "quote": "Base: 35 cm tall · shade Ø 30 cm, packed separately in the same box"
+          },
+          {
             "doc": "E5",
             "quote": "\"The lamp is only 35 cm tall. The listing says 45 cm.\""
           },
@@ -371,7 +356,7 @@
             "quote": "Buyer photo lamp-tape.jpg: a tape measure against the lamp, no shade on it"
           }
         ],
-        "contradictionId": "C1"
+        "contradictionId": null
       },
       {
         "id": "returns",
@@ -419,9 +404,45 @@
   "sentences": [
     {
       "id": "S1",
-      "text": "The buyer ordered one ceramic table lamp under listing L-3140 for 86.00 USD, and payment was completed on 24 September 2026.",
+      "text": "The listing snapshot shows the ceramic table lamp measures 35 cm at the base and 45 cm tall with the shade fitted.",
       "noteId": null,
       "citations": [
+        {
+          "doc": "E1",
+          "quote": "Listing #L-3140 · Ceramic table lamp, sage glaze",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Height: 45 cm with shade fitted",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Base: 35 cm tall · shade Ø 30 cm, packed separately in the same box",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Snapshot taken at checkout, 24 Sep 2026 16:02 UTC",
+          "valid": true
+        }
+      ],
+      "verdict": "needs_review",
+      "reason": "Why: The evidence states \"Base: 35 cm tall\", whereas the sentence describes it as measuring 35 cm at the base, which could imply width rather than height.",
+      "decidedBy": "model",
+      "rewrite": "The listing snapshot shows the ceramic table lamp's base is 35 cm tall and total height is 45 cm with the shade fitted."
+    },
+    {
+      "id": "S2",
+      "text": "Order #10498 for 86.00 USD was successfully captured under payment ID 1PL98901KD4410276, matching the disputed amount.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "D",
+          "quote": "Disputed amount: 86.00 USD",
+          "valid": true
+        },
         {
           "doc": "E2",
           "quote": "Order #10498 · placed 24 Sep 2026 16:02 UTC",
@@ -430,6 +451,11 @@
         {
           "doc": "E2",
           "quote": "1 × Ceramic table lamp, sage (listing #L-3140) · 86.00 USD",
+          "valid": true
+        },
+        {
+          "doc": "E3",
+          "quote": "Capture 1PL98901KD4410276",
           "valid": true
         },
         {
@@ -449,50 +475,8 @@
       "rewrite": null
     },
     {
-      "id": "S2",
-      "text": "Our listing specifies the base is 35 cm tall and the overall height is 45 cm with the shade fitted.",
-      "noteId": null,
-      "citations": [
-        {
-          "doc": "E1",
-          "quote": "Height: 45 cm with shade fitted",
-          "valid": true
-        },
-        {
-          "doc": "E1",
-          "quote": "Base: 35 cm tall · shade Ø 30 cm, packed separately in the same box",
-          "valid": true
-        }
-      ],
-      "verdict": "needs_review",
-      "reason": "Why: it relies on E1 (\"45 cm\"), which E5 contradicts (\"35 cm\"). State both or resolve the contradiction.",
-      "decidedBy": "deterministic",
-      "rewrite": null
-    },
-    {
       "id": "S3",
-      "text": "The buyer claims the lamp is only 35 cm tall, providing a photograph of the lamp measured without its shade.",
-      "noteId": null,
-      "citations": [
-        {
-          "doc": "E5",
-          "quote": "\"The lamp is only 35 cm tall. The listing says 45 cm.\"",
-          "valid": true
-        },
-        {
-          "doc": "E5",
-          "quote": "Buyer photo lamp-tape.jpg: a tape measure against the lamp, no shade on it",
-          "valid": true
-        }
-      ],
-      "verdict": "needs_review",
-      "reason": "Why: it relies on E5 (\"35 cm\"), which E1 contradicts (\"45 cm\"). State both or resolve the contradiction.",
-      "decidedBy": "deterministic",
-      "rewrite": null
-    },
-    {
-      "id": "S4",
-      "text": "During dispatch check, the unit measured 35 cm for the base and 45 cm with the shade fitted, which was packed in its own inner carton.",
+      "text": "Our warehouse dispatch check confirmed the base measured 35 cm and 45 cm with the shade fitted, packed in its own inner carton.",
       "noteId": null,
       "citations": [
         {
@@ -522,8 +506,8 @@
       "rewrite": null
     },
     {
-      "id": "S5",
-      "text": "We delivered the package via FedEx Ground on 29 September 2026 with signature confirmation.",
+      "id": "S4",
+      "text": "FedEx Ground delivered the shipment on 29 September 2026 under tracking 771234569981 with signature confirmation.",
       "noteId": null,
       "citations": [
         {
@@ -539,6 +523,37 @@
         {
           "doc": "E4",
           "quote": "Delivered 29 Sep 2026 14:20 UTC · signed \"T. E.\"",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S5",
+      "text": "The buyer claims the lamp is only 35 cm tall, submitting a photo showing a tape measure against the lamp without a shade.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "D",
+          "quote": "Reason as shown to the merchant: Buyer says the lamp is smaller than described",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "\"The lamp is only 35 cm tall. The listing says 45 cm.\"",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "Buyer photo lamp-tape.jpg: a tape measure against the lamp, no shade on it",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "From t•••@example.com · 1 Oct 2026 12:05 UTC",
           "valid": true
         }
       ],
@@ -573,17 +588,17 @@
           "valid": true
         }
       ],
-      "verdict": "needs_review",
-      "reason": "Why: it relies on E1 (\"45 cm\"), which E5 contradicts (\"35 cm\"). State both or resolve the contradiction.",
-      "decidedBy": "deterministic",
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
       "rewrite": null
     }
   ],
   "injections": [],
   "recommendation": {
     "action": "provide_evidence",
-    "rule": "PayPal requests OTHER; the case file has what it needs, no critical requirement is missing, and 3 sentence(s) are supported",
-    "explanation": "You have documented evidence showing the buyer ordered one ceramic table lamp under listing L-3140, dispatch checks confirming its measurements and packing, and delivery via FedEx Ground with signature confirmation on 29 September 2026. Submitting these verified details fulfills PayPal's request for evidence to address the not-as-described claim. The decision is yours, and PayPal decides the outcome."
+    "rule": "PayPal requests OTHER; the case file has what it needs, no critical requirement is missing, and 5 sentence(s) are supported",
+    "explanation": "Providing evidence is appropriate because order #10498 for 86.00 USD was delivered via FedEx Ground under tracking 771234569981, and dispatch records verify the lamp measures 45 cm tall as listed when fitted with its shade rather than the 35 cm base shown in the buyer's photo. The decision is yours, and PayPal decides the outcome."
   },
   "usage": {
     "calls": [
@@ -591,64 +606,73 @@
         "stage": "screen",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 1295,
-        "outputTokens": 4,
-        "thinkingTokens": 135,
-        "ms": 2843
+        "inputTokens": 1281,
+        "outputTokens": 9,
+        "thinkingTokens": 0,
+        "ms": 1687
       },
       {
         "stage": "extract",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 1668,
-        "outputTokens": 2439,
+        "inputTokens": 1636,
+        "outputTokens": 2440,
         "thinkingTokens": 0,
-        "ms": 14166
+        "ms": 14686
       },
       {
         "stage": "analyze",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 2910,
-        "outputTokens": 1665,
+        "inputTokens": 2937,
+        "outputTokens": 1498,
         "thinkingTokens": 0,
-        "ms": 11574
+        "ms": 9987
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 618,
-        "outputTokens": 48,
-        "thinkingTokens": 0,
-        "ms": 2465
-      },
-      {
-        "stage": "verify",
-        "provider": "gemini",
-        "model": "gemini-3.8-flash",
-        "inputTokens": 542,
-        "outputTokens": 48,
-        "thinkingTokens": 0,
-        "ms": 2520
-      },
-      {
-        "stage": "verify",
-        "provider": "gemini",
-        "model": "gemini-3.8-flash",
-        "inputTokens": 616,
-        "outputTokens": 48,
-        "thinkingTokens": 0,
-        "ms": 2716
-      },
-      {
-        "stage": "verify",
-        "provider": "gemini",
-        "model": "gemini-3.8-flash",
-        "inputTokens": 586,
+        "inputTokens": 600,
         "outputTokens": 19,
         "thinkingTokens": 0,
-        "ms": 2073
+        "ms": 1376
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 612,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 1865
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 665,
+        "outputTokens": 19,
+        "thinkingTokens": 0,
+        "ms": 2301
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 605,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 1719
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 596,
+        "outputTokens": 115,
+        "thinkingTokens": 430,
+        "ms": 5249
       },
       {
         "stage": "verify",
@@ -657,29 +681,20 @@
         "inputTokens": 527,
         "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 2252
-      },
-      {
-        "stage": "verify",
-        "provider": "gemini",
-        "model": "gemini-3.8-flash",
-        "inputTokens": 548,
-        "outputTokens": 19,
-        "thinkingTokens": 0,
-        "ms": 13164
+        "ms": 3381
       },
       {
         "stage": "explain",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 455,
-        "outputTokens": 90,
+        "inputTokens": 516,
+        "outputTokens": 92,
         "thinkingTokens": 0,
-        "ms": 11961
+        "ms": 2213
       }
     ],
-    "inputTokens": 9765,
-    "outputTokens": 4428,
-    "thinkingTokens": 135
+    "inputTokens": 9975,
+    "outputTokens": 4336,
+    "thinkingTokens": 430
   }
 }

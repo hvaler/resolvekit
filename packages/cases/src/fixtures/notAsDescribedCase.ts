@@ -3,7 +3,10 @@ import type { CaseFile, Evidence } from '../../../../apps/web/src/domain/types.t
 /**
  * Synthetic "not as described" case at the claim stage: a linen tote listed as natural (undyed) linen; the buyer says
  * the one received is navy. The case file has the listing, the catalogue photos and the return policy, but no photo
- * of the unit that was shipped: the gap the merchant has to close. All names, addresses and identifiers are fictional.
+ * of the unit that was shipped: the gap the merchant has to close. The warehouse pick list (E7) records the navy SKU
+ * for this order while the listing and the order are the natural one: the merchant's own records contradict each other,
+ * and the analyst has to say so instead of drafting a defence they don't support. All names, addresses and identifiers
+ * are fictional.
  *
  * PayPal's reasons-and-evidence table: for MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED the seller sends notes or
  * documents (evidence type OTHER) such as the product description and the return policy, or a refund ID.
@@ -18,7 +21,8 @@ const evidence: Evidence[] = [
       kind: 'lines',
       lines: [
         { text: 'Listing #L-2207 · Linen tote, natural', fragment: 'E1.title' },
-        { text: 'Colour: natural (undyed flax linen); no other colours offered', fragment: 'E1.colour' },
+        { text: 'Colour: natural (undyed flax linen) · SKU TOTE-NAT-38', fragment: 'E1.colour' },
+        { text: 'A navy version (SKU TOTE-NAV-38) is sold under listing #L-2231', fragment: 'E1.variant' },
         { text: 'Size 38 × 42 cm · cotton webbing handles', fragment: 'E1.size' },
         { text: 'Price 24.50 USD · listed 2 Sep 2026, unchanged since', fragment: 'E1.price' },
         { text: 'Snapshot taken at checkout, 29 Sep 2026 10:14 UTC', fragment: 'E1.snap' },
@@ -34,7 +38,7 @@ const evidence: Evidence[] = [
       kind: 'lines',
       lines: [
         { text: 'Order #10511 · placed 29 Sep 2026 10:14 UTC', fragment: 'E2.date' },
-        { text: '1 × Linen tote, natural (listing #L-2207) · 24.50 USD', fragment: 'E2.amt' },
+        { text: '1 × Linen tote, natural (listing #L-2207, SKU TOTE-NAT-38) · 24.50 USD', fragment: 'E2.amt' },
         { text: 'Shipped 30 Sep 2026 · UPS 1Z999AA10123459921 · delivered 2 Oct 2026', fragment: 'E2.ship' },
         { text: 'Ship to: 7 Example Lane, Exampleton EX2 •••', fragment: 'E2.addr' },
         { text: 'Buyer: m•••@example.com' },
@@ -101,6 +105,20 @@ const evidence: Evidence[] = [
       ],
     },
   },
+  {
+    id: 'E7',
+    short: 'Pick list',
+    title: 'Warehouse pick list',
+    meta: { type: 'Fulfilment record', tag: 'ORD', source: 'Warehouse system', received: '30 Sep 2026 · 09:12', hash: 'c57a…0e3d' },
+    body: {
+      kind: 'lines',
+      lines: [
+        { text: 'Pick list PL-30-0918 · 30 Sep 2026 09:12 UTC · station 2', fragment: 'E7.date' },
+        { text: 'Order #10511 · picked SKU TOTE-NAV-38 · qty 1', fragment: 'E7.sku' },
+        { text: 'Scanned bin B-14 (navy totes) · packed and labelled 09:20 UTC', fragment: 'E7.bin' },
+      ],
+    },
+  },
 ];
 
 export const notAsDescribedCase: CaseFile = {
@@ -123,7 +141,7 @@ export const notAsDescribedCase: CaseFile = {
     openedAt: '2026-10-03T08:40:00Z',
   },
   evidence,
-  evidenceSources: '6 documents',
+  evidenceSources: '7 documents',
   timeline: [],
   timelineCaption: '',
   // The first note claims a packing photo the case file does not have (E4: none on file): the analyst removes it.

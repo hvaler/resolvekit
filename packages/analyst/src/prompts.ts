@@ -111,17 +111,20 @@ export function factLines(facts: readonly Fact[], flagged: ReadonlySet<string>):
 
 const AMOUNT = /\b\d+(?:[.,]\d{2})\s?(?:USD|EUR|GBP|CAD|AUD|JPY)\b|[$€£]\s?\d/;
 const ADDRESS = /\b(?:ship to|delivered to|address|street|road|avenue|ave|apt|flat|unit|suite|postcode|zip)\b/i;
+/** Product identifiers: the listing, the order and the warehouse may name different variants of the same product. */
+const PRODUCT_ID = /\bSKU\b/i;
 
 /**
- * Facts that state amounts or addresses, grouped (deterministic), so the model compares them document against
- * document instead of finding them by chance.
+ * Facts that state amounts, addresses or product identifiers, grouped (deterministic), so the model compares them
+ * document against document instead of finding them by chance. A group appears only when two or more facts share
+ * it, so cases without such facts get exactly the same prompt as before.
  */
 export function crossCheckLines(facts: readonly Fact[]): string {
   const group = (name: string, re: RegExp) => {
     const hits = facts.filter((f) => re.test(f.quote));
     return hits.length > 1 ? `${name}: ${hits.map((f) => `${f.id} [${f.doc}] ${JSON.stringify(f.quote)}`).join('; ')}` : null;
   };
-  return [group('Amounts', AMOUNT), group('Addresses', ADDRESS)].filter(Boolean).join('\n') || '(none)';
+  return [group('Amounts', AMOUNT), group('Addresses', ADDRESS), group('Product identifiers (SKU)', PRODUCT_ID)].filter(Boolean).join('\n') || '(none)';
 }
 
 export function analyzePrompt(x: {

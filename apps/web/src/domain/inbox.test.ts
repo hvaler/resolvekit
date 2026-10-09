@@ -93,7 +93,7 @@ describe('quick filter text', () => {
     expect(quickFilterText.dispute(r)).toBe('PP-R-BLW-10187733 Item not as described');
     expect(quickFilterText.amount(r)).toBe('24.50');
     expect(quickFilterText.status(r)).toBe('Waiting for you WAITING_FOR_SELLER_RESPONSE');
-    expect(quickFilterText.next(r)).toBe('Add photos of the item Buyer says the colour differs');
+    expect(quickFilterText.next(r)).toBe('Review: records back the buyer Pick list shows the navy SKU');
   });
 
   it('does not search the due and readiness columns', () => {
@@ -112,7 +112,7 @@ describe('saved filter chips', () => {
   });
 
   it('count the disputes each chip matches', () => {
-    expect(chipCounts(rows)).toEqual({ approval: 1, agent: 2, processing: 1, due48: 2 });
+    expect(chipCounts(rows)).toEqual({ approval: 2, agent: 2, processing: 1, due48: 2 });
     const both = rows.filter((r) => CHIPS.filter((c) => c.key === 'agent' || c.key === 'due48').every((c) => c.matches(r)));
     expect(both.map((r) => r.id)).toEqual(['PP-R-KDA-10192258']);
   });

@@ -152,6 +152,15 @@ test('rules: in the claim stage PayPal offers no message, so missing critical ev
   const supported: Sentence = { id: 'S1', text: 'x', noteId: null, citations: [], verdict: 'supported', reason: null, decidedBy: 'model', rewrite: null };
   assert.equal(decideAction({ dispute, checklist: [item('description', 'present'), item('match', 'missing', false)], sentences: [supported] })!.action, 'provide_evidence');
   assert.equal(decideAction({ dispute, checklist: [item('description', 'missing')], sentences: [supported] })!.action, 'accept_claim');
+  // The merchant's own records contradict the decisive requirement (the unit sent): no defence is recommended.
+  const undermined = decideAction({ dispute, checklist: [item('description', 'present'), item('match', 'contradicts', false)], sentences: [supported] })!;
+  assert.equal(undermined.action, 'accept_claim');
+  assert.match(undermined.rule, /contradicts "match"/);
+  // Not decisive for "not received": an address difference alone does not stop the defence.
+  assert.equal(decideAction({ dispute: input().dispute, checklist: [item('tracking', 'present'), item('address', 'contradicts', false)], sentences: [supported] })!.action, 'provide_evidence');
+  // Incorrect amount: a capture above the approved amount backs the buyer too.
+  const amount = { ...dispute, reason: 'INCORRECT_AMOUNT' };
+  assert.equal(decideAction({ dispute: amount, checklist: [item('approved', 'present'), item('within', 'contradicts', false)], sentences: [supported] })!.action, 'accept_claim');
   const after = decideAction({ dispute: { ...dispute, allowedActions: ['send_message', 'accept_claim', 'escalate'], requestedEvidence: null }, checklist: [item('description', 'present')], sentences: [supported] })!;
   assert.deepEqual([after.action, after.rule], ['send_message', 'PayPal does not take evidence now; a message is the way to add to the case']);
 });

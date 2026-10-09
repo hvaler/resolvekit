@@ -1,11 +1,11 @@
 {
   "caseId": "PP-R-BLW-10187733",
-  "key": "da3bbcfae4f97dd3b96bf8063bcebce3bd7e39d57ce04b2dfe0012c7028fa0aa",
+  "key": "b8215a03d5849ab4a8359a8c592057fe656a71c80c93e08bd0730b95664c8a55",
   "promptVersion": "rk-analyst-2026-10-09.7",
   "requestedModel": "gemini-3.8-flash",
   "provider": "gemini",
   "model": "gemini-3.8-flash",
-  "createdAt": "2026-10-09T19:29:29.863Z",
+  "createdAt": "2026-10-09T20:06:38.645Z",
   "facts": [
     {
       "id": "F1",
@@ -18,7 +18,7 @@
       "id": "F2",
       "doc": "D",
       "quote": "Reason as shown to the merchant: Buyer says the colour differs from the listing",
-      "statement": "The buyer claims the colour differs from the listing.",
+      "statement": "The merchant sees the buyer claims the colour differs from the listing.",
       "at": null
     },
     {
@@ -39,7 +39,7 @@
       "id": "F5",
       "doc": "D",
       "quote": "Opened: 3 Oct 2026 08:40:00 UTC",
-      "statement": "The dispute was opened on 3 October 2026 at 08:40 UTC.",
+      "statement": "The dispute was opened on 3 October 2026 at 08:40:00 UTC.",
       "at": "2026-10-03T08:40:00.000Z"
     },
     {
@@ -59,185 +59,213 @@
     {
       "id": "F8",
       "doc": "E1",
-      "quote": "Colour: natural (undyed flax linen); no other colours offered",
-      "statement": "The listing colour is natural undyed flax linen with no other colours offered.",
+      "quote": "Colour: natural (undyed flax linen) · SKU TOTE-NAT-38",
+      "statement": "The listing colour is natural undyed flax linen, SKU TOTE-NAT-38.",
       "at": null
     },
     {
       "id": "F9",
+      "doc": "E1",
+      "quote": "A navy version (SKU TOTE-NAV-38) is sold under listing #L-2231",
+      "statement": "A navy version SKU TOTE-NAV-38 is sold under listing L-2231.",
+      "at": null
+    },
+    {
+      "id": "F10",
       "doc": "E1",
       "quote": "Size 38 × 42 cm · cotton webbing handles",
       "statement": "The tote size is 38 by 42 cm with cotton webbing handles.",
       "at": null
     },
     {
-      "id": "F10",
+      "id": "F11",
       "doc": "E1",
       "quote": "Price 24.50 USD · listed 2 Sep 2026, unchanged since",
       "statement": "The price is 24.50 USD, listed on 2 September 2026 and unchanged since.",
       "at": "2026-09-02T00:00:00.000Z"
     },
     {
-      "id": "F11",
+      "id": "F12",
       "doc": "E1",
       "quote": "Snapshot taken at checkout, 29 Sep 2026 10:14 UTC",
-      "statement": "A listing snapshot was captured at checkout on 29 September 2026 at 10:14 UTC.",
+      "statement": "The listing snapshot was captured at checkout on 29 September 2026 at 10:14 UTC.",
       "at": "2026-09-29T10:14:00.000Z"
     },
     {
-      "id": "F12",
+      "id": "F13",
       "doc": "E2",
       "quote": "Order #10511 · placed 29 Sep 2026 10:14 UTC",
       "statement": "Order 10511 was placed on 29 September 2026 at 10:14 UTC.",
       "at": "2026-09-29T10:14:00.000Z"
     },
     {
-      "id": "F13",
-      "doc": "E2",
-      "quote": "1 × Linen tote, natural (listing #L-2207) · 24.50 USD",
-      "statement": "The order consists of one natural linen tote for 24.50 USD.",
-      "at": null
-    },
-    {
       "id": "F14",
       "doc": "E2",
-      "quote": "Shipped 30 Sep 2026 · UPS 1Z999AA10123459921 · delivered 2 Oct 2026",
-      "statement": "Shipped via UPS on 30 September 2026 and delivered on 2 October 2026.",
-      "at": "2026-10-02T00:00:00.000Z"
+      "quote": "1 × Linen tote, natural (listing #L-2207, SKU TOTE-NAT-38) · 24.50 USD",
+      "statement": "The order was for one natural linen tote SKU TOTE-NAT-38 for 24.50 USD.",
+      "at": null
     },
     {
       "id": "F15",
       "doc": "E2",
-      "quote": "Ship to: 7 Example Lane, Exampleton EX2 •••",
-      "statement": "The shipping destination is 7 Example Lane, Exampleton.",
-      "at": null
+      "quote": "Shipped 30 Sep 2026 · UPS 1Z999AA10123459921 · delivered 2 Oct 2026",
+      "statement": "The package was shipped 30 September 2026 via UPS and delivered 2 October 2026.",
+      "at": "2026-09-30T00:00:00.000Z"
     },
     {
       "id": "F16",
       "doc": "E2",
-      "quote": "Buyer: m•••@example.com",
-      "statement": "The buyer email address is m•••@example.com.",
+      "quote": "Ship to: 7 Example Lane, Exampleton EX2 •••",
+      "statement": "The shipping address is 7 Example Lane, Exampleton.",
       "at": null
     },
     {
       "id": "F17",
-      "doc": "E3",
-      "quote": "Capture 5RT61848PC2207415",
-      "statement": "Payment capture identifier is 5RT61848PC2207415.",
+      "doc": "E2",
+      "quote": "Buyer: m•••@example.com",
+      "statement": "The buyer email is m•••@example.com.",
       "at": null
     },
     {
       "id": "F18",
       "doc": "E3",
-      "quote": "24.50 USD · COMPLETED",
-      "statement": "A payment of 24.50 USD was completed.",
+      "quote": "Capture 5RT61848PC2207415",
+      "statement": "The capture identifier is 5RT61848PC2207415.",
       "at": null
     },
     {
       "id": "F19",
+      "doc": "E3",
+      "quote": "24.50 USD · COMPLETED",
+      "statement": "Payment capture of 24.50 USD was completed.",
+      "at": null
+    },
+    {
+      "id": "F20",
       "doc": "E3",
       "quote": "Captured 29 Sep 2026 10:15 UTC",
       "statement": "The payment was captured on 29 September 2026 at 10:15 UTC.",
       "at": "2026-09-29T10:15:00.000Z"
     },
     {
-      "id": "F20",
-      "doc": "E4",
-      "quote": "Listing photos for #L-2207 · taken 2 Sep 2026 in the studio",
-      "statement": "Photos for listing L-2207 were taken in studio on 2 September 2026.",
-      "at": "2026-09-02T00:00:00.000Z"
-    },
-    {
       "id": "F21",
       "doc": "E4",
-      "quote": "Photo 1 (front): tote on a white background, oatmeal-coloured undyed linen",
-      "statement": "Photo 1 shows an oatmeal-coloured undyed linen tote against a white background.",
-      "at": null
+      "quote": "Listing photos for #L-2207 · taken 2 Sep 2026 in the studio",
+      "statement": "Photos for listing L-2207 were taken on 2 September 2026 in the studio.",
+      "at": "2026-09-02T00:00:00.000Z"
     },
     {
       "id": "F22",
       "doc": "E4",
-      "quote": "Photo 2 (detail): weave close-up, natural flax fibres with visible slubs",
-      "statement": "Photo 2 shows a weave close-up of natural flax fibres with visible slubs.",
+      "quote": "Photo 1 (front): tote on a white background, oatmeal-coloured undyed linen",
+      "statement": "Photo 1 shows an oatmeal-coloured undyed linen tote on a white background.",
       "at": null
     },
     {
       "id": "F23",
       "doc": "E4",
-      "quote": "Photo 3 (in use): tote carried over the shoulder, same oatmeal colour",
-      "statement": "Photo 3 depicts the oatmeal-coloured tote carried over the shoulder.",
+      "quote": "Photo 2 (detail): weave close-up, natural flax fibres with visible slubs",
+      "statement": "Photo 2 shows a weave close-up of natural flax fibres with slubs.",
       "at": null
     },
     {
       "id": "F24",
+      "doc": "E4",
+      "quote": "Photo 3 (in use): tote carried over the shoulder, same oatmeal colour",
+      "statement": "Photo 3 shows the tote carried over the shoulder in oatmeal colour.",
+      "at": null
+    },
+    {
+      "id": "F25",
       "doc": "E4",
       "quote": "Packing photo of order #10511: none on file",
       "statement": "There is no packing photo on file for order 10511.",
       "at": null
     },
     {
-      "id": "F25",
-      "doc": "E5",
-      "quote": "\"The tote I received is navy blue, not the natural colour shown in the listing.\"",
-      "statement": "The buyer states receiving a navy blue tote instead of natural colour.",
-      "at": null
-    },
-    {
       "id": "F26",
       "doc": "E5",
-      "quote": "Buyer photo tote-received.jpg: a dark navy tote lying on a bed, label not visible",
-      "statement": "The buyer photo displays a dark navy tote on a bed with no visible label.",
+      "quote": "\"The tote I received is navy blue, not the natural colour shown in the listing.\"",
+      "statement": "The buyer stated receiving a navy blue tote instead of the natural colour.",
       "at": null
     },
     {
       "id": "F27",
       "doc": "E5",
-      "quote": "From m•••@example.com · 3 Oct 2026 08:40 UTC",
-      "statement": "Message sent by m•••@example.com on 3 October 2026 at 08:40 UTC.",
-      "at": "2026-10-03T08:40:00.000Z"
+      "quote": "Buyer photo tote-received.jpg: a dark navy tote lying on a bed, label not visible",
+      "statement": "Buyer photo tote-received.jpg shows a dark navy tote on a bed with no visible label.",
+      "at": null
     },
     {
       "id": "F28",
-      "doc": "E6",
-      "quote": "Return policy · version of 1 Sep 2026",
-      "statement": "The return policy is dated 1 September 2026.",
-      "at": "2026-09-01T00:00:00.000Z"
+      "doc": "E5",
+      "quote": "From m•••@example.com · 3 Oct 2026 08:40 UTC",
+      "statement": "The message was sent by m•••@example.com on 3 October 2026 at 08:40 UTC.",
+      "at": "2026-10-03T08:40:00.000Z"
     },
     {
       "id": "F29",
+      "doc": "E6",
+      "quote": "Return policy · version of 1 Sep 2026",
+      "statement": "The return policy is the version from 1 September 2026.",
+      "at": "2026-09-01T00:00:00.000Z"
+    },
+    {
+      "id": "F30",
       "doc": "E6",
       "quote": "Returns accepted within 30 days of delivery",
       "statement": "Returns are accepted within 30 days of delivery.",
       "at": null
     },
     {
-      "id": "F30",
+      "id": "F31",
       "doc": "E6",
       "quote": "If an item is not as described, we pay return shipping",
-      "statement": "The merchant covers return shipping if an item is not as described.",
+      "statement": "The merchant pays return shipping if an item is not as described.",
       "at": null
     },
     {
-      "id": "F31",
+      "id": "F32",
       "doc": "E6",
       "quote": "Refund issued within 5 business days of receiving the return",
-      "statement": "Refunds are issued within 5 business days following return receipt.",
+      "statement": "Refunds are issued within 5 business days of receiving a return.",
       "at": null
+    },
+    {
+      "id": "F33",
+      "doc": "E7",
+      "quote": "Pick list PL-30-0918 · 30 Sep 2026 09:12 UTC · station 2",
+      "statement": "Pick list PL-30-0918 was generated at station 2 on 30 September 2026 at 09:12 UTC.",
+      "at": "2026-09-30T09:12:00.000Z"
+    },
+    {
+      "id": "F34",
+      "doc": "E7",
+      "quote": "Order #10511 · picked SKU TOTE-NAV-38 · qty 1",
+      "statement": "Warehouse picked one unit of SKU TOTE-NAV-38 for order 10511.",
+      "at": null
+    },
+    {
+      "id": "F35",
+      "doc": "E7",
+      "quote": "Scanned bin B-14 (navy totes) · packed and labelled 09:20 UTC",
+      "statement": "Warehouse scanned bin B-14 navy totes, packing and labelling at 09:20 UTC on 30 September 2026.",
+      "at": "2026-09-30T09:20:00.000Z"
     }
   ],
   "droppedFacts": 0,
   "timeline": [
     {
       "at": "2026-09-01T00:00:00.000Z",
-      "title": "Return policy version",
-      "sub": "Policy version dated 1 Sep 2026",
+      "title": "Return policy issued",
+      "sub": "Version dated 1 Sep 2026",
       "doc": "E6",
       "quote": "Return policy · version of 1 Sep 2026",
       "negated": false
     },
     {
       "at": "2026-09-02T00:00:00.000Z",
-      "title": "Product listed",
+      "title": "Listing created",
       "sub": "Listed at 24.50 USD",
       "doc": "E1",
       "quote": "Price 24.50 USD · listed 2 Sep 2026, unchanged since",
@@ -245,16 +273,16 @@
     },
     {
       "at": "2026-09-02T00:00:00.000Z",
-      "title": "Listing photos taken",
-      "sub": "Studio photos taken for L-2207",
+      "title": "Product photos taken",
+      "sub": "Studio photos of natural tote",
       "doc": "E4",
       "quote": "Listing photos for #L-2207 · taken 2 Sep 2026 in the studio",
       "negated": false
     },
     {
       "at": "2026-09-29T10:14:00.000Z",
-      "title": "Listing snapshot taken",
-      "sub": "Snapshot captured at checkout",
+      "title": "Listing snapshot captured",
+      "sub": "Captured at checkout",
       "doc": "E1",
       "quote": "Snapshot taken at checkout, 29 Sep 2026 10:14 UTC",
       "negated": false
@@ -262,7 +290,7 @@
     {
       "at": "2026-09-29T10:14:00.000Z",
       "title": "Order placed",
-      "sub": "Order 10511 placed",
+      "sub": "Order #10511 for 24.50 USD",
       "doc": "E2",
       "quote": "Order #10511 · placed 29 Sep 2026 10:14 UTC",
       "negated": false
@@ -270,23 +298,39 @@
     {
       "at": "2026-09-29T10:15:00.000Z",
       "title": "Payment captured",
-      "sub": "24.50 USD completed via capture 5RT61848PC2207415",
+      "sub": "24.50 USD completed",
       "doc": "E3",
       "quote": "Captured 29 Sep 2026 10:15 UTC",
       "negated": false
     },
     {
-      "at": "2026-10-02T00:00:00.000Z",
-      "title": "Order delivered",
-      "sub": "Delivered via UPS 1Z999AA10123459921",
+      "at": "2026-09-30T00:00:00.000Z",
+      "title": "Order shipped",
+      "sub": "Shipped via UPS",
       "doc": "E2",
       "quote": "Shipped 30 Sep 2026 · UPS 1Z999AA10123459921 · delivered 2 Oct 2026",
       "negated": false
     },
     {
+      "at": "2026-09-30T09:12:00.000Z",
+      "title": "Pick list generated",
+      "sub": "Pick list PL-30-0918 generated",
+      "doc": "E7",
+      "quote": "Pick list PL-30-0918 · 30 Sep 2026 09:12 UTC · station 2",
+      "negated": false
+    },
+    {
+      "at": "2026-09-30T09:20:00.000Z",
+      "title": "Order packed",
+      "sub": "Bin B-14 scanned and packed",
+      "doc": "E7",
+      "quote": "Scanned bin B-14 (navy totes) · packed and labelled 09:20 UTC",
+      "negated": false
+    },
+    {
       "at": "2026-10-03T08:40:00.000Z",
       "title": "Buyer message sent",
-      "sub": "Sent by m•••@example.com",
+      "sub": "Buyer reported navy tote received",
       "doc": "E5",
       "quote": "From m•••@example.com · 3 Oct 2026 08:40 UTC",
       "negated": false
@@ -300,7 +344,26 @@
       "negated": false
     }
   ],
-  "contradictions": [],
+  "contradictions": [
+    {
+      "id": "C1",
+      "title": "Picked SKU differs from ordered SKU",
+      "shortName": "sku contradiction",
+      "a": {
+        "doc": "E2",
+        "quote": "1 × Linen tote, natural (listing #L-2207, SKU TOTE-NAT-38) · 24.50 USD",
+        "value": "SKU TOTE-NAT-38"
+      },
+      "b": {
+        "doc": "E7",
+        "quote": "Order #10511 · picked SKU TOTE-NAV-38 · qty 1",
+        "value": "SKU TOTE-NAV-38"
+      },
+      "explanation": "Order 10511 specifies SKU TOTE-NAT-38 for a natural tote, whereas the warehouse pick list records SKU TOTE-NAV-38 being picked. Resolving this discrepancy is the merchant's call.",
+      "sentenceId": "S3",
+      "rewrite": "Order 10511 requested natural tote SKU TOTE-NAT-38, but the warehouse pick list recorded SKU TOTE-NAV-38 from bin B-14."
+    }
+  ],
   "checklist": {
     "title": "What \"not as described\" disputes need",
     "items": [
@@ -316,7 +379,7 @@
           },
           {
             "doc": "E1",
-            "quote": "Colour: natural (undyed flax linen); no other colours offered"
+            "quote": "Colour: natural (undyed flax linen) · SKU TOTE-NAT-38"
           },
           {
             "doc": "E1",
@@ -329,22 +392,6 @@
           {
             "doc": "E1",
             "quote": "Snapshot taken at checkout, 29 Sep 2026 10:14 UTC"
-          },
-          {
-            "doc": "E4",
-            "quote": "Listing photos for #L-2207 · taken 2 Sep 2026 in the studio"
-          },
-          {
-            "doc": "E4",
-            "quote": "Photo 1 (front): tote on a white background, oatmeal-coloured undyed linen"
-          },
-          {
-            "doc": "E4",
-            "quote": "Photo 2 (detail): weave close-up, natural flax fibres with visible slubs"
-          },
-          {
-            "doc": "E4",
-            "quote": "Photo 3 (in use): tote carried over the shoulder, same oatmeal colour"
           }
         ],
         "contradictionId": null
@@ -353,14 +400,26 @@
         "id": "match",
         "label": "Item sent matches the listing",
         "critical": false,
-        "status": "missing",
+        "status": "contradicts",
         "evidence": [
           {
-            "doc": "E4",
-            "quote": "Packing photo of order #10511: none on file"
+            "doc": "E1",
+            "quote": "Colour: natural (undyed flax linen) · SKU TOTE-NAT-38"
+          },
+          {
+            "doc": "E2",
+            "quote": "1 × Linen tote, natural (listing #L-2207, SKU TOTE-NAT-38) · 24.50 USD"
+          },
+          {
+            "doc": "E7",
+            "quote": "Order #10511 · picked SKU TOTE-NAV-38 · qty 1"
+          },
+          {
+            "doc": "E7",
+            "quote": "Scanned bin B-14 (navy totes) · packed and labelled 09:20 UTC"
           }
         ],
-        "contradictionId": null
+        "contradictionId": "C1"
       },
       {
         "id": "complaint",
@@ -371,10 +430,6 @@
           {
             "doc": "D",
             "quote": "Reason as shown to the merchant: Buyer says the colour differs from the listing"
-          },
-          {
-            "doc": "E1",
-            "quote": "Colour: natural (undyed flax linen); no other colours offered"
           },
           {
             "doc": "E5",
@@ -424,11 +479,7 @@
           },
           {
             "doc": "E2",
-            "quote": "Order #10511 · placed 29 Sep 2026 10:14 UTC"
-          },
-          {
-            "doc": "E2",
-            "quote": "1 × Linen tote, natural (listing #L-2207) · 24.50 USD"
+            "quote": "1 × Linen tote, natural (listing #L-2207, SKU TOTE-NAT-38) · 24.50 USD"
           },
           {
             "doc": "E3",
@@ -450,7 +501,38 @@
   "sentences": [
     {
       "id": "S1",
-      "text": "The buyer placed order 10511 for one natural linen tote for 24.50 USD, and payment was completed under capture 5RT61848PC2207415.",
+      "text": "Listing L-2207 describes a natural undyed flax linen tote, SKU TOTE-NAT-38, priced at 24.50 USD.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E1",
+          "quote": "Listing #L-2207 · Linen tote, natural",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Colour: natural (undyed flax linen) · SKU TOTE-NAT-38",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Size 38 × 42 cm · cotton webbing handles",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Price 24.50 USD · listed 2 Sep 2026, unchanged since",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S2",
+      "text": "The buyer placed order 10511 for one natural linen tote SKU TOTE-NAT-38, and payment capture of 24.50 USD was completed.",
       "noteId": null,
       "citations": [
         {
@@ -460,12 +542,7 @@
         },
         {
           "doc": "E2",
-          "quote": "1 × Linen tote, natural (listing #L-2207) · 24.50 USD",
-          "valid": true
-        },
-        {
-          "doc": "E3",
-          "quote": "Capture 5RT61848PC2207415",
+          "quote": "1 × Linen tote, natural (listing #L-2207, SKU TOTE-NAT-38) · 24.50 USD",
           "valid": true
         },
         {
@@ -479,86 +556,40 @@
           "valid": true
         }
       ],
-      "verdict": "supported",
-      "reason": null,
+      "verdict": "needs_review",
+      "reason": "Why: The cited text confirms order #10511, SKU TOTE-NAT-38, and completed capture of 24.50 USD, but does not identify the purchaser as \"The buyer\".",
       "decidedBy": "model",
-      "rewrite": null
-    },
-    {
-      "id": "S2",
-      "text": "Listing L-2207 offers only natural undyed flax linen measuring 38 by 42 cm, with no other colours offered.",
-      "noteId": null,
-      "citations": [
-        {
-          "doc": "E1",
-          "quote": "Listing #L-2207 · Linen tote, natural",
-          "valid": true
-        },
-        {
-          "doc": "E1",
-          "quote": "Colour: natural (undyed flax linen); no other colours offered",
-          "valid": true
-        },
-        {
-          "doc": "E1",
-          "quote": "Size 38 × 42 cm · cotton webbing handles",
-          "valid": true
-        },
-        {
-          "doc": "E1",
-          "quote": "Snapshot taken at checkout, 29 Sep 2026 10:14 UTC",
-          "valid": true
-        }
-      ],
-      "verdict": "supported",
-      "reason": null,
-      "decidedBy": "model",
-      "rewrite": null
+      "rewrite": "Order 10511 was placed for one natural linen tote SKU TOTE-NAT-38, and payment capture of 24.50 USD was completed."
     },
     {
       "id": "S3",
-      "text": "The studio listing photos show the oatmeal-coloured undyed linen tote against a white background, in detail, and in use.",
+      "text": "The warehouse pick list shows SKU TOTE-NAV-38 was picked from bin B-14 for order 10511.",
       "noteId": null,
       "citations": [
         {
-          "doc": "E4",
-          "quote": "Listing photos for #L-2207 · taken 2 Sep 2026 in the studio",
+          "doc": "E7",
+          "quote": "Order #10511 · picked SKU TOTE-NAV-38 · qty 1",
           "valid": true
         },
         {
-          "doc": "E4",
-          "quote": "Photo 1 (front): tote on a white background, oatmeal-coloured undyed linen",
-          "valid": true
-        },
-        {
-          "doc": "E4",
-          "quote": "Photo 2 (detail): weave close-up, natural flax fibres with visible slubs",
-          "valid": true
-        },
-        {
-          "doc": "E4",
-          "quote": "Photo 3 (in use): tote carried over the shoulder, same oatmeal colour",
+          "doc": "E7",
+          "quote": "Scanned bin B-14 (navy totes) · packed and labelled 09:20 UTC",
           "valid": true
         }
       ],
-      "verdict": "supported",
-      "reason": null,
-      "decidedBy": "model",
+      "verdict": "needs_review",
+      "reason": "Why: it relies on E7 (\"SKU TOTE-NAV-38\"), which E2 contradicts (\"SKU TOTE-NAT-38\"). State both or resolve the contradiction.",
+      "decidedBy": "deterministic",
       "rewrite": null
     },
     {
       "id": "S4",
-      "text": "We shipped the order via UPS, and tracking confirms delivery to the buyer's destination on 2 October 2026.",
+      "text": "The package was shipped via UPS on 30 September 2026 and delivered on 2 October 2026.",
       "noteId": null,
       "citations": [
         {
           "doc": "E2",
           "quote": "Shipped 30 Sep 2026 · UPS 1Z999AA10123459921 · delivered 2 Oct 2026",
-          "valid": true
-        },
-        {
-          "doc": "E2",
-          "quote": "Ship to: 7 Example Lane, Exampleton EX2 •••",
           "valid": true
         }
       ],
@@ -569,22 +600,12 @@
     },
     {
       "id": "S5",
-      "text": "The buyer opened a dispute claiming they received a navy blue tote instead of the natural colour shown in the listing.",
+      "text": "The buyer stated they received a navy blue tote instead of the natural colour shown in the listing.",
       "noteId": null,
       "citations": [
         {
           "doc": "D",
-          "quote": "Dispute PP-R-BLW-10187733 · reason MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
-          "valid": true
-        },
-        {
-          "doc": "D",
           "quote": "Reason as shown to the merchant: Buyer says the colour differs from the listing",
-          "valid": true
-        },
-        {
-          "doc": "D",
-          "quote": "Opened: 3 Oct 2026 08:40:00 UTC",
           "valid": true
         },
         {
@@ -605,14 +626,9 @@
     },
     {
       "id": "S6",
-      "text": "Our return policy accepts returns within 30 days of delivery, covers return shipping if an item is not as described, and provides refunds within 5 business days of receipt.",
+      "text": "Our return policy accepts returns within 30 days of delivery, pays return shipping if an item is not as described, and issues refunds within 5 business days of receipt.",
       "noteId": null,
       "citations": [
-        {
-          "doc": "E6",
-          "quote": "Return policy · version of 1 Sep 2026",
-          "valid": true
-        },
         {
           "doc": "E6",
           "quote": "Returns accepted within 30 days of delivery",
@@ -646,9 +662,9 @@
         }
       ],
       "verdict": "rejected",
-      "reason": "Removed: The cited text directly contradicts the claim, stating \"Packing photo of order #10511: none on file\". It will not be sent.",
+      "reason": "Removed: The cited text contradicts the claim, stating \"none on file\" for the packing photo. It will not be sent.",
       "decidedBy": "model",
-      "rewrite": null
+      "rewrite": "There is no packing photo on file for order #10511."
     },
     {
       "id": "S8",
@@ -664,24 +680,19 @@
           "doc": "E6",
           "quote": "If an item is not as described, we pay return shipping",
           "valid": true
-        },
-        {
-          "doc": "E6",
-          "quote": "Refund issued within 5 business days of receiving the return",
-          "valid": true
         }
       ],
       "verdict": "needs_review",
-      "reason": "Why: The cited policy provides free return shipping only \"If an item is not as described\", rather than unconditionally.",
+      "reason": "Why: The cited text covers paid return shipping if not as described, but does not explicitly state a \"full refund\".",
       "decidedBy": "model",
-      "rewrite": "We offer returns within 30 days of delivery with return shipping covered if an item is not as described."
+      "rewrite": "If an item is not as described, we accept returns within 30 days and pay return shipping."
     }
   ],
   "injections": [],
   "recommendation": {
-    "action": "provide_evidence",
-    "rule": "PayPal requests OTHER; the case file has what it needs, no critical requirement is missing, and 6 sentence(s) are supported",
-    "explanation": "You have complete documentation showing that order 10511 for the natural linen tote was delivered via UPS on 2 October 2026, while the listing and studio photos establish that only the natural undyed flax linen is offered. Providing this evidence alongside your return policy addresses the buyer's claim regarding the received colour. The decision is yours, and PayPal decides the outcome."
+    "action": "accept_claim",
+    "rule": "The case file contradicts \"item sent matches the listing\": the merchant's own records back the buyer; accepting the claim refunds the buyer",
+    "explanation": "The buyer reported receiving a navy blue tote instead of the natural undyed flax linen tote described in listing L-2207, which is supported by the case file records. Accepting the claim aligns with these records and provides a refund under your policy; the decision is yours, and PayPal decides the outcome."
   },
   "usage": {
     "calls": [
@@ -689,28 +700,46 @@
         "stage": "screen",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 1295,
-        "outputTokens": 5,
-        "thinkingTokens": 0,
-        "ms": 2259
+        "inputTokens": 1509,
+        "outputTokens": 9,
+        "thinkingTokens": 168,
+        "ms": 2848
       },
       {
         "stage": "extract",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 1650,
-        "outputTokens": 2600,
+        "inputTokens": 1864,
+        "outputTokens": 3072,
         "thinkingTokens": 0,
-        "ms": 18610
+        "ms": 16239
       },
       {
         "stage": "analyze",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 2978,
-        "outputTokens": 1672,
+        "inputTokens": 3529,
+        "outputTokens": 1954,
         "thinkingTokens": 0,
-        "ms": 12073
+        "ms": 11978
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 560,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 1844
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 548,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 1860
       },
       {
         "stage": "verify",
@@ -719,83 +748,65 @@
         "inputTokens": 603,
         "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 2297
+        "ms": 2293
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 650,
-        "outputTokens": 48,
+        "inputTokens": 625,
+        "outputTokens": 132,
         "thinkingTokens": 0,
-        "ms": 2449
+        "ms": 2662
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 593,
+        "inputTokens": 565,
         "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 2751
+        "ms": 1466
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 583,
+        "inputTokens": 562,
         "outputTokens": 48,
         "thinkingTokens": 0,
-        "ms": 2182
+        "ms": 1570
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 520,
+        "outputTokens": 64,
+        "thinkingTokens": 0,
+        "ms": 1788
       },
       {
         "stage": "verify",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
         "inputTokens": 505,
-        "outputTokens": 74,
+        "outputTokens": 82,
         "thinkingTokens": 0,
-        "ms": 2056
-      },
-      {
-        "stage": "verify",
-        "provider": "gemini",
-        "model": "gemini-3.8-flash",
-        "inputTokens": 569,
-        "outputTokens": 19,
-        "thinkingTokens": 0,
-        "ms": 6490
-      },
-      {
-        "stage": "verify",
-        "provider": "gemini",
-        "model": "gemini-3.8-flash",
-        "inputTokens": 539,
-        "outputTokens": 64,
-        "thinkingTokens": 0,
-        "ms": 3160
-      },
-      {
-        "stage": "verify",
-        "provider": "gemini",
-        "model": "gemini-3.8-flash",
-        "inputTokens": 637,
-        "outputTokens": 19,
-        "thinkingTokens": 268,
-        "ms": 8375
+        "ms": 2478
       },
       {
         "stage": "explain",
         "provider": "gemini",
         "model": "gemini-3.8-flash",
-        "inputTokens": 554,
-        "outputTokens": 88,
+        "inputTokens": 481,
+        "outputTokens": 67,
         "thinkingTokens": 0,
-        "ms": 2179
+        "ms": 2075
       }
     ],
-    "inputTokens": 11156,
-    "outputTokens": 4733,
-    "thinkingTokens": 268
+    "inputTokens": 11871,
+    "outputTokens": 5620,
+    "thinkingTokens": 168
   }
 }
