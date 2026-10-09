@@ -49,7 +49,8 @@ its stages; editing a sentence sends it to the AI verifier, which re-chooses its
 **7. Optional: MeterMCP from your own MCP client.** MeterMCP is a metered MCP server at **<METERMCP_URL>/mcp**
 (Streamable HTTP). Add the HTTP header **`x-demo-code: <DEMO_CODE>`** in your client (e.g. MCP Inspector:
 Transport "Streamable HTTP", URL above, header under Authentication/Headers). Free tools (`price_list`,
-`get_balance`, `get_receipt`, `close_session`) work without it. Call `quote_lookup`: it answers `payment_required`
+`get_balance`, `get_receipt`, `close_session`) work without it. The first `deep_report` call of each session fails on purpose (a test switch, so the receipt shows an
+uncharged failure; the receipt says it was injected). Call `quote_lookup`: it answers `payment_required`
 with an `approval_url`; open it, log in with the sandbox buyer account and approve the 5.00 USD budget. Then call
 `get_balance` (status `active`), use the paid tools, and `close_session`: MeterMCP captures only the successful calls
 and releases the rest, and `get_receipt` shows each call with its request hash. Without the header a paid tool answers

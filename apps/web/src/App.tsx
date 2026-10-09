@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useMatch } from 'react-router-dom';
 import { useState } from 'react';
+import { setRecording, useRecording } from './app/recording';
 import { useServices } from './app/services';
 import type { SimulatedOutcome } from './domain/gateway';
 import { CasePage } from './pages/CasePage';
@@ -60,6 +61,10 @@ function DevOutcomeControl() {
           PayPal unreachable
         </label>
       </div>
+      <label className="mt-1.5 flex items-center gap-1" title="For the demo video: slower analysis replay (1.2 s per step) and this panel hidden. Turn off with ?record=0.">
+        <input type="checkbox" checked={false} onChange={(e) => setRecording(e.target.checked)} />
+        Recording mode (hides this panel)
+      </label>
     </details>
   );
 }
@@ -74,6 +79,7 @@ function showDevControls(): boolean {
 }
 
 export function App() {
+  const recording = useRecording();
   return (
     <>
       <Routes>
@@ -81,7 +87,8 @@ export function App() {
         <Route path="/cases/:id/*" element={<CasePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      {typeof window !== 'undefined' && showDevControls() && <DevOutcomeControl />}
+      {/* Recording mode (demo video) hides the Dev control; everything else on screen is unchanged. */}
+      {typeof window !== 'undefined' && !recording && showDevControls() && <DevOutcomeControl />}
     </>
   );
 }

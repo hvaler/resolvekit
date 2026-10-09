@@ -109,6 +109,13 @@ submitted: *Waiting for buyer*, *Under review*, or *Timeout* (read back, then sa
 open the new dispute now (otherwise it opens after ~75 s) or simulate PayPal being unreachable. In other builds add
 `?dev` to the URL, or `?outcome=under_review|timeout` to preselect it.
 
+**Recording mode** (for the demo video; off by default): add `?record` to the URL, or tick *Recording mode* in the
+Dev control. The analysis replay then shows each step for ~1.2 s instead of 0.65 s, and the Dev control is hidden.
+Nothing else changes: every label, provenance line ("cached" / "live", "Simulated PayPal" / "PayPal sandbox · live")
+and status stays exactly as in normal use. It is kept for the browser tab while you navigate; `?record=0` turns it
+off. The app is usable at phone width (390 px) too: the case file stacks timeline, evidence and draft, and the grids
+scroll inside their own box.
+
 ## MeterMCP
 
 `apps/metermcp` is a minimal, **real** metered MCP gateway: the seller behind the agent-purchase case. An AI agent

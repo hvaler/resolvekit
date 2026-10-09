@@ -3,9 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { actionableBlockers, checklistState, citationUse, deriveSentences, draftBlockers, draftCounts, notesText, type Recheck } from '../domain/draft';
 import { defaultEvidenceType, evidenceTypeOptions, selectEvidenceType } from '../domain/evidenceTypes';
 import type { ActionCode, CaseFile, ContradictionResolution, EvidenceType } from '../domain/types';
+import { replayStepMs, useRecording } from './recording';
 import type { AnalysisHandle } from './useAnalysis';
-
-const STEP_MS = 650;
 
 /** Replays the analyst's steps one by one. `animate` false shows them done at once (a live run just finished). */
 function useAnalysisReplay(stepCount: number, identity: string, animate: boolean) {
@@ -14,6 +13,8 @@ function useAnalysisReplay(stepCount: number, identity: string, animate: boolean
   const animateRef = useRef(animate);
   animateRef.current = animate;
   const lastEpoch = useRef(0);
+  // Recording mode (demo video): slower steps, nothing else changes.
+  const stepMs = replayStepMs(useRecording());
   useEffect(() => {
     const replayed = epoch !== lastEpoch.current;
     lastEpoch.current = epoch;
@@ -30,9 +31,9 @@ function useAnalysisReplay(stepCount: number, identity: string, animate: boolean
         }
         return r + 1;
       });
-    }, STEP_MS);
+    }, stepMs);
     return () => window.clearInterval(t);
-  }, [stepCount, identity, epoch]);
+  }, [stepCount, identity, epoch, stepMs]);
   return { run, replay: () => setEpoch((e) => e + 1) };
 }
 
