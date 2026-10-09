@@ -49,7 +49,7 @@ const allText = (c: ReturnType<typeof withMeterMcp>) => JSON.stringify([c.eviden
 describe('agent case documents from MeterMCP', () => {
   it('a bound case with a session shows the real mandate, calls and settlement, labelled from MeterMCP', () => {
     const c = withMeterMcp(agentCase, live(snap({ kind: 'metermcp', session: session() })));
-    for (const e of docs(c)) expect(e.sourceLabel).toEqual({ kind: 'metermcp', text: 'From MeterMCP · session mm-sess-01234567…' });
+    for (const e of docs(c)) expect(e.sourceLabel).toEqual({ kind: 'metermcp', text: 'From MeterMCP · session mm-sess-01234567…', title: `From MeterMCP · session ${SID}` });
     const [e1, e2, e3] = docs(c);
     expect(e1!.body).toMatchObject({ kind: 'mandate', sessionId: SID });
     expect(e1!.body.kind === 'mandate' && e1!.body.rows.map((r) => r.value)).toEqual([

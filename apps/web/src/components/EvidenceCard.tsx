@@ -79,9 +79,11 @@ export function EvidenceCard({
         on ? 'border-acc shadow-ring' : 'border-line',
       )}
     >
-      <div className="flex items-center gap-[9px]">
+      {/* Wraps instead of squeezing: the title keeps at least 12rem, badges move to their own line when they do not
+          fit, and a badge longer than the card is truncated with its full text in the tooltip. */}
+      <div className="flex flex-wrap items-center gap-x-[9px] gap-y-1.5">
         <EvidenceTag id={e.id} />
-        <span className="min-w-0 flex-1 text-[14px] font-semibold">{e.title}</span>
+        <span className="min-w-[12rem] flex-1 text-[14px] font-semibold">{e.title}</span>
         {contradictionOpen && (
           <span className="inline-flex items-center gap-[5px] rounded-sm bg-warn-soft px-[7px] py-0.5 text-[11.5px] font-medium text-warn">
             <span aria-hidden="true" className="h-1.5 w-1.5 rotate-45 bg-warn" />
@@ -91,8 +93,9 @@ export function EvidenceCard({
         {e.sourceLabel && (
           <span
             data-testid="source-label"
+            title={e.sourceLabel.title ?? e.sourceLabel.text}
             className={cx(
-              'whitespace-nowrap rounded-sm px-[7px] py-0.5 text-[11.5px] font-medium',
+              'max-w-full truncate whitespace-nowrap rounded-sm px-[7px] py-0.5 text-[11.5px] font-medium',
               e.sourceLabel.kind === 'metermcp' ? 'border border-ok-line bg-ok-soft text-ok' : 'border border-dashed border-info-line bg-info-soft text-info',
             )}
           >

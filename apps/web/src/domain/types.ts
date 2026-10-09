@@ -87,7 +87,7 @@ export interface Evidence {
    */
   paypalRecord?: 'capture';
   /** Where an agent-case document comes from: the real MeterMCP session, or the demo case. Shown on the card. */
-  sourceLabel?: { kind: 'metermcp' | 'demo'; text: string };
+  sourceLabel?: { kind: 'metermcp' | 'demo'; text: string; /** Full text for the tooltip when `text` is shortened. */ title?: string };
   body: EvidenceBody;
 }
 

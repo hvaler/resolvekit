@@ -63,7 +63,7 @@ function asDemo(c: CaseFile, source: PayPalSource, found: AgentReceiptSource | n
 
 function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource): CaseFile {
   const cur = s.currency;
-  const label = { kind: 'metermcp', text: `From MeterMCP · session ${shortSession(s.sessionId)}` } as const;
+  const label = { kind: 'metermcp', text: `From MeterMCP · session ${shortSession(s.sessionId)}`, title: `From MeterMCP · session ${s.sessionId}` } as const;
   const st = s.settlement;
   const captured = st.captured ?? '0.00';
   const released = st.released ?? '—';
