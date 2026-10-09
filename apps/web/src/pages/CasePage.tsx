@@ -22,7 +22,7 @@ import { hasSellerEvidence } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
-import { caseFiles, inbox, processingDispute } from '../fixtures';
+import { caseFiles, processingDispute } from '../fixtures';
 
 /** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
 function contradictionLabel(blockerName: string | undefined): string {
@@ -40,7 +40,7 @@ export function CasePage() {
   const c = caseFiles[id];
   if (c) return <CaseFileScreen key={id} c={c} />;
   if (id === processingDispute.id) return <ProcessingScreen />;
-  return <NotInDemo id={id} />;
+  return <NotFound id={id} />;
 }
 
 function CaseFileScreen({ c: demo }: { c: CaseFile }) {
@@ -105,7 +105,14 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           }
         />
         <CaseHeader
-          view={caseHeaderView({ summary: demo.summary, source, simulatedStatus: status, statusDetail, now: new Date() })}
+          view={caseHeaderView({
+            summary: demo.summary,
+            source,
+            simulatedStatus: status,
+            statusDetail,
+            now: new Date(),
+            ...(source.kind === 'simulated' && snap ? { simulatedSnap: snap } : {}),
+          })}
           statusHighlight={submitted}
           wide={c.kind === 'agent'}
           className="border-b border-line"
@@ -187,6 +194,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             realPayPal={snap?.origin?.kind === 'paypal'}
             checkedAt={snap?.checkedAt ?? null}
             submitted={submitted}
+            {...(snap ? { snapshot: snap } : {})}
             onReview={() => navigate(`/cases/${id}/approve`)}
           />
         </main>
@@ -239,19 +247,15 @@ function ProcessingScreen() {
   );
 }
 
-function NotInDemo({ id }: { id: string }) {
-  const row = inbox.find((r) => r.id === id);
+/** An id that is not a dispute of this workspace (every inbox row has a case file). */
+function NotFound({ id }: { id: string }) {
   const { snapshots } = useServices();
   return (
     <div className="flex min-h-screen flex-col">
       <AppBar caseId={id} checkedAt={snapshots[Object.keys(snapshots)[0] ?? '']?.checkedAt ?? null} />
       <main className="flex flex-col gap-3 px-7 py-6 max-md:px-4">
-        <h1 className="m-0 text-title-lg">{row ? row.reason : 'Case not found'}</h1>
-        <p className="m-0 max-w-[640px] text-[14px] text-ink-2">
-          {row
-            ? `This dispute is listed in the inbox for illustration. Its case file is not part of the synthetic demo data yet.`
-            : `There is no dispute ${id} in this workspace.`}
-        </p>
+        <h1 className="m-0 text-title-lg">Case not found</h1>
+        <p className="m-0 max-w-[640px] text-[14px] text-ink-2">{`There is no dispute ${id} in this workspace.`}</p>
         <Link to="/" className="text-body">
           ← All cases
         </Link>

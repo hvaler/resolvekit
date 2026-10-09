@@ -54,6 +54,55 @@ describe('routes render without errors', () => {
     expect(html).toContain('All four tool calls completed successfully.');
   });
 
+  it('not-as-described case at the claim stage: notes and documents, no message offered', () => {
+    const html = render('/cases/PP-R-BLW-10187733');
+    expect(html).toContain('Buyer says the colour differs from the listing');
+    expect(html).toContain('Other: notes and documents');
+    expect(html).toContain('Product photos record');
+    expect(html).toContain('Our packing photo shows the natural tote going into the box.');
+    expect(html).toContain('accept_claim');
+    expect(html).not.toContain('send_message');
+  });
+
+  it('incorrect-amount agent case: the mandate and receipt, labelled demo data, sent as notes and documents', () => {
+    const html = render('/cases/PP-R-KDA-10192258');
+    expect(html).toContain('INCORRECT_AMOUNT');
+    expect(html).toContain('Demo data');
+    expect(html).toContain('Attachments to send');
+    expect(html).not.toContain('How this goes to PayPal as digital delivery');
+  });
+
+  it('recorded case: the read-back of what was sent, the draft locked', () => {
+    const html = render('/cases/PP-R-QZE-10181290');
+    expect(html).toContain('Recorded by the simulator');
+    expect(html).toContain('Sent · read-only');
+    expect(html).toContain('Evidence recorded by the simulator');
+    expect(html).toContain('booking-B-4471.pdf');
+    expect(html).not.toContain('PayPal is asking for:');
+    expect(html).not.toContain('aria-label="Edit sentence');
+  });
+
+  it('closed case: the outcome, what was sent, no actions', () => {
+    const html = render('/cases/PP-R-HFA-10176021');
+    expect(html).toContain('Resolved in your favour');
+    expect(html).toContain('RESOLVED_SELLER_FAVOUR');
+    expect(html).toContain('Closed by the simulator');
+    expect(html).toContain('PayPal allows no actions for this dispute right now.');
+    expect(html).toContain('usps-tracking-9400111899223100176021.pdf');
+  });
+
+  it('every inbox row opens a case (no placeholder); an unknown id is not found', () => {
+    for (const id of ['PP-R-TVH-10190665', 'PP-R-MMC-10190702', 'PP-R-BLW-10187733', 'PP-R-PLN-10189901', 'PP-R-KDA-10192258', 'PP-R-QZE-10181290', 'PP-R-HFA-10176021']) {
+      const html = render(`/cases/${id}`);
+      expect(html, id).toContain('Response draft');
+      expect(html, id).toContain(`Analysis by ${goldenAnalyses[id]!.model}`);
+      expect(html, id).not.toContain('for illustration');
+    }
+    const missing = render('/cases/PP-R-XXX-00000000');
+    expect(missing).toContain('Case not found');
+    expect(missing).toContain('There is no dispute PP-R-XXX-00000000 in this workspace.');
+  });
+
   it('processing state', () => {
     const html = render('/cases/PP-R-NKQ-10194410');
     expect(html).toContain('PayPal is processing this new dispute');

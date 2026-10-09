@@ -1,14 +1,14 @@
 import { analysisKey, buildInput, withAnalysis, type CaseAnalysis } from '@resolvekit/analyst';
 import { describe, expect, it } from 'vitest';
 import { analysisLabel } from '../components/AnalysisBar';
-import { agentCase, standardCase } from '../fixtures';
+import { caseFiles, standardCase } from '../fixtures';
 import { goldenAnalyses } from '../fixtures/golden';
 import { AnalysisClient, AnalysisRequestError, AnalysisUnreachableError } from './analysisClient';
 import { deriveSentences, notesText } from './draft';
 
 describe('golden analyses', () => {
-  it('exist for both demo cases and were made from exactly the documents the app shows (else: npm run golden -- --golden)', async () => {
-    for (const c of [standardCase, agentCase]) {
+  it('exist for every case file and were made from exactly the documents the app shows (else: npm run golden -- --golden)', async () => {
+    for (const c of Object.values(caseFiles)) {
       const g = goldenAnalyses[c.summary.id]!;
       expect(g, c.summary.id).toBeDefined();
       expect(await analysisKey(buildInput(c), g.requestedModel, g.promptVersion)).toBe(g.key);
@@ -26,6 +26,21 @@ describe('golden analyses', () => {
     expect(c.evidence.find((e) => e.id === 'E6')!.warning).toMatch(/contains instructions/);
     // Every citation shown carries the exact quote, and the quote is in the document.
     for (const s of c.sentences) for (const ct of s.citations) for (const q of ct.quotes ?? []) expect(JSON.stringify(c.evidence)).toContain(q.replace(/"/g, '\\"'));
+  });
+
+  it('every case: the merchant’s unsupported note is removed, never sent, and every quote is in its document', () => {
+    for (const base of Object.values(caseFiles)) {
+      const g = goldenAnalyses[base.summary.id]!;
+      const c = withAnalysis(base, g, buildInput(base));
+      const views = deriveSentences(c.sentences, { edits: {}, checking: null, analysisStep: 99, rejectionStep: c.analysis.rejectionStep });
+      const removed = views.filter((v) => v.state === 'rejected');
+      expect(removed.length, base.summary.id).toBeGreaterThan(0);
+      for (const v of removed) expect(notesText(views)).not.toContain(v.text);
+      expect(views.filter((v) => v.state === 'supported').length, base.summary.id).toBeGreaterThan(0);
+      // Quotes are verbatim text of the document as the analyst read it (lines joined, whitespace normalised).
+      const text = (id: string) => (buildInput(base).documents.find((d) => d.id === id)?.lines ?? []).map((l) => l.text).join(' ').replace(/\s+/g, ' ');
+      for (const s of c.sentences) for (const ct of s.citations) for (const q of ct.quotes ?? []) expect(text(ct.evidenceId), base.summary.id).toContain(q.replace(/\s+/g, ' '));
+    }
   });
 });
 

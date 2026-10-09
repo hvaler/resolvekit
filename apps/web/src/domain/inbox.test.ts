@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEMO_NOW, caseFiles, inbox, processingOpening } from '../fixtures';
+import { DEMO_NOW, caseFiles, inbox, initialSnapshots, processingOpening } from '../fixtures';
+import { goldenAnalyses } from '../fixtures/golden';
 import {
   CHIPS,
   applySnapshot,
@@ -10,7 +11,9 @@ import {
   formatDue,
   formatDueAt,
   inboxSummary,
+  money,
   quickFilterText,
+  READINESS_OF,
   readiness,
   toGridRow,
   type InboxGridRow,
@@ -33,10 +36,13 @@ describe('due dates', () => {
     expect(formatDueAt('2026-10-10T01:00:00Z')).toBe('10 Oct · 01:00');
   });
 
-  it('agrees with the time left shown in the case files', () => {
+  it('agrees with the time left shown in the case files (none once the seller’s evidence is in or the case is closed)', () => {
     for (const c of Object.values(caseFiles)) {
       const r = row(c.summary.id);
-      expect(`${formatDue(r.dueH!)} left`).toBe(c.summary.timeLeft);
+      if (c.summary.respondBy == null) {
+        expect(r.dueH, c.summary.id).toBeNull();
+        expect(c.summary.timeLeft).toBeNull();
+      } else expect(`${formatDue(r.dueH!)} left`, c.summary.id).toBe(c.summary.timeLeft);
     }
   });
 
@@ -45,6 +51,31 @@ describe('due dates', () => {
     expect([...values].sort((a, b) => compareDue(a, b))).toEqual([30, 120, 238, null, null]);
     // AG Grid negates the comparator for a descending sort.
     expect([...values].sort((a, b) => -compareDue(a, b, true))).toEqual([238, 120, 30, null, null]);
+  });
+});
+
+describe('every inbox row and its case file', () => {
+  it('has a case file, except the dispute PayPal is still processing', () => {
+    for (const d of inbox) expect(!!caseFiles[d.id] || d.nextKind === 'processing', d.id).toBe(true);
+  });
+
+  it('agree on amount, stage and status; readiness is the committed analysis’s checklist', () => {
+    for (const d of inbox) {
+      const c = caseFiles[d.id];
+      if (!c) continue;
+      expect([money(d.amount!), d.currency, d.stage, d.status, d.item], d.id).toEqual([c.summary.amount, c.summary.currency, c.summary.stage, c.summary.status, c.summary.buyerItemType]);
+      expect(d.caseType, d.id).toBe(c.kind === 'agent' ? 'Agent purchase' : 'Standard');
+      const g = goldenAnalyses[d.id]!;
+      expect(g.checklist.items).toHaveLength(READINESS_OF);
+      expect(d.ready, d.id).toBe(g.checklist.items.filter((i) => i.status === 'present').length);
+    }
+  });
+
+  it('read as the simulator’s first snapshot makes them (recorded and closed rows)', () => {
+    for (const d of inbox) {
+      const s = initialSnapshots.find((x) => x.id === d.id);
+      if (caseFiles[d.id]) expect(applySnapshot(d, s), d.id).toEqual(d);
+    }
   });
 });
 
@@ -141,6 +172,12 @@ describe('applying a fresh read from PayPal', () => {
     const g = toGridRow(r, DEMO_NOW);
     expect(g).toMatchObject({ statusLabel: 'Waiting for you', stageLabel: 'Inquiry', nextKind: 'work', dueH: 240 });
     expect(g.nextSub).toBe('Opened by PayPal · 5 actions allowed');
+  });
+
+  it('a closed dispute: nothing to do, PayPal’s outcome and the day it closed', () => {
+    const r = applySnapshot(tvh, snap({ id: tvh.id, status: 'RESOLVED', outcome: { code: 'RESOLVED_SELLER_FAVOUR', closedAt: '2026-10-02T16:00:00Z' } }));
+    expect(r).toMatchObject({ status: 'RESOLVED', next: 'Nothing to do', nextKind: 'none', nextSub: 'Resolved in your favour · 2 Oct', respondBy: null, dueNote: 'Closed 2 Oct' });
+    expect(applySnapshot(tvh, snap({ id: tvh.id, status: 'RESOLVED' })).nextSub).toBe('Resolved at PayPal');
   });
 
   it('shows PayPal’s CHARGEBACK stage as "Claim"', () => {

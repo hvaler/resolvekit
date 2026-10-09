@@ -3,7 +3,21 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { analysisKey, buildInput, type CaseAnalysis } from '@resolvekit/analyst';
 import type { DisputeSnapshot } from '../../../apps/web/src/domain/types.ts';
-import { CASE_FILES, agentCase, caseAllowedActions, caseInput, caseView, documentsSignature, standardCase, type PayPalSource } from '../src/index.ts';
+import { PAYPAL_EVIDENCE_BY_REASON } from '../../../apps/web/src/domain/evidenceTypes.ts';
+import {
+  CASE_FILES,
+  RESOLVED_SENT_NOTES,
+  UNAUTHORISED_SENT_NOTES,
+  agentCase,
+  caseAllowedActions,
+  caseInput,
+  caseView,
+  documentsSignature,
+  resolvedCase,
+  standardCase,
+  unauthorisedCase,
+  type PayPalSource,
+} from '../src/index.ts';
 
 const golden = readdirSync(new URL('../../analyst/golden/', import.meta.url))
   .filter((f) => f.endsWith('.json'))
@@ -30,14 +44,70 @@ const live = (over: Partial<DisputeSnapshot> = {}): PayPalSource => ({
 });
 
 test('simulated cases: the input is the demo case as committed, so the golden analyses still match', async () => {
-  for (const c of [standardCase, agentCase]) {
+  for (const c of Object.values(CASE_FILES)) {
     const input = caseInput(c, { kind: 'simulated' });
     assert.deepEqual(input, buildInput(c));
     const g = golden.find((a) => a.caseId === c.summary.id);
-    assert.ok(g, `golden analysis for ${c.summary.id}`);
-    assert.equal(await analysisKey(input, g.requestedModel, g.promptVersion), g.key);
+    assert.ok(g, `golden analysis for ${c.summary.id} (else: npm run golden -- --case ${c.summary.id} --golden)`);
+    assert.equal(await analysisKey(input, g.requestedModel, g.promptVersion), g.key, c.summary.id);
   }
-  assert.deepEqual(Object.keys(CASE_FILES).sort(), [agentCase.summary.id, standardCase.summary.id].sort());
+  assert.equal(Object.keys(CASE_FILES).length, 7);
+  assert.ok(CASE_FILES[standardCase.summary.id] && CASE_FILES[agentCase.summary.id]);
+});
+
+test('every case follows PayPal: actions by stage, evidence types from the reasons-and-evidence table, state by status', () => {
+  for (const c of Object.values(CASE_FILES)) {
+    const id = c.summary.id;
+    const table = PAYPAL_EVIDENCE_BY_REASON[c.summary.reason];
+    // send-message, make-offer and escalate exist only in the inquiry stage (Customer Disputes API reference).
+    if (c.summary.stage === 'CHARGEBACK') assert.ok(!c.allowedActions.some((a) => a === 'send_message' || a === 'make_offer' || a === 'escalate'), id);
+    if (c.requestedEvidenceType) {
+      assert.ok(table.includes(c.requestedEvidenceType), `${id}: PayPal lists ${c.requestedEvidenceType} for ${c.summary.reason}`);
+      assert.ok(c.evidenceTypes.some((t) => t.type === c.requestedEvidenceType && t.satisfied), `${id}: the requested type is offered and met`);
+    }
+    // Notes-and-documents evidence carries no tracking; proof of fulfillment needs it.
+    for (const t of c.evidenceTypes) if (t.type === 'OTHER' && c.requestedEvidenceType === 'OTHER') assert.equal(c.fulfillment.tracking, '', id);
+    const seller = (c.simulatedPayPal?.evidences ?? []).filter((e) => e.source === 'SUBMITTED_BY_SELLER');
+    switch (c.summary.status) {
+      case 'WAITING_FOR_SELLER_RESPONSE':
+        assert.equal(seller.length, 0, id);
+        assert.ok(c.allowedActions.includes('provide_evidence') && c.summary.respondBy && c.requestedEvidenceType, id);
+        break;
+      case 'WAITING_FOR_BUYER_RESPONSE':
+        // Once the seller's evidence is in: no provide_evidence, no request, no seller due date (docs/sandbox-findings.md).
+        assert.equal(seller.length, 1, id);
+        assert.ok(!c.allowedActions.includes('provide_evidence') && !c.requestedEvidenceType && !c.summary.respondBy, id);
+        assert.ok(c.simulatedPayPal?.buyerRespondBy, id);
+        break;
+      case 'RESOLVED':
+        assert.deepEqual(c.allowedActions, [], id);
+        assert.ok(c.simulatedPayPal?.outcome?.code, id);
+        break;
+      default:
+        assert.fail(`${id}: unexpected status ${c.summary.status}`);
+    }
+    for (const e of seller) {
+      assert.ok(table.includes(e.evidenceType as never), `${id}: recorded ${e.evidenceType}`);
+      assert.deepEqual(e.files, c.attachments.map((a) => a.name), id);
+      assert.equal(e.carrier, c.fulfillment.carrier, id);
+      assert.equal(e.tracking, c.fulfillment.tracking, id);
+    }
+  }
+});
+
+test('recorded cases: the notes PayPal holds are exactly the supported sentences of the committed analysis', () => {
+  for (const [c, notes] of [
+    [unauthorisedCase, UNAUTHORISED_SENT_NOTES],
+    [resolvedCase, RESOLVED_SENT_NOTES],
+  ] as const) {
+    const g = golden.find((a) => a.caseId === c.summary.id)!;
+    const sent = g.sentences.filter((s) => s.verdict === 'supported').map((s) => s.text.trim()).join(' ');
+    assert.ok(sent.length > 0 && sent.length <= 2000, c.summary.id);
+    assert.equal(notes, sent, c.summary.id);
+    assert.equal(c.simulatedPayPal!.evidences.find((e) => e.source === 'SUBMITTED_BY_SELLER')!.notes, notes);
+    // The removed merchant note never went to PayPal.
+    for (const s of g.sentences.filter((x) => x.verdict === 'rejected')) assert.ok(!notes.includes(s.text), s.text);
+  }
 });
 
 test('bound case: PayPal’s capture and dispute record come from the read; merchant documents and notes stay', () => {

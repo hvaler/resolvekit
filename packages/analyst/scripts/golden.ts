@@ -10,10 +10,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentCase } from '../../cases/src/fixtures/agentCase.ts';
-import { standardCase } from '../../cases/src/fixtures/standardCase.ts';
+import { CASE_FILES } from '../../cases/src/index.ts';
 import { GOLDEN_DIR } from '../src/cache.ts';
-import { buildInput } from '../src/input.ts';
+import { caseInput } from '../../cases/src/input.ts';
 import { analysisKey } from '../src/key.ts';
 import { analyzeCase } from '../src/pipeline.ts';
 import { modelFromEnv } from '../src/providers.ts';
@@ -33,9 +32,10 @@ if (!cfg) {
   process.exit(1);
 }
 
-for (const c of [standardCase, agentCase]) {
+for (const c of Object.values(CASE_FILES)) {
   if (only && c.summary.id !== only) continue;
-  const input = buildInput(c);
+  // The case as the app shows it unbound (simulated PayPal; for the agent case, the demo MeterMCP session).
+  const input = caseInput(c, { kind: 'simulated' });
   const key = await analysisKey(input, cfg.primary.model);
   console.log(`${c.summary.id} · key ${key.slice(0, 12)} · ${cfg.primary.provider}/${cfg.primary.model}`);
   const a = await analyzeCase(input, {
