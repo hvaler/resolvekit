@@ -241,8 +241,8 @@ function ProcessingScreen() {
           />
           {opened ? (
             <p role="status" className="m-0 bg-ok-soft px-[22px] py-3.5 text-body text-ink">
-              PayPal has opened this dispute: {snap?.allowedActions.length ?? 0} actions are now allowed. Its case file is not part of the synthetic
-              demo data yet.
+              PayPal has opened this dispute: {snap?.allowedActions.length ?? 0} actions are now allowed. This row shows the
+              processing state only; its documents are not included in the demo.
             </p>
           ) : (
             <ProcessingBanner checkedAt={snap?.checkedAt ?? null} allowedActions={snap?.allowedActions ?? []} />
