@@ -1,0 +1,959 @@
+{
+  "caseId": "PP-R-KDA-10192258",
+  "key": "4d65a2f8cb4eee7e27ef62bf64083962d743087d6363626e9dd662f6f90c8132",
+  "promptVersion": "rk-analyst-2026-10-09.7",
+  "requestedModel": "gemini-3.8-flash",
+  "provider": "gemini",
+  "model": "gemini-3.8-flash",
+  "createdAt": "2026-10-09T19:34:21.429Z",
+  "facts": [
+    {
+      "id": "F1",
+      "doc": "D",
+      "quote": "Dispute PP-R-KDA-10192258 · reason INCORRECT_AMOUNT",
+      "statement": "The dispute reason is INCORRECT_AMOUNT for case PP-R-KDA-10192258.",
+      "at": null
+    },
+    {
+      "id": "F2",
+      "doc": "D",
+      "quote": "Reason as shown to the merchant: Buyer says they were charged more than the budget they approved",
+      "statement": "Buyer states they were charged more than the budget they approved.",
+      "at": null
+    },
+    {
+      "id": "F3",
+      "doc": "D",
+      "quote": "Buyer-declared item type: Service",
+      "statement": "The buyer declared the item type as Service.",
+      "at": null
+    },
+    {
+      "id": "F4",
+      "doc": "D",
+      "quote": "Disputed amount: 3.20 USD",
+      "statement": "The disputed amount is 3.20 USD.",
+      "at": null
+    },
+    {
+      "id": "F5",
+      "doc": "D",
+      "quote": "Opened: 7 Oct 2026 09:30:00 UTC",
+      "statement": "The dispute was opened on 7 October 2026 at 09:30:00 UTC.",
+      "at": "2026-10-07T09:30:00.000Z"
+    },
+    {
+      "id": "F6",
+      "doc": "D",
+      "quote": "Stage: CHARGEBACK",
+      "statement": "The dispute stage is CHARGEBACK.",
+      "at": null
+    },
+    {
+      "id": "F7",
+      "doc": "E1",
+      "quote": "Buyer approved a budget of 5.00 USD for agent session",
+      "statement": "The buyer approved a budget of 5.00 USD for the session.",
+      "at": null
+    },
+    {
+      "id": "F8",
+      "doc": "E1",
+      "quote": "Session: mm-sess-20261006-03",
+      "statement": "The session ID is mm-sess-20261006-03.",
+      "at": null
+    },
+    {
+      "id": "F9",
+      "doc": "E1",
+      "quote": "Approved: 6 Oct 2026 14:02 UTC by the buyer in PayPal",
+      "statement": "The buyer approved the mandate on 6 October 2026 at 14:02 UTC in PayPal.",
+      "at": "2026-10-06T14:02:00.000Z"
+    },
+    {
+      "id": "F10",
+      "doc": "E1",
+      "quote": "PayPal order: 8XA10394RT2258117",
+      "statement": "The PayPal order number is 8XA10394RT2258117.",
+      "at": null
+    },
+    {
+      "id": "F11",
+      "doc": "E1",
+      "quote": "Authorization: 2GH66019372258404 · 5.00 USD hold",
+      "statement": "Authorization 2GH66019372258404 placed a 5.00 USD hold.",
+      "at": null
+    },
+    {
+      "id": "F12",
+      "doc": "E1",
+      "quote": "Hard cap: 5.00 USD · checked before every call",
+      "statement": "A hard cap of 5.00 USD was checked before every call.",
+      "at": null
+    },
+    {
+      "id": "F13",
+      "doc": "E2",
+      "quote": "#1 14:03:10 quote_lookup 0.05 USD OK · request b1e0…4c2a",
+      "statement": "Call 1 executed quote_lookup for 0.05 USD successfully.",
+      "at": "2026-10-06T14:03:10.000Z"
+    },
+    {
+      "id": "F14",
+      "doc": "E2",
+      "quote": "#2 14:03:41 deep_report 0.40 USD OK · request 58d3…a917",
+      "statement": "Call 2 executed deep_report for 0.40 USD successfully.",
+      "at": "2026-10-06T14:03:41.000Z"
+    },
+    {
+      "id": "F15",
+      "doc": "E2",
+      "quote": "#3 14:05:02 quote_lookup 0.05 USD OK · request e07c…31f5",
+      "statement": "Call 3 executed quote_lookup for 0.05 USD successfully.",
+      "at": "2026-10-06T14:05:02.000Z"
+    },
+    {
+      "id": "F16",
+      "doc": "E2",
+      "quote": "#4 14:05:30 deep_report 0.40 USD OK · request 2a9b…d860",
+      "statement": "Call 4 executed deep_report for 0.40 USD successfully.",
+      "at": "2026-10-06T14:05:30.000Z"
+    },
+    {
+      "id": "F17",
+      "doc": "E2",
+      "quote": "#5 14:06:48 quote_lookup 0.05 USD OK · request 9c44…07e2",
+      "statement": "Call 5 executed quote_lookup for 0.05 USD successfully.",
+      "at": "2026-10-06T14:06:48.000Z"
+    },
+    {
+      "id": "F18",
+      "doc": "E2",
+      "quote": "#6 14:07:15 deep_report 0.40 USD FAILED · not charged · request f6a1…5b3d",
+      "statement": "Call 6 deep_report failed and was not charged.",
+      "at": "2026-10-06T14:07:15.000Z"
+    },
+    {
+      "id": "F19",
+      "doc": "E2",
+      "quote": "#7 14:07:52 deep_report 0.40 USD OK · request 03be…c98f",
+      "statement": "Call 7 executed deep_report for 0.40 USD successfully.",
+      "at": "2026-10-06T14:07:52.000Z"
+    },
+    {
+      "id": "F20",
+      "doc": "E2",
+      "quote": "#8 14:09:05 quote_lookup 0.05 USD OK · request 7d25…e140",
+      "statement": "Call 8 executed quote_lookup for 0.05 USD successfully.",
+      "at": "2026-10-06T14:09:05.000Z"
+    },
+    {
+      "id": "F21",
+      "doc": "E2",
+      "quote": "#9 14:09:33 deep_report 0.40 USD OK · request a8f0…6d1b",
+      "statement": "Call 9 executed deep_report for 0.40 USD successfully.",
+      "at": "2026-10-06T14:09:33.000Z"
+    },
+    {
+      "id": "F22",
+      "doc": "E2",
+      "quote": "#10 14:10:51 quote_lookup 0.05 USD OK · request 4c6e…92a7",
+      "statement": "Call 10 executed quote_lookup for 0.05 USD successfully.",
+      "at": "2026-10-06T14:10:51.000Z"
+    },
+    {
+      "id": "F23",
+      "doc": "E2",
+      "quote": "#11 14:11:20 deep_report 0.40 USD OK · request d19a…3f04",
+      "statement": "Call 11 executed deep_report for 0.40 USD successfully.",
+      "at": "2026-10-06T14:11:20.000Z"
+    },
+    {
+      "id": "F24",
+      "doc": "E2",
+      "quote": "#12 14:12:40 quote_lookup 0.05 USD OK · request 61b7…a8c5",
+      "statement": "Call 12 executed quote_lookup for 0.05 USD successfully.",
+      "at": "2026-10-06T14:12:40.000Z"
+    },
+    {
+      "id": "F25",
+      "doc": "E2",
+      "quote": "#13 14:13:06 deep_report 0.40 USD OK · request c3d8…17e6",
+      "statement": "Call 13 executed deep_report for 0.40 USD successfully.",
+      "at": "2026-10-06T14:13:06.000Z"
+    },
+    {
+      "id": "F26",
+      "doc": "E2",
+      "quote": "#14 14:14:30 quote_lookup 0.05 USD OK · request 8e52…b0f9",
+      "statement": "Call 14 executed quote_lookup for 0.05 USD successfully.",
+      "at": "2026-10-06T14:14:30.000Z"
+    },
+    {
+      "id": "F27",
+      "doc": "E2",
+      "quote": "#15 14:14:58 deep_report 0.40 USD OK · request 15fa…4d28",
+      "statement": "Call 15 executed deep_report for 0.40 USD successfully.",
+      "at": "2026-10-06T14:14:58.000Z"
+    },
+    {
+      "id": "F28",
+      "doc": "E2",
+      "quote": "#16 14:16:12 quote_lookup 0.05 USD OK · request b94c…e7a0",
+      "statement": "Call 16 executed quote_lookup for 0.05 USD successfully.",
+      "at": "2026-10-06T14:16:12.000Z"
+    },
+    {
+      "id": "F29",
+      "doc": "E2",
+      "quote": "Approved budget 5.00 USD",
+      "statement": "The approved budget is 5.00 USD.",
+      "at": null
+    },
+    {
+      "id": "F30",
+      "doc": "E3",
+      "quote": "Captured 3.20 of 5.00 USD · remainder released",
+      "statement": "3.20 USD of 5.00 USD was captured and the remainder was released.",
+      "at": null
+    },
+    {
+      "id": "F31",
+      "doc": "E3",
+      "quote": "Capture: 4KD02258MX7719034 · 6 Oct 2026 14:20 UTC",
+      "statement": "Capture 4KD02258MX7719034 took place on 6 October 2026 at 14:20 UTC.",
+      "at": "2026-10-06T14:20:00.000Z"
+    },
+    {
+      "id": "F32",
+      "doc": "E3",
+      "quote": "Captured: 3.20 USD (15 OK calls)",
+      "statement": "3.20 USD was captured for 15 OK calls.",
+      "at": null
+    },
+    {
+      "id": "F33",
+      "doc": "E3",
+      "quote": "Released: 1.80 USD authorization remainder",
+      "statement": "The 1.80 USD remaining authorization was released.",
+      "at": null
+    },
+    {
+      "id": "F34",
+      "doc": "E4",
+      "quote": "Session mm-sess-20261006-03 · 16 calls · 15 charged",
+      "statement": "Session mm-sess-20261006-03 had 16 calls with 15 charged.",
+      "at": null
+    },
+    {
+      "id": "F35",
+      "doc": "E4",
+      "quote": "Total charged 3.20 USD of 5.00 USD budget",
+      "statement": "A total of 3.20 USD was charged out of a 5.00 USD budget.",
+      "at": null
+    },
+    {
+      "id": "F36",
+      "doc": "E4",
+      "quote": "Each call listed with time, tool, price, status and request hash",
+      "statement": "Calls are listed with time, tool, price, status, and request hash.",
+      "at": null
+    },
+    {
+      "id": "F37",
+      "doc": "E5",
+      "quote": "Received: 6 Oct 2026 · 14:20 (from Simulated PayPal · demo data)",
+      "statement": "The simulated authorization record was received on 6 October 2026 at 14:20.",
+      "at": "2026-10-06T14:20:00.000Z"
+    },
+    {
+      "id": "F38",
+      "doc": "E5",
+      "quote": "Authorization 2GH66019372258404 · 5.00 USD · created 6 Oct 2026 14:02 UTC",
+      "statement": "Authorization 2GH66019372258404 for 5.00 USD was created on 6 October 2026 at 14:02 UTC.",
+      "at": "2026-10-06T14:02:00.000Z"
+    },
+    {
+      "id": "F39",
+      "doc": "E5",
+      "quote": "Captured 3.20 USD · 6 Oct 2026 14:20 UTC",
+      "statement": "3.20 USD was captured on 6 October 2026 at 14:20 UTC.",
+      "at": "2026-10-06T14:20:00.000Z"
+    },
+    {
+      "id": "F40",
+      "doc": "E5",
+      "quote": "Remaining 1.80 USD voided · 6 Oct 2026 14:20 UTC · not captured",
+      "statement": "The remaining 1.80 USD was voided and not captured on 6 October 2026 at 14:20 UTC.",
+      "at": "2026-10-06T14:20:00.000Z"
+    },
+    {
+      "id": "F41",
+      "doc": "E6",
+      "quote": "Received: 7 Oct 2026 · 09:30 (from PayPal dispute)",
+      "statement": "Buyer message was received on 7 October 2026 at 09:30.",
+      "at": "2026-10-07T09:30:00.000Z"
+    },
+    {
+      "id": "F42",
+      "doc": "E6",
+      "quote": "\"I set a 5.00 USD limit for my agent, but my statement shows 5.00 USD and then 3.20 USD. That is more than I approved.\"",
+      "statement": "Buyer states their statement showed 5.00 USD then 3.20 USD, exceeding the approved limit.",
+      "at": null
+    },
+    {
+      "id": "F43",
+      "doc": "E6",
+      "quote": "From k•••@example.com · 7 Oct 2026 09:30 UTC",
+      "statement": "Message sent from k•••@example.com on 7 October 2026 at 09:30 UTC.",
+      "at": "2026-10-07T09:30:00.000Z"
+    }
+  ],
+  "droppedFacts": 0,
+  "timeline": [
+    {
+      "at": "2026-10-06T14:02:00.000Z",
+      "title": "Mandate approved",
+      "sub": "Approved budget of 5.00 USD",
+      "doc": "E1",
+      "quote": "Approved: 6 Oct 2026 14:02 UTC by the buyer in PayPal",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:02:00.000Z",
+      "title": "Authorization created",
+      "sub": "5.00 USD hold placed",
+      "doc": "E5",
+      "quote": "Authorization 2GH66019372258404 · 5.00 USD · created 6 Oct 2026 14:02 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:03:10.000Z",
+      "title": "Call 1 executed",
+      "sub": "quote_lookup 0.05 USD OK",
+      "doc": "E2",
+      "quote": "#1 14:03:10 quote_lookup 0.05 USD OK · request b1e0…4c2a",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:03:41.000Z",
+      "title": "Call 2 executed",
+      "sub": "deep_report 0.40 USD OK",
+      "doc": "E2",
+      "quote": "#2 14:03:41 deep_report 0.40 USD OK · request 58d3…a917",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:05:02.000Z",
+      "title": "Call 3 executed",
+      "sub": "quote_lookup 0.05 USD OK",
+      "doc": "E2",
+      "quote": "#3 14:05:02 quote_lookup 0.05 USD OK · request e07c…31f5",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:05:30.000Z",
+      "title": "Call 4 executed",
+      "sub": "deep_report 0.40 USD OK",
+      "doc": "E2",
+      "quote": "#4 14:05:30 deep_report 0.40 USD OK · request 2a9b…d860",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:06:48.000Z",
+      "title": "Call 5 executed",
+      "sub": "quote_lookup 0.05 USD OK",
+      "doc": "E2",
+      "quote": "#5 14:06:48 quote_lookup 0.05 USD OK · request 9c44…07e2",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:07:15.000Z",
+      "title": "Call 6 failed",
+      "sub": "deep_report FAILED not charged",
+      "doc": "E2",
+      "quote": "#6 14:07:15 deep_report 0.40 USD FAILED · not charged · request f6a1…5b3d",
+      "negated": true
+    },
+    {
+      "at": "2026-10-06T14:07:52.000Z",
+      "title": "Call 7 executed",
+      "sub": "deep_report 0.40 USD OK",
+      "doc": "E2",
+      "quote": "#7 14:07:52 deep_report 0.40 USD OK · request 03be…c98f",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:09:05.000Z",
+      "title": "Call 8 executed",
+      "sub": "quote_lookup 0.05 USD OK",
+      "doc": "E2",
+      "quote": "#8 14:09:05 quote_lookup 0.05 USD OK · request 7d25…e140",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:09:33.000Z",
+      "title": "Call 9 executed",
+      "sub": "deep_report 0.40 USD OK",
+      "doc": "E2",
+      "quote": "#9 14:09:33 deep_report 0.40 USD OK · request a8f0…6d1b",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:10:51.000Z",
+      "title": "Call 10 executed",
+      "sub": "quote_lookup 0.05 USD OK",
+      "doc": "E2",
+      "quote": "#10 14:10:51 quote_lookup 0.05 USD OK · request 4c6e…92a7",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:11:20.000Z",
+      "title": "Call 11 executed",
+      "sub": "deep_report 0.40 USD OK",
+      "doc": "E2",
+      "quote": "#11 14:11:20 deep_report 0.40 USD OK · request d19a…3f04",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:12:40.000Z",
+      "title": "Call 12 executed",
+      "sub": "quote_lookup 0.05 USD OK",
+      "doc": "E2",
+      "quote": "#12 14:12:40 quote_lookup 0.05 USD OK · request 61b7…a8c5",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:13:06.000Z",
+      "title": "Call 13 executed",
+      "sub": "deep_report 0.40 USD OK",
+      "doc": "E2",
+      "quote": "#13 14:13:06 deep_report 0.40 USD OK · request c3d8…17e6",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:14:30.000Z",
+      "title": "Call 14 executed",
+      "sub": "quote_lookup 0.05 USD OK",
+      "doc": "E2",
+      "quote": "#14 14:14:30 quote_lookup 0.05 USD OK · request 8e52…b0f9",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:14:58.000Z",
+      "title": "Call 15 executed",
+      "sub": "deep_report 0.40 USD OK",
+      "doc": "E2",
+      "quote": "#15 14:14:58 deep_report 0.40 USD OK · request 15fa…4d28",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:16:12.000Z",
+      "title": "Call 16 executed",
+      "sub": "quote_lookup 0.05 USD OK",
+      "doc": "E2",
+      "quote": "#16 14:16:12 quote_lookup 0.05 USD OK · request b94c…e7a0",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:20:00.000Z",
+      "title": "Capture completed",
+      "sub": "Captured 3.20 USD 4KD02258MX7719034",
+      "doc": "E3",
+      "quote": "Capture: 4KD02258MX7719034 · 6 Oct 2026 14:20 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-06T14:20:00.000Z",
+      "title": "Remainder voided",
+      "sub": "1.80 USD authorization remainder released",
+      "doc": "E5",
+      "quote": "Remaining 1.80 USD voided · 6 Oct 2026 14:20 UTC · not captured",
+      "negated": false
+    },
+    {
+      "at": "2026-10-07T09:30:00.000Z",
+      "title": "Dispute opened",
+      "sub": "INCORRECT_AMOUNT disputed 3.20 USD",
+      "doc": "D",
+      "quote": "Opened: 7 Oct 2026 09:30:00 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-07T09:30:00.000Z",
+      "title": "Buyer message received",
+      "sub": "Dispute message from buyer",
+      "doc": "E6",
+      "quote": "From k•••@example.com · 7 Oct 2026 09:30 UTC",
+      "negated": false
+    }
+  ],
+  "contradictions": [],
+  "checklist": {
+    "title": "What \"incorrect amount\" disputes need",
+    "items": [
+      {
+        "id": "approved",
+        "label": "Amount the buyer approved",
+        "critical": true,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E1",
+            "quote": "Buyer approved a budget of 5.00 USD for agent session"
+          },
+          {
+            "doc": "E1",
+            "quote": "Approved: 6 Oct 2026 14:02 UTC by the buyer in PayPal"
+          },
+          {
+            "doc": "E1",
+            "quote": "Authorization: 2GH66019372258404 · 5.00 USD hold"
+          },
+          {
+            "doc": "E2",
+            "quote": "Approved budget 5.00 USD"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "charged",
+        "label": "Amount actually captured",
+        "critical": true,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E3",
+            "quote": "Captured 3.20 of 5.00 USD · remainder released"
+          },
+          {
+            "doc": "E3",
+            "quote": "Capture: 4KD02258MX7719034 · 6 Oct 2026 14:20 UTC"
+          },
+          {
+            "doc": "E3",
+            "quote": "Captured: 3.20 USD (15 OK calls)"
+          },
+          {
+            "doc": "E4",
+            "quote": "Total charged 3.20 USD of 5.00 USD budget"
+          },
+          {
+            "doc": "E5",
+            "quote": "Captured 3.20 USD · 6 Oct 2026 14:20 UTC"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "breakdown",
+        "label": "Itemised breakdown of the charge",
+        "critical": true,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E2",
+            "quote": "#1 14:03:10 quote_lookup 0.05 USD OK · request b1e0…4c2a"
+          },
+          {
+            "doc": "E2",
+            "quote": "#2 14:03:41 deep_report 0.40 USD OK · request 58d3…a917"
+          },
+          {
+            "doc": "E2",
+            "quote": "#3 14:05:02 quote_lookup 0.05 USD OK · request e07c…31f5"
+          },
+          {
+            "doc": "E2",
+            "quote": "#4 14:05:30 deep_report 0.40 USD OK · request 2a9b…d860"
+          },
+          {
+            "doc": "E2",
+            "quote": "#5 14:06:48 quote_lookup 0.05 USD OK · request 9c44…07e2"
+          },
+          {
+            "doc": "E2",
+            "quote": "#6 14:07:15 deep_report 0.40 USD FAILED · not charged · request f6a1…5b3d"
+          },
+          {
+            "doc": "E2",
+            "quote": "#7 14:07:52 deep_report 0.40 USD OK · request 03be…c98f"
+          },
+          {
+            "doc": "E2",
+            "quote": "#8 14:09:05 quote_lookup 0.05 USD OK · request 7d25…e140"
+          },
+          {
+            "doc": "E2",
+            "quote": "#9 14:09:33 deep_report 0.40 USD OK · request a8f0…6d1b"
+          },
+          {
+            "doc": "E2",
+            "quote": "#10 14:10:51 quote_lookup 0.05 USD OK · request 4c6e…92a7"
+          },
+          {
+            "doc": "E2",
+            "quote": "#11 14:11:20 deep_report 0.40 USD OK · request d19a…3f04"
+          },
+          {
+            "doc": "E2",
+            "quote": "#12 14:12:40 quote_lookup 0.05 USD OK · request 61b7…a8c5"
+          },
+          {
+            "doc": "E2",
+            "quote": "#13 14:13:06 deep_report 0.40 USD OK · request c3d8…17e6"
+          },
+          {
+            "doc": "E2",
+            "quote": "#14 14:14:30 quote_lookup 0.05 USD OK · request 8e52…b0f9"
+          },
+          {
+            "doc": "E2",
+            "quote": "#15 14:14:58 deep_report 0.40 USD OK · request 15fa…4d28"
+          },
+          {
+            "doc": "E2",
+            "quote": "#16 14:16:12 quote_lookup 0.05 USD OK · request b94c…e7a0"
+          },
+          {
+            "doc": "E4",
+            "quote": "Session mm-sess-20261006-03 · 16 calls · 15 charged"
+          },
+          {
+            "doc": "E4",
+            "quote": "Each call listed with time, tool, price, status and request hash"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "within",
+        "label": "Capture within the approved amount",
+        "critical": false,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E1",
+            "quote": "Buyer approved a budget of 5.00 USD for agent session"
+          },
+          {
+            "doc": "E1",
+            "quote": "Hard cap: 5.00 USD · checked before every call"
+          },
+          {
+            "doc": "E3",
+            "quote": "Captured 3.20 of 5.00 USD · remainder released"
+          },
+          {
+            "doc": "E4",
+            "quote": "Total charged 3.20 USD of 5.00 USD budget"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "holds",
+        "label": "Holds released, nothing taken twice",
+        "critical": false,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E3",
+            "quote": "Captured 3.20 of 5.00 USD · remainder released"
+          },
+          {
+            "doc": "E3",
+            "quote": "Released: 1.80 USD authorization remainder"
+          },
+          {
+            "doc": "E5",
+            "quote": "Remaining 1.80 USD voided · 6 Oct 2026 14:20 UTC · not captured"
+          }
+        ],
+        "contradictionId": null
+      }
+    ]
+  },
+  "sentences": [
+    {
+      "id": "S1",
+      "text": "The buyer approved a budget mandate of 5.00 USD for the session on 6 October 2026.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E1",
+          "quote": "Buyer approved a budget of 5.00 USD for agent session",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Approved: 6 Oct 2026 14:02 UTC by the buyer in PayPal",
+          "valid": true
+        }
+      ],
+      "verdict": "needs_review",
+      "reason": "Why: The evidence states 'budget' rather than 'budget mandate'.",
+      "decidedBy": "model",
+      "rewrite": "The buyer approved a budget of 5.00 USD for the session on 6 October 2026."
+    },
+    {
+      "id": "S2",
+      "text": "The session ran 16 calls, with call 6 failing and not being charged.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E2",
+          "quote": "#6 14:07:15 deep_report 0.40 USD FAILED · not charged · request f6a1…5b3d",
+          "valid": true
+        },
+        {
+          "doc": "E4",
+          "quote": "Session mm-sess-20261006-03 · 16 calls · 15 charged",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S3",
+      "text": "The 15 successful calls totalled 3.20 USD as detailed in the itemised session receipt.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E3",
+          "quote": "Captured: 3.20 USD (15 OK calls)",
+          "valid": true
+        },
+        {
+          "doc": "E4",
+          "quote": "Session mm-sess-20261006-03 · 16 calls · 15 charged",
+          "valid": true
+        },
+        {
+          "doc": "E4",
+          "quote": "Total charged 3.20 USD of 5.00 USD budget",
+          "valid": true
+        },
+        {
+          "doc": "E4",
+          "quote": "Each call listed with time, tool, price, status and request hash",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S4",
+      "text": "We captured 3.20 USD on 6 October 2026, which remained within the 5.00 USD approved budget.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E3",
+          "quote": "Captured 3.20 of 5.00 USD · remainder released",
+          "valid": true
+        },
+        {
+          "doc": "E3",
+          "quote": "Capture: 4KD02258MX7719034 · 6 Oct 2026 14:20 UTC",
+          "valid": true
+        },
+        {
+          "doc": "E4",
+          "quote": "Total charged 3.20 USD of 5.00 USD budget",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S5",
+      "text": "The remaining 1.80 USD of the initial authorization hold was completely voided and released rather than captured.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E3",
+          "quote": "Captured 3.20 of 5.00 USD · remainder released",
+          "valid": true
+        },
+        {
+          "doc": "E3",
+          "quote": "Released: 1.80 USD authorization remainder",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "Remaining 1.80 USD voided · 6 Oct 2026 14:20 UTC · not captured",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S6",
+      "text": "We refunded the 1.80 USD difference to the buyer.",
+      "noteId": "N1",
+      "citations": [
+        {
+          "doc": "E3",
+          "quote": "Released: 1.80 USD authorization remainder",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "Remaining 1.80 USD voided · 6 Oct 2026 14:20 UTC · not captured",
+          "valid": true
+        }
+      ],
+      "verdict": "rejected",
+      "reason": "Removed: The evidence shows the 1.80 USD was an uncaptured authorization remainder that was voided/released, not refunded to the buyer. It will not be sent.",
+      "decidedBy": "model",
+      "rewrite": "The remaining 1.80 USD authorization was voided and released rather than captured."
+    },
+    {
+      "id": "S7",
+      "text": "MeterMCP refuses any call that would take the total past the approved budget.",
+      "noteId": "N2",
+      "citations": [
+        {
+          "doc": "E1",
+          "quote": "Hard cap: 5.00 USD · checked before every call",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "Approved budget 5.00 USD",
+          "valid": true
+        }
+      ],
+      "verdict": "needs_review",
+      "reason": "Why: The evidence shows a \"Hard cap: 5.00 USD · checked before every call\" and \"Approved budget 5.00 USD\", but does not explicitly name \"MeterMCP\" or state it \"refuses\" calls.",
+      "decidedBy": "model",
+      "rewrite": "A hard cap of 5.00 USD, matching the approved budget, is checked before every call."
+    }
+  ],
+  "injections": [],
+  "recommendation": {
+    "action": "provide_evidence",
+    "rule": "PayPal requests OTHER; the case file has what it needs, no critical requirement is missing, and 4 sentence(s) are supported",
+    "explanation": "You have supported documentation showing that the 15 successful calls totalled 3.20 USD as detailed in the itemised session receipt, and that the remaining 1.80 USD of the initial authorization hold was completely voided and released rather than captured. Providing this evidence fits the dispute requirements because it confirms the captured amount matches the billed service; the decision is yours, and PayPal decides the outcome."
+  },
+  "usage": {
+    "calls": [
+      {
+        "stage": "screen",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 1721,
+        "outputTokens": 4,
+        "thinkingTokens": 0,
+        "ms": 15523
+      },
+      {
+        "stage": "extract",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 2069,
+        "outputTokens": 4305,
+        "thinkingTokens": 0,
+        "ms": 26511
+      },
+      {
+        "stage": "analyze",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 5294,
+        "outputTokens": 2684,
+        "thinkingTokens": 0,
+        "ms": 17962
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 592,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 2005
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 566,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 2097
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 549,
+        "outputTokens": 88,
+        "thinkingTokens": 0,
+        "ms": 2207
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 572,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 2325
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 524,
+        "outputTokens": 121,
+        "thinkingTokens": 0,
+        "ms": 2192
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 594,
+        "outputTokens": 48,
+        "thinkingTokens": 577,
+        "ms": 6651
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 539,
+        "outputTokens": 95,
+        "thinkingTokens": 0,
+        "ms": 6872
+      },
+      {
+        "stage": "explain",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 445,
+        "outputTokens": 91,
+        "thinkingTokens": 0,
+        "ms": 2228
+      }
+    ],
+    "inputTokens": 13465,
+    "outputTokens": 7580,
+    "thinkingTokens": 577
+  }
+}
