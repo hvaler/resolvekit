@@ -226,10 +226,12 @@ field by field.
 
 **Evals** ([docs/evals.md](docs/evals.md), raw results committed): 18 synthetic cases — normal delivery, missing
 tracking, address/postcode/amount contradictions, fabricated-claim bait, 10 prompt-injection styles, agent receipts.
-`gemini-3.8-flash`, final prompt: citation validity **100%** (372/372), unsupported claims rejected **100%** (17/17),
-false rejection **0%** (0/15), contradiction recall **100%** (13/13), injection detected **10/10** (pattern scan alone
-8/10), outcome unchanged **10/10** — and still 10/10 with detection ignored. The first full run missed an amount
-contradiction (86% recall); the earlier versions and the remaining misses are in the doc, with the Groq numbers.
+`gemini-3.8-flash`, final prompt: citation validity **100%** (374/374), unsupported claims kept out of what can be
+sent **100%** (17/17; 16 removed, 1 sent to review), false rejection **0%** (0/15), contradiction recall **100%** (13/13),
+injection detected **10/10** (pattern scan alone 8/10), outcome unchanged **10/10** — and still 10/10 with detection
+ignored. The first full run missed an amount contradiction (86% recall). Groq `gpt-oss-120b` (13 of 18 cases before
+its free-tier quota ran out) was weaker — 92% of bait kept out, 10% false rejection, outcome unchanged 6/7 — and its two
+failures led to two new deterministic checks. Earlier versions, Groq details and the remaining misses are in the doc.
 `npm run evals -- --provider gemini|groq` reruns them (not part of `npm test`, which uses a fake model).
 
 **Data.** Only the synthetic demo documents (fictional names, addresses and identifiers) and, for bound cases, PayPal
