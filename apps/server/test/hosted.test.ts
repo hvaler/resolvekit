@@ -10,6 +10,7 @@ import { parseBindings } from '../src/bindings.ts';
 import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
 import { toSnapshot } from '../src/mapping.ts';
 import { waitingDispute } from './fixtures.ts';
+import { RESOLVED, goldenFor } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
@@ -22,7 +23,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const boundInput = (): AnalysisInput => caseInput(standardCase, { kind: 'live', snap: toSnapshot(waitingDispute(), CASE, 'sandbox', new Date()), failed: null });
 
 /** PayPal by path: every dispute read answers the waiting dispute, every send succeeds; optionally slow or failing reads. */
-function routedPayPal(o: { failRead?: boolean; delayMs?: number } = {}) {
+function routedPayPal(o: { failRead?: () => boolean; delayMs?: number } = {}) {
   const calls: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
@@ -30,14 +31,14 @@ function routedPayPal(o: { failRead?: boolean; delayMs?: number } = {}) {
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
     await sleep(o.delayMs ?? 2);
     if (u.pathname.endsWith('/provide-evidence')) return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
-    if (o.failRead) return new Response(JSON.stringify({ name: 'INTERNAL_SERVICE_ERROR' }), { status: 500, headers: { 'content-type': 'application/json' } });
+    if (o.failRead?.()) return new Response(JSON.stringify({ name: 'INTERNAL_SERVICE_ERROR' }), { status: 500, headers: { 'content-type': 'application/json' } });
     return new Response(JSON.stringify(waitingDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   return { calls, sends: () => calls.filter((c) => c.endsWith('/provide-evidence')).length, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: boolean; store?: MemoryAnalysisStore; now?: () => Date; demoCode?: string | null; model?: boolean } = {}) {
-  const pp = routedPayPal({ failRead: o.failRead ?? false });
+function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; demoCode?: string | null; model?: boolean } = {}) {
+  const pp = routedPayPal(o.failRead ? { failRead: o.failRead } : {});
   const fm = fakeModel(standardScript);
   const store = o.store ?? new MemoryAnalysisStore();
   const lines: string[] = [];
@@ -96,6 +97,23 @@ const submission = () => ({
   requestId: 'rk-req-abc123',
 });
 const evidencePath = `/api/disputes/${CASE}/evidence`;
+const intentPath = `/api/disputes/${CASE}/intent`;
+/** A store holding the golden analysis of the bound standard case (so intents can be composed). */
+async function goldenStore() {
+  const store = new MemoryAnalysisStore();
+  const g = await goldenFor(CASE, boundInput());
+  store.cached.set(g.key, g);
+  return store;
+}
+type IntentBody = { id: string; contentHash: string; error?: string };
+/** Compose an intent (no demo code needed) and, with a cookie, approve it. */
+async function intentFor(app: ReturnType<typeof setup>['app'], cookie?: string): Promise<IntentBody> {
+  const r = await app(req(intentPath, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED } }));
+  const i = (await r.json()) as IntentBody;
+  assert.equal(r.status, 201, JSON.stringify(i));
+  if (cookie) assert.equal((await app(req(`${intentPath}/${i.id}/approve`, { body: { contentHash: i.contentHash }, cookie }))).status, 200);
+  return i;
+}
 const analysisPath = `/api/cases/${CASE}/analysis`;
 
 // ------------------------------------------------------------------------------------------------ Host, Origin, headers
@@ -173,13 +191,15 @@ test('unlock: a good code sets an HttpOnly Secure SameSite=Strict cookie for 12 
 
 test('unlock: the cookie expires after 12 h, and a tampered or foreign-secret cookie unlocks nothing', async () => {
   let now = new Date('2026-10-09T08:00:00Z');
-  const { app, pp } = setup({ now: () => now });
+  const { app, pp } = setup({ now: () => now, store: await goldenStore() });
+  const i = await intentFor(app);
+  const approvePath = `${intentPath}/${i.id}/approve`;
   const { cookie } = await unlock(app);
   const [name, value] = cookie!.split('=');
   const [exp, nonce, sig] = value!.split('.');
   const tampered = `${name}=${Number(exp) + 3_600_000}.${nonce}.${sig}`;
   for (const c of [tampered, `${name}=${exp}.${nonce}.${'A'.repeat(43)}`, `${name}=garbage`]) {
-    const r = await app(req(evidencePath, { body: submission(), cookie: c }));
+    const r = await app(req(approvePath, { body: { contentHash: i.contentHash }, cookie: c }));
     assert.equal(r.status, 403, c);
     assert.equal(((await r.json()) as { error: string }).error, 'DEMO_CODE_REQUIRED');
   }
@@ -187,7 +207,7 @@ test('unlock: the cookie expires after 12 h, and a tampered or foreign-secret co
   assert.equal(((await (await app(req('/api/demo', { cookie: cookie! }))).json()) as { unlocked: boolean }).unlocked, true);
   now = new Date('2026-10-09T20:00:01Z');
   assert.equal(((await (await app(req('/api/demo', { cookie: cookie! }))).json()) as { unlocked: boolean }).unlocked, false);
-  assert.equal((await app(req(evidencePath, { body: submission(), cookie: cookie! }))).status, 403);
+  assert.equal((await app(req(approvePath, { body: { contentHash: i.contentHash }, cookie: cookie! }))).status, 403);
   assert.equal(pp.sends(), 0);
 });
 
@@ -238,8 +258,13 @@ test('protected: evidence send, live re-run, cache-miss analysis and re-check al
   const input = boundInput();
   const key = await analysisKey(input, 'gemini-3.8-flash');
   store.golden.set(key, { key, caseId: CASE } as CaseAnalysis);
+  const g = await goldenFor(CASE, input);
+  store.cached.set(g.key, g);
   const { app, pp, model, counters } = setup({ store });
-  const send = await app(req(evidencePath, { body: submission() }));
+  const i = await intentFor(app);
+  const send2 = await app(req(evidencePath, { body: { intentId: i.id } }));
+  assert.equal(send2.status, 403);
+  const send = await app(req(`${intentPath}/${i.id}/approve`, { body: { contentHash: i.contentHash } }));
   assert.equal(send.status, 403);
   const sb = (await send.json()) as { error: string; detail: string };
   assert.equal(sb.error, 'DEMO_CODE_REQUIRED');
@@ -259,32 +284,47 @@ test('protected: evidence send, live re-run, cache-miss analysis and re-check al
   assert.deepEqual(Object.values(counters.state().caps).map((c) => c.used), [0, 0, 0]);
 });
 
-test('unlocked: evidence goes to PayPal and counts against the daily cap', async () => {
-  const { app, pp, counters } = setup();
+test('unlocked: an approved intent goes to PayPal and counts against the daily cap; the approver is the demo session', async () => {
+  const { app, pp, counters } = setup({ store: await goldenStore() });
   const { cookie } = await unlock(app);
-  const r = await app(req(evidencePath, { body: submission(), cookie: cookie! }));
+  const i = await intentFor(app, cookie!);
+  // Another session (another judge) cannot send what this one approved.
+  await sleep(5);
+  const other = await unlock(app, CODE, '198.51.100.9');
+  const foreign = await app(req(evidencePath, { body: { intentId: i.id }, cookie: other.cookie! }));
+  assert.equal(foreign.status, 403);
+  assert.equal(((await foreign.json()) as { error: string }).error, 'NOT_THE_APPROVER');
+  const r = await app(req(evidencePath, { body: { intentId: i.id }, cookie: cookie! }));
   assert.equal(r.status, 202);
+  const events = ((await (await app(req(`/api/disputes/${CASE}/audit`))).json()) as { events: Array<{ kind: string; actor: string }> }).events;
+  assert.match(events.find((e) => e.kind === 'intent_approved')!.actor, /^demo session [0-9a-f]{12}$/);
   assert.equal(pp.sends(), 1);
   assert.equal(counters.state().caps.evidence!.used, 1);
 });
 
-test('caps: N concurrent evidence sends never exceed the daily cap (reserved atomically before the PayPal calls)', async () => {
-  const { app, pp, counters } = setup({ caps: { evidence: 3 } });
+test('caps: concurrent confirmations send once; a further intent over the daily cap is refused (reserved atomically)', async () => {
+  const { app, pp, counters } = setup({ caps: { evidence: 1 }, store: await goldenStore() });
   const { cookie } = await unlock(app);
-  const all = await Promise.all(Array.from({ length: 12 }, (_, i) => app(req(evidencePath, { body: { ...submission(), requestId: `rk-req-${i}` }, cookie: cookie! }))));
-  const statuses = all.map((r) => r.status);
-  assert.equal(statuses.filter((s) => s === 202).length, 3);
-  assert.equal(statuses.filter((s) => s === 429).length, 9);
-  assert.equal(pp.sends(), 3);
-  assert.equal(counters.state().caps.evidence!.used, 3);
-  const capped = (await all.find((r) => r.status === 429)!.json()) as { error: string };
-  assert.equal(capped.error, 'DAILY_CAP');
+  const i = await intentFor(app, cookie!);
+  const all = await Promise.all(Array.from({ length: 6 }, () => app(req(evidencePath, { body: { intentId: i.id }, cookie: cookie! }))));
+  assert.equal(all.filter((r) => r.status === 202).length, 1);
+  assert.equal(pp.sends(), 1);
+  // (The fake PayPal still offers provide_evidence.) The next intent is over the daily cap.
+  const j = await intentFor(app, cookie!);
+  const capped = await app(req(evidencePath, { body: { intentId: j.id }, cookie: cookie! }));
+  assert.equal(capped.status, 429);
+  assert.equal(((await capped.json()) as { error: string }).error, 'DAILY_CAP');
+  assert.equal(pp.sends(), 1);
+  assert.equal(counters.state().caps.evidence!.used, 1);
 });
 
 test('caps: a send that fails before reaching PayPal (dispute read failed) is refunded', async () => {
-  const { app, pp, counters } = setup({ failRead: true });
+  let fail = false;
+  const { app, pp, counters } = setup({ failRead: () => fail, store: await goldenStore() });
   const { cookie } = await unlock(app);
-  const r = await app(req(evidencePath, { body: submission(), cookie: cookie! }));
+  const i = await intentFor(app, cookie!);
+  fail = true;
+  const r = await app(req(evidencePath, { body: { intentId: i.id }, cookie: cookie! }));
   assert.equal(r.status, 502);
   assert.equal(pp.sends(), 0);
   assert.equal(counters.state().caps.evidence!.used, 0);
@@ -399,13 +439,16 @@ test('client text: re-check sentences and evidence fields are validated server-s
   assert.equal((await verify('Delivered.‮on time')).status, 400);
   assert.equal((await verify('Delivered.\u0000')).status, 400);
   assert.equal((await verify('Delivered.', '/api/cases/PP-R-NOT-A-CASE/analysis/verify')).status, 404);
-  const send = (over: Record<string, unknown>) => app(req(evidencePath, { body: { ...submission(), ...over }, cookie: cookie! }));
-  assert.equal((await send({ notes: 'Delivered.\u0007' })).status, 400);
-  assert.equal((await send({ tracking: '<script>alert(1)</script>' })).status, 400);
-  assert.equal((await send({ carrier: 'ups; drop' })).status, 400);
-  assert.equal((await send({ evidenceType: 'PROOF OF ANYTHING' })).status, 400);
-  assert.equal((await send({ notes: 'x'.repeat(2001) })).status, 422);
-  assert.equal((await send({ files: [{ name: 'not-a-case-file.pdf', size: '1 KB' }] })).status, 422);
+  // Evidence: only an intent id. Intent requests: only the evidence type, re-checked edits and resolutions.
+  const send = (body: Record<string, unknown>) => app(req(evidencePath, { body, cookie: cookie! }));
+  assert.equal((await send({ ...submission() })).status, 400);
+  assert.equal((await send({ intentId: 'x', notes: 'Delivered.' })).status, 400);
+  const ask = (body: Record<string, unknown>) => app(req(intentPath, { body, cookie: cookie! }));
+  assert.equal((await ask({ evidenceType: 'PROOF_OF_FULFILLMENT', notes: 'Delivered.' })).status, 400);
+  assert.equal((await ask({ evidenceType: 'PROOF OF ANYTHING' })).status, 400);
+  assert.equal((await ask({ evidenceType: 'PROOF_OF_FULFILLMENT', edits: { S1: 'Delivered.\u0007' } })).status, 400);
+  assert.equal((await ask({ evidenceType: 'PROOF_OF_FULFILLMENT', edits: { S1: 'x'.repeat(601) } })).status, 400);
+  assert.equal((await ask({ evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: { C1: { status: 'resolved', note: 'Same unit.\u202e' } } })).status, 400);
   assert.equal(pp.sends(), 0);
   assert.equal(counters.state().caps.evidence!.used, 0);
   assert.equal(counters.state().caps.recheck!.used, 0);
@@ -439,7 +482,7 @@ test('warm-up: skipped (and logged) when the daily cap is reached, PayPal cannot
   const capped = setup({ caps: { 'live-analysis': 0 } });
   assert.deepEqual((await capped.app.warmUp()).map((w) => [w.outcome, /DAILY_CAP/.test(w.detail)]), [['skipped', true]]);
   assert.equal(capped.model.requests.length, 0);
-  const down = setup({ failRead: true });
+  const down = setup({ failRead: () => true });
   const d = await down.app.warmUp();
   assert.equal(d[0]!.outcome, 'skipped');
   assert.match(d[0]!.detail, /PayPal could not be read/);

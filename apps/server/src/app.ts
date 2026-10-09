@@ -1,18 +1,29 @@
 /**
  * The ResolveKit API as a plain `(Request) => Promise<Response>` handler, so tests call it directly with a fake
  * PayPal fetch. Credentials and tokens stay inside the PayPal client: no response or log line carries them.
+ *
+ * Sending evidence (irreversible on a real dispute) goes through a server-side submission intent:
+ *   POST /api/disputes/:case/intent {evidenceType, edits, resolutions} → the exact content, composed HERE from the
+ *        server's own documents and analysis (supported sentences only; an edit only with the server's own re-check)
+ *   POST /api/disputes/:case/intent/:id/approve {contentHash}        → the merchant approves that exact content
+ *   POST /api/disputes/:case/evidence {intentId}                     → sends that approved intent and nothing else,
+ *        after composing it again from a fresh PayPal read: any difference refuses the send.
+ * Notes, files or tracking in a request body are never sent.
  */
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
-import { caseInput, type PayPalSource } from '@resolvekit/cases';
-import type { AnalysisInput } from '@resolvekit/analyst';
+import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
+import { toCitations, withAnalysis, type AnalysisInput } from '@resolvekit/analyst';
 import type { AgentReceiptSource, DisputeSnapshot } from '../../web/src/domain/types.ts';
+import type { Recheck } from '../../web/src/domain/draft.ts';
+import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
 import { hasSellerEvidence } from '../../web/src/domain/recorded.ts';
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
+import { IntentStore, publicIntent, type StoredIntent } from './intents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
-import { checkAgainstDispute, isProblem, parseSubmission } from './validate.ts';
+import { checkAgainstDispute } from './validate.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
 export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck';
@@ -23,6 +34,9 @@ export interface Refusal {
   body: { error: string; detail: string; [k: string]: unknown };
 }
 
+/** Who is acting on a request, or why they may not. */
+export type Actor = { ok: true; actor: string } | { ok: false; refusal: Refusal };
+
 /**
  * Asked right before a costly action, with the request that asks for it. `reserve` refuses (demo code missing,
  * daily cap reached) or reserves one unit atomically (check and count in one synchronous step, so concurrent requests
@@ -30,6 +44,11 @@ export interface Refusal {
  */
 export interface CostGate {
   reserve(req: Request, action: CostlyAction): Reservation;
+  /**
+   * Who approves or sends: the hosted demo session (its unlock cookie, never the code itself). `unlocked`: real
+   * PayPal is involved, so a demo session is required. Local mode has no gate: the local operator.
+   */
+  actor(req: Request, unlocked: boolean): Actor;
 }
 
 export type { Reservation };
@@ -53,6 +72,8 @@ export interface ApiOptions {
   pins?: InputPins | null;
   /** How long a PayPal read of a bound case is reused to build the analyst's input (default 60 s). */
   readTtlMs?: number;
+  /** Submission intents and the audit log (persisted on the data dir by main.ts). Default: in memory. */
+  intents?: IntentStore | null;
 }
 
 /** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
@@ -66,9 +87,10 @@ export interface AppOptions extends ApiOptions {
 }
 
 export const TOKEN_HEADER = 'x-resolvekit-token';
+export const LOCAL_OPERATOR = 'local operator';
 
 /** Control characters (line breaks excepted where allowed) and bidi overrides: never in text a client sends us. */
-export const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/;
+export const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/;
 export const DEFAULT_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173', 'http://127.0.0.1:4173'];
 
 function sameSecret(a: string, b: string): boolean {
@@ -119,6 +141,12 @@ function fromPayPalError(e: unknown): Response {
   return json(502, { error: 'PAYPAL_UNREACHABLE' });
 }
 
+/** A short reason for the audit log (codes only). */
+function failureText(e: unknown): string {
+  if (e instanceof PayPalError) return `PayPal ${e.status}${paypalIssue(e) ? ` ${paypalIssue(e)}` : ''}`;
+  return isTimeout(e) ? 'PayPal timed out' : 'PayPal unreachable';
+}
+
 /** Local mode: every request passes {@link guard} first. */
 export function createApp(opts: AppOptions): Handler {
   return withLog(opts.log, createApi(opts), (req) => guard(req, opts));
@@ -144,14 +172,43 @@ export function withLog(log: ((line: string) => void) | undefined, api: Handler,
 /** The API handler, plus the analyst's input as the server builds it (hosted warm-up, tests). */
 export type Api = Handler & {
   inputFor: (caseId: string) => Promise<AnalysisInput | Response>;
-  /** Forget the PayPal reads kept for building inputs (the bindings changed). */
+  /** Forget the PayPal reads kept for building inputs and invalidate open intents (the bindings changed). */
   forgetReads: () => void;
+  /** The intents and audit log (tests, main.ts). */
+  intents: IntentStore;
 };
+
+/** sha256 hex of a string. */
+const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
+
+/** The case as the server sees it right now: where PayPal's data comes from, and the analyst's input. */
+interface CaseState {
+  source: PayPalSource;
+  input: AnalysisInput;
+  /** The bound dispute as just read (bound cases only). */
+  dispute: Dispute | null;
+  snap: DisputeSnapshot | null;
+  /** The bound PayPal dispute id, or null when the case runs on the simulator. */
+  disputeId: string | null;
+}
+
+/** An intent composed from a case state: its content and hash, and what is needed to compose it again. */
+interface ComposedIntent {
+  content: IntentContent;
+  contentHash: string;
+  rechecks: Record<string, Recheck>;
+}
 
 export function createApi(opts: ApiOptions): Api {
   const now = opts.now ?? (() => new Date());
   const log = opts.log ?? (() => {});
   const isAgentCase = (caseId: string) => CASE_FILES[caseId]?.kind === 'agent';
+  const intents = opts.intents ?? new IntentStore({ now });
+  /** The verifier's verdicts on edited sentences, by `${analysisKey}\n${text}`: only these edits can be sent. */
+  const verified = new Map<string, Recheck>();
+
+  /** Who is acting (hosted: the demo session; local: the operator at this machine). */
+  const actorOf = (req: Request, unlocked: boolean): Actor => (opts.gate ? opts.gate.actor(req, unlocked) : { ok: true, actor: LOCAL_OPERATOR });
 
   /**
    * The MeterMCP session behind the dispute's disputed capture. `none` (with the reason) when there is no capture,
@@ -171,13 +228,8 @@ export function createApi(opts: ApiOptions): Api {
     return gate ? () => gate.reserve(req, action) : undefined;
   };
 
-  /**
-   * A fresh read of a bound case from PayPal, with the agent case's MeterMCP session: what GET /api/disputes answers,
-   * and what the analyst's input is built from. Throws what PayPal throws.
-   */
-  const reads = new Map<string, { at: number; snap: DisputeSnapshot }>();
-  const readCase = async (caseId: string, disputeId: string, paypal: PayPalClient): Promise<DisputeSnapshot> => {
-    const d = await paypal.disputes.get(disputeId);
+  /** The dispute as just read, as the web app's snapshot (with the agent case's MeterMCP session). */
+  const snapshotOf = async (caseId: string, d: Dispute): Promise<DisputeSnapshot> => {
     let snap = toSnapshot(d, caseId, opts.env, now());
     if (isAgentCase(caseId)) {
       let receipt: AgentReceiptSource;
@@ -188,6 +240,16 @@ export function createApi(opts: ApiOptions): Api {
       }
       snap = { ...snap, agentReceipt: receipt };
     }
+    return snap;
+  };
+
+  /**
+   * A fresh read of a bound case from PayPal, with the agent case's MeterMCP session: what GET /api/disputes answers,
+   * and what the analyst's input is built from. Throws what PayPal throws.
+   */
+  const reads = new Map<string, { at: number; snap: DisputeSnapshot }>();
+  const readCase = async (caseId: string, disputeId: string, paypal: PayPalClient): Promise<DisputeSnapshot> => {
+    const snap = await snapshotOf(caseId, await paypal.disputes.get(disputeId));
     reads.set(caseId, { at: now().getTime(), snap });
     return snap;
   };
@@ -216,6 +278,82 @@ export function createApi(opts: ApiOptions): Api {
     return pins.resolve(caseId, caseInput(demo, source), submitted);
   };
 
+  /** Whether a case goes to real PayPal: bound, and PayPal connected (the web app decides the same way, from /health). */
+  const boundDispute = async (caseId: string): Promise<string | null> => {
+    const disputeId = opts.bindings[caseId];
+    if (!disputeId || !opts.paypal) return null;
+    return (await checkHealth()).paypal === 'unconfigured' ? null : disputeId;
+  };
+
+  /**
+   * The case right now, for composing or re-checking an intent: a bound case is read fresh from PayPal (never from
+   * the read cache); a simulated case is the demo case. Answers the problem when PayPal cannot be read.
+   */
+  const caseState = async (caseId: string): Promise<CaseState | Response> => {
+    const demo = CASE_FILES[caseId]!;
+    const disputeId = await boundDispute(caseId);
+    if (!disputeId) {
+      const source: PayPalSource = { kind: 'simulated' };
+      return { source, input: pins.resolve(caseId, caseInput(demo, source), false), dispute: null, snap: null, disputeId: null };
+    }
+    let dispute: Dispute;
+    try {
+      dispute = await opts.paypal!.disputes.get(disputeId);
+    } catch (e) {
+      return fromPayPalError(e);
+    }
+    const snap = await snapshotOf(caseId, dispute);
+    reads.set(caseId, { at: now().getTime(), snap });
+    const source: PayPalSource = { kind: 'live', snap, failed: null };
+    return { source, input: pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), dispute, snap, disputeId };
+  };
+
+  /**
+   * Compose the intent's content from the server's own case state and analysis. `rechecks`: verdicts already bound to
+   * an intent (when composing it again before sending); otherwise the verdicts this server recorded for the edits.
+   */
+  const compose = async (caseId: string, st: CaseState, req: IntentRequest, rechecks?: Record<string, Recheck>): Promise<ComposedIntent | Response> => {
+    const analyst = opts.analyst;
+    if (!analyst) return json(503, { error: 'ANALYST_UNAVAILABLE', detail: 'The analyst is not set up on this server' });
+    const a = await analyst.stored(st.input);
+    if (!a) return json(409, { error: 'NO_ANALYSIS', detail: 'There is no analysis of these documents on the server; analyse the case first' });
+    const demo = CASE_FILES[caseId]!;
+    const c = withAnalysis(caseView(demo, st.source), a.analysis, st.input);
+    const used: Record<string, Recheck> = {};
+    const composed = composeSubmission({
+      c,
+      req,
+      verified: (text) => {
+        const id = Object.keys(req.edits).find((k) => req.edits[k] === text);
+        const r = rechecks ? (id ? rechecks[id] : undefined) : verified.get(`${a.key}\n${text}`);
+        if (r && id) used[id] = r;
+        return r ?? null;
+      },
+      allowedActions: caseAllowedActions(st.source, undefined, demo.allowedActions),
+      submitted: !!st.snap && hasSellerEvidence(st.snap),
+    });
+    if (isComposeProblem(composed)) return json(composed.status, { error: composed.error, detail: composed.detail, ...(composed.blockers ? { blockers: composed.blockers } : {}) });
+    const s = composed.submission;
+    if (st.dispute) {
+      const problem = checkAgainstDispute(s, st.dispute);
+      if (problem) return json(problem.status, { error: problem.error, detail: problem.detail });
+    }
+    const content: IntentContent = {
+      caseId,
+      disputeId: st.disputeId,
+      documentsHash: sha256(documentsSignature(st.input)),
+      analysisKey: a.key,
+      evidenceType: s.evidenceType,
+      carrier: s.carrier,
+      tracking: s.tracking,
+      notes: s.notes,
+      files: s.files,
+      sentences: composed.sentences,
+      resolutionNotes: composed.resolutionNotes,
+    };
+    return { content, contentHash: await contentHash(content), rechecks: used };
+  };
+
   let health: Promise<{ paypal: PayPalEnv | 'unconfigured'; error?: string }> | null = null;
 
   const checkHealth = () => {
@@ -232,6 +370,14 @@ export function createApi(opts: ApiOptions): Api {
       }
     })();
     return health;
+  };
+
+  const readJson = async (req: Request): Promise<{ ok: true; body: unknown } | { ok: false; res: Response }> => {
+    try {
+      return { ok: true, body: await req.json() };
+    } catch {
+      return { ok: false, res: json(400, { error: 'INVALID_JSON' }) };
+    }
   };
 
   /**
@@ -253,27 +399,171 @@ export function createApi(opts: ApiOptions): Api {
     if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
     // The body carries at most the edited sentence of a re-check. Document data in it is ignored: the input is built
     // here from the server's own fixtures and reads.
-    let body: { text?: unknown } | null;
-    try {
-      body = (await req.json()) as typeof body;
-    } catch {
-      return json(400, { error: 'INVALID_JSON' });
-    }
+    const parsed = await readJson(req);
+    if (!parsed.ok) return parsed.res;
+    const body = parsed.body as { text?: unknown } | null;
     let text = '';
     if (sub === '/verify') {
       text = typeof body?.text === 'string' ? body.text.trim() : '';
       if (!text || text.length > 600) return json(400, { error: 'INVALID_TEXT', detail: 'text must be 1-600 characters' });
-      if (CONTROL_CHARS.test(text)) return json(400, { error: 'INVALID_TEXT', detail: 'text must not contain control or bidi characters' });
+      if (CONTROL_CHARS.test(text) || /[\r\n]/.test(text)) return json(400, { error: 'INVALID_TEXT', detail: 'text must not contain line breaks, control or bidi characters' });
+      // A sentence is being edited: whatever was approved before no longer describes the response.
+      intents.invalidateCase(caseId, 'a sentence was edited after this intent was composed');
     }
     const input = await serverInput(caseId);
     if (input instanceof Response) return input;
     if (sub === '/verify') {
       const r = await analyst.verify(input, text, liveGate(req, 'recheck'));
+      if (r.status === 200) {
+        const v = r.body as { verdict: Recheck['state']; reason: string | null; citations: Parameters<typeof toCitations>[1]; model: string };
+        const key = await analyst.key(input);
+        const label = v.verdict === 'supported' ? 'supported' : v.verdict === 'rejected' ? 'removed' : 'needs review';
+        verified.set(`${key}\n${text}`, { state: v.verdict, reason: v.reason, note: `Edited · re-checked by ${v.model}: ${label}`, citations: toCitations(input, v.citations) });
+        const who = actorOf(req, false);
+        intents.record({ caseId, kind: 'edit_rechecked', actor: who.ok ? who.actor : 'visitor', detail: `${v.model}: ${label} · text sha256 ${sha256(text).slice(0, 12)}` });
+      }
       return json(r.status, r.body);
     }
     const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1', liveGate(req, 'live-analysis'));
     // The input goes back with the answer: the web app maps the analysis onto exactly these documents.
     return json(r.status, { ...(r.body as object), input });
+  };
+
+  /** POST /api/disputes/:case/intent → compose the exact content to send, from the server's own case and analysis. */
+  const createIntent = async (req: Request, caseId: string): Promise<Response> => {
+    const parsed = await readJson(req);
+    if (!parsed.ok) return parsed.res;
+    const ir = parseIntentRequest(parsed.body);
+    if (isComposeProblem(ir)) return json(ir.status, { error: ir.error, detail: ir.detail });
+    const st = await caseState(caseId);
+    if (st instanceof Response) return st;
+    const composed = await compose(caseId, st, ir);
+    if (composed instanceof Response) return composed;
+    const who = actorOf(req, false);
+    const intent = intents.create({ ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.ok ? who.actor : 'visitor' });
+    return json(201, publicIntent(intent));
+  };
+
+  /** POST /api/disputes/:case/intent/:id/approve {contentHash} → the merchant approves exactly that content. */
+  const approveIntent = async (req: Request, caseId: string, intentId: string): Promise<Response> => {
+    const parsed = await readJson(req);
+    if (!parsed.ok) return parsed.res;
+    const hash = (parsed.body as { contentHash?: unknown } | null)?.contentHash;
+    if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) return json(400, { error: 'INVALID_APPROVAL', detail: 'contentHash (the sha256 of the content you reviewed) is required' });
+    const i = intents.get(intentId);
+    if (!i || i.caseId !== caseId) return json(404, { error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case' });
+    // Approving what goes to real PayPal needs a demo session (hosted); the simulator needs none.
+    const who = actorOf(req, i.disputeId != null);
+    if (!who.ok) return json(who.refusal.status, who.refusal.body);
+    const t = intents.approve(intentId, caseId, hash, who.actor);
+    if (!t.ok) return json(t.status, { error: t.error, detail: t.detail, ...(t.intent ? { intent: publicIntent(t.intent) } : {}) });
+    return json(200, publicIntent(t.intent));
+  };
+
+  /**
+   * POST /api/disputes/:case/evidence {intentId}: send the approved intent and nothing else. Right before sending,
+   * the dispute is read fresh and the intent composed again from it: documents, analysis, sentences, files, tracking
+   * and PayPal's allowed actions must all still give the approved content hash.
+   */
+  const sendIntent = async (req: Request, caseId: string, paypal: PayPalClient, boundId: string): Promise<Response> => {
+    const parsed = await readJson(req);
+    if (!parsed.ok) return parsed.res;
+    const body = parsed.body as Record<string, unknown> | null;
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((k) => k !== 'intentId') || typeof body.intentId !== 'string') {
+      return json(400, {
+        error: 'INVALID_SUBMISSION',
+        detail: 'The body must be { "intentId": "<approved intent>" }: notes, files and tracking are composed and approved on the server, never taken from the request',
+      });
+    }
+    const intentId = body.intentId;
+    const i0 = intents.get(intentId);
+    if (!i0 || i0.caseId !== caseId) return json(404, { error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case' });
+    if (i0.disputeId !== boundId) {
+      intents.invalidate(intentId, 'the case is bound to another dispute now');
+      return json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${i0.disputeId ?? 'the simulator'}; the case is bound to ${boundId} now` });
+    }
+    const who = actorOf(req, true);
+    if (!who.ok) return json(who.refusal.status, who.refusal.body);
+    if (i0.approvedBy && who.actor !== i0.approvedBy) return json(403, { error: 'NOT_THE_APPROVER', detail: 'Only the session that approved this intent can send it' });
+
+    // One send at a time: of two concurrent confirmations, exactly one gets past this synchronous transition.
+    const claim = intents.beginSend(intentId, caseId);
+    if (!claim.ok) return json(claim.status, { error: claim.error, detail: claim.detail, ...(claim.intent ? { intent: publicIntent(claim.intent) } : {}) });
+    const intent = claim.intent;
+    const refuse = (res: Response, why: string, invalidate: boolean): Response => {
+      if (invalidate) intents.invalidate(intentId, why, who.actor);
+      else intents.revert(intentId, claim.previous);
+      intents.record({ caseId, kind: 'send_refused', actor: who.actor, disputeId: boundId, intentId, contentHash: intent.contentHash, requestId: intent.requestId, detail: why });
+      return res;
+    };
+
+    // Hosted demo: sending to real PayPal needs the demo code and stays within the daily cap.
+    const reserved = opts.gate?.reserve(req, 'evidence');
+    if (reserved && !reserved.ok) return refuse(json(reserved.refusal.status, reserved.refusal.body), String((reserved.refusal.body as { error?: string }).error ?? reserved.refusal.status), false);
+    let sending = false;
+    try {
+      const st = await caseState(caseId);
+      if (st instanceof Response) return refuse(st, `PayPal could not be read (${st.status})`, false);
+      if (!st.dispute) return refuse(json(409, { error: 'NOT_BOUND', detail: 'PayPal is not connected for this case now' }), 'PayPal not connected', false);
+      if (sha256(documentsSignature(st.input)) !== intent.documentsHash) {
+        return refuse(json(409, { error: 'DOCUMENTS_CHANGED', detail: 'The case documents changed since you approved this response; review it again' }), 'documents changed', true);
+      }
+      const again = await compose(caseId, st, intent.request, intent.rechecks);
+      if (again instanceof Response) {
+        const b = (await again.clone().json().catch(() => ({}))) as { error?: string };
+        return refuse(again, `composing again failed: ${b.error ?? again.status}`, again.status !== 503);
+      }
+      if (again.contentHash !== intent.contentHash) {
+        return refuse(json(409, { error: 'INTENT_STALE', detail: 'What would be sent now differs from what you approved (analysis, sentences, files or tracking changed); review it again' }), 'content changed', true);
+      }
+
+      // The files are built here: the case's own PDFs, or the agent case's real MeterMCP receipt.
+      let files: EvidenceFile[];
+      const sid = isAgentCase(caseId) && st.snap?.agentReceipt?.kind === 'metermcp' ? st.snap.agentReceipt.session.sessionId : null;
+      if (sid) {
+        if (intent.files.some((f) => f.name !== receiptFileName(sid))) return refuse(json(422, { error: 'UNKNOWN_FILE', detail: `Only the receipt of session ${sid} can be attached` }), 'unknown file', true);
+        try {
+          files = intent.files.length ? [{ name: receiptFileName(sid), type: 'application/pdf', data: await opts.meterMcp!.receiptPdf(sid) }] : [];
+        } catch (e) {
+          return refuse(json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' }), 'MeterMCP unavailable', false);
+        }
+      } else {
+        try {
+          files = buildAttachments(caseId, intent.files);
+        } catch (e) {
+          if (e instanceof UnknownFileError) return refuse(json(422, { error: 'UNKNOWN_FILE', detail: e.message }), 'unknown file', true);
+          throw e;
+        }
+      }
+
+      sending = true;
+      intents.record({ caseId, kind: 'send_started', actor: who.actor, disputeId: boundId, intentId, contentHash: intent.contentHash, requestId: intent.requestId });
+      const tracking = { carrier_name: intent.carrier, tracking_number: intent.tracking, ...(intent.carrier === 'OTHER' ? { carrier_name_other: 'Digital delivery' } : {}) };
+      try {
+        await paypal.disputes.provideEvidence(
+          boundId,
+          // Tracking info only goes with a carrier and a reference (proof of fulfillment); OTHER is notes and documents.
+          intent.carrier && intent.tracking
+            ? { evidence_type: intent.evidenceType, evidence_info: { tracking_info: [tracking] }, notes: intent.notes }
+            : { evidence_type: intent.evidenceType, notes: intent.notes },
+          files,
+          // One PayPal-Request-Id per intent: a retry of the same intent is the same request.
+          { requestId: intent.requestId },
+        );
+      } catch (e) {
+        intents.failed(intentId, who.actor, failureText(e));
+        return fromPayPalError(e);
+      }
+      intents.sent(intentId, who.actor, 'accepted by PayPal (read back to confirm)');
+      log(`provide-evidence sent · case ${caseId} → ${boundId} · ${intent.evidenceType} · ${files.length} file(s)${sid ? ` · MeterMCP receipt ${sid}` : ''} · intent ${intentId} · request ${intent.requestId}`);
+      // Accepted by PayPal is not "recorded": the client reads the dispute back to find out what PayPal stored.
+      return json(202, { sent: true, intent: publicIntent(intents.get(intentId)!) });
+    } catch (e) {
+      if (!sending) intents.revert(intentId, claim.previous);
+      throw e;
+    } finally {
+      if (!sending && reserved?.ok) reserved.release();
+    }
   };
 
   const route = async (req: Request): Promise<Response> => {
@@ -287,114 +577,53 @@ export function createApi(opts: ApiOptions): Api {
     }
     const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
-    const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(\/evidence)?$/.exec(path);
+    const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|intent|audit)(?:\/(int-[0-9a-f]{24})(\/approve)?)?)?$/.exec(path);
     if (!m) return json(404, { error: 'NOT_FOUND' });
     const caseId = m[1]!;
+    const sub = m[2];
+    const intentId = m[3];
+
+    // Intents and the audit log exist for every case: a simulated case's intent is approved here too, and the
+    // in-browser simulator records it.
+    if (sub === 'intent' || sub === 'audit') {
+      if (!CASE_FILES[caseId]) return json(404, { error: 'UNKNOWN_CASE' });
+      if (sub === 'audit') {
+        if (intentId || req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+        return json(200, { events: intents.events(caseId) });
+      }
+      if (!intentId) return req.method === 'POST' ? createIntent(req, caseId) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (m[4]) return req.method === 'POST' ? approveIntent(req, caseId, intentId) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+      const i = intents.get(intentId);
+      return i && i.caseId === caseId ? json(200, publicIntent(i)) : json(404, { error: 'UNKNOWN_INTENT' });
+    }
+    if (intentId) return json(404, { error: 'NOT_FOUND' });
+
     const disputeId = opts.bindings[caseId];
     if (!disputeId) return json(404, { error: 'NOT_BOUND', detail: `Case ${caseId} is not bound to a PayPal dispute` });
     const paypal = opts.paypal;
     if (!paypal) return json(503, { error: 'PAYPAL_UNCONFIGURED' });
 
-    if (!m[2] && req.method === 'GET') {
+    if (!sub && req.method === 'GET') {
       try {
         return json(200, await readCase(caseId, disputeId, paypal));
       } catch (e) {
         return fromPayPalError(e);
       }
     }
-
-    if (m[2] && req.method === 'POST') {
-      let body: unknown;
-      try {
-        body = await req.json();
-      } catch {
-        return json(400, { error: 'INVALID_JSON' });
-      }
-      const sub = parseSubmission(body);
-      if (isProblem(sub)) return json(sub.status, { error: sub.error, detail: sub.detail });
-      if (sub.disputeId && sub.disputeId !== caseId) return json(400, { error: 'INVALID_SUBMISSION', detail: 'disputeId does not match the URL' });
-      // Hosted demo: sending to real PayPal needs the demo code and stays within the daily cap.
-      const reserved = opts.gate?.reserve(req, 'evidence');
-      if (reserved && !reserved.ok) return json(reserved.refusal.status, reserved.refusal.body);
-      // Refunded on every path that returns before PayPal is asked to record the evidence.
-      let sending = false;
-      const send = async (): Promise<Response> => {
-        const demoFiles = (): EvidenceFile[] | Response => {
-          try {
-            return buildAttachments(caseId, sub.files);
-          } catch (e) {
-            if (e instanceof UnknownFileError) return json(422, { error: 'UNKNOWN_FILE', detail: e.message });
-            throw e;
-          }
-        };
-        let files: EvidenceFile[] | Response | null = isAgentCase(caseId) ? null : demoFiles();
-        if (files instanceof Response) return files;
-
-        // Read first: the rules depend on what PayPal shows now, not on what the browser last saw.
-        let dispute;
-        try {
-          dispute = await paypal.disputes.get(disputeId);
-        } catch (e) {
-          return fromPayPalError(e);
-        }
-        const problem = checkAgainstDispute(sub, dispute);
-        if (problem) return json(problem.status, { error: problem.error, detail: problem.detail });
-
-        // Agent case: when MeterMCP has the session of the disputed capture, the evidence is that session: digital
-        // delivery (carrier OTHER) referenced by the session id, with the PDF of the real receipt. Without a session
-        // the demo documents go, as for any bound case. If MeterMCP cannot be asked, nothing is sent.
-        let sessionRef: string | null = null;
-        if (files === null) {
-          let found: AgentReceiptSource;
-          try {
-            found = await agentReceipt(dispute);
-          } catch (e) {
-            return json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' });
-          }
-          if (found.kind === 'metermcp') {
-            const sid = found.session.sessionId;
-            if (sub.carrier !== 'OTHER' || sub.tracking !== sid) {
-              return json(422, { error: 'TRACKING_MISMATCH', detail: `Digital delivery of session ${sid}: carrier OTHER and tracking ${sid}` });
-            }
-            const wrong = sub.files.find((f) => f.name !== receiptFileName(sid));
-            if (wrong) return json(422, { error: 'UNKNOWN_FILE', detail: `File ${wrong.name} is not the receipt of session ${sid}` });
-            try {
-              files = sub.files.length ? [{ name: receiptFileName(sid), type: 'application/pdf', data: await opts.meterMcp!.receiptPdf(sid) }] : [];
-            } catch (e) {
-              return json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' });
-            }
-            sessionRef = sid;
-          } else {
-            files = demoFiles();
-            if (files instanceof Response) return files;
-          }
-        }
-
-        sending = true;
-        const tracking = { carrier_name: sub.carrier, tracking_number: sub.tracking, ...(sub.carrier === 'OTHER' ? { carrier_name_other: 'Digital delivery' } : {}) };
-        try {
-          await paypal.disputes.provideEvidence(
-            disputeId,
-            // Tracking info only goes with a carrier and a reference (proof of fulfillment); OTHER is notes and documents.
-            sub.carrier && sub.tracking
-              ? { evidence_type: sub.evidenceType, evidence_info: { tracking_info: [tracking] }, notes: sub.notes }
-              : { evidence_type: sub.evidenceType, notes: sub.notes },
-            files,
-            { requestId: sub.requestId },
-          );
-        } catch (e) {
-          return fromPayPalError(e);
-        }
-        log(`provide-evidence sent · case ${caseId} → ${disputeId} · ${sub.evidenceType} · ${files.length} file(s)${sessionRef ? ` · MeterMCP receipt ${sessionRef}` : ''} · request ${sub.requestId}`);
-        // Accepted by PayPal is not "recorded": the client reads the dispute back to find out what PayPal stored.
-        return json(202, { sent: true });
-      };
-      return send().finally(() => {
-        if (!sending && reserved?.ok) reserved.release();
-      });
-    }
+    if (sub === 'evidence' && req.method === 'POST') return sendIntent(req, caseId, paypal, disputeId);
     return json(405, { error: 'METHOD_NOT_ALLOWED' });
   };
 
-  return Object.assign(route, { inputFor: serverInput, forgetReads: () => reads.clear() });
+  return Object.assign(route, {
+    inputFor: serverInput,
+    forgetReads: () => {
+      reads.clear();
+      intents.invalidateAll('the bindings changed');
+    },
+    intents,
+  });
 }
+
+/** The record of a stored intent, for tests. */
+export type { StoredIntent };

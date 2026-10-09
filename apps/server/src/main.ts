@@ -23,6 +23,7 @@ import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
 import { checkBindings, parseBindings } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
 import { createHostedApp, type HostedApp } from './hosted.ts';
+import { IntentStore } from './intents.ts';
 import { MeterMcpClient } from './metermcp.ts';
 import { toNodeListener } from './node.ts';
 
@@ -103,6 +104,9 @@ const analyst = new AnalystService({
 // The input each case was analysed with before the seller's evidence went in (see InputPins).
 const pins = new InputPins({ file: join(dataDir, 'analysis-inputs.json') });
 
+// Submission intents (what the merchant approved, exactly) and the approval/send audit log: the server's record.
+const intents = new IntentStore({ file: join(dataDir, 'intents.json'), eventsFile: join(dataDir, 'audit-events.jsonl') });
+
 let app: Handler;
 let hostedApp: HostedApp | null = null;
 let tokenFile: string | null = null;
@@ -129,7 +133,7 @@ if (hosted) {
   });
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
-    paypal, env, bindings, log, meterMcp, analyst, pins, site, counters, demoCode, sessionSecret,
+    paypal, env, bindings, log, meterMcp, analyst, pins, intents, site, counters, demoCode, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
@@ -143,7 +147,7 @@ if (hosted) {
   tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('../.runtime-token', import.meta.url));
   writeFileSync(tokenFile, token, { mode: 0o600 });
   const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
-  app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins, meterMcp, analyst, pins });
+  app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents });
 }
 
 const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`));

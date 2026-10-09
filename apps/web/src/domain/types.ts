@@ -337,6 +337,11 @@ export interface EvidenceSubmission {
   tracking: string;
   notes: string;
   files: SubmissionFile[];
+  /**
+   * The server's approved submission intent this content comes from (see domain/intent.ts). The real gateway sends
+   * only this id: the server sends the intent's content, never text from the browser.
+   */
+  intentId?: string;
 }
 
 /**

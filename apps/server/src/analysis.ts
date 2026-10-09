@@ -149,6 +149,13 @@ export class AnalystService {
     return this.progress(key);
   }
 
+  /** The finished analysis of these documents (this run's result, the cache or golden), or null. Never runs the model. */
+  async stored(input: AnalysisInput): Promise<{ key: string; analysis: CaseAnalysis } | null> {
+    const key = await this.key(input);
+    const analysis = this.jobs.get(key)?.result ?? this.o.store.get(key)?.analysis;
+    return analysis ? { key, analysis } : null;
+  }
+
   progress(key: string): ServiceAnswer {
     const job = this.jobs.get(key);
     if (job?.status === 'running') return { status: 200, body: { status: 'running', key, progress: job.progress, live: this.liveState() } };

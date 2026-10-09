@@ -8,6 +8,9 @@ import { AnalystService, InputPins } from '../src/analysis.ts';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
 import { MeterMcpClient, MeterMcpError, toMeteredSession, type MeterMcpSource, type Receipt } from '../src/metermcp.ts';
 import { fakePayPal, waitingDispute } from './fixtures.ts';
+import { analystFor } from './kit.ts';
+import { toSnapshot } from '../src/mapping.ts';
+import type { AgentReceiptSource } from '../../web/src/domain/types.ts';
 
 const CASE = 'PP-R-MMC-10190702';
 const REAL = 'PP-R-REAL-1';
@@ -89,18 +92,6 @@ const get = (path: string) => new Request(BASE + path, { headers: { [TOKEN_HEADE
 const post = (path: string, body: unknown) =>
   new Request(BASE + path, { method: 'POST', headers: { [TOKEN_HEADER]: TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
-const submission = (over: Record<string, unknown> = {}) => ({
-  disputeId: CASE,
-  action: 'provide_evidence',
-  evidenceType: 'PROOF_OF_FULFILLMENT',
-  carrier: 'OTHER',
-  tracking: SID,
-  notes: 'The buyer approved a budget; three calls completed and were charged.',
-  files: [{ name: `session-receipt-${SID}.pdf`, size: 'PDF' }],
-  requestId: 'rk-req-agent-1',
-  ...over,
-});
-
 test('receipt → MeteredSession keeps mandate, every call and the settlement', () => {
   const s = toMeteredSession(receipt());
   assert.equal(s.sessionId, SID);
@@ -139,12 +130,34 @@ test('GET of the agent case without a session (or with MeterMCP down) says why, 
   }
 });
 
-test('POST for the agent case with a session sends digital delivery (OTHER, session id) and the real receipt PDF', async () => {
+/** The agent case bound to the waiting dispute, as the server composes it (MeterMCP session or demo documents). */
+async function intentSetup(replies: Parameters<typeof fakePayPal>[0], meterMcp: MeterMcpSource | null, docsMeter: MeterMcpSource | null = meterMcp) {
+  const pp = fakePayPal(replies);
+  const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
+  // The analysis of exactly the documents the server builds (with or without the MeterMCP session).
+  const snap = toSnapshot(waitingDispute(), CASE, 'sandbox', new Date());
+  const receiptSource: AgentReceiptSource = docsMeter ? { kind: 'metermcp', session: toMeteredSession(receipt()) } : { kind: 'none', reason: `MeterMCP has no session for capture ${CAPTURE}` };
+  const input = caseInput(agentCase, { kind: 'live', snap: { ...snap, agentReceipt: receiptSource }, failed: null });
+  const { analyst } = await analystFor([[CASE, input]]);
+  const app = createApp({ paypal, env: 'sandbox', bindings: { [CASE]: REAL }, port: 8787, token: TOKEN, allowedOrigins: DEFAULT_ORIGINS, meterMcp, analyst });
+  const intent = async () => {
+    const r = await app(post(`/api/disputes/${CASE}/intent`, { evidenceType: 'PROOF_OF_FULFILLMENT' }));
+    const b = (await r.json()) as { id: string; contentHash: string; carrier: string; tracking: string; files: Array<{ name: string }>; error?: string };
+    assert.equal(r.status, 201, JSON.stringify(b));
+    assert.equal((await app(post(`/api/disputes/${CASE}/intent/${b.id}/approve`, { contentHash: b.contentHash }))).status, 200);
+    return b;
+  };
+  return { pp, app, intent };
+}
+
+test('agent case with a session: the server composes digital delivery (OTHER, session id) with the real receipt PDF, and sends exactly that', async () => {
   const { meter } = fakeMeter();
-  const { app, pp } = setup([{ status: 200, body: waitingDispute() }, { status: 200, body: {} }], meter);
-  const r = await app(post(`/api/disputes/${CASE}/evidence`, submission()));
+  const { app, pp, intent } = await intentSetup([{ status: 200, body: waitingDispute() }, { status: 200, body: waitingDispute() }, { status: 200, body: {} }], meter);
+  const i = await intent();
+  assert.deepEqual([i.carrier, i.tracking, i.files.map((f) => f.name)], ['OTHER', SID, [`session-receipt-${SID}.pdf`]]);
+  const r = await app(post(`/api/disputes/${CASE}/evidence`, { intentId: i.id }));
   assert.equal(r.status, 202);
-  const send = pp.apiCalls()[1]!;
+  const send = pp.apiCalls()[2]!;
   const form = send.init.body as FormData;
   const input = JSON.parse(await (form.get('input') as Blob).text());
   assert.deepEqual(input.evidences[0].evidence_info.tracking_info, [{ carrier_name: 'OTHER', tracking_number: SID, carrier_name_other: 'Digital delivery' }]);
@@ -156,34 +169,34 @@ test('POST for the agent case with a session sends digital delivery (OTHER, sess
   assert.ok(!text.includes('SYNTHETIC TEST DOCUMENT'));
 });
 
-test('POST for the agent case with a session refuses another reference or another file, and nothing is sent', async () => {
-  for (const [over, code] of [
-    [{ tracking: 'mm-sess-20261008-01' }, 'TRACKING_MISMATCH'],
-    [{ carrier: 'UPS' }, 'TRACKING_MISMATCH'],
-    [{ files: [{ name: 'session-receipt-mm-sess-20261008-01.pdf', size: '46 KB' }] }, 'UNKNOWN_FILE'],
-  ] as const) {
-    const { app, pp } = setup([{ status: 200, body: waitingDispute() }], fakeMeter().meter);
-    const r = await app(post(`/api/disputes/${CASE}/evidence`, submission(over)));
-    assert.equal(r.status, 422);
-    assert.equal((await r.json()).error, code);
-    assert.equal(pp.apiCalls().length, 1); // the read only
+test('agent case: another reference or another file cannot be asked for; the request is refused and nothing is sent', async () => {
+  const { app, pp } = await intentSetup([{ status: 200, body: waitingDispute() }], fakeMeter().meter);
+  for (const extra of [{ tracking: 'mm-sess-20261008-01' }, { carrier: 'UPS' }, { files: [{ name: 'session-receipt-mm-sess-20261008-01.pdf', size: '46 KB' }] }]) {
+    const r = await app(post(`/api/disputes/${CASE}/intent`, { evidenceType: 'PROOF_OF_FULFILLMENT', ...extra }));
+    assert.equal(r.status, 400);
   }
+  assert.equal(pp.apiCalls().filter((c) => c.method === 'POST').length, 0);
 });
 
-test('POST for the agent case: no session → the demo documents; MeterMCP down → nothing sent', async () => {
+test('agent case: no session → the demo documents; MeterMCP down at send time → documents changed, nothing sent', async () => {
   {
-    const { app, pp } = setup([{ status: 200, body: waitingDispute() }, { status: 200, body: {} }], fakeMeter({ session: false }).meter);
-    const r = await app(post(`/api/disputes/${CASE}/evidence`, submission({ tracking: 'mm-sess-20261008-01', files: [{ name: 'session-receipt-mm-sess-20261008-01.pdf', size: '46 KB' }] })));
-    assert.equal(r.status, 202);
-    const files = (pp.apiCalls()[1]!.init.body as FormData).getAll('evidence-file') as File[];
+    const { app, pp, intent } = await intentSetup([{ status: 200, body: waitingDispute() }, { status: 200, body: waitingDispute() }, { status: 200, body: {} }], fakeMeter({ session: false }).meter, null);
+    const i = await intent();
+    assert.equal((await app(post(`/api/disputes/${CASE}/evidence`, { intentId: i.id }))).status, 202);
+    const files = (pp.apiCalls()[2]!.init.body as FormData).getAll('evidence-file') as File[];
     assert.ok(Buffer.from(await files[0]!.arrayBuffer()).toString('latin1').includes('SYNTHETIC TEST DOCUMENT'));
   }
   {
-    const { app, pp } = setup([{ status: 200, body: waitingDispute() }], fakeMeter({ down: true }).meter);
-    const r = await app(post(`/api/disputes/${CASE}/evidence`, submission()));
-    assert.equal(r.status, 502);
-    assert.equal((await r.json()).error, 'METERMCP_UNAVAILABLE');
-    assert.equal(pp.apiCalls().length, 1);
+    let down = false;
+    const { meter } = fakeMeter();
+    const flaky: MeterMcpSource = { ...meter, findByCapture: async (c) => (down ? Promise.reject(new MeterMcpError('MeterMCP unreachable')) : meter.findByCapture(c)) };
+    const { app, pp, intent } = await intentSetup([{ status: 200, body: waitingDispute() }, { status: 200, body: waitingDispute() }], flaky, meter);
+    const i = await intent();
+    down = true;
+    const r = await app(post(`/api/disputes/${CASE}/evidence`, { intentId: i.id }));
+    assert.equal(r.status, 409);
+    assert.equal((await r.json()).error, 'DOCUMENTS_CHANGED');
+    assert.equal(pp.apiCalls().filter((c) => c.method === 'POST').length, 0);
   }
 });
 

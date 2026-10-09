@@ -28,8 +28,9 @@ import {
   type DailyCounters,
   type StaticSite,
 } from '@resolvekit/hosting';
+import { createHash } from 'node:crypto';
 import type { LiveGate } from './analysis.ts';
-import { createApi, json, withLog, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
+import { createApi, json, withLog, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 
 /** What the warm-up did for one bound case. */
 export interface WarmUpOutcome {
@@ -134,6 +135,14 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       }
       return { ok: true, release: () => o.counters.release(action, day) };
     },
+    // The approver of a send: the demo session (a hash of its signed cookie, never the code). Real PayPal needs one;
+    // the simulator records a visitor without the code as such.
+    actor(req: Request, unlocked: boolean): Actor {
+      const cookie = readCookie(req, DEMO_COOKIE);
+      if (cookie && session(req).ok) return { ok: true, actor: `demo session ${createHash('sha256').update(cookie).digest('hex').slice(0, 12)}` };
+      if (!unlocked) return { ok: true, actor: 'visitor (no demo code)' };
+      return { ok: false, refusal: { status: 403, body: { error: 'DEMO_CODE_REQUIRED', detail: LOCKED_REASON.evidence, action: 'evidence' } } };
+    },
   };
 
   // Live runs and re-checks analyse inputs the server builds itself (app.ts), behind the demo code and the caps.
@@ -192,7 +201,11 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const a = apiLimit.take(ip);
       if (!a.ok) return tooMany(a.retryAfterSec, `Too many requests; try again in ${a.retryAfterSec} s`);
       if (path === '/api/demo' || path.startsWith('/api/demo/')) return demoRoute(req, path, ip);
-      if (req.method === 'GET' && path.startsWith('/api/disputes/')) {
+      // Reads that go to PayPal: the dispute itself, and composing an intent (it reads the dispute fresh).
+      const paypalRead =
+        (req.method === 'GET' && path.startsWith('/api/disputes/') && !path.endsWith('/audit') && !path.includes('/intent/')) ||
+        (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path));
+      if (paypalRead) {
         const r = readLimit.take(ip);
         if (!r.ok) return tooMany(r.retryAfterSec, `Too many PayPal reads; try again in ${r.retryAfterSec} s`);
       }

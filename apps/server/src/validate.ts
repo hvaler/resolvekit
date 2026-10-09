@@ -1,6 +1,6 @@
 /**
- * Checks on an evidence submission before anything goes to PayPal. Shape checks run on the request alone; the
- * dispute checks run on the dispute as just read from PayPal.
+ * Checks on an evidence submission against the dispute as just read from PayPal, right before anything is sent. The
+ * submission itself is never parsed from a client: it is a server-composed intent (see app.ts and domain/intent.ts).
  */
 import { chooseEvidenceType, requestedEvidence, sellerActions, type Dispute } from '@resolvekit/paypal';
 import type { EvidenceSubmission } from '../../web/src/domain/types.ts';
@@ -13,44 +13,8 @@ export interface Problem {
   detail: string;
 }
 
-export type SubmissionRequest = EvidenceSubmission & { requestId: string };
-
-const isStr = (v: unknown): v is string => typeof v === 'string';
-
-/** Parse the JSON body; returns the submission or the first problem found. */
-export function parseSubmission(body: unknown): SubmissionRequest | Problem {
-  const b = body as Partial<SubmissionRequest> | null;
-  const bad = (detail: string): Problem => ({ status: 400, error: 'INVALID_SUBMISSION', detail });
-  if (!b || typeof b !== 'object') return bad('Body must be a JSON object');
-  if (b.action !== 'provide_evidence') return bad('action must be provide_evidence');
-  for (const k of ['evidenceType', 'carrier', 'tracking', 'notes', 'requestId'] as const) if (!isStr(b[k])) return bad(`${k} must be a string`);
-  if (!/^[\w.:-]{1,64}$/.test(b.requestId!)) return bad('requestId must be 1-64 letters, digits, ".", ":", "_" or "-"');
-  if (!Array.isArray(b.files) || !b.files.every((f) => f && isStr(f.name) && isStr(f.size))) return bad('files must be a list of { name, size }');
-  if (b.files.length > 10) return bad('At most 10 files');
-  if (b.notes!.length > NOTES_LIMIT * 2) return bad(`notes must be at most ${NOTES_LIMIT} characters`);
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(b.notes!)) return bad('notes must not contain control or bidi characters');
-  if (!/^[A-Za-z0-9 ._-]{0,100}$/.test(b.tracking!.trim())) return bad('tracking must be letters, digits, spaces, ".", "_" or "-" (at most 100)');
-  if (!/^[A-Z0-9_]{0,40}$/.test(b.carrier!.trim())) return bad('carrier must be a PayPal carrier code');
-  if (!/^[A-Z0-9_]{1,60}$/.test(b.evidenceType!)) return bad('evidenceType must be a PayPal evidence type');
-  if (!b.files.every((f) => f.name.length <= 200 && f.size.length <= 40)) return bad('file name or size too long');
-  return {
-    disputeId: isStr(b.disputeId) ? b.disputeId : '',
-    action: 'provide_evidence',
-    evidenceType: b.evidenceType!,
-    carrier: b.carrier!.trim(),
-    tracking: b.tracking!.trim(),
-    notes: b.notes!,
-    files: b.files.map((f) => ({ name: f.name, size: f.size })),
-    requestId: b.requestId!,
-  };
-}
-
-export function isProblem(x: unknown): x is Problem {
-  return !!x && typeof x === 'object' && 'error' in x && 'status' in x;
-}
-
 /** Rules that depend on the dispute as PayPal shows it right now. */
-export function checkAgainstDispute(s: SubmissionRequest, d: Dispute): Problem | null {
+export function checkAgainstDispute(s: EvidenceSubmission, d: Dispute): Problem | null {
   if (!sellerActions(d).includes('provide_evidence')) {
     return { status: 409, error: 'PROVIDE_EVIDENCE_NOT_ALLOWED', detail: `PayPal does not offer provide_evidence on this dispute now (status ${d.status ?? 'unknown'})` };
   }
