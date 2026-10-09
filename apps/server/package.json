@@ -1,0 +1,16 @@
+{
+  "name": "@resolvekit/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env src/main.ts",
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@resolvekit/paypal": "*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.5"
+  }
+}

@@ -9,6 +9,7 @@ export interface Evidence {
   notes?: string;
   evidence_info?: { tracking_info?: TrackingInfo[]; refund_ids?: string[] };
   documents?: Array<{ name: string; url?: string }>;
+  action_info?: { action?: string; response_option?: string; mandatory?: boolean };
 }
 export interface TrackingInfo { carrier_name: string; carrier_name_other?: string; tracking_number: string; tracking_url?: string }
 export interface Dispute {
@@ -19,6 +20,8 @@ export interface Dispute {
   evidences?: Evidence[];
   links?: DisputeLink[];
   disputed_transactions?: Array<{ seller_transaction_id?: string; items?: Array<{ item_type?: string }> }>;
+  seller_response_due_date?: string;
+  dispute_amount?: { currency_code: string; value: string };
 }
 export interface EvidenceFile { name: string; type: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/gif'; data: Uint8Array }
 export type EvidenceInput = Pick<Evidence, 'evidence_type' | 'evidence_info' | 'notes'>;
@@ -41,7 +44,7 @@ export function sellerActions(d: Dispute): string[] {
 // SERVICE, and rejects PROOF_FOR_SOFTWARE_OR_SERVICE_DELIVERED with EVIDENCE_TYPE_IS_NOT_ALLOWED (sandbox,
 // 2026-10-08). Digital delivery then goes as carrier OTHER.
 export function chooseEvidenceType(requested: string[], itemType?: string): string {
-  if (requested.length > 0) return requested[0];
+  if (requested[0]) return requested[0];
   return itemType === 'SERVICE' || itemType === 'DIGITAL_DOWNLOAD' ? 'PROOF_FOR_SOFTWARE_OR_SERVICE_DELIVERED' : 'PROOF_OF_FULFILLMENT';
 }
 
@@ -64,11 +67,12 @@ export class DisputesApi {
   }
 
   // Irreversible: PayPal accepts one submission; afterwards provide_evidence is gone. Re-read with get().
-  provideEvidence(disputeId: string, evidence: EvidenceInput, files: EvidenceFile[]): Promise<unknown> {
+  // `requestId` becomes the PayPal-Request-Id header, so a retry of the same approval is not a second action.
+  provideEvidence(disputeId: string, evidence: EvidenceInput, files: EvidenceFile[], opts: { requestId?: string } = {}): Promise<unknown> {
     const form = new FormData();
     form.append('input', new Blob([JSON.stringify({ evidences: [evidence] })], { type: 'application/json' }), 'input.json');
     for (const f of files) form.append('evidence-file', new Blob([f.data], { type: f.type }), f.name);
-    return this.client.request('POST', `/v1/customer/disputes/${encodeURIComponent(disputeId)}/provide-evidence`, form);
+    return this.client.request('POST', `/v1/customer/disputes/${encodeURIComponent(disputeId)}/provide-evidence`, form, opts);
   }
 
   sendMessage(disputeId: string, message: string): Promise<unknown> {

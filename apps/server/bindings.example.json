@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy to bindings.json (git-ignored). Web case id → real PayPal sandbox dispute id. Unbound cases stay on the simulated PayPal and are never sent to PayPal.",
+  "PP-R-TVH-10190665": "PP-R-XXX-00000000",
+  "PP-R-MMC-10190702": ""
+}

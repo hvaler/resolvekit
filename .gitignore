@@ -7,3 +7,7 @@ coverage/
 *.log
 .DS_Store
 .playwright-mcp/
+
+# Real dispute bindings (apps/server/bindings.example.json is the template)
+apps/server/bindings.json
+apps/server/.runtime-token

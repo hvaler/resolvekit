@@ -83,3 +83,20 @@ test('surfaces PayPal error details instead of hiding them', async () => {
     /400 INVALID_REQUEST.*EVIDENCE_TYPE_IS_NOT_ALLOWED/,
   );
 });
+
+test('uses the caller request id as PayPal-Request-Id so a retry of the same approval is not a new action', async () => {
+  const { fn, calls } = fakeFetch([{ status: 200, body: {} }]);
+  await client(fn).disputes.provideEvidence('PP-R-1', { evidence_type: 'PROOF_OF_FULFILLMENT', notes: 'x' }, [], { requestId: 'rk-req-abc123' });
+  assert.equal(new Headers(calls[1].init.headers).get('paypal-request-id'), 'rk-req-abc123');
+});
+
+test('verifies credentials with an OAuth token only, without reading any dispute', async () => {
+  const { fn, calls } = fakeFetch([]);
+  await client(fn).verifyCredentials();
+  assert.deepEqual(calls.map((c) => new URL(c.url).pathname), ['/v1/oauth2/token']);
+});
+
+test('a credentials failure is reported without the secret', async () => {
+  const fn = (async () => new Response(JSON.stringify({ error: 'invalid_client', error_description: 'Client Authentication failed' }), { status: 401 })) as typeof fetch;
+  await assert.rejects(client(fn).verifyCredentials(), (e: Error) => /401/.test(e.message) && !e.message.includes('secret'));
+});

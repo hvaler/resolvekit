@@ -12,12 +12,14 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run test:paypal && npm run test:web",
+    "test": "npm run test:paypal && npm run test:server && npm run test:web",
     "test:paypal": "node --test \"packages/*/test/*.test.ts\"",
+    "test:server": "npm run test --workspace @resolvekit/server",
     "test:web": "npm run test --workspace @resolvekit/web",
+    "server": "npm run start --workspace @resolvekit/server",
     "dev": "npm run dev --workspace @resolvekit/web",
     "build": "npm run build --workspace @resolvekit/web",
     "preview": "npm run preview --workspace @resolvekit/web",
-    "typecheck": "npm run typecheck --workspace @resolvekit/web"
+    "typecheck": "npm run typecheck --workspace @resolvekit/web && npm run typecheck --workspace @resolvekit/server"
   }
 }

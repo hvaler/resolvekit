@@ -41,6 +41,11 @@ export class PayPalClient {
     this.disputes = new DisputesApi(this);
   }
 
+  /** Get (or reuse) an OAuth token: proves the credentials work without touching any dispute. */
+  async verifyCredentials(): Promise<void> {
+    await this.accessToken();
+  }
+
   private async accessToken(): Promise<string> {
     if (this.token && Date.now() < this.token.expiresAt) return this.token.value;
     const basic = Buffer.from(`${this.opts.clientId}:${this.opts.clientSecret}`).toString('base64');
@@ -57,8 +62,9 @@ export class PayPalClient {
     return this.token.value;
   }
 
-  // JSON or multipart request. Every POST carries a PayPal-Request-Id so a retry cannot duplicate an action.
-  async request<T>(method: 'GET' | 'POST', path: string, body?: unknown | FormData): Promise<T> {
+  // JSON or multipart request. Every POST carries a PayPal-Request-Id so a retry cannot duplicate an action;
+  // pass the caller's own id to make a retry of the same approved action reuse it.
+  async request<T>(method: 'GET' | 'POST', path: string, body?: unknown | FormData, opts: { requestId?: string } = {}): Promise<T> {
     const headers: Record<string, string> = { Authorization: `Bearer ${await this.accessToken()}` };
     let payload: BodyInit | undefined;
     if (body instanceof FormData) payload = body;
@@ -66,7 +72,7 @@ export class PayPalClient {
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
     }
-    if (method === 'POST') headers['PayPal-Request-Id'] = randomUUID();
+    if (method === 'POST') headers['PayPal-Request-Id'] = opts.requestId ?? randomUUID();
     const r = await this.opts.fetch(BASE[this.opts.env] + path, {
       method,
       headers,
@@ -79,3 +85,5 @@ export class PayPalClient {
     return parsed as T;
   }
 }
+
+export * from './disputes.ts';
