@@ -111,3 +111,15 @@ describe('new disputes opened by PayPal', () => {
     expect((await g.getDispute('N1')).status).toBe('WAITING_FOR_SELLER_RESPONSE');
   });
 });
+
+describe('simulated PayPal in the claim stage', () => {
+  it('after the evidence, PayPal reviews: no seller actions (send-message and make-offer exist only in the inquiry stage)', async () => {
+    const claim: DisputeSnapshot = { ...initial, id: 'C1', stage: 'CHARGEBACK', allowedActions: ['provide_evidence', 'accept_claim'] };
+    const g = new SimulatedDisputeGateway([claim], { outcome: () => 'waiting_for_buyer' });
+    const notes: EvidenceSubmission = { ...submission, disputeId: 'C1', evidenceType: 'OTHER', carrier: '', tracking: '' };
+    const r = await submitWithReadBack(g, notes, { requestId: 'rk-c' });
+    expect(r.kind).toBe('recorded');
+    expect(r.snapshot).toMatchObject({ status: 'UNDER_REVIEW', allowedActions: [] });
+    if (r.kind === 'recorded') expect(r.recorded).toMatchObject({ evidenceType: 'OTHER', carrier: '', tracking: '' });
+  });
+});

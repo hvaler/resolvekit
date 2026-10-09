@@ -52,9 +52,11 @@ export interface SentenceRowProps {
   onCancel: () => void;
   suggestion?: { label: string; text: string };
   onApplySuggestion?: () => void;
+  /** The response was sent: the sentence is shown as sent, not editable. */
+  readOnly?: boolean;
 }
 
-export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCancel, suggestion, onApplySuggestion }: SentenceRowProps) {
+export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCancel, suggestion, onApplySuggestion, readOnly = false }: SentenceRowProps) {
   const { hl } = useHighlight();
   const [draft, setDraft] = useState(s.text);
   const [hidden, setHidden] = useState(false);
@@ -62,7 +64,7 @@ export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCanc
   const T = SENTENCE_TONE[s.state];
   const rejected = s.state === 'rejected';
   const hot = !!hl && (hl.sid ? hl.sid === s.id : s.citations.some((c) => c.evidenceId === hl.ev));
-  const canEdit = !editing && (s.state === 'supported' || s.state === 'needs_review');
+  const canEdit = !readOnly && !editing && (s.state === 'supported' || s.state === 'needs_review');
   const showChips = !editing && s.state !== 'pending' && s.citations.length > 0;
   const showReason = !editing && (rejected || s.state === 'needs_review') && !!s.reason;
   const showNote = !editing && !!s.note && s.state !== 'checking';
@@ -87,7 +89,7 @@ export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCanc
             </span>
           )}
           <span className="flex-1" />
-          {suggestion && s.state === 'needs_review' && !editing && (
+          {!readOnly && suggestion && s.state === 'needs_review' && !editing && (
             <button type="button" onClick={onApplySuggestion} className="rounded-sm border border-warn-line bg-surface px-2 py-0.5 text-[11.5px]">
               {suggestion.label}
             </button>

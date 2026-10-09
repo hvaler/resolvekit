@@ -50,3 +50,13 @@ describe('compareSentRecorded', () => {
     expect(c.rows.every((r) => r.recorded === 'Not recorded')).toBe(true);
   });
 });
+
+describe('notes-and-documents evidence (OTHER)', () => {
+  it('has no carrier or tracking rows to compare', async () => {
+    const { compareSentRecorded } = await import('./compare');
+    const sent = { disputeId: 'D', action: 'provide_evidence' as const, evidenceType: 'OTHER' as const, carrier: '', tracking: '', notes: 'n', files: [{ name: 'a.pdf', size: '1 KB' }] };
+    const c = compareSentRecorded(sent, { evidenceType: 'OTHER', source: 'SUBMITTED_BY_SELLER', carrier: '', tracking: '', notes: 'n', files: ['a.pdf'], storedAt: 's' }, 'now');
+    expect(c.rows.map((r) => r.field)).toEqual(['Evidence type', 'Files', 'Notes', 'Submitted']);
+    expect(c.allMatch).toBe(true);
+  });
+});

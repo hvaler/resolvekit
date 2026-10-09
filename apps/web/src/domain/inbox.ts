@@ -259,6 +259,18 @@ export function inboxSummary(rows: readonly InboxGridRow[]): string {
  */
 export function applySnapshot(d: InboxDispute, s: DisputeSnapshot | undefined): InboxDispute {
   if (!s) return d;
+  if (s.status === 'RESOLVED') {
+    const closed = s.outcome?.closedAt ? dayMonth(s.outcome.closedAt) : null;
+    return {
+      ...d,
+      status: s.status,
+      next: 'Nothing to do',
+      nextKind: 'none',
+      nextSub: `${outcomeText(s.outcome?.code)}${closed ? ` · ${closed}` : ''}`,
+      respondBy: null,
+      dueNote: closed ? `Closed ${closed}` : 'Closed',
+    };
+  }
   if (hasSellerEvidence(s)) {
     const reviewing = s.status === 'UNDER_REVIEW';
     return {
@@ -268,7 +280,7 @@ export function applySnapshot(d: InboxDispute, s: DisputeSnapshot | undefined): 
       nextKind: 'none',
       nextSub: s.origin?.kind === 'paypal' ? 'Evidence recorded by PayPal' : 'Evidence recorded by the simulator',
       respondBy: null,
-      dueNote: reviewing ? 'PayPal reviewing' : 'Buyer to respond',
+      dueNote: reviewing ? 'PayPal reviewing' : s.buyerRespondBy ? `Buyer: by ${dayMonth(s.buyerRespondBy)}` : 'Buyer to respond',
     };
   }
   if (d.nextKind === 'processing' && s.status !== 'UNDER_REVIEW') {
@@ -284,6 +296,32 @@ export function applySnapshot(d: InboxDispute, s: DisputeSnapshot | undefined): 
     };
   }
   return s.status === d.status ? d : { ...d, status: s.status };
+}
+
+/** "2 Oct" (UTC). */
+function dayMonth(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
+/** PayPal's `dispute_outcome.outcome_code` in the merchant's words. */
+export function outcomeText(code: string | null | undefined): string {
+  switch (code) {
+    case 'RESOLVED_SELLER_FAVOUR':
+      return 'Resolved in your favour';
+    case 'RESOLVED_BUYER_FAVOUR':
+      return 'Resolved in the buyer’s favour';
+    case 'RESOLVED_WITH_PAYOUT':
+      return 'Resolved with a PayPal payout';
+    case 'CANCELED_BY_BUYER':
+      return 'Cancelled by the buyer';
+    case 'ACCEPTED':
+      return 'Claim accepted';
+    case 'DENIED':
+      return 'Claim denied';
+    default:
+      return 'Resolved at PayPal';
+  }
 }
 
 /** Shallow equality of grid rows, to send only changed rows to the grid. */

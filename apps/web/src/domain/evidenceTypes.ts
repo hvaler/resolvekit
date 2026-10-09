@@ -10,6 +10,17 @@ export const NOT_ALLOWED_BY_REASON: Readonly<Partial<Record<DisputeReason, reado
   MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ['PROOF_FOR_SOFTWARE_OR_SERVICE_DELIVERED'],
 };
 
+/**
+ * The evidence types PayPal's "Dispute reasons and evidence" table lists for each reason
+ * (developer.paypal.com/disputes/reasons-evidence, read 9 Oct 2026). The demo cases only send these.
+ */
+export const PAYPAL_EVIDENCE_BY_REASON: Readonly<Record<DisputeReason, readonly EvidenceType[]>> = {
+  MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER'],
+  MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED: ['OTHER', 'PROOF_OF_REFUND'],
+  UNAUTHORISED: ['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER'],
+  INCORRECT_AMOUNT: ['PROOF_OF_REFUND', 'OTHER'],
+};
+
 export const NOT_ALLOWED_ERROR = 'EVIDENCE_TYPE_IS_NOT_ALLOWED';
 
 export const EVIDENCE_TYPE_LABEL: Readonly<Record<EvidenceType, string>> = {

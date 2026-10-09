@@ -12,7 +12,7 @@
 import { utcDate, utcDateTime, type PayPalSource } from '@resolvekit/cases';
 import { bindingMismatch, moneyText } from './binding';
 import type { GatewayMode } from './httpGateway';
-import { dueHours, formatDue, formatDueAt, type InboxDispute } from './inbox';
+import { dueHours, formatDue, formatDueAt, outcomeText, type InboxDispute } from './inbox';
 import { hasSellerEvidence } from './recorded';
 import type { DisputeSnapshot, DisputeStatus, DisputeSummary } from './types';
 
@@ -69,14 +69,14 @@ export function itemTypeLabel(code: string | null | undefined): string | null {
 }
 
 /** "18 Oct" (UTC). */
-const dayMonth = (iso: string) => formatDueAt(iso).split(' · ')[0];
+const dayMonth = (iso: string) => formatDueAt(iso).split(' · ')[0]!;
 
 /**
  * Why there is no seller due date. After the seller's evidence is in, PayPal stops returning
  * `seller_response_due_date` (docs/sandbox-findings.md): the deadline leaves, it is not kept as a stale date.
  */
 export function noSellerDeadline(s: DisputeSnapshot): { text: string; sub: string | null } {
-  if (s.status === 'RESOLVED') return { text: 'No seller deadline', sub: 'Closed at PayPal' };
+  if (s.status === 'RESOLVED') return { text: 'No seller deadline', sub: s.outcome?.closedAt ? `${outcomeText(s.outcome.code)} · ${dayMonth(s.outcome.closedAt)}` : 'Closed at PayPal' };
   if (s.status === 'UNDER_REVIEW') return { text: 'No seller deadline', sub: 'PayPal is reviewing' };
   if (s.status === 'WAITING_FOR_BUYER_RESPONSE' || hasSellerEvidence(s)) {
     return { text: 'No seller deadline', sub: s.buyerRespondBy ? `Buyer’s turn · buyer by ${dayMonth(s.buyerRespondBy)}` : 'Buyer’s turn' };
@@ -122,9 +122,12 @@ export interface HeaderInput {
   /** "WAITING_FOR_BUYER_RESPONSE · read 4s ago": the caller formats the read time. */
   statusDetail: string;
   now: Date;
+  /** The simulator's snapshot of a simulated case: once the seller's evidence is in or it is closed, it says why there is no due date. */
+  simulatedSnap?: DisputeSnapshot;
 }
 
-function fromDemo(s: DisputeSummary, status: DisputeStatus, statusDetail: string): HeaderView {
+function fromDemo(s: DisputeSummary, status: DisputeStatus, statusDetail: string, snap?: DisputeSnapshot): HeaderView {
+  const settled = !s.respondBy && !!snap && (snap.status === 'RESOLVED' || hasSellerEvidence(snap));
   return {
     amount: s.amount,
     currency: s.currency,
@@ -137,7 +140,7 @@ function fromDemo(s: DisputeSummary, status: DisputeStatus, statusDetail: string
     statusEmpty: '',
     statusDetail,
     due: s.respondBy ? { at: s.respondBy, left: s.timeLeft ?? '' } : null,
-    dueEmpty: { text: 'Set when it opens', sub: null },
+    dueEmpty: settled ? noSellerDeadline(snap!) : { text: 'Set when it opens', sub: null },
     transactionId: s.transactionId,
     transactionText: s.captureText,
     disputeLine: null,
@@ -168,10 +171,10 @@ function withoutPayPal(why: string, notice: HeaderView['notice']): HeaderView {
   };
 }
 
-export function caseHeaderView({ summary, source, simulatedStatus, statusDetail, now }: HeaderInput): HeaderView {
+export function caseHeaderView({ summary, source, simulatedStatus, statusDetail, now, simulatedSnap }: HeaderInput): HeaderView {
   switch (source.kind) {
     case 'simulated':
-      return fromDemo(summary, simulatedStatus, statusDetail);
+      return fromDemo(summary, simulatedStatus, statusDetail, simulatedSnap);
     case 'checking':
       return withoutPayPal('Checking the PayPal connection…', { tone: 'info', text: 'Checking whether this case runs on real PayPal…' });
     case 'loading':

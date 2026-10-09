@@ -188,8 +188,11 @@ export class SimulatedDisputeGateway implements DisputeGateway {
       throw new GatewayTimeoutError();
     }
     this.sent.push({ submission, requestId: opts.requestId });
-    const status: DisputeStatus = outcome === 'under_review' ? 'UNDER_REVIEW' : 'WAITING_FOR_BUYER_RESPONSE';
-    const allowed: ActionCode[] = status === 'UNDER_REVIEW' ? ['send_message'] : ['send_message', 'make_offer', 'accept_claim'];
+    // In the claim stage PayPal decides on the evidence (and send-message / make-offer exist only in the inquiry
+    // stage), so the dispute goes to review with no seller actions, as the sandbox shows right after a submission.
+    const claim = !!d.stage && d.stage !== 'INQUIRY';
+    const status: DisputeStatus = claim || outcome === 'under_review' ? 'UNDER_REVIEW' : 'WAITING_FOR_BUYER_RESPONSE';
+    const allowed: ActionCode[] = claim ? [] : status === 'UNDER_REVIEW' ? ['send_message'] : ['send_message', 'make_offer', 'accept_claim'];
     d.status = status;
     d.allowedActions = allowed;
     const now = this.opts.now();

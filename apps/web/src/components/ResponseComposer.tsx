@@ -4,9 +4,10 @@ import { useSecondsSince } from '../app/services';
 import type { CaseDraft } from '../app/useCaseDraft';
 import { NOTES_LIMIT, blockerSentence, draftSummary, notesCountLabel } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
-import type { ActionCode, CaseFile } from '../domain/types';
+import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
 import { evidenceDomId } from './EvidenceCard';
 import { EvidenceTypeSelector } from './EvidenceTypeSelector';
+import { RecordedEvidence } from './RecordedEvidence';
 import { SentenceRow } from './SentenceRow';
 import { PrimaryAction, cx } from './ui';
 
@@ -48,12 +49,24 @@ function Attachments({ c }: { c: CaseFile }) {
   );
 }
 
-function ActionChoice({ c, d, allowed, checkedAt }: { c: CaseFile; d: CaseDraft; allowed: readonly ActionCode[]; checkedAt: number | null }) {
+function ActionChoice({
+  c,
+  d,
+  allowed,
+  checkedAt,
+  sent,
+}: {
+  c: CaseFile;
+  d: CaseDraft;
+  allowed: readonly ActionCode[];
+  checkedAt: number | null;
+  sent: boolean;
+}) {
   const secs = useSecondsSince(checkedAt);
   return (
     <section aria-label="Action" className="flex flex-col gap-2">
       <h3 className="m-0 text-[12.5px] font-semibold">What to do</h3>
-      {c.recommendation && (
+      {c.recommendation && !sent && (
         <div className="rounded-xl bg-acc-soft px-3 py-2.5 text-label leading-normal text-ink">
           <strong className="font-semibold">{c.recommendation.title}</strong> {c.recommendation.body}
         </div>
@@ -70,7 +83,10 @@ function ActionChoice({ c, d, allowed, checkedAt }: { c: CaseFile; d: CaseDraft;
               aria-checked={sel}
               onClick={() => d.setAction(code)}
               className="flex flex-col gap-0.5 rounded-[7px] px-2.5 py-2 text-left"
-              style={{ border: `1px solid ${sel ? 'var(--acc)' : 'var(--line2)'}`, background: sel ? 'var(--acc-soft)' : 'var(--surface)' }}
+              style={{
+                border: `1px solid ${sel ? 'var(--acc)' : 'var(--line2)'}`,
+                background: sel ? 'var(--acc-soft)' : 'var(--surface)',
+              }}
             >
               <span className="text-body font-medium">{det?.label ?? ACTION_LABEL[code]}</span>
               <span className="text-[11.5px] text-ink-3">{det?.sub ?? ''}</span>
@@ -136,11 +152,13 @@ export interface ResponseComposerProps {
   submitted: boolean;
   /** The dispute is on real PayPal (not the simulator): only then does the copy say "recorded by PayPal". */
   realPayPal?: boolean;
+  /** The latest read of the dispute: once the seller's evidence is in, what PayPal stored is shown back. */
+  snapshot?: DisputeSnapshot;
   onReview: () => void;
 }
 
 /** Right zone: the draft with its sentence states, evidence type, attachments, action, and the way forward. */
-export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, realPayPal = false, onReview }: ResponseComposerProps) {
+export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, realPayPal = false, snapshot, onReview }: ResponseComposerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const busy = d.blockers.some((b) => b.kind === 'analysis' || b.kind === 'checking');
   const actionable = d.actionable;
@@ -149,7 +167,10 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
   let blockText: string;
   let blockColor = 'var(--ink2)';
   let btnLabel: string;
-  if (submitted) {
+  if (submitted && snapshot?.status === 'RESOLVED') {
+    blockText = 'This dispute is closed. The case file is kept read-only.';
+    btnLabel = realPayPal ? 'Closed by PayPal' : 'Closed by the simulator';
+  } else if (submitted) {
     blockText = 'Evidence was submitted. PayPal no longer offers "Provide evidence" for this dispute.';
     btnLabel = realPayPal ? 'Evidence recorded by PayPal' : 'Evidence recorded by the simulator';
   } else if (actionable.length && !busy) {
@@ -166,7 +187,10 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
 
   if (collapsed) {
     return (
-      <aside aria-label="Response draft" className="flex w-[52px] flex-none flex-col border-l border-line bg-surface transition-[width] duration-fast max-md:w-full max-md:border-l-0 max-md:border-t">
+      <aside
+        aria-label="Response draft"
+        className="flex w-[52px] flex-none flex-col border-l border-line bg-surface transition-[width] duration-fast max-md:w-full max-md:border-l-0 max-md:border-t"
+      >
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -193,7 +217,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
       <div className="flex flex-none flex-col gap-[3px] border-b border-line px-[22px] pb-3 pt-3.5 max-md:px-4">
         <div className="flex items-center gap-2 max-md:flex-wrap">
           <h2 className="m-0 text-[15px] font-semibold">Response draft</h2>
-          <span className="text-[12px] text-ink-3">Drafted by the analyst · you approve</span>
+          <span className="text-[12px] text-ink-3">{submitted ? 'Sent · read-only' : 'Drafted by the analyst · you approve'}</span>
           <span className="flex-1" />
           <button
             type="button"
@@ -210,6 +234,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
       </div>
 
       <div className="flex flex-1 flex-col gap-[22px] overflow-auto pb-[22px] pl-[18px] pr-[22px] pt-2.5 max-md:overflow-visible max-md:px-3">
+        {submitted && snapshot && <RecordedEvidence snapshot={snapshot} realPayPal={realPayPal} />}
         <ol aria-label="Draft sentences" className="m-0 flex list-none flex-col gap-1 p-0">
           {d.views.map((v) => {
             const base = c.sentences.find((s) => s.id === v.id);
@@ -223,23 +248,31 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
                 onEdit={() => d.setEditing(v.id)}
                 onCancel={() => d.setEditing(null)}
                 onSave={(t) => d.saveEdit(v.id, t)}
-                {...(sug ? { suggestion: sug, onApplySuggestion: () => d.saveEdit(v.id, sug.text, `Applied the analyst's rephrasing of sentence ${v.num}`) } : {})}
+                {...(sug
+                  ? {
+                      suggestion: sug,
+                      onApplySuggestion: () => d.saveEdit(v.id, sug.text, `Applied the analyst's rephrasing of sentence ${v.num}`),
+                    }
+                  : {})}
+                readOnly={submitted}
               />
             );
           })}
         </ol>
 
-        <EvidenceTypeSelector
-          options={d.options}
-          selected={d.evidenceType}
-          onSelect={d.selectEvidenceType}
-          requested={c.requestedEvidenceType}
-          requestedNote={c.requestedNote}
-        />
+        {!submitted && (
+          <EvidenceTypeSelector
+            options={d.options}
+            selected={d.evidenceType}
+            onSelect={d.selectEvidenceType}
+            requested={c.requestedEvidenceType}
+            requestedNote={c.requestedNote}
+          />
+        )}
 
         {isAgent ? (
           <>
-            <DigitalDelivery c={c} />
+            {c.fulfillment.digital ? <DigitalDelivery c={c} /> : !submitted && <Attachments c={c} />}
             <section aria-label="Action" className="flex flex-col gap-1.5">
               <div className="flex justify-between text-[12.5px]">
                 <span className="font-semibold">
@@ -255,40 +288,40 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
               {alsoAllowed.length > 0 && (
                 <span className="text-[11.5px] text-ink-3">
                   Also allowed now:{' '}
-                  {alsoAllowed
-                    .map((a) => (a === 'accept_claim' ? `accept claim (refund ${c.refundText})` : ACTION_LABEL[a].toLowerCase()))
-                    .join(', ')}
-                  .
+                  {alsoAllowed.map((a) => (a === 'accept_claim' ? `accept claim (refund ${c.refundText})` : ACTION_LABEL[a].toLowerCase())).join(', ')}.
                 </span>
               )}
             </section>
           </>
         ) : (
           <>
-            <Attachments c={c} />
-            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} />
-            <section aria-label="Notes length" className="flex flex-col gap-1.5">
-              <div className="flex justify-between text-[12.5px]">
-                <span className="font-semibold">Notes sent to PayPal</span>
-                <span className={cx('font-mono text-[12px]', notesLen > NOTES_LIMIT ? 'text-bad' : 'text-ink-2')}>
-                  {notesCountLabel(d.notes)}
-                </span>
-              </div>
-              <div
-                role="meter"
-                aria-label="Notes length"
-                aria-valuemin={0}
-                aria-valuemax={NOTES_LIMIT}
-                aria-valuenow={notesLen}
-                className="h-1 overflow-hidden rounded-[2px] bg-line"
-              >
-                <span
-                  className="block h-full transition-[width] duration-[400ms]"
-                  style={{ width: `${Math.min(100, (notesLen / NOTES_LIMIT) * 100)}%`, background: notesLen > NOTES_LIMIT ? 'var(--bad)' : 'var(--acc)' }}
-                />
-              </div>
-              <span className="text-[11.5px] text-ink-3">Supported sentences only. Removed sentences are never sent.</span>
-            </section>
+            {!submitted && <Attachments c={c} />}
+            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} />
+            {!submitted && (
+              <section aria-label="Notes length" className="flex flex-col gap-1.5">
+                <div className="flex justify-between text-[12.5px]">
+                  <span className="font-semibold">Notes sent to PayPal</span>
+                  <span className={cx('font-mono text-[12px]', notesLen > NOTES_LIMIT ? 'text-bad' : 'text-ink-2')}>{notesCountLabel(d.notes)}</span>
+                </div>
+                <div
+                  role="meter"
+                  aria-label="Notes length"
+                  aria-valuemin={0}
+                  aria-valuemax={NOTES_LIMIT}
+                  aria-valuenow={notesLen}
+                  className="h-1 overflow-hidden rounded-[2px] bg-line"
+                >
+                  <span
+                    className="block h-full transition-[width] duration-[400ms]"
+                    style={{
+                      width: `${Math.min(100, (notesLen / NOTES_LIMIT) * 100)}%`,
+                      background: notesLen > NOTES_LIMIT ? 'var(--bad)' : 'var(--acc)',
+                    }}
+                  />
+                </div>
+                <span className="text-[11.5px] text-ink-3">Supported sentences only. Removed sentences are never sent.</span>
+              </section>
+            )}
           </>
         )}
       </div>
