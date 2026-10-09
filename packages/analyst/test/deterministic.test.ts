@@ -127,3 +127,28 @@ test('drafting: fact and note ids written into a sentence are removed (they are 
   assert.equal(stripIdRefs('Royal Example Mail delivered it (N1) on 13 September [F14].'), 'Royal Example Mail delivered it on 13 September.');
   assert.equal(stripIdRefs('Order #10482 (paid in full).'), 'Order #10482 (paid in full).');
 });
+
+test('rules: each PayPal reason gets its own checklist, five items, at least one critical', () => {
+  const ids = (reason: string, buyerItemType = 'Physical product') => requirementsFor({ reason, buyerItemType }).items.map((i) => i.id);
+  assert.deepEqual(ids('MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED'), ['description', 'match', 'complaint', 'returns', 'payment']);
+  assert.deepEqual(ids('UNAUTHORISED', 'Booking'), ['account', 'delivered', 'history', 'contact', 'payment']);
+  assert.deepEqual(ids('INCORRECT_AMOUNT', 'Service'), ['approved', 'charged', 'breakdown', 'within', 'holds']);
+  for (const reason of ['MERCHANDISE_OR_SERVICE_NOT_RECEIVED', 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED', 'UNAUTHORISED', 'INCORRECT_AMOUNT']) {
+    const r = requirementsFor({ reason, buyerItemType: 'Physical product' });
+    assert.equal(r.items.length, 5, reason);
+    assert.ok(r.items.some((i) => i.critical), reason);
+    assert.notEqual(r.title, 'What this dispute needs', reason);
+  }
+  // A reason without its own rules keeps the generic list.
+  assert.equal(requirementsFor({ reason: 'DUPLICATE_TRANSACTION', buyerItemType: 'Service' }).title, 'What this dispute needs');
+});
+
+test('rules: in the claim stage PayPal offers no message, so missing critical evidence means accepting; after the evidence is in, a message', () => {
+  const dispute = { ...input().dispute, reason: 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED', allowedActions: ['provide_evidence', 'accept_claim'], requestedEvidence: 'OTHER', evidenceOptions: [{ type: 'OTHER', satisfied: true }] };
+  const item = (id: string, status: ChecklistItem['status'], critical = true): ChecklistItem => ({ id, label: id, critical, status, evidence: [], contradictionId: null });
+  const supported: Sentence = { id: 'S1', text: 'x', noteId: null, citations: [], verdict: 'supported', reason: null, decidedBy: 'model', rewrite: null };
+  assert.equal(decideAction({ dispute, checklist: [item('description', 'present'), item('match', 'missing', false)], sentences: [supported] })!.action, 'provide_evidence');
+  assert.equal(decideAction({ dispute, checklist: [item('description', 'missing')], sentences: [supported] })!.action, 'accept_claim');
+  const after = decideAction({ dispute: { ...dispute, allowedActions: ['send_message', 'accept_claim', 'escalate'], requestedEvidence: null }, checklist: [item('description', 'present')], sentences: [supported] })!;
+  assert.deepEqual([after.action, after.rule], ['send_message', 'PayPal does not take evidence now; a message is the way to add to the case']);
+});
