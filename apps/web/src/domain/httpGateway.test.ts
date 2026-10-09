@@ -24,6 +24,7 @@ const submission: EvidenceSubmission = {
   tracking: '1Z',
   notes: 'n',
   files: [{ name: 'a.pdf', size: '1 KB' }],
+  intentId: 'int-0123456789abcdef01234567',
 };
 
 describe('HttpDisputeGateway', () => {
@@ -33,14 +34,21 @@ describe('HttpDisputeGateway', () => {
     expect(f.calls[0]!.url).toBe('/api/disputes/CASE-1');
   });
 
-  it('posts the submission as JSON with the request id; 202 resolves', async () => {
+  it('posts only the approved intent id (the server sends the intent’s own content); 202 resolves', async () => {
     const f = fake(() => json(202, { sent: true }));
     await new HttpDisputeGateway({ fetch: f.fetch }).provideEvidence(submission, { requestId: 'rk-req-1' });
     const c = f.calls[0]!;
     expect(c.url).toBe('/api/disputes/CASE-1/evidence');
     expect(c.init.method).toBe('POST');
     expect(new Headers(c.init.headers).get('content-type')).toBe('application/json');
-    expect(JSON.parse(String(c.init.body))).toMatchObject({ ...submission, requestId: 'rk-req-1' });
+    expect(JSON.parse(String(c.init.body))).toEqual({ intentId: submission.intentId });
+  });
+
+  it('never posts a submission without an approved intent', async () => {
+    const f = fake(() => json(202, { sent: true }));
+    const { intentId: _, ...bare } = submission;
+    await expect(new HttpDisputeGateway({ fetch: f.fetch }).provideEvidence(bare)).rejects.toBeInstanceOf(GatewayRequestError);
+    expect(f.calls).toHaveLength(0);
   });
 
   it('surfaces PayPal issue codes', async () => {

@@ -3,6 +3,7 @@ import { AnalysisClient } from '../domain/analysisClient';
 import { DemoClient, type DemoState, type UnlockResult } from '../domain/demoClient';
 import { SimulatedDisputeGateway, type DisputeGateway, type SimulatedOutcome } from '../domain/gateway';
 import { HttpDisputeGateway, RoutingDisputeGateway, modeFor, type GatewayMode, type ServerHealth } from '../domain/httpGateway';
+import { HttpIntentClient, LocalIntentClient, type IntentSource } from '../domain/intentClient';
 import { payPalSource, type PayPalSource } from '../domain/paypalView';
 import { utcHm } from '../domain/time';
 import type { AuditEntry, DisputeSnapshot } from '../domain/types';
@@ -24,6 +25,8 @@ export interface SyncState {
 }
 
 interface Services {
+  /** Submission intents: composed, approved and sent by the server (local composition only without a server). */
+  intents: IntentSource;
   /** The AI analyst on the ResolveKit server; null when the app runs without a server (tests). */
   analysis: AnalysisClient | null;
   /** Routes each case to real PayPal (bound case, server connected) or to the simulator. */
@@ -93,6 +96,7 @@ export function ServicesProvider({
   );
   const http = useMemo(() => (server === undefined ? new HttpDisputeGateway() : server), [server]);
   const analysis = useMemo(() => (server === null ? null : new AnalysisClient()), [server]);
+  const intents = useMemo<IntentSource>(() => (server === null ? new LocalIntentClient() : new HttpIntentClient()), [server]);
   const demoClient = useMemo(() => (server === null ? null : new DemoClient()), [server]);
   const [demo, setDemo] = useState<DemoState | null>(null);
   useEffect(() => {
@@ -200,8 +204,8 @@ export function ServicesProvider({
 
   const modeKnown = !http || health != null;
   const value = useMemo<Services>(
-    () => ({ analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, unlockDemo, lockDemo }),
-    [analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, unlockDemo, lockDemo],
+    () => ({ intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, unlockDemo, lockDemo }),
+    [intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, unlockDemo, lockDemo],
   );
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }

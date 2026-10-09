@@ -206,7 +206,14 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
         </main>
       </div>
       {showFlow && submission && (
-        <ApproveFlow c={c} views={d.views} submission={submission} actionsBefore={actionsBefore.current} onClose={() => navigate(`/cases/${id}`)} />
+        <ApproveFlow
+          c={c}
+          views={d.views}
+          submission={submission}
+          request={{ evidenceType: d.evidenceType!, edits: d.edits, resolutions: d.resolutions }}
+          actionsBefore={actionsBefore.current}
+          onClose={() => navigate(`/cases/${id}`)}
+        />
       )}
     </HighlightProvider>
   );

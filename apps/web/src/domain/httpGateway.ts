@@ -69,10 +69,15 @@ export class HttpDisputeGateway implements DisputeGateway {
     return this.call<DisputeSnapshot>(`/disputes/${encodeURIComponent(caseId)}`, { method: 'GET' }, this.readTimeoutMs);
   }
 
-  async provideEvidence(submission: EvidenceSubmission, opts: { requestId: string }): Promise<void> {
+  /**
+   * Send an approved submission intent. Only its id goes to the server, which sends the intent's own content (with the
+   * intent's PayPal-Request-Id); a submission without an intent is never sent.
+   */
+  async provideEvidence(submission: EvidenceSubmission, _opts?: { requestId: string }): Promise<void> {
+    if (!submission.intentId) throw new GatewayRequestError(400, { error: 'NO_INTENT', detail: 'Only an approved submission intent can be sent to PayPal' });
     await this.call<{ sent: true }>(
       `/disputes/${encodeURIComponent(submission.disputeId)}/evidence`,
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...submission, requestId: opts.requestId }) },
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ intentId: submission.intentId }) },
       this.sendTimeoutMs,
     );
   }
