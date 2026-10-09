@@ -49,6 +49,15 @@ export interface AnalystServiceOptions {
 
 export type ServiceAnswer = { status: number; body: unknown };
 
+/**
+ * Hosted mode: asked right before a model call would start. `check` may refuse (demo code, daily cap); `commit`
+ * counts the run once it starts. Stored analyses never reach it.
+ */
+export interface LiveGate {
+  check(): ServiceAnswer | null;
+  commit(): void;
+}
+
 const HOUR = 3_600_000;
 
 export class AnalystService {
@@ -77,7 +86,7 @@ export class AnalystService {
   }
 
   /** Stored analysis, running job, or a new live run. */
-  async request(caseId: string, input: AnalysisInput, refresh: boolean): Promise<ServiceAnswer> {
+  async request(caseId: string, input: AnalysisInput, refresh: boolean, gate?: LiveGate): Promise<ServiceAnswer> {
     const key = await this.key(input);
     const live = () => this.liveState();
     const running = this.jobs.get(key);
@@ -89,10 +98,14 @@ export class AnalystService {
     if (!this.o.model) {
       return { status: 503, body: { error: 'ANALYST_UNCONFIGURED', detail: 'No analysis is stored for these documents and no model key (GEMINI_API_KEY / GROQ_API_KEY) is set on the server', key, live: live() } };
     }
-    if (!this.live.take()) {
-      const s = live();
+    const s = live();
+    if (s.remaining <= 0) {
       return { status: 429, body: { error: 'RATE_LIMITED', detail: `Live analyses are limited to ${s.limit} per hour on this server; try again in ${Math.ceil(s.resetInSec / 60)} min`, key, live: s } };
     }
+    const refused = gate?.check();
+    if (refused) return { status: refused.status, body: { ...(refused.body as object), key, live: s } };
+    this.live.take();
+    gate?.commit();
     this.start(key, caseId, input);
     return { status: 202, body: { status: 'running', key, progress: [], live: live() } };
   }
@@ -135,16 +148,20 @@ export class AnalystService {
   }
 
   /** Re-verify one edited sentence against the analysis of these documents (live, rate-limited). */
-  async verify(input: AnalysisInput, text: string): Promise<ServiceAnswer> {
+  async verify(input: AnalysisInput, text: string, gate?: LiveGate): Promise<ServiceAnswer> {
     const key = await this.key(input);
     const job = this.jobs.get(key);
     const analysis = job?.result ?? this.o.store.get(key)?.analysis;
     if (!analysis) return { status: 404, body: { error: 'NO_ANALYSIS', detail: 'Analyse these documents before re-checking a sentence', key } };
     if (!this.o.model) return { status: 503, body: { error: 'ANALYST_UNCONFIGURED', detail: 'No model key is set on the server' } };
-    if (!this.verifies.take()) {
-      const s = this.verifies.state();
-      return { status: 429, body: { error: 'RATE_LIMITED', detail: `Re-checks are limited to ${s.limit} per hour on this server`, resetInSec: s.resetInSec } };
+    const vs = this.verifies.state();
+    if (vs.remaining <= 0) {
+      return { status: 429, body: { error: 'RATE_LIMITED', detail: `Re-checks are limited to ${vs.limit} per hour on this server`, resetInSec: vs.resetInSec } };
     }
+    const refused = gate?.check();
+    if (refused) return refused;
+    this.verifies.take();
+    gate?.commit();
     try {
       const r = await recheckSentence(analysis, input, text, { model: this.o.model, onUsage: (u) => this.o.onUsage?.(input.caseId, u) });
       return { status: 200, body: { verdict: r.verdict, reason: r.reason, rewrite: r.rewrite, decidedBy: r.decidedBy, citations: r.citations, model: r.usage.model, provider: r.usage.provider } };

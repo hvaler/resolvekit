@@ -5,14 +5,33 @@
 import { timingSafeEqual } from 'node:crypto';
 import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import type { AgentReceiptSource } from '../../web/src/domain/types.ts';
-import type { AnalystService } from './analysis.ts';
+import type { AnalystService, LiveGate } from './analysis.ts';
 import { parseInput } from './analysis.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
 import { checkAgainstDispute, isProblem, parseSubmission } from './validate.ts';
 
-export interface AppOptions {
+/** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
+export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck';
+
+/** A refusal as status + JSON body. */
+export interface Refusal {
+  status: number;
+  body: { error: string; detail: string; [k: string]: unknown };
+}
+
+/**
+ * Asked right before a costly action, with the request that asks for it: `check` refuses (demo code missing, daily
+ * cap reached) or allows; `commit` counts the action once it actually starts. Local mode has no gate.
+ */
+export interface CostGate {
+  check(req: Request, action: CostlyAction): Refusal | null;
+  commit(action: CostlyAction): void;
+}
+
+/** What the API routes need, in local and hosted mode alike. */
+export interface ApiOptions {
   /** null when PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET are not set. */
   paypal: PayPalClient | null;
   env: PayPalEnv;
@@ -20,16 +39,22 @@ export interface AppOptions {
   bindings: Readonly<Record<string, string>>;
   now?: () => Date;
   log?: (line: string) => void;
+  /** MeterMCP: the agent case's session receipt, found by the disputed capture. null = not used. */
+  meterMcp?: MeterMcpSource | null;
+  /** The AI analyst (packages/analyst). null/absent: the analysis routes answer 503. */
+  analyst?: AnalystService | null;
+  /** Hosted mode: refuses costly actions without the demo code or over the daily caps. Absent: always allowed. */
+  gate?: CostGate | null;
+}
+
+/** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
+export interface AppOptions extends ApiOptions {
   /** Request guard: the port the server listens on (Host must be 127.0.0.1:port or localhost:port). */
   port: number;
   /** Per-launch secret every request must carry in `X-ResolveKit-Token` (the Vite proxy injects it). */
   token: string;
   /** Browser origins allowed to call the API when an Origin header is present. */
   allowedOrigins: readonly string[];
-  /** MeterMCP on this machine: the agent case's session receipt, found by the disputed capture. null = not used. */
-  meterMcp?: MeterMcpSource | null;
-  /** The AI analyst (packages/analyst). null/absent: the analysis routes answer 503. */
-  analyst?: AnalystService | null;
 }
 
 export const TOKEN_HEADER = 'x-resolvekit-token';
@@ -62,7 +87,7 @@ export function guard(req: Request, opts: Pick<AppOptions, 'port' | 'token' | 'a
 
 export type Handler = (req: Request) => Promise<Response>;
 
-const json = (status: number, body: unknown) =>
+export const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
 const isTimeout = (e: unknown) => e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
@@ -83,7 +108,29 @@ function fromPayPalError(e: unknown): Response {
   return json(502, { error: 'PAYPAL_UNREACHABLE' });
 }
 
+/** Local mode: every request passes {@link guard} first. */
 export function createApp(opts: AppOptions): Handler {
+  return withLog(opts.log, createApi(opts), (req) => guard(req, opts));
+}
+
+/** Runs `pre` (a guard) and then `api`; a throw becomes 500; one log line per request (method, path, status, time). */
+export function withLog(log: ((line: string) => void) | undefined, api: Handler, pre?: (req: Request) => Response | null): Handler {
+  const write = log ?? (() => {});
+  return async (req) => {
+    const t = Date.now();
+    let res: Response;
+    try {
+      res = pre?.(req) ?? (await api(req));
+    } catch {
+      res = json(500, { error: 'INTERNAL' });
+    }
+    write(`${req.method} ${new URL(req.url).pathname} → ${res.status} · ${Date.now() - t} ms`);
+    return res;
+  };
+}
+
+/** The /api routes without any request guard: the caller puts one in front (local {@link guard} or hosted mode). */
+export function createApi(opts: ApiOptions): Handler {
   const now = opts.now ?? (() => new Date());
   const log = opts.log ?? (() => {});
   const isAgentCase = (caseId: string) => CASE_FILES[caseId]?.kind === 'agent';
@@ -100,6 +147,12 @@ export function createApp(opts: AppOptions): Handler {
     if (!sessionId) return { kind: 'none', reason: `MeterMCP has no session for capture ${capture}` };
     return { kind: 'metermcp', session: toMeteredSession(await opts.meterMcp.receipt(sessionId)) };
   };
+  /** For the analyst: asked right before it would call the model (nothing stored for these documents, or a refresh). */
+  const liveGate = (req: Request, action: CostlyAction): LiveGate | undefined => {
+    const gate = opts.gate;
+    return gate ? { check: () => gate.check(req, action), commit: () => gate.commit(action) } : undefined;
+  };
+
   let health: Promise<{ paypal: PayPalEnv | 'unconfigured'; error?: string }> | null = null;
 
   const checkHealth = () => {
@@ -147,10 +200,10 @@ export function createApp(opts: AppOptions): Handler {
     if (sub === '/verify') {
       const text = typeof body?.text === 'string' ? body.text.trim() : '';
       if (!text || text.length > 600) return json(400, { error: 'INVALID_TEXT', detail: 'text must be 1-600 characters' });
-      const r = await analyst.verify(input, text);
+      const r = await analyst.verify(input, text, liveGate(req, 'recheck'));
       return json(r.status, r.body);
     }
-    const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1');
+    const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1', liveGate(req, 'live-analysis'));
     return json(r.status, r.body);
   };
 
@@ -199,6 +252,9 @@ export function createApp(opts: AppOptions): Handler {
       const sub = parseSubmission(body);
       if (isProblem(sub)) return json(sub.status, { error: sub.error, detail: sub.detail });
       if (sub.disputeId && sub.disputeId !== caseId) return json(400, { error: 'INVALID_SUBMISSION', detail: 'disputeId does not match the URL' });
+      // Hosted demo: sending to real PayPal needs the demo code and stays within the daily cap.
+      const refused = opts.gate?.check(req, 'evidence');
+      if (refused) return json(refused.status, refused.body);
 
       const demoFiles = (): EvidenceFile[] | Response => {
         try {
@@ -251,6 +307,7 @@ export function createApp(opts: AppOptions): Handler {
         }
       }
 
+      opts.gate?.commit('evidence');
       const tracking = { carrier_name: sub.carrier, tracking_number: sub.tracking, ...(sub.carrier === 'OTHER' ? { carrier_name_other: 'Digital delivery' } : {}) };
       try {
         await paypal.disputes.provideEvidence(
@@ -269,15 +326,5 @@ export function createApp(opts: AppOptions): Handler {
     return json(405, { error: 'METHOD_NOT_ALLOWED' });
   };
 
-  return async (req) => {
-    const t = Date.now();
-    let res: Response;
-    try {
-      res = guard(req, opts) ?? (await route(req));
-    } catch {
-      res = json(500, { error: 'INTERNAL' });
-    }
-    log(`${req.method} ${new URL(req.url).pathname} → ${res.status} · ${Date.now() - t} ms`);
-    return res;
-  };
+  return route;
 }
