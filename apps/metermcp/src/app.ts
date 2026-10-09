@@ -161,10 +161,16 @@ export function createApp(opts: AppOptions): Handler {
         if (!/^[A-Z0-9]{5,40}$/.test(capture)) return json(400, { error: 'CAPTURE_REQUIRED', detail: '?capture=<PayPal capture id>' });
         return json(200, { sessions: meter.sessionsByCapture(capture).map((s) => ({ id: s.id, status: s.status, capture_id: s.capture_id })) });
       }
-      const m = /^\/sessions\/([^/]+)\/(receipt\.json|receipt\.pdf|close)$/.exec(path);
+      const m = /^\/sessions\/([^/]+)\/(receipt\.json|receipt\.pdf|close|reconcile)$/.exec(path);
       if (!m) return json(404, { error: 'NOT_FOUND' });
       const id = m[1]!;
       if (!SESSION_ID.test(id)) return json(404, { error: 'NOT_FOUND' });
+      if (m[2] === 'reconcile') {
+        // On demand: read a PENDING capture back from PayPal now.
+        if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+        const s = await meter.reconcile(id);
+        return s ? json(200, { session_id: s.id, status: s.status, capture_id: s.capture_id, capture_status: s.capture_status }) : json(404, { error: 'NOT_FOUND' });
+      }
       if (m[2] === 'close') {
         if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
         const r = await meter.close(id);

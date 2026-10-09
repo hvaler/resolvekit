@@ -307,7 +307,8 @@ export interface MeteredSession {
   calls: MeteredCall[];
   totals: { calls: number; ok: number; failed: number; charged: string; cap: string };
   settlement: {
-    status: 'open' | 'captured' | 'voided' | 'failed' | 'not_approved';
+    /** capture_pending: PayPal reports the capture PENDING (not a final charge); capture_declined: it was declined. */
+    status: 'open' | 'captured' | 'capture_pending' | 'capture_declined' | 'voided' | 'failed' | 'not_approved';
     captureId: string | null;
     captureStatus: string | null;
     captured: string | null;

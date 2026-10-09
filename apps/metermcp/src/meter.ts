@@ -113,6 +113,7 @@ export class Meter {
   private readonly opening = new Map<string, Promise<SessionRow | ToolAnswer>>();
   private readonly approving = new Map<string, Promise<SessionRow>>();
   private readonly closing = new Map<string, Promise<CloseResult>>();
+  private readonly reconciling = new Map<string, Promise<SessionRow | null>>();
 
   constructor(opts: MeterOptions) {
     const now = opts.now ?? (() => new Date());
@@ -402,7 +403,9 @@ export class Meter {
       this.o.ledger.cancel(id, this.iso());
       return { status: 'cancelled', session_id: id, message: 'The budget was never approved; nothing to settle.' };
     }
-    if (s0.status === 'settled' || s0.status === 'voided' || s0.status === 'cancelled') return this.closeResult(s0);
+    if (s0.status === 'settled' || s0.status === 'voided' || s0.status === 'cancelled' || s0.status === 'capture_declined') return this.closeResult(s0);
+    // A close retry on a pending capture reconciles it (reads the capture) instead of capturing again.
+    if (s0.status === 'capture_pending') return this.closeResult((await this.reconcile(id)) ?? s0);
     const begin = this.o.ledger.beginClose(id, this.iso());
     if (!begin.ok) {
       if (begin.reason === 'in_flight') return { status: 'busy', session_id: id, message: 'A paid call is still running; close again when it finishes.' };
@@ -454,13 +457,55 @@ export class Meter {
           authStatus = null;
         }
         this.o.ledger.settled(id, { captureId: capture.id, captureStatus: capture.status ?? null, capturedCents: charged, authorizationStatus: authStatus, now: this.iso() });
-        this.o.log(`session ${id}: captured ${fromCents(charged)} ${s.currency} (capture ${capture.id} ${capture.status ?? '?'}), authorization ${authStatus ?? 'not re-read'}`);
+        this.o.log(
+          capture.status === 'PENDING'
+            ? `session ${id}: capture ${capture.id} for ${fromCents(charged)} ${s.currency} is PENDING at PayPal; not claimed as charged until it completes`
+            : `session ${id}: captured ${fromCents(charged)} ${s.currency} (capture ${capture.id} ${capture.status ?? '?'}), authorization ${authStatus ?? 'not re-read'}`,
+        );
       }
     } catch (e) {
       this.o.ledger.settlementFailed(id, why(e));
       this.o.log(`session ${id}: settlement FAILED (${why(e)}); close again to retry`);
     }
     return this.closeResult(this.o.ledger.session(id)!);
+  }
+
+  /**
+   * Read a PENDING capture back from PayPal (GET /v2/payments/captures/{id}) and move the session on: COMPLETED →
+   * settled (exactly once), DECLINED/FAILED → capture_declined (the attempt stays on record, nothing is charged), still
+   * PENDING → unchanged. Idempotent and deduplicated per session; a PayPal error changes nothing.
+   */
+  reconcile(id: string): Promise<SessionRow | null> {
+    const inFlight = this.reconciling.get(id);
+    if (inFlight) return inFlight;
+    const p = this.doReconcile(id).finally(() => this.reconciling.delete(id));
+    this.reconciling.set(id, p);
+    return p;
+  }
+
+  private async doReconcile(id: string): Promise<SessionRow | null> {
+    const s = this.o.ledger.session(id);
+    if (!s || s.status !== 'capture_pending' || !s.capture_id || !this.o.paypal) return s;
+    let status: string | undefined;
+    try {
+      status = (await this.o.paypal.payments.getCapture(s.capture_id)).status;
+    } catch (e) {
+      this.o.log(`session ${id}: could not read capture ${s.capture_id} (${why(e)}); still pending`);
+      return s;
+    }
+    if (status === 'COMPLETED') {
+      if (this.o.ledger.captureCompleted(id, this.iso())) this.o.log(`session ${id}: capture ${s.capture_id} COMPLETED; charged ${fromCents(s.captured_cents ?? 0)} ${s.currency}, remainder released`);
+    } else if (status === 'DECLINED' || status === 'FAILED') {
+      if (this.o.ledger.captureDeclined(id, status, this.iso())) this.o.log(`session ${id}: capture ${s.capture_id} ${status}; not charged`);
+    }
+    return this.o.ledger.session(id);
+  }
+
+  /** Reconcile every pending capture (the scheduled sweep). */
+  async reconcilePending(): Promise<string[]> {
+    const pending = this.o.ledger.sessionsWithStatus('capture_pending');
+    for (const s of pending) await this.reconcile(s.id);
+    return pending.map((s) => s.id);
   }
 
   private closeResult(s: SessionRow): CloseResult {
@@ -474,6 +519,10 @@ export class Meter {
       ...(s.status === 'settled' ? { captured: fromCents(s.captured_cents ?? 0), released: fromCents(s.cap_cents - (s.captured_cents ?? 0)), capture_id: s.capture_id, capture_status: s.capture_status } : {}),
       ...(s.status === 'voided' ? { captured: '0.00', released: fromCents(s.cap_cents), authorization_status: s.authorization_status } : {}),
       ...(s.status === 'settlement_failed' ? { settlement_error: s.settlement_error, retry: 'Call close_session again (or POST /sessions/{id}/close) to retry.' } : {}),
+      ...(s.status === 'capture_pending'
+        ? { capture_id: s.capture_id, capture_status: s.capture_status, message: 'PayPal reports the capture PENDING: not a final charge yet and nothing released yet. MeterMCP re-reads it; close again to check now.' }
+        : {}),
+      ...(s.status === 'capture_declined' ? { capture_id: s.capture_id, capture_status: s.capture_status, captured: '0.00', settlement_error: s.settlement_error } : {}),
       receipt: `${this.o.publicUrl}/sessions/${s.id}/receipt.json`,
     };
   }

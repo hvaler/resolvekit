@@ -42,7 +42,8 @@ export interface Receipt {
   calls: ReceiptCall[];
   totals: { calls: number; ok: number; failed: number; pending: number; charged: string; cap: string };
   settlement: {
-    status: 'open' | 'captured' | 'voided' | 'failed' | 'not_approved';
+    /** capture_pending: the capture exists but PayPal reports it PENDING (not a final charge); capture_declined: it was declined. */
+    status: 'open' | 'captured' | 'capture_pending' | 'capture_declined' | 'voided' | 'failed' | 'not_approved';
     capture_id: string | null;
     capture_status: string | null;
     invoice_id: string | null;
@@ -63,6 +64,8 @@ const SETTLEMENT: Record<SessionStatus, Receipt['settlement']['status']> = {
   active: 'open',
   closing: 'open',
   settled: 'captured',
+  capture_pending: 'capture_pending',
+  capture_declined: 'capture_declined',
   voided: 'voided',
   settlement_failed: 'failed',
 };
@@ -108,14 +111,14 @@ export function buildReceipt(s: SessionRow, calls: readonly CallRow[], env: PayP
       status: SETTLEMENT[s.status],
       capture_id: s.capture_id,
       capture_status: s.capture_status,
-      invoice_id: s.status === 'settled' ? `${s.id}-settle` : null,
+      invoice_id: s.status === 'settled' || s.status === 'capture_pending' || s.status === 'capture_declined' ? `${s.id}-settle` : null,
       captured: captured == null ? null : fromCents(captured),
       released: captured == null ? null : fromCents(s.cap_cents - captured),
       remainder_released: s.status === 'settled' || s.status === 'voided',
       settled_at: s.settled_at,
       error: s.settlement_error,
     },
-    note: `Tool outputs are synthetic demo data. The budget approval, authorization and ${s.status === 'voided' ? 'void' : 'capture'} are real PayPal ${env} transactions. Failed calls are never charged.`,
+    note: `Tool outputs are synthetic demo data. The budget approval, authorization and ${s.status === 'voided' ? 'void' : 'capture'} are real PayPal ${env} transactions. Failed calls are never charged.${s.status === 'capture_pending' ? ' The capture is still PENDING at PayPal: this receipt is not proof of a final charge.' : ''}`,
   };
   return { ...body, receipt_sha256: sha256(canonicalJson(body)) };
 }
@@ -150,7 +153,11 @@ export function receiptLines(r: Receipt): string[] {
     'SETTLEMENT',
     st.status === 'captured'
       ? `Captured ${st.captured} ${cur} · PayPal capture ${st.capture_id} (${st.capture_status ?? '?'}) · invoice ${st.invoice_id}`
-      : st.status === 'voided'
+      : st.status === 'capture_pending'
+        ? `Capture ${st.capture_id} for ${r.totals.charged} ${cur} submitted; PayPal reports it PENDING: not a final charge yet, nothing released yet`
+        : st.status === 'capture_declined'
+          ? `Capture ${st.capture_id} for ${r.totals.charged} ${cur} was not completed (${st.capture_status ?? '?'}): not charged`
+          : st.status === 'voided'
         ? `Nothing consumed · authorization voided (${m.authorization_status ?? '?'})`
         : st.status === 'failed'
           ? `Settlement failed, not charged: ${st.error ?? '?'}`

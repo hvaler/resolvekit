@@ -15,8 +15,16 @@ export type SessionStatus =
   | 'active'
   /** No more calls; settlement in progress. */
   | 'closing'
-  /** Consumed total captured with final_capture (the remainder released). */
+  /**
+   * The final capture was made but PayPal reports it PENDING: not a completed charge yet, and nothing is claimed as
+   * charged or released. Reconciled by reading the capture (on a schedule, on demand, on close) until it is
+   * COMPLETED (→ settled, once) or DECLINED/FAILED (→ capture_declined).
+   */
+  | 'capture_pending'
+  /** Consumed total captured with final_capture and COMPLETED at PayPal (the remainder released). */
   | 'settled'
+  /** PayPal declined or failed the pending capture: the attempt stays on record; nothing was charged. */
+  | 'capture_declined'
   /** Nothing consumed: the authorization was voided. */
   | 'voided'
   /** The capture or void failed: never charged as far as MeterMCP knows; retry with close. */
@@ -164,7 +172,7 @@ export class Ledger {
     return (
       (this.db
         .prepare(
-          "SELECT * FROM sessions WHERE mcp_session = ? AND status IN ('pending_approval', 'active', 'closing', 'settlement_failed') ORDER BY created_at DESC, rowid DESC LIMIT 1",
+          "SELECT * FROM sessions WHERE mcp_session = ? AND status IN ('pending_approval', 'active', 'closing', 'settlement_failed', 'capture_pending') ORDER BY created_at DESC, rowid DESC LIMIT 1",
         )
         .get(mcpSession) as SessionRow | undefined) ?? null
     );
@@ -261,12 +269,31 @@ export class Ledger {
     });
   }
 
+  /**
+   * closing → settled when PayPal reports the capture COMPLETED; → capture_pending (no settled_at, nothing claimed)
+   * when it reports PENDING. The capture id and amount are recorded either way.
+   */
   settled(id: string, c: { captureId: string; captureStatus: string | null; capturedCents: number; authorizationStatus: string | null; now: string }): void {
+    const pending = c.captureStatus === 'PENDING';
     this.db
       .prepare(
-        "UPDATE sessions SET status = 'settled', capture_id = ?, capture_status = ?, captured_cents = ?, authorization_status = COALESCE(?, authorization_status), settled_at = ?, settlement_error = NULL WHERE id = ? AND status = 'closing'",
+        "UPDATE sessions SET status = ?, capture_id = ?, capture_status = ?, captured_cents = ?, authorization_status = COALESCE(?, authorization_status), settled_at = ?, settlement_error = NULL WHERE id = ? AND status = 'closing'",
       )
-      .run(c.captureId, c.captureStatus, c.capturedCents, c.authorizationStatus, c.now, id);
+      .run(pending ? 'capture_pending' : 'settled', c.captureId, c.captureStatus, c.capturedCents, c.authorizationStatus, pending ? null : c.now, id);
+  }
+
+  /** capture_pending → settled, once (a second reconciliation changes nothing). True when this call made the change. */
+  captureCompleted(id: string, now: string): boolean {
+    const r = this.db.prepare("UPDATE sessions SET status = 'settled', capture_status = 'COMPLETED', settled_at = ? WHERE id = ? AND status = 'capture_pending'").run(now, id);
+    return r.changes === 1;
+  }
+
+  /** capture_pending → capture_declined: the attempt stays on record (capture id, amount asked), nothing is charged. */
+  captureDeclined(id: string, captureStatus: string, now: string): boolean {
+    const r = this.db
+      .prepare("UPDATE sessions SET status = 'capture_declined', capture_status = ?, settlement_error = ?, settled_at = NULL WHERE id = ? AND status = 'capture_pending'")
+      .run(captureStatus, `PayPal reported the capture ${captureStatus} at ${now}: not charged`, id);
+    return r.changes === 1;
   }
 
   voided(id: string, c: { authorizationStatus: string | null; now: string }): void {

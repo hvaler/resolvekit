@@ -77,7 +77,11 @@ server.listen(port, host, () => {
   log(`MeterMCP on http://${host}:${port}/mcp · public ${publicUrl} · PayPal ${paypal ? env : 'unconfigured'} · budget ${process.env.METERMCP_BUDGET ?? '5.00'} USD · idle close ${idleMs / 60_000} min${hosted ? ' · hosted mode' : ''}`);
   if (failFirst.length) log(`TEST SWITCH: the first ${failFirst.join(', ')} call of each session fails (not charged)`);
 });
-const sweep = setInterval(() => void meter.sweepIdle(idleMs).catch((e) => log(`idle sweep failed: ${String(e)}`)), 30_000);
+const sweep = setInterval(() => {
+  void meter.sweepIdle(idleMs).catch((e) => log(`idle sweep failed: ${String(e)}`));
+  // Captures PayPal reported PENDING: read them back until they complete or are declined.
+  void meter.reconcilePending().catch((e) => log(`capture reconciliation failed: ${String(e)}`));
+}, 30_000);
 
 const stop = () => {
   clearInterval(sweep);

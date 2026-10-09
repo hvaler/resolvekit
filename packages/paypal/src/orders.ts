@@ -170,6 +170,11 @@ export class PaymentsApi {
     this.client = client;
   }
 
+  /** A capture as PayPal reports it now: PENDING settles later as COMPLETED, or ends DECLINED / FAILED. */
+  getCapture(captureId: string): Promise<Capture> {
+    return this.client.request<Capture>('GET', `/v2/payments/captures/${encodeURIComponent(captureId)}`);
+  }
+
   getAuthorization(authorizationId: string): Promise<Authorization> {
     return this.client.request<Authorization>('GET', `/v2/payments/authorizations/${encodeURIComponent(authorizationId)}`);
   }

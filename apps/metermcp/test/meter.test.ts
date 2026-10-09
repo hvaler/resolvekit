@@ -319,3 +319,79 @@ test('request hashes are stable: canonical JSON ignores key order', () => {
   assert.notEqual(requestHash('s', 1, 't', { a: 1 }), requestHash('s', 2, 't', { a: 1 }));
   assert.equal(requestHash('mm-sess-x', 1, 'quote_lookup', { symbol: 'ACME' }), requestHash('mm-sess-x', 1, 'quote_lookup', { symbol: 'ACME' }));
 });
+
+// ------------------------------------------------------------------------------------------------ H3: PENDING captures
+
+test('H3: a capture PayPal answers PENDING is capture_pending, not settled: ledger and receipt say pending, nothing released', async () => {
+  const { meter, pp, ledger } = setup();
+  const id = await openSession(meter, pp);
+  await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' });
+  pp.captureAnswers('PENDING');
+  const closed = body(await meter.closeFor('mcp-1'));
+  assert.equal(closed.status, 'capture_pending');
+  assert.equal(closed.captured, undefined);
+  assert.equal(closed.released, undefined);
+  assert.match(closed.message, /PENDING/);
+  const s = ledger.session(id)!;
+  assert.equal(s.status, 'capture_pending');
+  assert.equal(s.settled_at, null);
+  const r = meter.receipt(id)!;
+  assert.equal(r.settlement.status, 'capture_pending');
+  assert.equal(r.settlement.capture_status, 'PENDING');
+  assert.equal(r.settlement.captured, null);
+  assert.equal(r.settlement.remainder_released, false);
+  const text = receiptLines(r).join('\n');
+  assert.ok(!/Captured \d|Remainder released|Settled at/.test(text), text);
+  assert.match(text, /PENDING at PayPal|not a final charge/);
+  // No more paid calls on it.
+  assert.equal(body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'B' })).error, 'session_closed');
+});
+
+test('H3: reconciliation moves a pending capture to settled exactly once when PayPal reports COMPLETED (scheduled, on demand, on close)', async () => {
+  const { meter, pp, ledger } = setup();
+  const id = await openSession(meter, pp);
+  await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' });
+  pp.captureAnswers('PENDING');
+  await meter.closeFor('mcp-1');
+  const captureId = ledger.session(id)!.capture_id!;
+  // Still pending at PayPal: nothing changes.
+  assert.deepEqual(await meter.reconcilePending(), [id]);
+  assert.equal(ledger.session(id)!.status, 'capture_pending');
+  pp.setCapture(captureId, 'COMPLETED');
+  // Concurrent reconciliations (schedule + a close retry + on demand) settle it once.
+  const [a, b, c] = await Promise.all([meter.reconcile(id), meter.close(id), meter.reconcilePending()]);
+  assert.equal(a!.status, 'settled');
+  assert.equal(b.status, 'settled');
+  assert.ok(Array.isArray(c));
+  const r = meter.receipt(id)!;
+  assert.equal(r.settlement.status, 'captured');
+  assert.equal(r.settlement.captured, '0.05');
+  assert.equal(r.settlement.remainder_released, true);
+  assert.ok(r.settlement.settled_at);
+  // Once settled, nothing more: no new capture, no further transition.
+  assert.equal((await meter.reconcile(id))!.status, 'settled');
+  assert.equal(pp.count(/capture$/), 1);
+  assert.equal([...pp.auths.values()][0]!.captures.length, 1);
+});
+
+test('H3: a pending capture PayPal later declines keeps the attempt on record and claims no charge', async () => {
+  const { meter, pp, ledger } = setup();
+  const id = await openSession(meter, pp);
+  await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' });
+  pp.captureAnswers('PENDING');
+  await meter.closeFor('mcp-1');
+  const captureId = ledger.session(id)!.capture_id!;
+  pp.setCapture(captureId, 'DECLINED');
+  assert.equal((await meter.reconcile(id))!.status, 'capture_declined');
+  const r = meter.receipt(id)!;
+  assert.equal(r.settlement.status, 'capture_declined');
+  assert.equal(r.settlement.capture_id, captureId);
+  assert.equal(r.settlement.capture_status, 'DECLINED');
+  assert.equal(r.settlement.captured, null);
+  assert.equal(r.settlement.remainder_released, false);
+  assert.match(r.settlement.error!, /DECLINED/);
+  assert.ok(!/Captured \d/.test(receiptLines(r).join('\n')));
+  // Terminal: a close does not capture again.
+  assert.equal((await meter.close(id)).status, 'capture_declined');
+  assert.equal(pp.count(/capture$/), 1);
+});

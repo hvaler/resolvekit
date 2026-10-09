@@ -13,6 +13,10 @@ export function fakePayPal() {
   const auths = new Map<string, FakeAuth>();
   const calls: Array<{ method: string; path: string; body: any; headers: Record<string, string> }> = [];
   const failures: Array<{ match: RegExp; status: number; body: unknown }> = [];
+  /** Status of each capture as PayPal reports it now (GET /v2/payments/captures/{id}). */
+  const captureStatus = new Map<string, string>();
+  /** Status the next new capture answers with (PayPal can answer PENDING). */
+  let nextCaptureStatus = 'COMPLETED';
   let seq = 0;
   const id = (p: string) => `${p}${String(++seq).padStart(4, '0')}FAKE`;
 
@@ -88,12 +92,17 @@ export function fakePayPal() {
       // PayPal-Request-Id replay: the same capture comes back.
       const rid = (init.headers as Record<string, string>)['PayPal-Request-Id'];
       const again = a.captures.find((c) => c.body.rid === rid);
-      if (again) return reply(201, { id: again.id, status: 'COMPLETED', amount: again.amount });
+      if (again) return reply(201, { id: again.id, status: captureStatus.get(again.id) ?? 'COMPLETED', amount: again.amount });
       if (a.status !== 'CREATED') return reply(422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'AUTHORIZATION_ALREADY_CAPTURED' }] });
       const c = { id: id('CAP'), amount: body.amount, body: { ...body, rid } };
       a.captures.push(c);
       if (body.final_capture) a.status = 'CAPTURED';
-      return reply(201, { id: c.id, status: 'COMPLETED', amount: c.amount, final_capture: body.final_capture, invoice_id: body.invoice_id });
+      captureStatus.set(c.id, nextCaptureStatus);
+      return reply(201, { id: c.id, status: nextCaptureStatus, amount: c.amount, final_capture: body.final_capture, invoice_id: body.invoice_id });
+    }
+    if ((m = /^\/v2\/payments\/captures\/([^/]+)$/.exec(u.pathname)) && method === 'GET') {
+      const st = captureStatus.get(m[1]!);
+      return st ? reply(200, { id: m[1], status: st }) : reply(404, { name: 'RESOURCE_NOT_FOUND' });
     }
     if ((m = /^\/v2\/payments\/authorizations\/([^/]+)\/void$/.exec(u.pathname)) && method === 'POST') {
       const a = auths.get(m[1]!);
@@ -119,5 +128,13 @@ export function fakePayPal() {
       failures.push({ match, status, body });
     },
     count: (re: RegExp) => calls.filter((c) => re.test(`${c.method} ${c.path}`)).length,
+    /** The next capture answers this status (e.g. PENDING). */
+    captureAnswers(status: string) {
+      nextCaptureStatus = status;
+    },
+    /** PayPal now reports this capture with this status (COMPLETED, DECLINED, FAILED…). */
+    setCapture(id: string, status: string) {
+      captureStatus.set(id, status);
+    },
   };
 }

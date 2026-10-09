@@ -252,3 +252,15 @@ test('pinned input: once PayPal shows the seller’s evidence, the analysis inpu
   // Before sending, the latest input is used (and pinned).
   assert.equal(pins.resolve(CASE, after, false), after);
 });
+
+test('H3: an agent session whose capture is still PENDING is not used as proof of a final charge: nothing composed, nothing sent', async () => {
+  const pending: Receipt = { ...receipt(), settlement: { ...receipt().settlement, status: 'capture_pending', capture_status: 'PENDING', captured: null, released: null, remainder_released: false, settled_at: null } };
+  const meter: MeterMcpSource = { findByCapture: async () => SID, receipt: async () => pending, receiptPdf: async () => RECEIPT_PDF };
+  const { app, pp } = await intentSetup([{ status: 200, body: waitingDispute() }], meter);
+  const r = await app(post(`/api/disputes/${CASE}/intent`, { evidenceType: 'PROOF_OF_FULFILLMENT' }));
+  assert.equal(r.status, 409);
+  const b = (await r.json()) as { error: string; detail: string };
+  assert.equal(b.error, 'RECEIPT_NOT_FINAL');
+  assert.match(b.detail, /PENDING/);
+  assert.equal(pp.apiCalls().filter((c) => c.method === 'POST').length, 0);
+});

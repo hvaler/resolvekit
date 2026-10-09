@@ -92,7 +92,11 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource): Case
       headline:
         st.status === 'captured'
           ? `Captured ${captured} of ${s.mandate.cap} ${cur} · remainder released`
-          : st.status === 'voided'
+          : st.status === 'capture_pending'
+            ? `Capture of ${s.totals.charged} ${cur} PENDING at PayPal · not a final charge yet`
+            : st.status === 'capture_declined'
+              ? `Capture of ${s.totals.charged} ${cur} declined by PayPal · not charged`
+              : st.status === 'voided'
             ? `Nothing charged · ${s.mandate.cap} ${cur} authorization voided`
             : `Not settled yet (${st.status})`,
       captured,
@@ -100,7 +104,9 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource): Case
       cap: s.mandate.cap,
       rows: [
         { fragment: 's1', label: 'Capture', value: st.captureId ? `${st.captureId} · ${stamp(st.settledAt)}` : '—' },
-        { fragment: 's2', label: 'Captured', value: `${captured} ${cur} (${s.totals.ok} OK call${s.totals.ok === 1 ? '' : 's'})` },
+        st.status === 'captured'
+          ? { fragment: 's2', label: 'Captured', value: `${captured} ${cur} (${s.totals.ok} OK call${s.totals.ok === 1 ? '' : 's'})` }
+          : { fragment: 's2', label: 'Captured', value: st.status === 'capture_pending' ? `Not final: PayPal reports the capture ${st.captureStatus ?? 'PENDING'}` : `Nothing (${st.status})` },
         { fragment: 's3', label: 'Released', value: st.remainderReleased ? `${released} ${cur} authorization remainder` : 'Not yet' },
       ],
     },
@@ -136,7 +142,7 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource): Case
       }),
     ),
     ...(st.settledAt
-      ? [{ kind: 'event', time: clock(st.settledAt), title: 'Settled', sub: st.status === 'captured' ? `Captured ${captured} · ${released} released` : 'Authorization voided', tag: 'PP', evidenceId: 'E3' } as TimelineItem]
+      ? [{ kind: 'event', time: clock(st.settledAt), title: 'Settled', sub: st.status === 'captured' ? `Captured ${captured} · ${released} released` : st.status === 'voided' ? 'Authorization voided' : `Not settled (${st.status})`, tag: 'PP', evidenceId: 'E3' } as TimelineItem]
       : []),
     ...(opened ? [{ kind: 'event', time: clock(opened), title: 'Dispute opened', sub: `${dayText(opened)} · read from PayPal`, tag: 'PP', evidenceId: null } as TimelineItem] : []),
   ];

@@ -343,6 +343,16 @@ export function createApi(opts: ApiOptions): Api {
    * an intent (when composing it again before sending); otherwise the verdicts this server recorded for the edits.
    */
   const compose = async (caseId: string, st: CaseState, req: IntentRequest, rechecks?: Record<string, Recheck>): Promise<ComposedIntent | Response> => {
+    // The agent case's evidence is the MeterMCP receipt: only a COMPLETED capture is proof of a final charge.
+    const receipt = st.snap?.agentReceipt;
+    if (receipt?.kind === 'metermcp' && receipt.session.settlement.status !== 'captured') {
+      const s = receipt.session.settlement;
+      return json(409, {
+        error: 'RECEIPT_NOT_FINAL',
+        detail: `The MeterMCP session is ${s.status}${s.captureStatus ? ` (PayPal capture ${s.captureStatus})` : ''}: its receipt is not proof of a final charge yet, so it is not sent`,
+        reasons: [`MeterMCP settlement ${s.status}`],
+      });
+    }
     const analyst = opts.analyst;
     if (!analyst) return json(503, { error: 'ANALYST_UNAVAILABLE', detail: 'The analyst is not set up on this server' });
     const a = await analyst.stored(st.input);
