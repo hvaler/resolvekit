@@ -42,6 +42,12 @@ and PayPal's request never count.
 in-browser simulator and is never sent to PayPal. The app bar says which: **PayPal sandbox · live `PP-R-…`** or
 **Simulated PayPal**. Simulated read-backs say *Recorded by the PayPal simulator*.
 
+On a bound case every PayPal field (amount, reason, buyer-declared item type, stage, status, due date, disputed
+transaction, requested evidence, allowed actions) comes from the latest PayPal read, in the case header and the inbox
+row alike; only the merchant side (order, documents, timeline, the analyst's draft) comes from the demo case. Before
+the first read, or if PayPal cannot be reached, those fields show "—" with the reason, never demo values. If the bound
+dispute's amount differs from the demo case's order, the case header says so, and the server logs it at startup.
+
 The API only answers the local web app. It listens on `127.0.0.1`, refuses other `Host` headers (DNS rebinding) and
 foreign `Origin`s, needs a per-launch token that the Vite proxy adds on the server side (the browser never sees it),
 and takes JSON only for writes. The Vite dev/preview proxy also refuses cross-site requests before adding the token.
