@@ -141,6 +141,14 @@ export function useAnalysis(caseId: string, input: AnalysisInput | null, client:
     };
   }, [sig, load]);
 
+  // Hosted demo: once unlocked, documents with no stored analysis get one (a live run, within the caps).
+  const wasLocked = useRef(!!locked.live);
+  useEffect(() => {
+    const unlockedNow = wasLocked.current && !locked.live;
+    wasLocked.current = !!locked.live;
+    if (unlockedNow && fixed && state.kind === 'unavailable') void load(fixed, false);
+  }, [locked.live, fixed, state.kind, load]);
+
   const rerun = useCallback(() => {
     if (!fixed) return;
     setRerunError(null);
