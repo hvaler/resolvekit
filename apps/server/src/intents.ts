@@ -10,10 +10,11 @@
  * session can read, approve, send or cancel it: for anyone else it does not exist (404). One session's actions (a new
  * intent, an edit) only ever invalidate that session's own intents. Ids carry 128 random bits.
  *
- * Bounded, without ever letting one session push out another's intents: a session holds at most one open intent per
- * case and {@link MAX_OPEN_PER_OWNER} in all (beyond that its OWN oldest is replaced); when {@link MAX_OPEN} open (or
- * {@link MAX_INTENTS} stored) intents exist, new ones are refused (429 with a retry time) and existing ones are not
- * touched. Intents end only by their {@link INTENT_TTL_MS} lifetime (or their owner's actions); closed ones are pruned
+ * Bounded, without ever letting one client push out another's intents: a session holds at most one open intent per
+ * case and {@link MAX_OPEN_PER_OWNER} in all (beyond that its OWN oldest is replaced); a client IP holds at most
+ * {@link MAX_OPEN_PER_IP} open intents across all its sessions (beyond that only that IP is refused); and as a safety
+ * net, when {@link MAX_OPEN} open (or {@link MAX_INTENTS} stored) intents exist, new ones are refused (429 with a retry
+ * time). Existing intents are never touched by anyone else's creations. Intents end only by their {@link INTENT_TTL_MS} lifetime (or their owner's actions); closed ones are pruned
  * {@link CLOSED_RETENTION_MS} after they expire. Every scan is over at most {@link MAX_INTENTS} entries. The audit
  * file is compacted to its latest events beyond {@link MAX_EVENTS_FILE_BYTES}. (Per-IP creation rates: hosted.ts.)
  * Persisted on the data dir when given files. No document text and no secrets go into either file.
@@ -24,8 +25,11 @@ import { dirname } from 'node:path';
 import type { IntentRequest, IntentStatus, SubmissionIntent } from '../../web/src/domain/intent.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
 
-export const MAX_INTENTS = 500;
-export const MAX_OPEN = 200;
+/** Safety nets only: the operative limits are per session and per client IP. */
+export const MAX_INTENTS = 2000;
+export const MAX_OPEN = 1000;
+/** Open intents per client IP, whatever the number of demo sessions it unlocked. */
+export const MAX_OPEN_PER_IP = 20;
 export const MAX_OPEN_PER_OWNER_CASE = 1;
 export const MAX_OPEN_PER_OWNER = 10;
 export const CLOSED_RETENTION_MS = 60 * 60_000;
@@ -41,6 +45,8 @@ export interface StoredIntent extends SubmissionIntent {
   rechecks: Record<string, Recheck>;
   /** The owner: the session that created it. Only it can read, approve, send or cancel the intent. */
   createdBy: string;
+  /** The client it was composed from (hosted: the client IP behind the trusted proxy; local: "local"). */
+  createdFrom: string;
 }
 
 export type AuditKind =
@@ -247,7 +253,14 @@ export class IntentStore {
       .filter((x) => x.createdBy === i.createdBy && x.status !== 'sending')
       .sort((x, y) => x.createdAt.localeCompare(y.createdAt));
     for (const old of mine.slice(0, Math.max(0, mine.length - MAX_OPEN_PER_OWNER + 1))) this.invalidate(old.id, 'replaced: this session holds too many open intents', i.createdBy);
-    // Global caps: refuse, never evict. Existing intents stay approvable and sendable.
+    // The client IP's cap, however many sessions it holds: only that IP is refused, nothing is evicted.
+    const fromIp = this.open().filter((x) => x.createdFrom === i.createdFrom);
+    if (fromIp.length >= MAX_OPEN_PER_IP) {
+      const soonest = Math.min(...fromIp.map((x) => Date.parse(x.expiresAt)));
+      const retryAfterSec = Math.max(1, Math.ceil((soonest - this.now().getTime()) / 1000));
+      return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'Too many open submission intents from this address; try again later', retryAfterSec };
+    }
+    // Global caps (a safety net): refuse, never evict. Existing intents stay approvable and sendable.
     const open = this.open();
     if (open.length >= MAX_OPEN || this.intents.size >= MAX_INTENTS) {
       const soonest = Math.min(...open.map((x) => Date.parse(x.expiresAt)), this.now().getTime() + this.ttlMs);

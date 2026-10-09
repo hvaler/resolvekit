@@ -12,7 +12,7 @@ import { DailyCounters } from '@resolvekit/hosting';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
 import { caseInput, standardCase } from '@resolvekit/cases';
 import { createHostedApp } from '../src/hosted.ts';
-import { INTENT_ID, IntentStore, MAX_EVENTS_FILE_BYTES, MAX_OPEN, MAX_OPEN_PER_OWNER, type StoredIntent } from '../src/intents.ts';
+import { INTENT_ID, IntentStore, MAX_EVENTS_FILE_BYTES, MAX_OPEN, MAX_OPEN_PER_IP, MAX_OPEN_PER_OWNER, type StoredIntent } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
 import { RESOLVED, analystFor, standardDispute } from './kit.ts';
 
@@ -175,9 +175,9 @@ test('hosted: once one session’s evidence is in, another session’s approved 
 
 // ------------------------------------------------------------------------------------------------ the store
 
-const draft = (owner: string, caseId = CASE): Omit<StoredIntent, 'id' | 'status' | 'createdAt' | 'expiresAt' | 'approvedBy' | 'approvedAt' | 'sentAt' | 'reason' | 'requestId'> => ({
+const draft = (owner: string, caseId = CASE, ip = `ip-${owner}`): Omit<StoredIntent, 'id' | 'status' | 'createdAt' | 'expiresAt' | 'approvedBy' | 'approvedAt' | 'sentAt' | 'reason' | 'requestId'> => ({
   caseId, disputeId: REAL, documentsHash: 'd', analysisKey: 'k', evidenceType: 'OTHER', carrier: '', tracking: '', notes: 'n', files: [], sentences: [], resolutionNotes: [],
-  contentHash: 'h', request: { evidenceType: 'OTHER', edits: {}, resolutions: {} }, rechecks: {}, createdBy: owner,
+  contentHash: 'h', request: { evidenceType: 'OTHER', edits: {}, resolutions: {} }, rechecks: {}, createdBy: owner, createdFrom: ip,
 });
 const created = (x: ReturnType<IntentStore['create']>): StoredIntent => {
   if ('ok' in x) throw new Error(x.error);
@@ -225,6 +225,30 @@ test('store: at the global cap new intents are refused (429 with a retry time), 
   // Only their lifetime ends them: after 30 min they expire, and new ones fit again.
   now = new Date('2026-10-09T08:31:00Z');
   created(s.create(draft('late')));
+});
+
+test('store: many sessions from one IP cannot exceed the per-IP cap nor fill the global cap; another IP still creates and sends', () => {
+  const s = new IntentStore();
+  const other = created(s.create(draft('judge', CASE, '198.51.100.1')));
+  assert.ok(s.approve(other.id, CASE, 'h', 'judge').ok);
+  const results = Array.from({ length: 60 }, (_, k) => s.create(draft(`minted-session-${k}`, `CASE-${k}`, '203.0.113.66')));
+  const ok = results.filter((r) => !('ok' in r));
+  const refused = results.filter((r) => 'ok' in r && r.status === 429);
+  assert.equal(ok.length, MAX_OPEN_PER_IP);
+  assert.equal(refused.length, 60 - MAX_OPEN_PER_IP);
+  assert.ok(MAX_OPEN > MAX_OPEN_PER_IP * 10, 'the global cap is only a safety net');
+  // Nothing of the other IP was touched; it can still create (its next intent replaces only its own) and send.
+  assert.equal(s.get(other.id, 'judge')!.status, 'approved');
+  assert.ok(s.beginSend(other.id, CASE, 'judge').ok);
+  created(s.create(draft('judge-2', CASE, '198.51.100.1')));
+});
+
+test('hosted: an unlocked browser that unlocks again keeps its session (no new session is minted)', async () => {
+  const { app } = await setup();
+  const c = await unlock(app, '198.51.100.1');
+  const again = await app(req('/api/demo/unlock', { body: { code: CODE }, cookie: c, ip: '198.51.100.1' }));
+  assert.equal(again.status, 200);
+  assert.equal(again.headers.get('set-cookie'), null);
 });
 
 test('store: closed intents are pruned by TTL (an hour after expiry), so the persisted state stays bounded', () => {

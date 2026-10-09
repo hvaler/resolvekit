@@ -143,8 +143,9 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     // the simulator records a visitor without the code as such.
     actor(req: Request, unlocked: boolean): Actor {
       const cookie = readCookie(req, DEMO_COOKIE);
-      if (cookie && session(req).ok) return { ok: true, actor: `demo session ${createHash('sha256').update(cookie).digest('hex').slice(0, 12)}` };
-      if (!unlocked) return { ok: true, actor: 'visitor (no demo code)' };
+      const client = clientIp(req, hops);
+      if (cookie && session(req).ok) return { ok: true, actor: `demo session ${createHash('sha256').update(cookie).digest('hex').slice(0, 12)}`, client };
+      if (!unlocked) return { ok: true, actor: 'visitor (no demo code)', client };
       return { ok: false, refusal: { status: 403, body: { error: 'DEMO_CODE_REQUIRED', detail: LOCKED_REASON.evidence, action: 'evidence' } } };
     },
   };
@@ -167,6 +168,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     }
     if (path !== '/api/demo/unlock') return json(404, { error: 'NOT_FOUND' });
     if (!o.demoCode) return json(503, { error: 'DEMO_DISABLED', detail: 'No demo code is configured on this server' });
+    // A browser that is already unlocked keeps its session: no new one is minted (and no attempt is counted).
+    if (session(req).ok) return json(200, demoState(req));
     // Count the attempt before looking at the code (both limits, atomically): guesses are capped per IP and overall.
     const perIp = unlockIp.take(ip);
     if (!perIp.ok) return tooMany(perIp.retryAfterSec, `Too many attempts; try again in ${Math.ceil(perIp.retryAfterSec / 60)} min`);

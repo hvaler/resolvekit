@@ -35,7 +35,7 @@ export interface Refusal {
 }
 
 /** Who is acting on a request, or why they may not. */
-export type Actor = { ok: true; actor: string } | { ok: false; refusal: Refusal };
+export type Actor = { ok: true; actor: string; /** The client (hosted: IP behind the trusted proxy). */ client?: string } | { ok: false; refusal: Refusal };
 
 /**
  * Asked right before a costly action, with the request that asks for it. `reserve` refuses (demo code missing,
@@ -444,7 +444,7 @@ export function createApi(opts: ApiOptions): Api {
     if (st instanceof Response) return st;
     const composed = await compose(caseId, st, ir);
     if (composed instanceof Response) return composed;
-    const intent = intents.create({ ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor });
+    const intent = intents.create({ ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local' });
     if ('ok' in intent) {
       const r = json(intent.status, { error: intent.error, detail: intent.detail, ...(intent.retryAfterSec ? { retryAfterSec: intent.retryAfterSec } : {}) });
       if (intent.retryAfterSec) r.headers.set('retry-after', String(intent.retryAfterSec));
