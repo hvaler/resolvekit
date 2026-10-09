@@ -75,6 +75,12 @@ export class KeyedLimiter {
     return { ok: true, remaining: this.o.limit - h.count };
   }
 
+  /** Give back one request taken in the current window (the action it counted for did not happen). */
+  release(key: string): void {
+    const h = this.hits.get(key);
+    if (h && h.count > 0 && this.o.now() - h.start < this.o.windowMs) h.count -= 1;
+  }
+
   /**
    * Whether `key` has no requests left in its window, without counting one. With {@link take} in the same
    * synchronous step (check, then count failures) it limits failures only, e.g. wrong demo codes.

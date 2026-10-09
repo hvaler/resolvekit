@@ -211,20 +211,6 @@ export class IntentStore {
     return i;
   }
 
-  /** Expire by TTL, and forget closed intents {@link CLOSED_RETENTION_MS} after their expiry (bounded: ≤ MAX_INTENTS). */
-  private sweep() {
-    const cutoff = this.now().getTime() - CLOSED_RETENTION_MS;
-    let pruned = false;
-    for (const i of this.intents.values()) {
-      this.fresh(i);
-      if (!(OPEN.includes(i.status) || i.status === 'sending') && Date.parse(i.expiresAt) < cutoff) {
-        this.intents.delete(i.id);
-        pruned = true;
-      }
-    }
-    if (pruned) this.save();
-  }
-
   /** The intent, only for its owner (anyone else: null, as if it did not exist). */
   get(id: string, owner: string): StoredIntent | null {
     const i = this.intents.get(id);
@@ -237,35 +223,62 @@ export class IntentStore {
     return i ? this.fresh(i) : null;
   }
 
-  private open(): StoredIntent[] {
-    return [...this.intents.values()].filter((i) => OPEN.includes(i.status) || i.status === 'sending');
+  /** Open now (by the clock, without changing anything). */
+  private isOpenAt(x: StoredIntent, now: number): boolean {
+    if (x.status === 'sending' || x.status === 'failed') return true;
+    return (x.status === 'proposed' || x.status === 'approved') && Date.parse(x.expiresAt) > now;
   }
 
   /**
-   * Store a new intent for its owner. The owner's own open intents for the case are invalidated (only the latest
-   * content can be sent); nobody else's are touched. Refused when the server holds too many open intents.
+   * Whether a new intent of `owner` for `caseId` from `client` may be created, and which of the owner's OWN open intents
+   * it would retire (the same case's, and its oldest beyond {@link MAX_OPEN_PER_OWNER}). Changes nothing: a refusal
+   * leaves the store exactly as it was. Checked once before the expensive work (see {@link admit}) and again, in the
+   * same synchronous step as the insert, by {@link create}.
+   */
+  private plan(caseId: string, owner: string, client: string): { ok: true; retire: StoredIntent[]; prunable: StoredIntent[] } | Refused {
+    const now = this.now().getTime();
+    const all = [...this.intents.values()];
+    const open = all.filter((x) => this.isOpenAt(x, now));
+    const mine = open.filter((x) => x.createdBy === owner && x.status !== 'sending').sort((x, y) => x.createdAt.localeCompare(y.createdAt));
+    const sameCase = mine.filter((x) => x.caseId === caseId);
+    const others = mine.filter((x) => x.caseId !== caseId);
+    const retire = [...sameCase, ...others.slice(0, Math.max(0, others.length - (MAX_OPEN_PER_OWNER - 1)))];
+    const retiring = new Set(retire.map((x) => x.id));
+    const retryIn = (list: StoredIntent[]) => {
+      const soonest = Math.min(...list.map((x) => Date.parse(x.expiresAt)), now + this.ttlMs);
+      return Math.max(1, Math.ceil((soonest - now) / 1000));
+    };
+    // The client IP's cap, however many sessions it holds: only that IP is refused, nothing is evicted.
+    const fromIp = open.filter((x) => x.createdFrom === client && !retiring.has(x.id));
+    if (fromIp.length >= MAX_OPEN_PER_IP) {
+      return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'Too many open submission intents from this address; try again later', retryAfterSec: retryIn(fromIp) };
+    }
+    // Global safety net: refuse, never evict. Closed intents past their retention would be pruned on commit.
+    const prunable = all.filter((x) => !this.isOpenAt(x, now) && Date.parse(x.expiresAt) < now - CLOSED_RETENTION_MS);
+    if (open.length - retire.length >= MAX_OPEN || this.intents.size - prunable.length >= MAX_INTENTS) {
+      return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'The server holds too many open submission intents; try again later', retryAfterSec: retryIn(open) };
+    }
+    return { ok: true, retire, prunable };
+  }
+
+  /** Step 3–4 of creating an intent, before any expensive work: may this session/client create one now? No side effects. */
+  admit(caseId: string, owner: string, client: string): Refused | null {
+    const p = this.plan(caseId, owner, client);
+    return p.ok ? null : p;
+  }
+
+  /**
+   * Store a new intent for its owner, in one synchronous step: the caps are checked again, and only if the intent is
+   * stored are the owner's own replaced intents retired (nobody else's are ever touched). A refusal changes nothing.
    */
   create(i: Omit<StoredIntent, 'id' | 'status' | 'createdAt' | 'expiresAt' | 'approvedBy' | 'approvedAt' | 'sentAt' | 'reason' | 'requestId'>): StoredIntent | Refused {
-    this.sweep();
-    this.invalidateCase(i.caseId, 'replaced by a newer intent for this case', i.createdBy);
-    // The session's own cap: its oldest open intent makes room (never anyone else's).
-    const mine = this.open()
-      .filter((x) => x.createdBy === i.createdBy && x.status !== 'sending')
-      .sort((x, y) => x.createdAt.localeCompare(y.createdAt));
-    for (const old of mine.slice(0, Math.max(0, mine.length - MAX_OPEN_PER_OWNER + 1))) this.invalidate(old.id, 'replaced: this session holds too many open intents', i.createdBy);
-    // The client IP's cap, however many sessions it holds: only that IP is refused, nothing is evicted.
-    const fromIp = this.open().filter((x) => x.createdFrom === i.createdFrom);
-    if (fromIp.length >= MAX_OPEN_PER_IP) {
-      const soonest = Math.min(...fromIp.map((x) => Date.parse(x.expiresAt)));
-      const retryAfterSec = Math.max(1, Math.ceil((soonest - this.now().getTime()) / 1000));
-      return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'Too many open submission intents from this address; try again later', retryAfterSec };
-    }
-    // Global caps (a safety net): refuse, never evict. Existing intents stay approvable and sendable.
-    const open = this.open();
-    if (open.length >= MAX_OPEN || this.intents.size >= MAX_INTENTS) {
-      const soonest = Math.min(...open.map((x) => Date.parse(x.expiresAt)), this.now().getTime() + this.ttlMs);
-      const retryAfterSec = Math.max(1, Math.ceil((soonest - this.now().getTime()) / 1000));
-      return { ok: false, status: 429, error: 'TOO_MANY_INTENTS', detail: 'The server holds too many open submission intents; try again later', retryAfterSec };
+    const plan = this.plan(i.caseId, i.createdBy, i.createdFrom);
+    if (!plan.ok) return plan;
+    // Committed from here on (no await, no early return).
+    for (const x of plan.prunable) this.intents.delete(x.id);
+    for (const x of this.intents.values()) this.fresh(x);
+    for (const x of plan.retire) {
+      this.invalidate(x.id, x.caseId === i.caseId ? 'replaced by a newer intent for this case' : 'replaced: this session holds too many open intents', i.createdBy);
     }
     const id = newIntentId();
     const now = this.now();

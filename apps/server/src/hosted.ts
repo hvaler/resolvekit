@@ -212,15 +212,26 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const paypalRead =
         (req.method === 'GET' && path.startsWith('/api/disputes/') && !path.endsWith('/audit') && !path.includes('/intent/')) ||
         (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path));
-      if (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path)) {
+      const composing = req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path);
+      if (composing) {
         const t = intentLimit.take(ip);
         if (!t.ok) return tooMany(t.retryAfterSec, `Too many submission intents from this address; try again in ${t.retryAfterSec} s`);
       }
       if (paypalRead) {
         const r = readLimit.take(ip);
-        if (!r.ok) return tooMany(r.retryAfterSec, `Too many PayPal reads; try again in ${r.retryAfterSec} s`);
+        if (!r.ok) {
+          if (composing) intentLimit.release(ip);
+          return tooMany(r.retryAfterSec, `Too many PayPal reads; try again in ${r.retryAfterSec} s`);
+        }
       }
-      return api(req);
+      const res = await api(req);
+      // A composition that did not create an intent gives its slot back; one refused before reading PayPal (no
+      // session, a cap, a malformed request) gives back its PayPal read too. Nothing else changed on the server.
+      if (composing && res.status !== 201) {
+        intentLimit.release(ip);
+        if (res.status === 400 || res.status === 403 || res.status === 429) readLimit.release(ip);
+      }
+      return res;
     }
 
     if (o.site) return o.site.serve(req) ?? json(405, { error: 'METHOD_NOT_ALLOWED' });
