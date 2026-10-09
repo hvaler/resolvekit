@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@resolvekit/paypal": "*"
+    "@resolvekit/paypal": "*",
+    "@resolvekit/pdf": "*"
   },
   "devDependencies": {
     "@types/node": "24.13.5"

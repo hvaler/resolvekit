@@ -1,0 +1,6 @@
+{
+  "name": "@resolvekit/pdf",
+  "private": true,
+  "type": "module",
+  "exports": "./src/pdf.ts"
+}

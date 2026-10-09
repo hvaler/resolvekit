@@ -1,6 +1,6 @@
 /**
- * A tiny PDF writer for the synthetic evidence documents: one or more A4 pages of Helvetica text. It writes
- * real PDF 1.4 (objects, xref table with byte offsets, trailer, %%EOF) and no more than that.
+ * A tiny PDF writer, shared by apps/server (evidence documents) and apps/metermcp (session receipts): one or more
+ * A4 pages of Helvetica text. It writes real PDF 1.4 (objects, xref table with byte offsets, trailer, %%EOF) and no more than that.
  */
 
 // Characters the fixtures use beyond ASCII, in WinAnsiEncoding (the standard Helvetica encoding).

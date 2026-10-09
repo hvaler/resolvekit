@@ -6,7 +6,7 @@ import type { EvidenceFile } from '@resolvekit/paypal';
 import type { CaseFile, Evidence, SubmissionFile } from '../../web/src/domain/types.ts';
 import { agentCase } from '../../web/src/fixtures/agentCase.ts';
 import { standardCase } from '../../web/src/fixtures/standardCase.ts';
-import { writePdf } from './pdf.ts';
+import { writePdf } from '@resolvekit/pdf';
 
 export const SYNTHETIC_HEADER = 'SYNTHETIC TEST DOCUMENT';
 

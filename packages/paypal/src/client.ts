@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DisputesApi } from './disputes.ts';
+import { OrdersApi, PaymentsApi } from './orders.ts';
 
 export type PayPalEnv = 'sandbox' | 'live';
 
@@ -33,12 +34,16 @@ const BASE: Record<PayPalEnv, string> = {
 
 export class PayPalClient {
   readonly disputes: DisputesApi;
+  readonly orders: OrdersApi;
+  readonly payments: PaymentsApi;
   private readonly opts: Required<Omit<PayPalClientOptions, 'fetch'>> & { fetch: typeof fetch };
   private token: { value: string; expiresAt: number } | null = null;
 
   constructor(opts: PayPalClientOptions) {
     this.opts = { timeoutMs: 60_000, fetch: globalThis.fetch.bind(globalThis), ...opts };
     this.disputes = new DisputesApi(this);
+    this.orders = new OrdersApi(this);
+    this.payments = new PaymentsApi(this);
   }
 
   /** Get (or reuse) an OAuth token: proves the credentials work without touching any dispute. */
@@ -64,8 +69,14 @@ export class PayPalClient {
 
   // JSON or multipart request. Every POST carries a PayPal-Request-Id (the caller's own id when given). Whether
   // the Disputes API deduplicates on it is NOT verified, so callers must read the dispute back before any retry.
-  async request<T>(method: 'GET' | 'POST', path: string, body?: unknown | FormData, opts: { requestId?: string } = {}): Promise<T> {
-    const headers: Record<string, string> = { Authorization: `Bearer ${await this.accessToken()}` };
+  // `headers` adds request headers (e.g. Prefer: return=representation); it cannot replace Authorization.
+  async request<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown | FormData,
+    opts: { requestId?: string; headers?: Record<string, string> } = {},
+  ): Promise<T> {
+    const headers: Record<string, string> = { ...opts.headers, Authorization: `Bearer ${await this.accessToken()}` };
     let payload: BodyInit | undefined;
     if (body instanceof FormData) payload = body;
     else if (body !== undefined) {
@@ -87,3 +98,4 @@ export class PayPalClient {
 }
 
 export * from './disputes.ts';
+export * from './orders.ts';

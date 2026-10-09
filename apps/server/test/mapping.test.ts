@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mapStatus, toSnapshot } from '../src/mapping.ts';
 import { buildAttachments, CASE_FILES, evidenceLines, SYNTHETIC_HEADER, UnknownFileError } from '../src/documents.ts';
-import { writePdf } from '../src/pdf.ts';
+import { writePdf } from '@resolvekit/pdf';
 import { evidenceInDispute, fakePayPal, waitingDispute } from './fixtures.ts';
 import { checkBindings } from '../src/bindings.ts';
 import { PayPalClient } from '@resolvekit/paypal';

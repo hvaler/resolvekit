@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "test", "../../packages/paypal/src"]
+  "include": ["src", "test", "../../packages/paypal/src", "../../packages/pdf/src"]
 }
