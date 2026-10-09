@@ -135,10 +135,10 @@ export function AppBar({
   syncNow?: boolean;
 }) {
   return (
-    <header className="flex h-11 flex-none items-center gap-3.5 border-b border-line bg-surface px-[18px]">
+    <header className="flex h-11 flex-none items-center gap-3.5 border-b border-line bg-surface px-[18px] max-md:h-auto max-md:flex-wrap max-md:gap-x-2.5 max-md:gap-y-2 max-md:px-4 max-md:py-2">
       <Logo />
       <span aria-hidden="true" className="h-[18px] w-px bg-line-2" />
-      <nav aria-label="Breadcrumb" className="flex items-center gap-3.5">
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-3.5 max-md:gap-2">
         {caseId ? (
           <>
             <Link to="/" className="text-[12.5px] text-ink-2 no-underline hover:text-ink">
@@ -158,7 +158,7 @@ export function AppBar({
           </span>
         )}
       </nav>
-      <span className="flex-1" />
+      <span className="flex-1 max-md:basis-full max-md:flex-none" />
       <SyncIndicator checkedAt={checkedAt} onRetry={onSync} />
       {syncNow && onSync && (
         <button type="button" onClick={onSync} className="h-[26px] rounded-md border border-line-2 bg-surface px-[9px] text-[12px] text-ink-2">

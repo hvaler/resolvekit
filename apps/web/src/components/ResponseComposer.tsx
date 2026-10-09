@@ -166,15 +166,15 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
 
   if (collapsed) {
     return (
-      <aside aria-label="Response draft" className="flex w-[52px] flex-none flex-col border-l border-line bg-surface transition-[width] duration-fast">
+      <aside aria-label="Response draft" className="flex w-[52px] flex-none flex-col border-l border-line bg-surface transition-[width] duration-fast max-md:w-full max-md:border-l-0 max-md:border-t">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
           aria-label="Expand response draft"
-          className="flex flex-1 flex-col items-center gap-3 border-0 bg-transparent pt-4 text-ink-2"
+          className="flex flex-1 flex-col items-center gap-3 border-0 bg-transparent pt-4 text-ink-2 max-md:flex-row max-md:py-3 max-md:pl-4"
         >
           <span aria-hidden="true">‹</span>
-          <span className="text-body font-medium [writing-mode:vertical-rl]">
+          <span className="text-body font-medium [writing-mode:vertical-rl] max-md:[writing-mode:horizontal-tb]">
             Response draft · {submitted ? 'sent' : actionable.length ? `${actionable.length} to resolve` : busy ? 'checking' : 'ready'}
           </span>
         </button>
@@ -186,9 +186,12 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
   const alsoAllowed = allowedActions.filter((a) => a !== 'provide_evidence');
 
   return (
-    <aside aria-label="Response draft" className="flex min-h-0 w-[480px] flex-none flex-col border-l border-line bg-surface transition-[width] duration-fast">
-      <div className="flex flex-none flex-col gap-[3px] border-b border-line px-[22px] pb-3 pt-3.5">
-        <div className="flex items-center gap-2">
+    <aside
+      aria-label="Response draft"
+      className="flex min-h-0 w-[480px] flex-none flex-col border-l border-line bg-surface transition-[width] duration-fast max-md:w-full max-md:border-l-0 max-md:border-t"
+    >
+      <div className="flex flex-none flex-col gap-[3px] border-b border-line px-[22px] pb-3 pt-3.5 max-md:px-4">
+        <div className="flex items-center gap-2 max-md:flex-wrap">
           <h2 className="m-0 text-[15px] font-semibold">Response draft</h2>
           <span className="text-[12px] text-ink-3">Drafted by the analyst · you approve</span>
           <span className="flex-1" />
@@ -206,7 +209,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-[22px] overflow-auto pb-[22px] pl-[18px] pr-[22px] pt-2.5">
+      <div className="flex flex-1 flex-col gap-[22px] overflow-auto pb-[22px] pl-[18px] pr-[22px] pt-2.5 max-md:overflow-visible max-md:px-3">
         <ol aria-label="Draft sentences" className="m-0 flex list-none flex-col gap-1 p-0">
           {d.views.map((v) => {
             const base = c.sentences.find((s) => s.id === v.id);
@@ -290,7 +293,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
         )}
       </div>
 
-      <div className="flex flex-none flex-col gap-2 border-t border-line bg-surface px-[22px] pb-3.5 pt-3">
+      <div className="flex flex-none flex-col gap-2 border-t border-line bg-surface px-[22px] pb-3.5 pt-3 max-md:sticky max-md:bottom-0 max-md:px-4">
         <span className="text-[12px]" style={{ color: blockColor }} aria-live="polite">
           {blockText}
         </span>

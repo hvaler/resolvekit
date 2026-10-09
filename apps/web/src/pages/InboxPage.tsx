@@ -49,10 +49,10 @@ export function InboxPage() {
   const onOpen = useCallback((r: InboxGridRow) => navigate(`/cases/${r.id}`), [navigate]);
 
   return (
-    <div className="flex min-h-screen min-w-[1180px] flex-col">
+    <div className="flex min-h-screen min-w-[1180px] flex-col max-md:min-w-0">
       <AppBar checkedAt={Number.isFinite(lastChecked) ? lastChecked : null} onSync={() => void refreshAll(tracked)} syncNow />
-      <main className="flex flex-col gap-3.5 px-7 pb-[26px] pt-[22px]">
-        <div className="flex items-end justify-between gap-5">
+      <main className="flex flex-col gap-3.5 px-7 pb-[26px] pt-[22px] max-md:px-4">
+        <div className="flex items-end justify-between gap-5 max-md:flex-col max-md:items-start max-md:gap-1.5">
           <div className="flex flex-col gap-[3px]">
             <h1 className="m-0 text-title-lg">Disputes</h1>
             <span className="text-[13.5px] text-ink-2">{modeKnown ? inboxSummary(rows) : 'Loading disputes…'}</span>
@@ -92,7 +92,7 @@ export function InboxPage() {
           <span aria-live="polite" className="font-mono text-[12px] font-medium leading-none text-ink-2">
             Showing {shown} of {rows.length}
           </span>
-          <label className="box-border flex h-8 w-[300px] items-center gap-2 rounded-[7px] border border-line-2 bg-surface px-2.5 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-acc">
+          <label className="box-border flex h-8 w-[300px] max-md:w-full items-center gap-2 rounded-[7px] border border-line-2 bg-surface px-2.5 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-acc">
             <span aria-hidden="true" className="box-border h-[11px] w-[11px] flex-none rounded-full border-[1.5px] border-ink-3" />
             <input
               type="search"
@@ -112,7 +112,7 @@ export function InboxPage() {
           </button>
         </div>
 
-        <div role="region" aria-label="Disputes grid">
+        <div role="region" aria-label="Disputes grid" className="max-md:min-w-0">
           <InboxGrid
             rows={rows}
             loading={loading}

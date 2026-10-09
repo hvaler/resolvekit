@@ -6,7 +6,15 @@ import { Code, cx } from './ui';
 
 function Cell({ label, children, first = false, className, style }: { label?: string; children: ReactNode; first?: boolean; className?: string; style?: CSSProperties }) {
   return (
-    <div className={cx('flex flex-col gap-[3px]', first ? 'pr-[18px]' : 'border-l border-line px-4', className)} style={style}>
+    <div
+      className={cx(
+        'flex flex-col gap-[3px]',
+        // Narrow screens: two columns; the amount/reason cell takes a whole row, the others lose the left rule.
+        first ? 'pr-[18px] max-md:col-span-2 max-md:pb-2.5 max-md:pr-0' : 'border-l border-line px-4 max-md:border-l-0 max-md:px-0 max-md:py-1.5',
+        className,
+      )}
+      style={style}
+    >
       {label && <span className="text-[11.5px] text-ink-3">{label}</span>}
       {children}
     </div>
@@ -31,7 +39,7 @@ export function CaseHeader({ view: v, statusHighlight = false, processing = fals
         <p
           role="status"
           className={cx(
-            'm-0 flex items-center gap-2 border-b border-line px-[22px] py-2 text-[12.5px]',
+            'm-0 flex items-center gap-2 border-b border-line px-[22px] py-2 text-[12.5px] max-md:px-4',
             v.notice.tone === 'bad' ? 'bg-bad-soft text-bad' : 'bg-info-soft text-info',
           )}
         >
@@ -42,7 +50,7 @@ export function CaseHeader({ view: v, statusHighlight = false, processing = fals
         </p>
       )}
       <div
-        className="grid px-[22px] py-3.5"
+        className="grid px-[22px] py-3.5 max-md:gap-x-4 max-md:px-4 max-md:![grid-template-columns:repeat(2,minmax(0,1fr))]"
         style={{
           gridTemplateColumns: wide
             ? 'minmax(0,1.9fr) minmax(0,.7fr) minmax(0,1.2fr) minmax(0,.85fr) minmax(0,1.2fr)'
@@ -97,7 +105,7 @@ export function CaseHeader({ view: v, statusHighlight = false, processing = fals
           )}
         </Cell>
         <Cell label="Disputed transaction" className="pr-0">
-          <span className="font-mono text-mono-id">{v.transactionId}</span>
+          <span className="font-mono text-mono-id [overflow-wrap:anywhere]">{v.transactionId}</span>
           <span className="text-[12px] text-ink-2">{v.transactionText}</span>
         </Cell>
       </div>

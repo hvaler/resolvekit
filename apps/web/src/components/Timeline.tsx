@@ -19,7 +19,7 @@ export function Timeline({
   const short = (id: string) => evidence.find((e) => e.id === id)?.short ?? id;
 
   return (
-    <section aria-label="Timeline" className="flex w-[292px] flex-none flex-col gap-2 overflow-auto border-r border-line px-3.5 pb-7 pt-4">
+    <section aria-label="Timeline" className="flex w-[292px] flex-none flex-col gap-2 overflow-auto border-r border-line px-3.5 pb-7 pt-4 max-md:w-full max-md:overflow-visible max-md:border-b max-md:border-r-0">
       <div className="flex items-baseline justify-between px-1">
         <h2 className="m-0 text-[14px] font-semibold">Timeline</h2>
         <span className="text-[12px] text-ink-3">{caption}</span>

@@ -45,7 +45,7 @@ function Stepper({ flow, mode }: { flow: Flow; mode: GatewayMode }) {
   const idx = FLOW_STEP[flow];
   const STEPS = steps(mode);
   return (
-    <ol aria-label="Steps" className="m-0 flex list-none items-center gap-2 p-0">
+    <ol aria-label="Steps" className="m-0 flex list-none items-center gap-2 p-0 max-md:flex-wrap">
       {STEPS.map((label, i) => {
         const done = i < idx;
         const cur = i === idx;
@@ -94,7 +94,7 @@ function Row({ k, children, ddClass }: { k: string; children: ReactNode; ddClass
 }
 
 function Footer({ children }: { children: ReactNode }) {
-  return <div className="flex flex-none items-center gap-3 border-t border-line px-[26px] py-3.5">{children}</div>;
+  return <div className="flex flex-none items-center gap-3 border-t border-line px-[26px] py-3.5 max-md:flex-wrap max-md:px-4">{children}</div>;
 }
 
 export interface ApproveFlowProps {
@@ -211,14 +211,14 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
   const carrierText = c.fulfillment.carrier === c.fulfillment.carrierLabel ? c.fulfillment.carrier : `${c.fulfillment.carrierLabel}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--scrim)] px-6 pt-[34px]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--scrim)] px-6 pt-[34px] max-md:px-0 max-md:pt-0">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="approve-title"
-        className="flex h-[min(830px,calc(100vh-68px))] w-[min(1200px,100%)] flex-col overflow-hidden rounded-3xl bg-surface shadow-modal"
+        className="flex h-[min(830px,calc(100vh-68px))] w-[min(1200px,100%)] flex-col overflow-hidden rounded-3xl bg-surface shadow-modal max-md:h-[100dvh] max-md:rounded-none"
       >
-        <div className="flex flex-none items-center gap-5 border-b border-line px-[26px] py-4">
+        <div className="flex flex-none items-center gap-5 border-b border-line px-[26px] py-4 max-md:relative max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-2 max-md:py-3 max-md:pl-4 max-md:pr-14">
           <div className="flex flex-col gap-0.5">
             <h2 id="approve-title" ref={headingRef} tabIndex={-1} className="m-0 text-[18px] font-semibold tracking-[-0.01em] outline-none">
               {title(flow, mode)}
@@ -230,7 +230,12 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
           <span className="flex-1" />
           <Stepper flow={flow} mode={mode} />
           {closable && (
-            <button type="button" aria-label="Close" onClick={onClose} className="ml-2 h-7 w-7 rounded-lg border border-line-2 bg-surface text-ink-2">
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={onClose}
+              className="ml-2 h-7 w-7 rounded-lg border border-line-2 bg-surface text-ink-2 max-md:absolute max-md:right-4 max-md:top-3 max-md:ml-0"
+            >
               ×
             </button>
           )}
@@ -238,9 +243,9 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
 
         {flow === 'review' && (
           <>
-            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-              <div className="flex flex-col gap-3.5 overflow-auto border-r border-line px-[26px] pb-6 pt-5">
-                <div className="flex items-baseline justify-between">
+            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] max-md:block max-md:overflow-auto">
+              <div className="flex flex-col gap-3.5 overflow-auto border-r border-line px-[26px] pb-6 pt-5 max-md:overflow-visible max-md:border-r-0 max-md:px-4">
+                <div className="flex items-baseline justify-between max-md:flex-col max-md:gap-0.5">
                   <h3 className="m-0 text-[14px] font-semibold">What your response claims · {supported.length} sentences, each with its proof</h3>
                   <span className="text-[12px] text-ink-3">Quoted from the source</span>
                 </div>
@@ -254,7 +259,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                     <div
                       key={s.id}
                       role="row"
-                      className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)] gap-3.5 border-b border-line px-3.5 py-[11px] shadow-rule-ok last:border-b-0"
+                      className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)] gap-3.5 border-b border-line px-3.5 py-[11px] shadow-rule-ok last:border-b-0 max-md:grid-cols-[20px_minmax(0,1fr)] max-md:gap-x-2.5 max-md:gap-y-2 max-md:px-3"
                     >
                       <span role="cell" className="font-mono text-[12px] font-medium leading-[22px] text-ink-3">
                         {i + 1}
@@ -262,7 +267,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                       <p role="cell" className="text-pretty m-0 text-body-lg leading-normal">
                         {s.text}
                       </p>
-                      <div role="cell" className="flex min-w-0 flex-col gap-[5px]">
+                      <div role="cell" className="flex min-w-0 flex-col gap-[5px] max-md:col-start-2">
                         {s.citations.map((ct) => (
                           <div key={ct.evidenceId} className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-2">
                             <EvidenceTag id={ct.evidenceId} size="sm" />
@@ -285,7 +290,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                   </div>
                 )}
               </div>
-              <div className="flex flex-col gap-3.5 overflow-auto bg-surface-2 px-[26px] pb-6 pt-5">
+              <div className="flex flex-col gap-3.5 overflow-auto bg-surface-2 px-[26px] pb-6 pt-5 max-md:overflow-visible max-md:px-4">
                 <h3 className="m-0 text-[14px] font-semibold">Exactly what goes to PayPal</h3>
                 <Dl>
                   <Row k="Action" ddClass="text-[13.5px] font-medium">
@@ -333,7 +338,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
             <Footer>
               <Button onClick={onClose}>← Back to edit</Button>
               <span className="flex-1" />
-              <span className="text-[12.5px] text-ink-2">Nothing has been sent. Next you confirm.</span>
+              <span className="text-[12.5px] text-ink-2 max-md:order-first max-md:basis-full">Nothing has been sent. Next you confirm.</span>
               <Button variant="primary" onClick={() => setFlow('confirm')}>
                 Continue to confirm →
               </Button>
@@ -343,8 +348,8 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
 
         {flow === 'confirm' && (
           <>
-            <div className="flex flex-1 justify-center overflow-auto px-[26px] py-[34px]">
-              <div className="flex w-[640px] flex-col gap-5">
+            <div className="flex flex-1 justify-center overflow-auto px-[26px] py-[34px] max-md:px-4 max-md:py-5">
+              <div className="flex w-[640px] flex-col gap-5 max-md:w-full">
                 <div role="alert" className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-2xl border border-bad-line bg-bad-soft px-[18px] py-4">
                   <span aria-hidden="true" className="grid h-6 w-6 place-items-center rounded-full bg-bad text-body font-bold text-white">
                     !
@@ -357,7 +362,7 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
                     </span>
                   </div>
                 </div>
-                <Dl labelWidth={150} className="text-[13.5px]">
+                <Dl labelWidth={150} className="text-[13.5px] max-md:![grid-template-columns:96px_minmax(0,1fr)]">
                   <Row k="Action" ddClass="font-medium">
                     Provide evidence · {EVIDENCE_TYPE_LABEL[submission.evidenceType]}
                   </Row>
@@ -417,8 +422,8 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
         )}
 
         {flow === 'sending' && (
-          <div className="flex flex-1 items-center justify-center">
-            <div className="flex w-[520px] flex-col gap-[18px]">
+          <div className="flex flex-1 items-center justify-center max-md:px-4">
+            <div className="flex w-[520px] flex-col gap-[18px] max-md:w-full">
               <SendProgress approvedAt={approvedAt} phase={phase} reached={reached} retrying={retrying} />
               <span className="pl-8 text-body text-ink-2">
                 {mode.kind === 'paypal'
@@ -430,8 +435,8 @@ export function ApproveFlow({ c, views, submission, actionsBefore, onClose }: Ap
         )}
 
         {flow === 'error' && (
-          <div className="flex flex-1 items-center justify-center">
-            <div className="flex w-[580px] flex-col gap-4">
+          <div className="flex flex-1 items-center justify-center max-md:px-4">
+            <div className="flex w-[580px] flex-col gap-4 max-md:w-full">
               <div role="alert" className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-2xl border border-warn-line bg-warn-soft px-[18px] py-4">
                 <span aria-hidden="true" className="grid h-6 w-6 place-items-center rounded-full bg-warn text-body font-bold text-surface">
                   !
@@ -524,8 +529,11 @@ function Recorded({
   const allowed = allowedActionsAfter(actionsBefore, snap);
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-[26px] pb-6 pt-5">
-        <div role="status" className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl border border-ok-line bg-ok-soft px-[18px] py-3.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-[26px] pb-6 pt-5 max-md:px-4">
+        <div
+          role="status"
+          className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl border border-ok-line bg-ok-soft px-[18px] py-3.5 max-md:grid-cols-[auto_minmax(0,1fr)] max-md:gap-3 max-md:px-3.5"
+        >
           <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-full bg-ok font-bold text-surface">
             ✓
           </span>
@@ -537,14 +545,14 @@ function Recorded({
                 : `Read back from the PayPal simulator at ${snap.readAt}. No real PayPal dispute is involved.`}
             </span>
           </div>
-          <div className="flex flex-col items-end gap-0.5 border-l border-ok-line pl-[18px]">
+          <div className="flex flex-col items-end gap-0.5 border-l border-ok-line pl-[18px] max-md:col-span-2 max-md:items-start max-md:border-l-0 max-md:border-t max-md:pl-0 max-md:pt-2">
             <span className="text-[11.5px] text-ink-3">{mode.kind === 'paypal' ? 'PayPal status now' : 'Simulated status now'}</span>
             <span className="text-[16px] font-semibold">{STATUS_DISPLAY[snap.status].label}</span>
             <span className="font-mono text-mono-code leading-[1.2] text-ink-2">{snap.status}</span>
           </div>
         </div>
         <span className="-mt-1.5 text-body text-ink-2">{statusExplanation(snap.status)}</span>
-        <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-5">
+        <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-5 max-md:grid-cols-1">
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between">
               <h3 className="m-0 text-[14px] font-semibold">Sent vs. {mode.kind === 'paypal' ? 'recorded by PayPal' : 'recorded by the simulator'}</h3>
@@ -552,15 +560,15 @@ function Recorded({
                 {cmp.allMatch ? '✓' : '!'} {cmp.matched} of {cmp.total} fields match
               </span>
             </div>
-            <div role="table" aria-label="Sent versus recorded" className="overflow-hidden rounded-[9px] border border-line">
-              <div role="row" className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)_76px] gap-3 border-b border-line bg-surface-2 px-3.5 py-2 text-[11.5px] font-medium text-ink-3">
+            <div role="table" aria-label="Sent versus recorded" className="overflow-hidden rounded-[9px] border border-line max-md:overflow-x-auto">
+              <div role="row" className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)_76px] gap-3 border-b max-md:grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)_56px] max-md:gap-2 max-md:px-2.5 border-line bg-surface-2 px-3.5 py-2 text-[11.5px] font-medium text-ink-3">
                 <span role="columnheader">Field</span>
                 <span role="columnheader">Sent</span>
                 <span role="columnheader">{mode.kind === 'paypal' ? 'Recorded by PayPal' : 'Recorded (simulator)'}</span>
                 <span role="columnheader">Match</span>
               </div>
               {cmp.rows.map((m) => (
-                <div key={m.field} role="row" className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)_76px] items-start gap-3 border-b border-line px-3.5 py-[9px] last:border-b-0">
+                <div key={m.field} role="row" className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)_76px] items-start gap-3 border-b max-md:grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)_56px] max-md:gap-2 max-md:px-2.5 border-line px-3.5 py-[9px] last:border-b-0">
                   <span role="cell" className="text-[12.5px] text-ink-2">
                     {m.field}
                   </span>

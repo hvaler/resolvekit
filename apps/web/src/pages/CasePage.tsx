@@ -92,7 +92,10 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
 
   return (
     <HighlightProvider>
-      <div className="relative flex h-screen min-w-[1180px] flex-col overflow-hidden" aria-hidden={showFlow || undefined}>
+      <div
+        className="relative flex h-screen min-w-[1180px] flex-col overflow-hidden max-md:h-auto max-md:min-h-screen max-md:min-w-0 max-md:overflow-visible"
+        aria-hidden={showFlow || undefined}
+      >
         <AppBar
           caseId={id}
           checkedAt={snap?.checkedAt ?? null}
@@ -117,7 +120,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           rerunBlocked={analysis.rerunBlocked}
           live={analysis.live}
         />
-        <main className="flex min-h-0 flex-1">
+        <main className="flex min-h-0 flex-1 max-md:flex-col">
           <Timeline
             items={c.timeline}
             caption={c.timelineCaption}
@@ -135,7 +138,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
               ) : null;
             }}
           />
-          <section aria-label="Evidence" className="flex min-w-0 flex-1 flex-col gap-3 overflow-auto px-5 pb-8 pt-4">
+          <section aria-label="Evidence" className="flex min-w-0 flex-1 flex-col gap-3 overflow-auto px-5 pb-8 pt-4 max-md:overflow-visible max-md:px-4">
             <div className="flex items-baseline justify-between">
               <h2 className="m-0 text-[14px] font-semibold">
                 Evidence <span className="text-[12.5px] font-normal text-ink-3">· {c.evidenceSources}</span>
@@ -202,9 +205,9 @@ function ProcessingScreen() {
   const status = snap?.status ?? s.status;
   const opened = status !== 'UNDER_REVIEW';
   return (
-    <div className="flex min-h-screen min-w-[1180px] flex-col">
+    <div className="flex min-h-screen min-w-[1180px] flex-col max-md:min-w-0">
       <AppBar caseId={s.id} checkedAt={snap?.checkedAt ?? null} />
-      <main className="flex flex-col gap-2.5 px-7 pb-[30px] pt-6">
+      <main className="flex flex-col gap-2.5 px-7 pb-[30px] pt-6 max-md:px-4">
         <Link to="/" className="text-[12.5px]">
           ← All cases
         </Link>
@@ -241,7 +244,7 @@ function NotInDemo({ id }: { id: string }) {
   return (
     <div className="flex min-h-screen flex-col">
       <AppBar caseId={id} checkedAt={snapshots[Object.keys(snapshots)[0] ?? '']?.checkedAt ?? null} />
-      <main className="flex flex-col gap-3 px-7 py-6">
+      <main className="flex flex-col gap-3 px-7 py-6 max-md:px-4">
         <h1 className="m-0 text-title-lg">{row ? row.reason : 'Case not found'}</h1>
         <p className="m-0 max-w-[640px] text-[14px] text-ink-2">
           {row

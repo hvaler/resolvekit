@@ -63,9 +63,9 @@ export function AnalysisBar({ steps, run, note, label, problem, onReplay, onReru
   const complete = run >= steps.length;
   const budget = live?.configured ? ` · ${live.remaining}/${live.limit} live runs left this hour` : '';
   return (
-    <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-surface-2 px-[22px] py-2 text-[12.5px]">
+    <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-surface-2 px-[22px] py-2 text-[12.5px] max-md:px-4">
       <span className="text-[10.5px] font-semibold uppercase tracking-[.08em] text-ink-3">Analysis</span>
-      <ol aria-label="Analysis steps" className="m-0 flex flex-none list-none gap-4 whitespace-nowrap p-0">
+      <ol aria-label="Analysis steps" className="m-0 flex flex-none list-none gap-4 whitespace-nowrap p-0 max-md:flex-1 max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-1">
         {steps.map((stepLabel, i) => {
           const done = run > i;
           const active = run === i;
@@ -91,11 +91,11 @@ export function AnalysisBar({ steps, run, note, label, problem, onReplay, onReru
         })}
       </ol>
       {/* The steps keep their width; the note takes what is left and truncates instead of overlapping them. */}
-      <span className={cx('min-w-[160px] flex-1 truncate pl-2 text-right text-[12px]', problem ? 'text-warn' : 'text-ink-3')} title={problem ?? note} role={problem ? 'status' : undefined}>
+      <span className={cx('min-w-[160px] flex-1 truncate pl-2 text-right text-[12px] max-md:basis-full max-md:pl-0 max-md:text-left', problem ? 'text-warn' : 'text-ink-3')} title={problem ?? note} role={problem ? 'status' : undefined}>
         {problem ?? note}
       </span>
       {/* Provenance and controls stay together; on a narrow window they wrap to a second line instead of clipping. */}
-      <span className="ml-auto flex flex-none items-center gap-2">
+      <span className="ml-auto flex flex-none items-center gap-2 max-md:ml-0 max-md:flex-1 max-md:flex-wrap">
       <span
         className={cx('flex-none whitespace-nowrap rounded-sm px-[7px] py-0.5 font-mono text-[11px]', label.live ? 'bg-acc-soft text-acc' : 'border border-line-2 bg-surface text-ink-2')}
         title={label.title}
