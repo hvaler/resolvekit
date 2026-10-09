@@ -7,6 +7,7 @@ import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type P
 import type { AgentReceiptSource } from '../../web/src/domain/types.ts';
 import type { AnalystService, LiveGate, Reservation } from './analysis.ts';
 import { parseInput } from './analysis.ts';
+import type { AnalysisInput } from '@resolvekit/analyst';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
@@ -47,6 +48,11 @@ export interface ApiOptions {
   analyst?: AnalystService | null;
   /** Hosted mode: refuses costly actions without the demo code or over the daily caps. Absent: always allowed. */
   gate?: CostGate | null;
+  /**
+   * Hosted mode: the input a live run or re-check would send to the model must be the server's own demo case
+   * (see anchor.ts); returns why not, or null. Stored analyses are still looked up with any well-formed input.
+   */
+  anchor?: ((input: AnalysisInput) => string | null) | null;
 }
 
 /** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
@@ -150,9 +156,17 @@ export function createApi(opts: ApiOptions): Handler {
     return { kind: 'metermcp', session: toMeteredSession(await opts.meterMcp.receipt(sessionId)) };
   };
   /** For the analyst: asked right before it would call the model (nothing stored for these documents, or a refresh). */
-  const liveGate = (req: Request, action: CostlyAction): LiveGate | undefined => {
-    const gate = opts.gate;
-    return gate ? () => gate.reserve(req, action) : undefined;
+  const liveGate = (req: Request, action: CostlyAction, input: AnalysisInput): LiveGate | undefined => {
+    const { gate, anchor } = opts;
+    if (!gate && !anchor) return undefined;
+    return () => {
+      // The gate first (a locked visitor learns that the demo code is needed), then the content check.
+      const r: Reservation = gate ? gate.reserve(req, action) : { ok: true, release: () => {} };
+      const why = r.ok ? anchor?.(input) : null;
+      if (!why) return r;
+      if (r.ok) r.release();
+      return { ok: false, refusal: { status: 422, body: { error: 'INPUT_NOT_ANCHORED', detail: `Live runs only analyse the demo case's own documents: ${why}` } } };
+    };
   };
 
   let health: Promise<{ paypal: PayPalEnv | 'unconfigured'; error?: string }> | null = null;
@@ -202,10 +216,10 @@ export function createApi(opts: ApiOptions): Handler {
     if (sub === '/verify') {
       const text = typeof body?.text === 'string' ? body.text.trim() : '';
       if (!text || text.length > 600) return json(400, { error: 'INVALID_TEXT', detail: 'text must be 1-600 characters' });
-      const r = await analyst.verify(input, text, liveGate(req, 'recheck'));
+      const r = await analyst.verify(input, text, liveGate(req, 'recheck', input));
       return json(r.status, r.body);
     }
-    const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1', liveGate(req, 'live-analysis'));
+    const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1', liveGate(req, 'live-analysis', input));
     return json(r.status, r.body);
   };
 

@@ -25,23 +25,29 @@ export interface MeterMcpSource {
 
 export class MeterMcpClient implements MeterMcpSource {
   private readonly base: string;
-  private readonly tokenFile: string;
+  private readonly tokenFile: string | null;
+  private readonly token: string | null;
   private readonly fetch: typeof fetch;
   private readonly timeoutMs: number;
 
-  constructor(opts: { base: string; tokenFile: string; fetch?: typeof fetch; timeoutMs?: number }) {
+  /** Local: `tokenFile` (MeterMCP's per-launch token file). Hosted: `token` (the admin token shared through the env). */
+  constructor(opts: { base: string; tokenFile?: string; token?: string; fetch?: typeof fetch; timeoutMs?: number }) {
     this.base = opts.base.replace(/\/$/, '');
-    this.tokenFile = opts.tokenFile;
+    this.tokenFile = opts.tokenFile ?? null;
+    this.token = opts.token || null;
     this.fetch = opts.fetch ?? ((...a) => globalThis.fetch(...a));
     this.timeoutMs = opts.timeoutMs ?? 10_000;
   }
 
   private async get(path: string): Promise<Response> {
-    let token: string;
-    try {
-      token = readFileSync(this.tokenFile, 'utf8').trim();
-    } catch {
-      throw new MeterMcpError('MeterMCP is not running (no runtime token)');
+    let token = this.token;
+    if (!token) {
+      try {
+        token = this.tokenFile ? readFileSync(this.tokenFile, 'utf8').trim() : '';
+      } catch {
+        throw new MeterMcpError('MeterMCP is not running (no runtime token)');
+      }
+      if (!token) throw new MeterMcpError('MeterMCP admin token is not configured');
     }
     let r: Response;
     try {

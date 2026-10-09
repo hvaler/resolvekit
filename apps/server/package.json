@@ -10,7 +10,8 @@
   "dependencies": {
     "@resolvekit/paypal": "*",
     "@resolvekit/pdf": "*",
-    "@resolvekit/analyst": "*"
+    "@resolvekit/analyst": "*",
+    "@resolvekit/hosting": "*"
   },
   "devDependencies": {
     "@types/node": "24.13.5"

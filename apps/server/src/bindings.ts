@@ -35,3 +35,23 @@ export async function checkBindings(opts: {
     }),
   );
 }
+
+const CASE_ID = /^[A-Za-z0-9-]{1,64}$/;
+const DISPUTE_ID = /^PP-[A-Z0-9-]{4,60}$/;
+
+/**
+ * Bindings as configured (bindings.json, or the BINDINGS_JSON env in hosted mode): `{ "<web case id>": "<PayPal
+ * dispute id>" }`; keys starting with "_" are comments. Throws on anything else, so a bad binding stops the start
+ * instead of silently pointing a case somewhere unexpected. Never read from a client.
+ */
+export function parseBindings(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('bindings must be a JSON object { "<case id>": "<PayPal dispute id>" }');
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.startsWith('_')) continue;
+    if (!CASE_ID.test(k)) throw new Error(`bindings: invalid case id ${JSON.stringify(k.slice(0, 80))}`);
+    if (typeof v !== 'string' || !DISPUTE_ID.test(v)) throw new Error(`bindings: ${k} must map to a PayPal dispute id (PP-…)`);
+    out[k] = v;
+  }
+  return out;
+}

@@ -12,7 +12,8 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@resolvekit/paypal": "*",
     "zod": "3.25.76",
-    "@resolvekit/pdf": "*"
+    "@resolvekit/pdf": "*",
+    "@resolvekit/hosting": "*"
   },
   "devDependencies": {
     "@types/node": "24.13.5"
