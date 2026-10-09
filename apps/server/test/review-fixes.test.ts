@@ -12,10 +12,11 @@ import { join } from 'node:path';
 import { DailyCounters } from '@resolvekit/hosting';
 import { PayPalClient } from '@resolvekit/paypal';
 import { caseInput, standardCase } from '@resolvekit/cases';
+import { analysisKey } from '@resolvekit/analyst/node';
 import { createHostedApp } from '../src/hosted.ts';
 import { IntentStore, MAX_OPEN, type StoredIntent } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
-import { RESOLVED, STD_CAPTURE, analystFor, standardDispute } from './kit.ts';
+import { MODEL, RESOLVED, STD_CAPTURE, analystFor, standardDispute } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
@@ -218,4 +219,27 @@ test('review 5: an edit while the intent is being sent voids the approval when t
   assert.equal(await status(app, i, s, '198.51.100.1'), 'invalidated');
   assert.equal((await send(app, i, s, '198.51.100.1')).status, 409);
   assert.equal(pp.sends.length, 0);
+});
+
+// ------------------------------------------------------------------------------------------------ 6
+
+test('review 6: another session’s re-run of the analysis does not change or stale my approved intent', async () => {
+  const { app, pp, store, input } = await setup();
+  const s = await unlock(app, '198.51.100.1');
+  const i = await composeApproved(app, s, '198.51.100.1');
+  // What a refresh=1 by someone else does: a new analysis of the same documents, stored under the same key.
+  const key = await analysisKey(input, MODEL);
+  const cur = store.get(key)!.analysis;
+  store.cached.set(key, { ...cur, sentences: cur.sentences.map((x) => (x.id === 'S2' ? { ...x, text: 'A different sentence from a newer run.' } : x)) });
+  // Someone composing now gets the newer analysis…
+  const other = await unlock(app, '198.51.100.2');
+  const j = await app(req(`${base}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED }, cookie: other, ip: '198.51.100.2' }));
+  assert.equal(j.status, 201);
+  assert.ok(((await j.json()) as Intent).notes.includes('A different sentence from a newer run.'));
+  // …while my approved intent still sends exactly what I approved.
+  const r = await send(app, i, s, '198.51.100.1');
+  assert.equal(r.status, 202, await r.clone().text());
+  assert.equal(pp.sends.length, 1);
+  assert.equal(((await r.json()) as { intent: Intent }).intent.notes, i.notes);
+  assert.ok(!i.notes.includes('A different sentence'));
 });

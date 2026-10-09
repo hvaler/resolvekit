@@ -13,7 +13,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
-import { toCitations, withAnalysis, type AnalysisInput } from '@resolvekit/analyst';
+import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
 import type { AgentReceiptSource, DisputeSnapshot } from '../../web/src/domain/types.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
@@ -198,6 +198,9 @@ interface CaseState {
 
 /** An intent composed from a case state: its content and hash, and what is needed to compose it again. */
 interface ComposedIntent {
+  /** The exact analysis the sentences came from, and its hash (pinned with the intent). */
+  analysis: CaseAnalysis;
+  analysisHash: string;
   content: IntentContent;
   contentHash: string;
   rechecks: Record<string, Recheck>;
@@ -210,6 +213,13 @@ export function createApi(opts: ApiOptions): Api {
   const intents = opts.intents ?? new IntentStore({ now });
   /** The verifier's verdicts on edited sentences, by `${analysisKey}\n${text}`: only these edits can be sent. */
   const verified = new Map<string, Recheck>();
+  /** Bounded: the oldest verdicts go first (an intent keeps the verdicts it was composed with). */
+  const MAX_VERIFIED = 2000;
+  const rememberVerdict = (k: string, r: Recheck) => {
+    verified.delete(k);
+    verified.set(k, r);
+    if (verified.size > MAX_VERIFIED) verified.delete(verified.keys().next().value!);
+  };
 
   /** The case's binding, normalised (string or object form), or null. */
   const bindingOf = (caseId: string): Binding | null => toBinding(opts.bindings[caseId]);
@@ -342,7 +352,7 @@ export function createApi(opts: ApiOptions): Api {
    * Compose the intent's content from the server's own case state and analysis. `rechecks`: verdicts already bound to
    * an intent (when composing it again before sending); otherwise the verdicts this server recorded for the edits.
    */
-  const compose = async (caseId: string, st: CaseState, req: IntentRequest, rechecks?: Record<string, Recheck>): Promise<ComposedIntent | Response> => {
+  const compose = async (caseId: string, st: CaseState, req: IntentRequest, rechecks?: Record<string, Recheck>, pinned?: CaseAnalysis | null): Promise<ComposedIntent | Response> => {
     // The agent case's evidence is the MeterMCP receipt: only a COMPLETED capture is proof of a final charge.
     const receipt = st.snap?.agentReceipt;
     if (receipt?.kind === 'metermcp' && receipt.session.settlement.status !== 'captured') {
@@ -355,7 +365,10 @@ export function createApi(opts: ApiOptions): Api {
     }
     const analyst = opts.analyst;
     if (!analyst) return json(503, { error: 'ANALYST_UNAVAILABLE', detail: 'The analyst is not set up on this server' });
-    const a = await analyst.stored(st.input);
+    // Composing again before a send uses the very analysis the intent was composed from (if it is still an analysis of
+    // these documents): someone else's re-run of the analysis does not change an approved response.
+    const key = await analyst.key(st.input);
+    const a = pinned && pinned.key === key ? { key, analysis: pinned } : await analyst.stored(st.input);
     if (!a) return json(409, { error: 'NO_ANALYSIS', detail: 'There is no analysis of these documents on the server; analyse the case first' });
     const demo = CASE_FILES[caseId]!;
     const c = withAnalysis(caseView(demo, st.source), a.analysis, st.input);
@@ -391,7 +404,7 @@ export function createApi(opts: ApiOptions): Api {
       sentences: composed.sentences,
       resolutionNotes: composed.resolutionNotes,
     };
-    return { content, contentHash: await contentHash(content), rechecks: used };
+    return { content, contentHash: await contentHash(content), rechecks: used, analysis: a.analysis, analysisHash: sha256(JSON.stringify(a.analysis)) };
   };
 
   let health: Promise<{ paypal: PayPalEnv | 'unconfigured'; error?: string }> | null = null;
@@ -460,7 +473,7 @@ export function createApi(opts: ApiOptions): Api {
         const v = r.body as { verdict: Recheck['state']; reason: string | null; citations: Parameters<typeof toCitations>[1]; model: string };
         const key = await analyst.key(input);
         const label = v.verdict === 'supported' ? 'supported' : v.verdict === 'rejected' ? 'removed' : 'needs review';
-        verified.set(`${key}\n${text}`, { state: v.verdict, reason: v.reason, note: `Edited · re-checked by ${v.model}: ${label}`, citations: toCitations(input, v.citations) });
+        rememberVerdict(`${key}\n${text}`, { state: v.verdict, reason: v.reason, note: `Edited · re-checked by ${v.model}: ${label}`, citations: toCitations(input, v.citations) });
         const who = actorOf(req, false);
         intents.record({ caseId, kind: 'edit_rechecked', actor: who.ok ? who.actor : 'visitor', detail: `${v.model}: ${label} · text sha256 ${sha256(text).slice(0, 12)}` });
       }
@@ -493,7 +506,10 @@ export function createApi(opts: ApiOptions): Api {
     if (st instanceof Response) return st;
     const composed = await compose(caseId, st, ir);
     if (composed instanceof Response) return composed;
-    const intent = intents.create({ ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local' });
+    const intent = intents.create(
+      { ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local', analysisHash: composed.analysisHash },
+      composed.analysis,
+    );
     if ('ok' in intent) return tooManyIntents(intent);
     return json(201, publicIntent(intent));
   };
@@ -568,7 +584,7 @@ export function createApi(opts: ApiOptions): Api {
       if (sha256(documentsSignature(st.input)) !== intent.documentsHash) {
         return refuse(json(409, { error: 'DOCUMENTS_CHANGED', detail: 'The case documents changed since you approved this response; review it again' }), 'documents changed', true);
       }
-      const again = await compose(caseId, st, intent.request, intent.rechecks);
+      const again = await compose(caseId, st, intent.request, intent.rechecks, intents.analysisPin(intent.analysisHash));
       if (again instanceof Response) {
         const b = (await again.clone().json().catch(() => ({}))) as { error?: string };
         return refuse(again, `composing again failed: ${b.error ?? again.status}`, again.status !== 503);
