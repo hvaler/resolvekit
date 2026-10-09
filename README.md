@@ -410,8 +410,10 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
   model except an edited sentence of a re-check.
 - Requests: `Host` must be the public host (`/healthz` excepted, for Render's health check); `/api` writes must
   carry the service's own `Origin`; POST is JSON only; per-IP limits (300 `/api` requests and 60 PayPal reads per 5
-  min, 20 submission intents per 10 min). The client address is the `X-Forwarded-For` entry `TRUSTED_PROXY_HOPS` from the
-  end (2 on Render: Cloudflare appends the visitor, then Render's proxy appends Cloudflare), believed only when the connection comes from a private address (Render's proxy;
+  min, 20 submission intents per 10 min). The client address comes from `X-Forwarded-For`, walking back from the entry Render's
+  proxy appended and skipping it only while it is a Cloudflare edge (Cloudflare's published ranges), up to
+  `TRUSTED_PROXY_HOPS` (2 on Render); so a request that bypasses Cloudflare is keyed on its own address and nothing
+  a client writes in the header is believed. The header is believed only when the connection comes from a private address (Render's proxy;
   `TRUSTED_PROXY_PEERS=private|any|none`), else the socket address; IPv6 is keyed per /64. The first request logs,
   masked, how the address was derived. Wrong demo codes: 5 per address per 15 min and 60 in all per hour (then
   addresses that already guessed wrong wait); a correct code is never counted, so guessing cannot lock judges out;

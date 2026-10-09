@@ -62,21 +62,67 @@ export function addressKey(raw: string): string {
 }
 
 /**
- * The client's address, as the key limits use ({@link addressKey}: IPv6 per /64). Each proxy appends the address it
- * received the connection from to X-Forwarded-For, so with `trustedHops` proxies in front (Render: 1) the client is
- * the entry that many places from the end; anything before it was written by the client and is ignored. That header
- * is believed only when the TCP peer is a proxy we trust (default: a private/loopback address, which is where a
- * platform proxy connects from); a request straight from the internet is keyed on its own TCP address, whatever
- * X-Forwarded-For it sends. (Requests built in-process, without the peer header, are tests: the header is used.)
+ * Cloudflare's published edge ranges (https://www.cloudflare.com/ips-v4/ and /ips-v6/, read 2026-10-09). Render serves
+ * *.onrender.com through Cloudflare, so the entry Render's proxy appends is normally a Cloudflare edge.
  */
-export function clientIp(req: Request, trustedHops = 1, trust: ProxyTrust = 'private'): string {
+const CLOUDFLARE_CIDRS = [
+  '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18', '108.162.192.0/18',
+  '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+  '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+  '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32', '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+];
+
+/** An address as a bigint plus its family, or null when it is not an IP literal. */
+function ipBits(raw: string): { v: 4 | 6; n: bigint } | null {
+  const ip = unmap(raw.trim());
+  const a = v4(ip);
+  if (a) return a.every((o) => o <= 255) ? { v: 4, n: a.reduce((acc, o) => (acc << 8n) | BigInt(o), 0n) } : null;
+  if (!ip.includes(':') || !IP_CHARS.test(ip)) return null;
+  const [head, tail] = ip.toLowerCase().split('::') as [string, string | undefined];
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  if (groups.length !== 8 || groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return null;
+  return { v: 6, n: groups.reduce((acc, g) => (acc << 16n) | BigInt(parseInt(g, 16)), 0n) };
+}
+
+/** True when `raw` lies inside one of `cidrs` (IPv4 or IPv6). */
+export function inCidrs(raw: string, cidrs: readonly string[]): boolean {
+  const ip = ipBits(raw);
+  if (!ip) return false;
+  return cidrs.some((c) => {
+    const [base, len] = c.split('/') as [string, string];
+    const b = ipBits(base);
+    if (!b || b.v !== ip.v) return false;
+    const width = ip.v === 4 ? 32n : 128n;
+    const shift = width - BigInt(Number(len));
+    return ip.n >> shift === b.n >> shift;
+  });
+}
+
+/** The proxies whose appended entry may be skipped: Cloudflare's edges (the hop in front of Render's own proxy). */
+export const TRUSTED_EDGE_CIDRS: readonly string[] = CLOUDFLARE_CIDRS;
+
+/**
+ * The client's address, as the key limits use ({@link addressKey}: IPv6 per /64). Each proxy appends the address it
+ * received the connection from to X-Forwarded-For. Render's proxy appends the last entry (believed only when the TCP
+ * peer is a proxy we trust: by default a private/loopback address, where a platform proxy connects from). With
+ * `trustedHops` > 1, the walk from the end skips an entry only while that entry is a known edge proxy
+ * ({@link TRUSTED_EDGE_CIDRS}: Cloudflare), so a request that reaches Render's proxy without going through Cloudflare
+ * is keyed on its own address, and nothing a client writes in X-Forwarded-For is ever believed. A request straight
+ * from the internet is keyed on its own TCP address. (Requests built in-process, without the peer header, are tests:
+ * the header is used.)
+ */
+export function clientIp(req: Request, trustedHops = 1, trust: ProxyTrust = 'private', edges: readonly string[] = TRUSTED_EDGE_CIDRS): string {
   const peer = req.headers.get(PEER_HEADER);
   const believe = trust === 'any' || (trust === 'private' && (peer == null || isPrivateAddress(peer)));
   const xff = req.headers.get('x-forwarded-for');
   if (believe && xff && trustedHops > 0) {
     const hops = xff.split(',').map((s) => s.trim()).filter(Boolean);
     if (hops.length) {
-      const ip = hops[Math.max(0, hops.length - trustedHops)]!;
+      let i = hops.length - 1;
+      for (let skipped = 1; skipped < trustedHops && i > 0 && inCidrs(hops[i]!, edges); skipped++) i--;
+      const ip = hops[i]!;
       return IP_CHARS.test(ip) ? addressKey(ip) : 'invalid';
     }
   }

@@ -9,7 +9,9 @@ import {
   KeyedLimiter,
   LIVE_OPT_IN,
   describeClientIp,
+  inCidrs,
   isPrivateAddress,
+  TRUSTED_EDGE_CIDRS,
   paypalEnvFor,
   PEER_HEADER,
   StaticSite,
@@ -28,7 +30,9 @@ const req = (headers: Record<string, string> = {}, path = '/', method = 'GET') =
 test('clientIp: one trusted hop takes the last X-Forwarded-For entry; client-written entries are ignored', () => {
   assert.equal(clientIp(req({ 'x-forwarded-for': '203.0.113.9' })), '203.0.113.9');
   assert.equal(clientIp(req({ 'x-forwarded-for': '1.1.1.1, 6.6.6.6, 203.0.113.9' })), '203.0.113.9');
-  assert.equal(clientIp(req({ 'x-forwarded-for': '1.1.1.1, 203.0.113.9' }), 2), '1.1.1.1');
+  // Two hops skip the last entry only when it is a Cloudflare edge (Render behind Cloudflare); otherwise the last
+  // entry, written by Render's proxy, is the client and anything before it was written by the client.
+  assert.equal(clientIp(req({ 'x-forwarded-for': '1.1.1.1, 203.0.113.9' }), 2), '203.0.113.9');
   // IPv6 is keyed per /64 (one subscriber's prefix), IPv4-mapped addresses unwrapped.
   assert.equal(clientIp(req({ 'x-forwarded-for': '2001:db8::1' })), '2001:db8:0:0::/64');
   assert.equal(clientIp(req({ 'x-forwarded-for': '2001:db8:0:0:ffff:1:2:3' })), '2001:db8:0:0::/64');
@@ -36,6 +40,24 @@ test('clientIp: one trusted hop takes the last X-Forwarded-For entry; client-wri
   assert.equal(clientIp(req({ 'x-forwarded-for': 'evil<script>' })), 'invalid');
   assert.equal(clientIp(req({ [PEER_HEADER]: '127.0.0.1' })), '127.0.0.1');
   assert.equal(clientIp(req()), 'unknown');
+});
+
+test('clientIp: behind Cloudflare and Render, two hops key on the visitor and cannot be spoofed', () => {
+  const peer = { [PEER_HEADER]: '10.30.189.4' }; // Render's proxy, private
+  // Seen on the deployed service: [visitor, Cloudflare edge].
+  assert.equal(clientIp(req({ ...peer, 'x-forwarded-for': '46.193.35.12, 172.71.146.9' }), 2), '46.193.35.12');
+  // A visitor who forges an entry: Cloudflare appends the real address after it; the forged one is never used.
+  assert.equal(clientIp(req({ ...peer, 'x-forwarded-for': '6.6.6.6, 46.193.35.12, 172.71.146.9' }), 2), '46.193.35.12');
+  // Bypassing Cloudflare to reach Render's proxy directly: the last entry is not a Cloudflare edge, so it is the key
+  // (the attacker's own address), and the forged entry before it is ignored.
+  assert.equal(clientIp(req({ ...peer, 'x-forwarded-for': '6.6.6.6, 198.51.100.77' }), 2), '198.51.100.77');
+  // IPv6 Cloudflare edge, IPv6 visitor keyed per /64.
+  assert.equal(clientIp(req({ ...peer, 'x-forwarded-for': '2001:db8:1:2::5, 2606:4700:10::1' }), 2), '2001:db8:1:2::/64');
+  // A lone Cloudflare entry has nothing before it: it is used rather than walking off the start.
+  assert.equal(clientIp(req({ ...peer, 'x-forwarded-for': '172.71.146.9' }), 2), '172.71.146.9');
+  for (const [ip, inside] of [['172.71.146.9', true], ['104.16.0.1', true], ['2606:4700::1', true], ['172.80.0.1', false], ['8.8.8.8', false], ['not-an-ip', false]] as const) {
+    assert.equal(inCidrs(ip, TRUSTED_EDGE_CIDRS), inside, ip);
+  }
 });
 
 test('clientIp: X-Forwarded-For is believed only from a proxy on a private address (review 7)', () => {
