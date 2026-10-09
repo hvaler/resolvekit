@@ -1,0 +1,691 @@
+{
+  "caseId": "PP-R-QZE-10181290",
+  "key": "3bcbb910814ee887c8fa459e9b8306ba5c23f99cb92df064abd5b29143353439",
+  "promptVersion": "rk-analyst-2026-10-09.7",
+  "requestedModel": "gemini-3.8-flash",
+  "provider": "gemini",
+  "model": "gemini-3.8-flash",
+  "createdAt": "2026-10-09T19:32:25.710Z",
+  "facts": [
+    {
+      "id": "F1",
+      "doc": "D",
+      "quote": "Dispute PP-R-QZE-10181290 · reason UNAUTHORISED",
+      "statement": "The dispute reason is UNAUTHORISED.",
+      "at": null
+    },
+    {
+      "id": "F2",
+      "doc": "D",
+      "quote": "Reason as shown to the merchant: Buyer doesn’t recognise the payment",
+      "statement": "The reason shown to the merchant is that the buyer does not recognise the payment.",
+      "at": null
+    },
+    {
+      "id": "F3",
+      "doc": "D",
+      "quote": "Buyer-declared item type: Booking",
+      "statement": "The buyer declared the item type as Booking.",
+      "at": null
+    },
+    {
+      "id": "F4",
+      "doc": "D",
+      "quote": "Disputed amount: 49.00 USD",
+      "statement": "The disputed amount is 49.00 USD.",
+      "at": null
+    },
+    {
+      "id": "F5",
+      "doc": "D",
+      "quote": "Opened: 5 Oct 2026 08:15:00 UTC",
+      "statement": "The dispute was opened on 5 October 2026 at 08:15:00 UTC.",
+      "at": "2026-10-05T08:15:00.000Z"
+    },
+    {
+      "id": "F6",
+      "doc": "D",
+      "quote": "Stage: INQUIRY",
+      "statement": "The dispute stage is INQUIRY.",
+      "at": null
+    },
+    {
+      "id": "F7",
+      "doc": "E1",
+      "quote": "Booking #B-4471 · Natural-dye linen workshop, 4 Oct 2026 18:00 UTC",
+      "statement": "Booking #B-4471 was for a Natural-dye linen workshop on 4 October 2026 at 18:00 UTC.",
+      "at": "2026-10-04T18:00:00.000Z"
+    },
+    {
+      "id": "F8",
+      "doc": "E1",
+      "quote": "Booked 28 Sep 2026 19:41 UTC by r•••@example.com (the PayPal payer)",
+      "statement": "The workshop was booked on 28 September 2026 at 19:41 UTC by r•••@example.com.",
+      "at": "2026-10-28T19:41:00.000Z"
+    },
+    {
+      "id": "F9",
+      "doc": "E1",
+      "quote": "Guest name: R. Example · 1 seat · 49.00 USD",
+      "statement": "The guest name is R. Example for 1 seat costing 49.00 USD.",
+      "at": null
+    },
+    {
+      "id": "F10",
+      "doc": "E1",
+      "quote": "Booked from device dv-7f3a…e21c, also used for order #10377",
+      "statement": "The booking was made from device dv-7f3a…e21c, also used for order #10377.",
+      "at": null
+    },
+    {
+      "id": "F11",
+      "doc": "E2",
+      "quote": "Capture 9QZ18129VB0447152",
+      "statement": "The capture ID is 9QZ18129VB0447152.",
+      "at": null
+    },
+    {
+      "id": "F12",
+      "doc": "E2",
+      "quote": "49.00 USD · COMPLETED",
+      "statement": "The payment of 49.00 USD is COMPLETED.",
+      "at": null
+    },
+    {
+      "id": "F13",
+      "doc": "E2",
+      "quote": "Captured 28 Sep 2026 19:42 UTC",
+      "statement": "The payment was captured on 28 September 2026 at 19:42 UTC.",
+      "at": "2026-09-28T19:42:00.000Z"
+    },
+    {
+      "id": "F14",
+      "doc": "E3",
+      "quote": "Booking confirmation sent to r•••@example.com · 28 Sep 2026 19:42 UTC",
+      "statement": "A booking confirmation was sent to r•••@example.com on 28 September 2026 at 19:42 UTC.",
+      "at": "2026-09-28T19:42:00.000Z"
+    },
+    {
+      "id": "F15",
+      "doc": "E3",
+      "quote": "Reminder sent to r•••@example.com · 3 Oct 2026 18:00 UTC",
+      "statement": "A reminder was sent to r•••@example.com on 3 October 2026 at 18:00 UTC.",
+      "at": "2026-10-03T18:00:00.000Z"
+    },
+    {
+      "id": "F16",
+      "doc": "E3",
+      "quote": "Reminder opened 3 Oct 2026 18:27 UTC",
+      "statement": "The reminder was opened on 3 October 2026 at 18:27 UTC.",
+      "at": "2026-10-03T18:27:00.000Z"
+    },
+    {
+      "id": "F17",
+      "doc": "E4",
+      "quote": "Workshop #B-4471 · 4 Oct 2026",
+      "statement": "Workshop #B-4471 was held on 4 October 2026.",
+      "at": "2026-10-04T00:00:00.000Z"
+    },
+    {
+      "id": "F18",
+      "doc": "E4",
+      "quote": "Checked in 17:52 UTC at the front desk · guest \"R. Example\"",
+      "statement": "Guest R. Example checked in at the front desk at 17:52 UTC.",
+      "at": "2026-10-04T17:52:00.000Z"
+    },
+    {
+      "id": "F19",
+      "doc": "E4",
+      "quote": "Photo ID checked: no",
+      "statement": "Photo ID was not checked.",
+      "at": null
+    },
+    {
+      "id": "F20",
+      "doc": "E4",
+      "quote": "Attended the full workshop · left 20:05 UTC",
+      "statement": "The guest attended the full workshop and left at 20:05 UTC.",
+      "at": "2026-10-04T20:05:00.000Z"
+    },
+    {
+      "id": "F21",
+      "doc": "E5",
+      "quote": "Order #10377 · placed 14 Aug 2026 11:20 UTC · 2 × Linen napkin set · 30.00 USD",
+      "statement": "Order #10377 for 2 Linen napkin sets totalling 30.00 USD was placed on 14 August 2026 at 11:20 UTC.",
+      "at": "2026-08-14T11:20:00.000Z"
+    },
+    {
+      "id": "F22",
+      "doc": "E5",
+      "quote": "Paid by r•••@example.com · device dv-7f3a…e21c",
+      "statement": "Order #10377 was paid by r•••@example.com from device dv-7f3a…e21c.",
+      "at": null
+    },
+    {
+      "id": "F23",
+      "doc": "E5",
+      "quote": "Delivered 18 Aug 2026 · no dispute",
+      "statement": "Order #10377 was delivered on 18 August 2026 without dispute.",
+      "at": "2026-08-18T00:00:00.000Z"
+    },
+    {
+      "id": "F24",
+      "doc": "E6",
+      "quote": "\"I don’t recognise this 49.00 USD payment.\"",
+      "statement": "The buyer stated they do not recognise the 49.00 USD payment.",
+      "at": null
+    },
+    {
+      "id": "F25",
+      "doc": "E6",
+      "quote": "From r•••@example.com · 5 Oct 2026 08:15 UTC",
+      "statement": "The message was sent from r•••@example.com on 5 October 2026 at 08:15 UTC.",
+      "at": "2026-10-05T08:15:00.000Z"
+    }
+  ],
+  "droppedFacts": 0,
+  "timeline": [
+    {
+      "at": "2026-08-14T11:20:00.000Z",
+      "title": "Prior order placed",
+      "sub": "Order #10377 · 30.00 USD",
+      "doc": "E5",
+      "quote": "Order #10377 · placed 14 Aug 2026 11:20 UTC · 2 × Linen napkin set · 30.00 USD",
+      "negated": false
+    },
+    {
+      "at": "2026-08-18T00:00:00.000Z",
+      "title": "Prior order delivered",
+      "sub": "Delivered without dispute",
+      "doc": "E5",
+      "quote": "Delivered 18 Aug 2026 · no dispute",
+      "negated": false
+    },
+    {
+      "at": "2026-09-28T19:41:00.000Z",
+      "title": "Workshop booked",
+      "sub": "Booking #B-4471 by r•••@example.com",
+      "doc": "E1",
+      "quote": "Booked 28 Sep 2026 19:41 UTC by r•••@example.com (the PayPal payer)",
+      "negated": false
+    },
+    {
+      "at": "2026-09-28T19:42:00.000Z",
+      "title": "Payment captured",
+      "sub": "Capture 9QZ18129VB0447152 · 49.00 USD",
+      "doc": "E2",
+      "quote": "Captured 28 Sep 2026 19:42 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-09-28T19:42:00.000Z",
+      "title": "Confirmation sent",
+      "sub": "Sent to r•••@example.com",
+      "doc": "E3",
+      "quote": "Booking confirmation sent to r•••@example.com · 28 Sep 2026 19:42 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-03T18:00:00.000Z",
+      "title": "Reminder sent",
+      "sub": "Sent to r•••@example.com",
+      "doc": "E3",
+      "quote": "Reminder sent to r•••@example.com · 3 Oct 2026 18:00 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-03T18:27:00.000Z",
+      "title": "Reminder opened",
+      "sub": "Opened by recipient",
+      "doc": "E3",
+      "quote": "Reminder opened 3 Oct 2026 18:27 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-04T17:52:00.000Z",
+      "title": "Guest checked in",
+      "sub": "R. Example checked in",
+      "doc": "E4",
+      "quote": "Checked in 17:52 UTC at the front desk · guest \"R. Example\"",
+      "negated": false
+    },
+    {
+      "at": "2026-10-04T18:00:00.000Z",
+      "title": "Workshop started",
+      "sub": "Natural-dye linen workshop",
+      "doc": "E1",
+      "quote": "Booking #B-4471 · Natural-dye linen workshop, 4 Oct 2026 18:00 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-04T20:05:00.000Z",
+      "title": "Workshop completed",
+      "sub": "Attended full workshop",
+      "doc": "E4",
+      "quote": "Attended the full workshop · left 20:05 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-05T08:15:00.000Z",
+      "title": "Buyer message sent",
+      "sub": "Sent from r•••@example.com",
+      "doc": "E6",
+      "quote": "From r•••@example.com · 5 Oct 2026 08:15 UTC",
+      "negated": false
+    },
+    {
+      "at": "2026-10-05T08:15:00.000Z",
+      "title": "Dispute opened",
+      "sub": "Dispute PP-R-QZE-10181290 opened",
+      "doc": "D",
+      "quote": "Opened: 5 Oct 2026 08:15:00 UTC",
+      "negated": false
+    }
+  ],
+  "contradictions": [],
+  "checklist": {
+    "title": "What \"unauthorised payment\" disputes need",
+    "items": [
+      {
+        "id": "account",
+        "label": "Ordered from the buyer’s account",
+        "critical": true,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E1",
+            "quote": "Booked 28 Sep 2026 19:41 UTC by r•••@example.com (the PayPal payer)"
+          },
+          {
+            "doc": "E1",
+            "quote": "Booked from device dv-7f3a…e21c, also used for order #10377"
+          },
+          {
+            "doc": "E5",
+            "quote": "Paid by r•••@example.com · device dv-7f3a…e21c"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "delivered",
+        "label": "Item delivered or booking used",
+        "critical": true,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E4",
+            "quote": "Workshop #B-4471 · 4 Oct 2026"
+          },
+          {
+            "doc": "E4",
+            "quote": "Checked in 17:52 UTC at the front desk · guest \"R. Example\""
+          },
+          {
+            "doc": "E4",
+            "quote": "Attended the full workshop · left 20:05 UTC"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "history",
+        "label": "Earlier undisputed purchases",
+        "critical": false,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E5",
+            "quote": "Order #10377 · placed 14 Aug 2026 11:20 UTC · 2 × Linen napkin set · 30.00 USD"
+          },
+          {
+            "doc": "E5",
+            "quote": "Paid by r•••@example.com · device dv-7f3a…e21c"
+          },
+          {
+            "doc": "E5",
+            "quote": "Delivered 18 Aug 2026 · no dispute"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "contact",
+        "label": "Confirmation sent to the buyer",
+        "critical": false,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "E3",
+            "quote": "Booking confirmation sent to r•••@example.com · 28 Sep 2026 19:42 UTC"
+          },
+          {
+            "doc": "E3",
+            "quote": "Reminder sent to r•••@example.com · 3 Oct 2026 18:00 UTC"
+          },
+          {
+            "doc": "E3",
+            "quote": "Reminder opened 3 Oct 2026 18:27 UTC"
+          }
+        ],
+        "contradictionId": null
+      },
+      {
+        "id": "payment",
+        "label": "Payment record for the disputed amount",
+        "critical": false,
+        "status": "present",
+        "evidence": [
+          {
+            "doc": "D",
+            "quote": "Disputed amount: 49.00 USD"
+          },
+          {
+            "doc": "E2",
+            "quote": "Capture 9QZ18129VB0447152"
+          },
+          {
+            "doc": "E2",
+            "quote": "49.00 USD · COMPLETED"
+          },
+          {
+            "doc": "E2",
+            "quote": "Captured 28 Sep 2026 19:42 UTC"
+          }
+        ],
+        "contradictionId": null
+      }
+    ]
+  },
+  "sentences": [
+    {
+      "id": "S1",
+      "text": "The buyer booked seat #B-4471 for 49.00 USD using their email r•••@example.com and the same device previously used for order #10377.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E1",
+          "quote": "Booked 28 Sep 2026 19:41 UTC by r•••@example.com (the PayPal payer)",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Guest name: R. Example · 1 seat · 49.00 USD",
+          "valid": true
+        },
+        {
+          "doc": "E1",
+          "quote": "Booked from device dv-7f3a…e21c, also used for order #10377",
+          "valid": true
+        }
+      ],
+      "verdict": "needs_review",
+      "reason": "Why: The cited text mentions \"1 seat\" but does not state the seat number \"#B-4471\".",
+      "decidedBy": "model",
+      "rewrite": "The buyer booked 1 seat for 49.00 USD using their email r•••@example.com and the same device previously used for order #10377."
+    },
+    {
+      "id": "S2",
+      "text": "Payment capture 9QZ18129VB0447152 for the disputed amount of 49.00 USD was completed on 28 September 2026.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "D",
+          "quote": "Disputed amount: 49.00 USD",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "Capture 9QZ18129VB0447152",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "49.00 USD · COMPLETED",
+          "valid": true
+        },
+        {
+          "doc": "E2",
+          "quote": "Captured 28 Sep 2026 19:42 UTC",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S3",
+      "text": "We sent a booking confirmation and a reminder to r•••@example.com, which was opened on 3 October 2026.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E3",
+          "quote": "Booking confirmation sent to r•••@example.com · 28 Sep 2026 19:42 UTC",
+          "valid": true
+        },
+        {
+          "doc": "E3",
+          "quote": "Reminder sent to r•••@example.com · 3 Oct 2026 18:00 UTC",
+          "valid": true
+        },
+        {
+          "doc": "E3",
+          "quote": "Reminder opened 3 Oct 2026 18:27 UTC",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S4",
+      "text": "Guest R. Example checked in at our front desk at 17:52 UTC and attended the full workshop on 4 October 2026.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E1",
+          "quote": "Booking #B-4471 · Natural-dye linen workshop, 4 Oct 2026 18:00 UTC",
+          "valid": true
+        },
+        {
+          "doc": "E4",
+          "quote": "Checked in 17:52 UTC at the front desk · guest \"R. Example\"",
+          "valid": true
+        },
+        {
+          "doc": "E4",
+          "quote": "Attended the full workshop · left 20:05 UTC",
+          "valid": true
+        }
+      ],
+      "verdict": "supported",
+      "reason": null,
+      "decidedBy": "model",
+      "rewrite": null
+    },
+    {
+      "id": "S5",
+      "text": "Order #10377 was previously placed in August 2026 by r•••@example.com from the same device and delivered without dispute.",
+      "noteId": null,
+      "citations": [
+        {
+          "doc": "E5",
+          "quote": "Order #10377 · placed 14 Aug 2026 11:20 UTC · 2 × Linen napkin set · 30.00 USD",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "Paid by r•••@example.com · device dv-7f3a…e21c",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "Delivered 18 Aug 2026 · no dispute",
+          "valid": true
+        }
+      ],
+      "verdict": "needs_review",
+      "reason": "Why: The cited text lists \"device dv-7f3a…e21c\" but does not include the disputed order's device details to establish it is the \"same device\".",
+      "decidedBy": "model",
+      "rewrite": "Order #10377 was previously placed in August 2026 by r•••@example.com from device dv-7f3a…e21c and delivered without dispute."
+    },
+    {
+      "id": "S6",
+      "text": "The guest showed photo ID at check-in.",
+      "noteId": "N1",
+      "citations": [
+        {
+          "doc": "E4",
+          "quote": "Photo ID checked: no",
+          "valid": true
+        }
+      ],
+      "verdict": "rejected",
+      "reason": "Removed: The cited text contradicts the claim, stating \"Photo ID checked: no\". It will not be sent.",
+      "decidedBy": "model",
+      "rewrite": "Photo ID was not checked at check-in."
+    },
+    {
+      "id": "S7",
+      "text": "The buyer had bought from us before, in August.",
+      "noteId": "N2",
+      "citations": [
+        {
+          "doc": "E5",
+          "quote": "Order #10377 · placed 14 Aug 2026 11:20 UTC · 2 × Linen napkin set · 30.00 USD",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "Paid by r•••@example.com · device dv-7f3a…e21c",
+          "valid": true
+        },
+        {
+          "doc": "E5",
+          "quote": "Delivered 18 Aug 2026 · no dispute",
+          "valid": true
+        }
+      ],
+      "verdict": "needs_review",
+      "reason": "Why: The evidence shows an order placed in August paid by \"r•••@example.com\", requiring confirmation that this matches the current buyer.",
+      "decidedBy": "model",
+      "rewrite": "A previous order was placed in August under r•••@example.com."
+    }
+  ],
+  "injections": [],
+  "recommendation": {
+    "action": "send_message",
+    "rule": "PayPal does not take evidence now; a message is the way to add to the case",
+    "explanation": "Because PayPal does not take evidence now, sending a message is the way to add case details showing that payment capture 9QZ18129VB0447152 for 49.00 USD was completed, booking communications were opened, and guest R. Example checked in and attended the workshop on 4 October 2026. The decision is yours, and PayPal decides the outcome."
+  },
+  "usage": {
+    "calls": [
+      {
+        "stage": "screen",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 1239,
+        "outputTokens": 4,
+        "thinkingTokens": 0,
+        "ms": 1972
+      },
+      {
+        "stage": "extract",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 1601,
+        "outputTokens": 2387,
+        "thinkingTokens": 0,
+        "ms": 15627
+      },
+      {
+        "stage": "analyze",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 2966,
+        "outputTokens": 1797,
+        "thinkingTokens": 0,
+        "ms": 11152
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 601,
+        "outputTokens": 19,
+        "thinkingTokens": 0,
+        "ms": 1952
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 592,
+        "outputTokens": 48,
+        "thinkingTokens": 0,
+        "ms": 2430
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 613,
+        "outputTokens": 84,
+        "thinkingTokens": 425,
+        "ms": 4837
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 494,
+        "outputTokens": 74,
+        "thinkingTokens": 0,
+        "ms": 2640
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 596,
+        "outputTokens": 19,
+        "thinkingTokens": 0,
+        "ms": 6069
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 582,
+        "outputTokens": 94,
+        "thinkingTokens": 0,
+        "ms": 2361
+      },
+      {
+        "stage": "verify",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 605,
+        "outputTokens": 132,
+        "thinkingTokens": 479,
+        "ms": 6786
+      },
+      {
+        "stage": "explain",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "inputTokens": 447,
+        "outputTokens": 92,
+        "thinkingTokens": 0,
+        "ms": 2449
+      }
+    ],
+    "inputTokens": 10336,
+    "outputTokens": 4750,
+    "thinkingTokens": 904
+  }
+}
