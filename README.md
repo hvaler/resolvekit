@@ -64,14 +64,20 @@ not only in the browser:
    binding or PayPal no longer offering `provide_evidence`. Every send of an intent carries the same PayPal-Request-Id.
    A failed send can be retried with that same intent; a sent one cannot be sent again.
 4. **Approvals are invalidated, not trusted forever.** Editing a sentence, composing a newer intent, changing the
-   bindings, or 30 minutes passing ends an intent.
+   bindings, or 30 minutes passing ends an intent (an edit during a send voids the approval if that send fails). A
+   failed send can be retried for 30 minutes. The intent keeps the exact analysis it was composed from, so someone
+   else re-running the analysis does not change an approved response.
 5. **Intents belong to their session.** In hosted mode composing, reading, approving, cancelling or sending an intent
    needs the demo unlock; each intent belongs to the demo session that composed it and does not exist for any other
-   (404). One session's actions never invalidate another's intents; when one session's evidence is in, the others'
-   sends fail with "PayPal already has seller evidence for this dispute". The store is bounded: one open intent per
-   session and case, 10 per session, 20 per client IP (whatever the number of sessions), 1,000 open / 2,000 stored as
-   a safety net (new ones are refused, existing ones never evicted), 20 compositions per IP per 10 minutes, 128-bit
-   ids, and an audit file compacted beyond 4 MB. A refused creation changes nothing.
+   (404). One session's actions never invalidate another's intents. Only one intent per dispute can be sending at a
+   time, and once PayPal accepted one (recorded on the disk), any other intent for that dispute is refused with
+   "PayPal already has seller evidence for this dispute", without waiting for PayPal's read. The store is bounded:
+   per session one open intent per case, 10 open, 30 stored and 30 compositions per 10 minutes (whatever its
+   addresses); 20 open per client address (IPv6 per /64), 20 compositions per address per 10 minutes; 1,000 open /
+   2,000 stored as a safety net (new ones are refused with the real time until one frees up; existing ones are never
+   evicted). Replaced, cancelled and expired intents leave the store at once. Audit events are kept per session
+   (one session cannot push out another's trail) and sends go to an append-only log that is never evicted. 128-bit
+   ids. A refused creation changes nothing.
 
 **Bindings are verified before any send, and fail closed.** A binding is
 `{ "<case id>": { "dispute": "PP-R-…", "capture": "<capture id>" } }`; `npm run demo:prepare` prints it with the
@@ -404,8 +410,12 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
   model except an edited sentence of a re-check.
 - Requests: `Host` must be the public host (`/healthz` excepted, for Render's health check); `/api` writes must
   carry the service's own `Origin`; POST is JSON only; per-IP limits (300 `/api` requests and 60 PayPal reads per 5
-  min, 20 submission intents per 10 min); the client IP is the last `X-Forwarded-For` entry (one trusted proxy hop,
-  `TRUSTED_PROXY_HOPS`). Submission intents, approvals and sends need the demo unlock and belong to the demo session
+  min, 20 submission intents per 10 min). The client address is the last `X-Forwarded-For` entry (one trusted proxy
+  hop, `TRUSTED_PROXY_HOPS`), believed only when the connection comes from a private address (Render's proxy;
+  `TRUSTED_PROXY_PEERS=private|any|none`), else the socket address; IPv6 is keyed per /64. The first request logs,
+  masked, how the address was derived. Wrong demo codes: 5 per address per 15 min and 60 in all per hour (then
+  addresses that already guessed wrong wait); a correct code is never counted, so guessing cannot lock judges out;
+  at most 10 demo sessions per address per hour. Submission intents, approvals and sends need the demo unlock and belong to the demo session
   that made them (see [How sending works](#how-sending-works-the-security-model)); an already unlocked browser keeps its
   session when it unlocks again.
 - Headers on every answer: CSP (own scripts only; Google Fonts; `frame-ancestors 'none'`), HSTS, `nosniff`,

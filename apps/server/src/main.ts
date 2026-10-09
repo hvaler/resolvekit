@@ -192,6 +192,7 @@ if (watchBindings) {
 }
 
 const stop = () => {
+  intents.flush();
   if (tokenFile) rmSync(tokenFile, { force: true });
   if (watchBindings) unwatchFile(bindingsFile);
   server.close(() => process.exit(0));
