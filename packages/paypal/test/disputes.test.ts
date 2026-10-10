@@ -100,3 +100,31 @@ test('a credentials failure is reported without the secret', async () => {
   const fn = (async () => new Response(JSON.stringify({ error: 'invalid_client', error_description: 'Client Authentication failed' }), { status: 401 })) as typeof fetch;
   await assert.rejects(client(fn).verifyCredentials(), (e: Error) => /401/.test(e.message) && !e.message.includes('secret'));
 });
+
+test('identity: starts a no-charge agreement token and reads the approving payer only once APPROVED', async () => {
+  const approval = 'https://www.sandbox.paypal.com/agreements/approve?ba_token=BA-9BU79859F44918800';
+  const { fn, calls } = fakeFetch([
+    { status: 201, body: { token_id: 'BA-9BU79859F44918800', links: [{ rel: 'approval_url', href: approval }] } },
+    { status: 200, body: { token_id: 'BA-9BU79859F44918800', token_status: 'PENDING' } },
+    { status: 200, body: { token_id: 'BA-9BU79859F44918800', token_status: 'APPROVED', payer_info: { payer_id: 'SELLER123', email: 's@example.com', first_name: 'John', last_name: 'Doe', country_code: 'ES' } } },
+  ]);
+  const c = client(fn);
+  const t = await c.identity.start({ returnUrl: 'https://app.example/r', cancelUrl: 'https://app.example/c', description: 'confirm' });
+  assert.deepEqual(t, { tokenId: 'BA-9BU79859F44918800', approvalUrl: approval });
+  const body = JSON.parse(String(calls[1].init.body));
+  assert.equal(body.plan.type, 'MERCHANT_INITIATED_BILLING');
+  assert.equal(body.plan.merchant_preferences.return_url, 'https://app.example/r');
+  assert.equal((await c.identity.read(t.tokenId)).payer, null);
+  const approved = await c.identity.read(t.tokenId);
+  assert.equal(approved.status, 'APPROVED');
+  assert.equal(approved.payer?.payerId, 'SELLER123');
+  assert.match(calls[3].url, /\/v1\/billing-agreements\/agreement-tokens\/BA-9BU79859F44918800$/);
+  // Only POSTs to start: reading never creates an agreement.
+  assert.equal(calls.filter((x) => x.init.method === 'POST' && !x.url.endsWith('/oauth2/token')).length, 1);
+});
+
+test('identity: a malformed token id is refused before any request', async () => {
+  const { fn, calls } = fakeFetch([]);
+  await assert.rejects(client(fn).identity.read('BA-1/../../v1/x'), /not an agreement token id/);
+  assert.equal(calls.length, 0);
+});

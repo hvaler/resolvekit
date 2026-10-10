@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DisputesApi } from './disputes.ts';
+import { IdentityApi } from './identity.ts';
 import { OrdersApi, PaymentsApi } from './orders.ts';
 
 export type PayPalEnv = 'sandbox' | 'live';
@@ -34,6 +35,7 @@ const BASE: Record<PayPalEnv, string> = {
 
 export class PayPalClient {
   readonly disputes: DisputesApi;
+  readonly identity: IdentityApi;
   readonly orders: OrdersApi;
   readonly payments: PaymentsApi;
   private readonly opts: Required<Omit<PayPalClientOptions, 'fetch'>> & { fetch: typeof fetch };
@@ -42,6 +44,7 @@ export class PayPalClient {
   constructor(opts: PayPalClientOptions) {
     this.opts = { timeoutMs: 60_000, fetch: globalThis.fetch.bind(globalThis), ...opts };
     this.disputes = new DisputesApi(this);
+    this.identity = new IdentityApi(this);
     this.orders = new OrdersApi(this);
     this.payments = new PaymentsApi(this);
   }
@@ -98,4 +101,5 @@ export class PayPalClient {
 }
 
 export * from './disputes.ts';
+export * from './identity.ts';
 export * from './orders.ts';

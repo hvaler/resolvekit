@@ -26,6 +26,8 @@ export interface Dispute {
     transaction_status?: string;
     gross_amount?: { currency_code: string; value: string };
     items?: Array<{ item_type?: string }>;
+    /** The seller's PayPal account: its merchant id is the payer id that account approves with. */
+    seller?: { merchant_id?: string; name?: string };
   }>;
   seller_response_due_date?: string;
   buyer_response_due_date?: string;

@@ -16,11 +16,10 @@ import { analysisKey } from '@resolvekit/analyst/node';
 import { createHostedApp } from '../src/hosted.ts';
 import { IntentStore, MAX_OPEN, type StoredIntent } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
-import { MODEL, RESOLVED, STD_CAPTURE, analystFor, standardDispute } from './kit.ts';
+import { MODEL, RESOLVED, STD_CAPTURE, TEST_SECRET, analystFor, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
-const CODE = 'judges-code-2026';
 const REAL = 'PP-R-REAL-1';
 const CASE = standardCase.summary.id;
 const base = `/api/disputes/${CASE}`;
@@ -56,6 +55,7 @@ async function setup(ppo: Parameters<typeof routedPayPal>[0] = {}, extra: { now?
   const pp = routedPayPal(ppo);
   const input = caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
   const { analyst, store } = await analystFor([[CASE, input]]);
+  const people = testAccounts(extra.now);
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
@@ -63,25 +63,27 @@ async function setup(ppo: Parameters<typeof routedPayPal>[0] = {}, extra: { now?
     analyst,
     site: null,
     counters: new DailyCounters({ file: null, limits: { 'live-analysis': 5, recheck: 50, evidence: 50 } }),
-    demoCode: CODE,
-    sessionSecret: 'x'.repeat(48),
+    accounts: people.accounts,
+    identity: null,
+    sessionSecret: TEST_SECRET,
     origins: [ORIGIN],
     hosts: [HOST],
     https: true,
     ...extra,
   });
-  return { app, pp, store, input };
+  teams.set(app, people);
+  return { app, pp, store, input, people };
 }
+const teams = new WeakMap<object, ReturnType<typeof testAccounts>>();
 type App = Awaited<ReturnType<typeof setup>>['app'];
 const req = (path: string, i: { body?: unknown; cookie?: string; ip?: string } = {}) => {
   const method = i.body !== undefined ? 'POST' : 'GET';
   const headers: Record<string, string> = { host: HOST, 'x-forwarded-for': i.ip ?? '203.0.113.7', ...(method === 'POST' ? { origin: ORIGIN, 'content-type': 'application/json' } : {}), ...(i.cookie ? { cookie: i.cookie } : {}) };
   return new Request(ORIGIN + path, { method, headers, ...(i.body !== undefined ? { body: JSON.stringify(i.body) } : {}) });
 };
-async function unlock(app: App, ip: string): Promise<string> {
-  const r = await app(req('/api/demo/unlock', { body: { code: CODE }, ip }));
-  assert.equal(r.status, 200);
-  return r.headers.get('set-cookie')!.split(';')[0]!;
+/** A new person of the seller's workspace (signed in). */
+async function unlock(app: App, _ip: string): Promise<string> {
+  return teams.get(app)!.member();
 }
 type Intent = { id: string; contentHash: string; status: string; notes: string };
 async function composeApproved(app: App, cookie: string, ip: string): Promise<Intent> {
@@ -127,15 +129,16 @@ test('review 1: once PayPal accepted one intent for a dispute, another is refuse
 
 // ------------------------------------------------------------------------------------------------ 2
 
-test('review 2: one session rotating addresses cannot fill the store, evict a judge’s trail, or block a new judge', async () => {
-  const { app } = await setup({ neverShows: true });
+test('review 2: one person rotating addresses cannot fill the store, evict a judge’s trail, or block a new judge', async () => {
+  const { app, people } = await setup({ neverShows: true });
   const judge = await unlock(app, '198.51.100.1');
   const i = await composeApproved(app, judge, '198.51.100.1');
   assert.equal((await send(app, i, judge, '198.51.100.1')).status, 202);
   const trail = async () => ((await (await app(req(`${base}/audit`, { cookie: judge, ip: '198.51.100.1' }))).json()) as { events: Array<{ kind: string }> }).events.map((e) => e.kind);
   const before = await trail();
   assert.deepEqual(before, ['intent_created', 'intent_approved', 'send_started', 'sent']);
-  const attacker = await unlock(app, '192.0.2.1');
+  // Another PayPal account's workspace: its intents run on the simulator, but they go into the same store.
+  const attacker = people.outsider();
   const codes: Record<number, number> = {};
   for (let n = 0; n < 2100; n++) {
     const ip = `10.0.${(Math.floor(n / 20) >> 8) & 255}.${Math.floor(n / 20) & 255}`;

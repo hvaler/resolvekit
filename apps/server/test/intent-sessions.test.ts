@@ -1,7 +1,8 @@
 /**
- * Submission intents on a shared hosted demo: each intent belongs to the demo session that composed it. Another
- * session can neither see, approve, send nor cancel it, and its own actions never invalidate it. Caps, TTL and
- * bounded files keep the store from growing without limit. Fake PayPal only: nothing is sent anywhere.
+ * Submission intents on a shared hosted demo: each intent belongs to the person who composed it. Anyone else (a
+ * teammate included) can neither see, approve, send nor cancel it, and their actions never invalidate it; the
+ * workspace's members share its audit trail. Caps, TTL and bounded files keep the store from growing without limit.
+ * Fake PayPal only: nothing is sent anywhere.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,13 +15,12 @@ import { caseInput, standardCase } from '@resolvekit/cases';
 import { createHostedApp } from '../src/hosted.ts';
 import { INTENT_ID, IntentStore, MAX_EVENTS_FILE_BYTES, MAX_OPEN, MAX_OPEN_PER_IP, MAX_OPEN_PER_OWNER, type StoredIntent } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
-import { RESOLVED, STD_CAPTURE, analystFor, standardDispute } from './kit.ts';
+import { RESOLVED, STD_CAPTURE, TEST_SECRET, analystFor, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
 const CASE = standardCase.summary.id;
 const REAL = 'PP-R-REAL-1';
-const CODE = 'judges-code-2026';
 
 /** PayPal by path; once a send went through, the dispute shows the seller's evidence (as PayPal does). */
 function routedPayPal() {
@@ -50,6 +50,7 @@ async function setup() {
   const pp = routedPayPal();
   const input = caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
   const { analyst } = await analystFor([[CASE, input]]);
+  const people = testAccounts();
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
@@ -57,14 +58,17 @@ async function setup() {
     analyst,
     site: null,
     counters: new DailyCounters({ file: null, limits: { 'live-analysis': 5, recheck: 50, evidence: 5 } }),
-    demoCode: CODE,
-    sessionSecret: 'x'.repeat(48),
+    accounts: people.accounts,
+    identity: null,
+    sessionSecret: TEST_SECRET,
     origins: [ORIGIN],
     hosts: [HOST],
     https: true,
   });
-  return { app, pp };
+  teams.set(app, people);
+  return { app, pp, people };
 }
+const teams = new WeakMap<object, ReturnType<typeof testAccounts>>();
 
 type Init = { body?: unknown; cookie?: string | null; ip?: string };
 const req = (path: string, i: Init = {}) => {
@@ -73,10 +77,9 @@ const req = (path: string, i: Init = {}) => {
   return new Request(ORIGIN + path, { method, headers, ...(i.body !== undefined ? { body: JSON.stringify(i.body) } : {}) });
 };
 type App = Awaited<ReturnType<typeof setup>>['app'];
-async function unlock(app: App, ip: string): Promise<string> {
-  const r = await app(req('/api/demo/unlock', { body: { code: CODE }, ip }));
-  assert.equal(r.status, 200);
-  return r.headers.get('set-cookie')!.split(';')[0]!;
+/** A new person of the seller's workspace (signed in). */
+async function unlock(app: App, _ip: string): Promise<string> {
+  return teams.get(app)!.member();
 }
 const base = `/api/disputes/${CASE}`;
 type Intent = { id: string; contentHash: string; status: string };
@@ -89,7 +92,7 @@ async function compose(app: App, cookie: string): Promise<Intent> {
 const approve = (app: App, i: Intent, cookie: string | null) => app(req(`${base}/intent/${i.id}/approve`, { body: { contentHash: i.contentHash }, cookie }));
 const send = (app: App, i: Intent, cookie: string | null) => app(req(`${base}/evidence`, { body: { intentId: i.id }, cookie }));
 
-test('hosted: without the demo unlock, intents cannot be composed, read, approved, cancelled or sent, nor the audit read', async () => {
+test('hosted: signed out, intents cannot be composed, read, approved, cancelled or sent, nor the audit read', async () => {
   const { app, pp } = await setup();
   const a = await unlock(app, '198.51.100.1');
   const i = await compose(app, a);
@@ -101,14 +104,14 @@ test('hosted: without the demo unlock, intents cannot be composed, read, approve
     await send(app, i, null),
     await app(req(`${base}/audit`)),
   ]) {
-    assert.equal(r.status, 403);
-    assert.equal(((await r.json()) as { error: string }).error, 'DEMO_CODE_REQUIRED');
+    assert.equal(r.status, 401);
+    assert.equal(((await r.json()) as { error: string }).error, 'SIGN_IN_REQUIRED');
   }
   assert.equal(pp.sends.length, 0);
 });
 
-test('hosted: another session cannot read, approve, cancel or send my intent (404, as if it did not exist)', async () => {
-  const { app, pp } = await setup();
+test('hosted: another person, a teammate included, cannot read, approve, cancel or send my intent (404, as if it did not exist)', async () => {
+  const { app, pp, people } = await setup();
   const mine = await unlock(app, '198.51.100.1');
   const theirs = await unlock(app, '198.51.100.2');
   const i = await compose(app, mine);
@@ -124,9 +127,12 @@ test('hosted: another session cannot read, approve, cancel or send my intent (40
   assert.equal(((await r.json()) as Intent).status, 'approved');
   assert.equal((await send(app, i, mine)).status, 202);
   assert.equal(pp.sends.length, 1);
-  // Each session sees its own audit trail only.
-  const theirEvents = ((await (await app(req(`${base}/audit`, { cookie: theirs }))).json()) as { events: unknown[] }).events;
-  assert.equal(theirEvents.length, 0);
+  // The workspace's members share its audit trail (who composed, approved and sent); another workspace sees none of it.
+  const trail = async (cookie: string) => ((await (await app(req(`${base}/audit`, { cookie }))).json()) as { events: Array<{ kind: string; actor: string }> }).events;
+  const shared = await trail(theirs);
+  assert.deepEqual(shared.map((e) => e.kind), ['intent_created', 'intent_approved', 'send_started', 'sent']);
+  assert.match(shared[1]!.actor, /^Member \d+ \(Member, reviewer · browser\) p_/);
+  assert.equal((await trail(people.outsider())).length, 0);
 });
 
 test('hosted: another session’s new intent or sentence edit does not invalidate mine', async () => {
@@ -241,14 +247,6 @@ test('store: many sessions from one IP cannot exceed the per-IP cap nor fill the
   assert.equal(s.get(other.id, 'judge')!.status, 'approved');
   assert.ok(s.beginSend(other.id, CASE, 'judge').ok);
   created(s.create(draft('judge-2', CASE, '198.51.100.1')));
-});
-
-test('hosted: an unlocked browser that unlocks again keeps its session (no new session is minted)', async () => {
-  const { app } = await setup();
-  const c = await unlock(app, '198.51.100.1');
-  const again = await app(req('/api/demo/unlock', { body: { code: CODE }, cookie: c, ip: '198.51.100.1' }));
-  assert.equal(again.status, 200);
-  assert.equal(again.headers.get('set-cookie'), null);
 });
 
 test('store: closed intents are pruned by TTL (an hour after expiry), so the persisted state stays bounded', () => {

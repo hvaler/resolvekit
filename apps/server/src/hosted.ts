@@ -4,34 +4,24 @@
  * - Host must be one of the service's public hosts (RENDER_EXTERNAL_HOSTNAME, custom domains). `/healthz` is exempt.
  * - /api: a state-changing request must come from the service's own origin (Origin header); a present Origin must be
  *   ours on reads too; POST bodies are JSON only; per-IP rate limits (client IP behind one trusted proxy hop).
- * - Browsing is free. What costs money or quota, or cannot be undone (evidence to real PayPal, live AI runs, AI
- *   re-checks), needs the demo code: `POST /api/demo/unlock {code}` sets an HttpOnly, Secure, SameSite=Strict cookie
- *   signed with the server's secret, valid 12 h. Those actions also have global daily caps, persisted on the disk.
+ * - Browsing is free. People sign in (auth.ts): a merchant with PayPal (Owner), members through an invite link with a
+ *   passkey or for one browser. The session is an HttpOnly, Secure, SameSite=Strict cookie signed with the server's
+ *   secret, valid 12 h. Composing and approving a response needs a signed-in person.
+ * - The real PayPal disputes are the seller's: only people of the workspace whose PayPal account is the seller on the
+ *   bound disputes see them live and can act on them; everyone else gets the same cases on the simulator. What costs
+ *   money or quota, or cannot be undone (evidence to real PayPal, live AI runs, AI re-checks), is for that workspace
+ *   only, within global daily caps persisted on the disk.
  * - Everything else: the built web app (apps/web/dist), with the SPA fallback.
  * - Every response carries the security headers (CSP, HSTS over https, nosniff, frame-ancestors 'none', Referrer-Policy).
  *
  * There is no per-launch token here: the browser talks to the API directly, so a secret in it would not be one. The
- * protection is the demo code (only judges have it), the Origin check and SameSite=Strict for CSRF, and the caps.
+ * protection is the signed-in person and their workspace, the Origin check and SameSite=Strict for CSRF, and the caps.
  */
-import {
-  APP_CSP,
-  DEMO_COOKIE,
-  KeyedLimiter,
-  clientIp,
-  describeClientIp,
-  type ProxyTrust,
-  demoCookie,
-  hostOf,
-  readCookie,
-  sameSecret,
-  signDemoSession,
-  verifyDemoSession,
-  withSecurityHeaders,
-  type DailyCounters,
-  type StaticSite,
-} from '@resolvekit/hosting';
-import { createHash } from 'node:crypto';
+import { APP_CSP, KeyedLimiter, clientIp, describeClientIp, type ProxyTrust, hostOf, withSecurityHeaders, type DailyCounters, type StaticSite } from '@resolvekit/hosting';
+import type { PayPalClient } from '@resolvekit/paypal';
+import type { AccountStore } from './accounts.ts';
 import type { LiveGate } from './analysis.ts';
+import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { createApi, json, withLog, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 
 /** What the warm-up did for one bound case. */
@@ -56,11 +46,14 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
   hosts: readonly string[];
   /** All origins are https: send HSTS. */
   https: boolean;
-  /** The demo code (env DEMO_CODE). null: nothing can be unlocked, costly actions are always refused. */
-  demoCode: string | null;
-  /** HMAC key of the unlock cookie (env RESOLVEKIT_SESSION_SECRET). */
+  /** Merchant workspaces, people, passkeys and invites (persisted on the data dir by main.ts). */
+  accounts: AccountStore;
+  /** The platform's PayPal app, for PayPal sign-in (PAYPAL_IDENTITY_CLIENT_ID/SECRET); null: PayPal sign-in off. */
+  identity: PayPalClient | null;
+  /** HMAC key of the session cookies (env RESOLVEKIT_SESSION_SECRET). */
   sessionSecret: string;
-  sessionTtlMs?: number;
+  /** Tests: WebAuthn without an authenticator. */
+  webauthn?: WebAuthn;
   /** Daily caps, keyed by {@link CostlyAction}. */
   counters: DailyCounters;
   /** The built web app; null serves the API only. */
@@ -77,34 +70,30 @@ export interface HostedLimits {
   api: { limit: number; windowMs: number };
   /** Reads that go to PayPal (GET /api/disputes/…), per IP. */
   paypalReads: { limit: number; windowMs: number };
-  /** Wrong demo codes per IP (brute force); a correct code is never counted. */
-  unlockPerIp: { limit: number; windowMs: number };
-  /** Wrong demo codes from everyone together (distributed brute force): beyond it, addresses that already guessed wrong wait. */
-  unlockGlobal: { limit: number; windowMs: number };
+  /** Sign-in and invite requests (POST /api/auth/*), per IP: passkey ceremonies, invite checks and joins. */
+  authPerIp: { limit: number; windowMs: number };
+  /** PayPal sign-ins started (each asks PayPal for an agreement token), per IP. */
+  paypalStartsPerIp: { limit: number; windowMs: number };
   /** Submission intents composed, per IP (a flood from one address cannot fill the server's intent store). */
   intentsPerIp: { limit: number; windowMs: number };
-  /** Demo sessions minted (correct unlocks) per IP. */
-  sessionsPerIp: { limit: number; windowMs: number };
 }
 
 const MIN = 60_000;
 export const DEFAULT_LIMITS: HostedLimits = {
   api: { limit: 300, windowMs: 5 * MIN },
   paypalReads: { limit: 60, windowMs: 5 * MIN },
-  unlockPerIp: { limit: 5, windowMs: 15 * MIN },
-  unlockGlobal: { limit: 60, windowMs: 60 * MIN },
+  authPerIp: { limit: 40, windowMs: 15 * MIN },
+  paypalStartsPerIp: { limit: 10, windowMs: 15 * MIN },
   intentsPerIp: { limit: 20, windowMs: 10 * MIN },
-  sessionsPerIp: { limit: 10, windowMs: 60 * MIN },
 };
 
-export const SESSION_TTL_MS = 12 * 60 * MIN;
-
-/** Why each costly action needs the demo code (shown by the web app as is). */
+/** Why each costly action is the seller workspace's only (shown by the web app as is). */
 export const LOCKED_REASON: Record<CostlyAction, string> = {
-  evidence: 'Sending evidence to the real PayPal sandbox cannot be undone, so on this public demo it needs the demo code from the Devpost testing instructions.',
-  'live-analysis': 'A live AI run uses model quota, so on this public demo it needs the demo code from the Devpost testing instructions. The stored analysis stays on screen.',
-  recheck: 'Re-checking an edited sentence calls the AI model, so on this public demo it needs the demo code from the Devpost testing instructions.',
+  evidence: 'Sending evidence to a real PayPal dispute cannot be undone, so only the seller’s workspace can do it: sign in with the seller’s PayPal account, or join its workspace with an invite.',
+  'live-analysis': 'A live AI run uses model quota, so on this public demo only the seller’s workspace runs it. The stored analysis stays on screen.',
+  recheck: 'Re-checking an edited sentence calls the AI model, so on this public demo only the seller’s workspace runs it.',
 };
+const SIGN_IN_REASON = 'Sign in to compose and approve responses: with PayPal (merchants) or with the invite link you were given.';
 
 const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks' };
 
@@ -118,26 +107,44 @@ const tooMany = (retryAfterSec: number, detail: string) => {
 
 export function createHostedApp(o: HostedOptions): HostedApp {
   const now = o.now ?? (() => new Date());
-  const ttl = o.sessionTtlMs ?? SESSION_TTL_MS;
   const hops = o.trustedHops ?? 1;
   const trust: ProxyTrust = o.proxyTrust ?? 'private';
   let derivationLogged = false;
   const L: HostedLimits = { ...DEFAULT_LIMITS, ...o.limits };
   const apiLimit = new KeyedLimiter({ ...L.api, now: () => now().getTime() });
   const readLimit = new KeyedLimiter({ ...L.paypalReads, now: () => now().getTime() });
-  const unlockIp = new KeyedLimiter({ ...L.unlockPerIp, now: () => now().getTime() });
-  const unlockAll = new KeyedLimiter({ ...L.unlockGlobal, now: () => now().getTime() });
   const intentLimit = new KeyedLimiter({ ...L.intentsPerIp, now: () => now().getTime() });
-  const sessionsIp = new KeyedLimiter({ ...L.sessionsPerIp, now: () => now().getTime() });
+  const authLimit = new KeyedLimiter({ ...L.authPerIp, now: () => now().getTime() });
+  const paypalStarts = new KeyedLimiter({ ...L.paypalStartsPerIp, now: () => now().getTime() });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
-  const session = (req: Request) => verifyDemoSession(o.sessionSecret, readCookie(req, DEMO_COOKIE), now().getTime(), ttl);
+  // The seller merchant ids of the bound disputes, as last read (refreshed before each signed-in request): which
+  // workspace sees real PayPal. `api` is created below with this gate.
+  let sellers = new Set<string>();
+  let api: ReturnType<typeof createApi>;
+  const refreshSellers = async () => {
+    sellers = await api.sellerIds();
+    return sellers;
+  };
+  const auth = createAuth({
+    accounts: o.accounts,
+    identity: o.identity,
+    secret: o.sessionSecret,
+    origins: o.origins,
+    isConnected: async (payerId) => (await refreshSellers()).has(payerId),
+    now,
+    log: o.log,
+    ...(o.webauthn ? { webauthn: o.webauthn } : {}),
+  });
+  const session = (req: Request) => auth.session(req);
 
   const gate: CostGate = {
     // Synchronous from the check to the count: concurrent requests cannot overshoot a cap.
     reserve(req: Request, action: CostlyAction): Reservation {
-      if (!session(req).ok) {
-        return { ok: false, refusal: { status: 403, body: { error: 'DEMO_CODE_REQUIRED', detail: LOCKED_REASON[action], action } } };
+      const s = session(req);
+      if (!s.ok) return { ok: false, refusal: { status: 401, body: { error: 'SIGN_IN_REQUIRED', detail: SIGN_IN_REASON, action } } };
+      if (!sellers.has(s.workspace.payerId)) {
+        return { ok: false, refusal: { status: 403, body: { error: 'SELLER_WORKSPACE_ONLY', detail: LOCKED_REASON[action], action } } };
       }
       const day = o.counters.today();
       if (!o.counters.take(action)) {
@@ -149,71 +156,30 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       }
       return { ok: true, release: () => o.counters.release(action, day) };
     },
-    // The approver of a send: the demo session (a hash of its signed cookie, never the code). Real PayPal needs one;
-    // the simulator records a visitor without the code as such.
+    // Who approves or sends: the signed-in person, named in the audit trail of their workspace. The simulator records
+    // a signed-out visitor as such; anything that needs an owner (intents) needs a signed-in person.
     actor(req: Request, unlocked: boolean): Actor {
-      const cookie = readCookie(req, DEMO_COOKIE);
       const client = clientIp(req, hops, trust);
-      if (cookie && session(req).ok) return { ok: true, actor: `demo session ${createHash('sha256').update(cookie).digest('hex').slice(0, 12)}`, client };
-      if (!unlocked) return { ok: true, actor: 'visitor (no demo code)', client };
-      return { ok: false, refusal: { status: 403, body: { error: 'DEMO_CODE_REQUIRED', detail: LOCKED_REASON.evidence, action: 'evidence' } } };
+      const s = session(req);
+      if (s.ok) return { ok: true, actor: actorLabel(s.person), team: s.workspace.id, client };
+      if (!unlocked) return { ok: true, actor: 'visitor (signed out)', client };
+      return { ok: false, refusal: { status: 401, body: { error: 'SIGN_IN_REQUIRED', detail: SIGN_IN_REASON } } };
+    },
+    async live(req: Request) {
+      const s = session(req);
+      return s.ok && (await refreshSellers()).has(s.workspace.payerId);
+    },
+    merchant(req: Request) {
+      const s = session(req);
+      return s.ok ? s.workspace.payerId : null;
     },
   };
 
-  // Live runs and re-checks analyse inputs the server builds itself (app.ts), behind the demo code and the caps.
-  const api = createApi({ ...o, gate });
+  // Live runs and re-checks analyse inputs the server builds itself (app.ts), behind the seller workspace and the caps.
+  api = createApi({ ...o, gate });
 
-  const demoState = (req: Request) => {
-    const s = session(req);
-    return { hosted: true, unlockable: !!o.demoCode, unlocked: s.ok, expiresAt: s.ok ? new Date(s.expiresAt).toISOString() : null, ...o.counters.state(), reasons: LOCKED_REASON };
-  };
-
-  const demoRoute = async (req: Request, path: string, ip: string): Promise<Response> => {
-    if (path === '/api/demo') return req.method === 'GET' ? json(200, demoState(req)) : json(405, { error: 'METHOD_NOT_ALLOWED' });
-    if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
-    if (path === '/api/demo/lock') {
-      const r = json(200, { unlocked: false });
-      r.headers.set('set-cookie', demoCookie('', 0));
-      return r;
-    }
-    if (path !== '/api/demo/unlock') return json(404, { error: 'NOT_FOUND' });
-    if (!o.demoCode) return json(503, { error: 'DEMO_DISABLED', detail: 'No demo code is configured on this server' });
-    // A browser that is already unlocked keeps its session: no new one is minted (and no attempt is counted).
-    if (session(req).ok) return json(200, demoState(req));
-    let body: { code?: unknown } | null;
-    try {
-      body = (await req.json()) as typeof body;
-    } catch {
-      return json(400, { error: 'INVALID_JSON' });
-    }
-    // From here to the answer nothing awaits: check, compare and count happen in one step (concurrent guesses cannot
-    // get past the limits). Only WRONG codes are counted (failures-only limiters), so guessing without the code can
-    // never lock out someone who has it: an address is blocked only by its own wrong guesses; and when wrong guesses
-    // from everywhere pass the global limit, addresses that already guessed wrong wait while a first try (a judge
-    // pasting the right code) is still checked.
-    if (unlockIp.blocked(ip)) {
-      const sec = unlockIp.retryAfterSec(ip);
-      return tooMany(sec, `Too many wrong codes from this address; try again in ${Math.ceil(sec / 60)} min`);
-    }
-    if (unlockAll.blocked('*') && unlockIp.used(ip) > 0) {
-      const sec = unlockAll.retryAfterSec('*');
-      return tooMany(sec, `Too many wrong codes on this demo; try again in ${Math.ceil(sec / 60)} min`);
-    }
-    const code = typeof body?.code === 'string' ? body.code.trim() : '';
-    if (!code || code.length > 200 || !sameSecret(code, o.demoCode)) {
-      unlockIp.take(ip);
-      unlockAll.take('*');
-      return json(403, { error: 'BAD_DEMO_CODE', detail: 'That is not the demo code' });
-    }
-    // The right code: one more demo session for this address, within its own limit (sessions also count against the
-    // per-session caps, and an already unlocked browser keeps its session above).
-    const minted = sessionsIp.take(ip);
-    if (!minted.ok) return tooMany(minted.retryAfterSec, `Too many demo sessions from this address; try again in ${Math.ceil(minted.retryAfterSec / 60)} min`);
-    const exp = now().getTime() + ttl;
-    const r = json(200, { ...demoState(req), unlocked: true, expiresAt: new Date(exp).toISOString() });
-    r.headers.set('set-cookie', demoCookie(signDemoSession(o.sessionSecret, exp), ttl / 1000));
-    return r;
-  };
+  /** GET /api/demo: hosted mode, the daily caps, and why the costly actions are limited (the web app shows it). */
+  const demoState = () => ({ hosted: true, ...o.counters.state(), reasons: LOCKED_REASON });
 
   const handle = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -238,7 +204,15 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       }
       const a = apiLimit.take(ip);
       if (!a.ok) return tooMany(a.retryAfterSec, `Too many requests; try again in ${a.retryAfterSec} s`);
-      if (path === '/api/demo' || path.startsWith('/api/demo/')) return demoRoute(req, path, ip);
+      if (path === '/api/demo') return req.method === 'GET' ? json(200, demoState()) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (req.method === 'POST' && path.startsWith('/api/auth/')) {
+        const t = path === '/api/auth/paypal/start' ? paypalStarts.take(ip) : authLimit.take(ip);
+        if (!t.ok) return tooMany(t.retryAfterSec, `Too many sign-in requests from this address; try again in ${Math.ceil(t.retryAfterSec / 60)} min`);
+      }
+      const authRes = auth.route(req, path);
+      if (authRes) return authRes;
+      // A signed-in request sees the sellers as PayPal reports them now (each bound dispute read once, then cached).
+      if (session(req).ok) await refreshSellers();
       // Reads that go to PayPal: the dispute itself, and composing an intent (it reads the dispute fresh).
       const paypalRead =
         (req.method === 'GET' && path.startsWith('/api/disputes/') && !path.endsWith('/audit') && !path.includes('/intent/')) ||

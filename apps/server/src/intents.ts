@@ -68,6 +68,8 @@ export interface StoredIntent extends SubmissionIntent {
   createdBy: string;
   /** The client it was composed from (hosted: the client address, IPv6 per /64; local: "local"). */
   createdFrom: string;
+  /** Hosted: the merchant workspace the creator acts for; its members see the intent's audit events. */
+  team?: string | null;
   /** sha256 of the exact analysis the sentences came from (pinned: someone else's re-run does not change it). */
   analysisHash?: string;
   /** When the last send failed (a failed intent may be retried until {@link FAILED_RETRY_MS} after that). */
@@ -96,6 +98,8 @@ export interface AuditEvent {
   actor: string;
   /** Whose trail it belongs to (the intent's owner; defaults to the actor). */
   owner?: string;
+  /** Hosted: the merchant workspace whose trail it is (every member sees it). */
+  team?: string;
   disputeId?: string | null;
   intentId?: string;
   contentHash?: string;
@@ -247,7 +251,10 @@ export class IntentStore {
 
   /** {@link record}, saying whether the event reached the disk (true without a file). */
   recordChecked(e: Omit<AuditEvent, 'at'> & { at?: string }): { event: AuditEvent; durable: boolean } {
-    const ev: AuditEvent = { at: e.at ?? this.iso(), ...e } as AuditEvent;
+    // An event about an intent belongs to the intent's workspace trail too.
+    const about = e.intentId ? (this.intents.get(e.intentId) ?? this.tombstones.get(e.intentId)) : undefined;
+    const team = e.team ?? about?.team ?? undefined;
+    const ev: AuditEvent = { at: e.at ?? this.iso(), ...e, ...(team ? { team } : {}) } as AuditEvent;
     if (SEND_KINDS.includes(ev.kind)) {
       // Sends: append-only, never evicted (bounded by the daily send cap).
       this.sendLog.push(ev);
@@ -311,8 +318,12 @@ export class IntentStore {
     this.eventsBytes = Buffer.byteLength(text);
   }
 
-  /** The case's events, oldest first; with `viewer`, only that session's own trail (hosted). */
-  events(caseId: string, viewer?: string): AuditEvent[] {
+  /** The case's events, oldest first; with `viewer`, only that session's own trail, or a workspace's (hosted). */
+  events(caseId: string, viewer?: string | { team: string }): AuditEvent[] {
+    if (viewer && typeof viewer === 'object') {
+      const ours = (e: AuditEvent) => e.team === viewer.team;
+      return [...[...this.buckets.values()].flat().filter(ours), ...this.sendLog.filter(ours)].filter((e) => e.caseId === caseId).sort((a, b) => a.at.localeCompare(b.at));
+    }
     const mine = (e: AuditEvent) => viewer === undefined || (e.owner ?? e.actor) === viewer;
     const ordinary = viewer === undefined ? [...this.buckets.values()].flat() : (this.buckets.get(viewer) ?? []);
     return [...ordinary, ...this.sendLog.filter(mine)].filter((e) => e.caseId === caseId).sort((a, b) => a.at.localeCompare(b.at));

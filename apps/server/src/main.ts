@@ -5,8 +5,9 @@
  * preview, adding the per-launch token).
  *
  * Hosted mode (`RESOLVEKIT_MODE=hosted`, e.g. on Render, see render.yaml): listens on 0.0.0.0:$PORT and serves the
- * built web app and /api on one public origin, with the demo code, daily caps and per-IP limits of hosted.ts.
- * Env (hosted): RENDER_EXTERNAL_URL (set by Render) · RESOLVEKIT_CUSTOM_DOMAINS · DEMO_CODE · RESOLVEKIT_SESSION_SECRET ·
+ * built web app and /api on one public origin, with merchant sign-in (auth.ts), daily caps and per-IP limits of hosted.ts.
+ * Env (hosted): RENDER_EXTERNAL_URL (set by Render) · RESOLVEKIT_CUSTOM_DOMAINS · RESOLVEKIT_SESSION_SECRET ·
+ * PAYPAL_IDENTITY_CLIENT_ID + PAYPAL_IDENTITY_CLIENT_SECRET (the platform's PayPal app, for PayPal sign-in) ·
  * RESOLVEKIT_DATA_DIR (the disk) · BINDINGS_JSON (or RESOLVEKIT_BINDINGS, a file) · METERMCP_URL + METERMCP_ADMIN_TOKEN ·
  * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · TRUSTED_PROXY_HOPS (1).
  */
@@ -18,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { DailyCounters, StaticSite, envInt, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { FileAnalysisStore, RateLimiter, modelFromEnv } from '@resolvekit/analyst/node';
+import { AccountStore } from './accounts.ts';
 import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
 import { checkBindings, parseBindings, type Binding } from './bindings.ts';
@@ -119,13 +121,24 @@ let tokenFile: string | null = null;
 if (hosted) {
   const pub = publicOrigins(process.env.RENDER_EXTERNAL_URL, process.env.RESOLVEKIT_CUSTOM_DOMAINS);
   if (!pub.origins.length) fail('RENDER_EXTERNAL_URL is not set (Render sets it; set it yourself elsewhere)');
-  const demoCode = process.env.DEMO_CODE?.trim() || null;
-  if (!demoCode) log('WARNING: DEMO_CODE is not set: costly demo actions (evidence, live AI) cannot be unlocked');
-  else if (demoCode.length < 12) log('WARNING: DEMO_CODE is short; use 12+ random characters');
   let sessionSecret = process.env.RESOLVEKIT_SESSION_SECRET ?? '';
   if (sessionSecret.length < 32) {
-    log('WARNING: RESOLVEKIT_SESSION_SECRET missing or short: using a per-launch secret (unlocks end on restart)');
+    log('WARNING: RESOLVEKIT_SESSION_SECRET missing or short: using a per-launch secret (sign-ins end on restart)');
     sessionSecret = randomBytes(32).toString('base64url');
+  }
+  // PayPal sign-in identifies the merchant through a no-charge approval requested by the PLATFORM's own PayPal app:
+  // a seller cannot approve a request of its own app, so this must not be the seller's app (PAYPAL_CLIENT_ID).
+  const idId = process.env.PAYPAL_IDENTITY_CLIENT_ID;
+  const idSecret = process.env.PAYPAL_IDENTITY_CLIENT_SECRET;
+  if (idId && idId === clientId) fail('PAYPAL_IDENTITY_CLIENT_ID must be a different PayPal app than PAYPAL_CLIENT_ID (the seller cannot approve its own app)');
+  const identity = idId && idSecret ? new PayPalClient({ clientId: idId, clientSecret: idSecret, env, timeoutMs: 30_000 }) : null;
+  if (!identity) log('WARNING: PAYPAL_IDENTITY_CLIENT_ID / _SECRET not set: PayPal sign-in is off (members can still join with invites)');
+  // Workspaces, people, passkeys and invites. An unreadable file stops the start (it would drop every membership).
+  let accounts: AccountStore;
+  try {
+    accounts = new AccountStore({ file: join(dataDir, 'accounts.json') });
+  } catch (e) {
+    accounts = fail(`accounts file ${join(dataDir, 'accounts.json')}: ${(e as Error).message}`);
   }
   const dist = process.env.RESOLVEKIT_WEB_DIST ?? fileURLToPath(new URL('../../web/dist/', import.meta.url));
   if (!existsSync(join(dist, 'index.html'))) fail(`no web build at ${dist} (run npm run build)`);
@@ -139,7 +152,7 @@ if (hosted) {
   });
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
-    paypal, env, bindings, log, meterMcp, analyst, pins, intents, site, counters, demoCode, sessionSecret,
+    paypal, env, bindings, log, meterMcp, analyst, pins, intents, site, counters, accounts, identity, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
@@ -147,7 +160,7 @@ if (hosted) {
     // X-Forwarded-For is believed only from a proxy on a private address (Render's), unless set to "any" or "none".
     proxyTrust: process.env.TRUSTED_PROXY_PEERS === 'any' ? 'any' : process.env.TRUSTED_PROXY_PEERS === 'none' ? 'none' : 'private',
   });
-  log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · demo code ${demoCode ? 'set' : 'NOT set'} · data in ${dataDir}`);
+  log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · PayPal sign-in ${identity ? 'on' : 'OFF'} · data in ${dataDir}`);
 } else {
   // Per-launch secret. Only the local Vite proxy reads this file and adds it to /api requests server-side, so the
   // browser never holds it and no other website can send it.
@@ -166,7 +179,7 @@ server.listen(port, host, () => {
   // Read and verify each bound dispute once in the background (logged); sending verifies again on its own fresh read.
   const cases = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency, transactionId: c.summary.transactionId }]));
   void checkBindings({ paypal, bindings, cases, log });
-  // Hosted: analyse each bound case once in the background, so visitors without the demo code see an analysis.
+  // Hosted: analyse each bound case once in the background, so the seller's workspace finds an analysis ready.
   if (hostedApp) void hostedApp.warmUp();
 });
 

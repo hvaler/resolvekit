@@ -8,11 +8,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@resolvekit/paypal": "*",
-    "@resolvekit/pdf": "*",
     "@resolvekit/analyst": "*",
     "@resolvekit/cases": "*",
-    "@resolvekit/hosting": "*"
+    "@resolvekit/hosting": "*",
+    "@resolvekit/paypal": "*",
+    "@resolvekit/pdf": "*",
+    "@simplewebauthn/server": "13.3.3"
   },
   "devDependencies": {
     "@types/node": "24.13.5"

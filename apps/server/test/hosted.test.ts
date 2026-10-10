@@ -10,14 +10,13 @@ import { parseBindings } from '../src/bindings.ts';
 import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
 import { toSnapshot } from '../src/mapping.ts';
 
-import { RESOLVED, STD_CAPTURE, goldenFor, standardDispute } from './kit.ts';
+import { RESOLVED, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
 const CASE = standardCase.summary.id;
 const REAL = 'PP-R-REAL-1';
-const CODE = 'judges-code-2026';
-const SECRET = 'x'.repeat(48);
+const SECRET = TEST_SECRET;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The standard case bound to the waiting sandbox dispute, as the web app shows it (and the server analyses it). */
 const boundInput = (): AnalysisInput => caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
@@ -37,7 +36,7 @@ function routedPayPal(o: { failRead?: () => boolean; delayMs?: number } = {}) {
   return { calls, sends: () => calls.filter((c) => c.endsWith('/provide-evidence')).length, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; demoCode?: string | null; model?: boolean } = {}) {
+function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean } = {}) {
   const pp = routedPayPal(o.failRead ? { failRead: o.failRead } : {});
   const fm = fakeModel(standardScript);
   const store = o.store ?? new MemoryAnalysisStore();
@@ -54,6 +53,7 @@ function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?:
     ['/index.html', new TextEncoder().encode('<!doctype html><title>ResolveKit</title><div id="root"></div>')],
     ['/assets/index-abc.js', new TextEncoder().encode('console.log("app")')],
   ]);
+  const people = testAccounts(o.now);
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
@@ -62,7 +62,8 @@ function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?:
     analyst,
     site,
     counters,
-    demoCode: o.demoCode === undefined ? CODE : o.demoCode,
+    accounts: people.accounts,
+    identity: null,
     sessionSecret: SECRET,
     origins: [ORIGIN],
     hosts: [HOST],
@@ -70,8 +71,10 @@ function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?:
     ...(o.limits ? { limits: o.limits } : {}),
     ...(o.now ? { now: o.now } : {}),
   });
-  return { app, pp, counters, model: fm, store, lines };
+  teams.set(app, people);
+  return { app, pp, counters, model: fm, store, lines, people };
 }
+const teams = new WeakMap<object, ReturnType<typeof testAccounts>>();
 
 type Init = { method?: string; body?: unknown; headers?: Record<string, string>; cookie?: string; ip?: string };
 const req = (path: string, i: Init = {}) => {
@@ -80,10 +83,9 @@ const req = (path: string, i: Init = {}) => {
   return new Request(ORIGIN + path, { method, headers, ...(i.body !== undefined ? { body: typeof i.body === 'string' ? i.body : JSON.stringify(i.body) } : {}) });
 };
 
-async function unlock(app: ReturnType<typeof setup>['app'], code = CODE, ip?: string): Promise<{ status: number; cookie: string | null; body: Record<string, unknown> }> {
-  const r = await app(req('/api/demo/unlock', { body: { code }, ...(ip ? { ip } : {}) }));
-  const set = r.headers.get('set-cookie');
-  return { status: r.status, cookie: set ? set.split(';')[0]! : null, body: (await r.json()) as Record<string, unknown> };
+/** A new person of the seller's workspace, signed in (what a judge with the reviewer link becomes). */
+async function unlock(app: ReturnType<typeof setup>['app'], _code?: string, _ip?: string): Promise<{ status: number; cookie: string | null }> {
+  return { status: 200, cookie: teams.get(app)!.member() };
 }
 
 const submission = () => ({
@@ -130,12 +132,12 @@ test('hosted: Host must be the public host; /healthz answers any Host', async ()
 
 test('hosted: state-changing requests need our own Origin; a foreign Origin is refused on reads too; JSON-only POST', async () => {
   const { app } = setup();
-  assert.equal((await app(req('/api/demo/unlock', { body: { code: CODE }, headers: { origin: 'https://evil.example' } }))).status, 403);
-  const noOrigin = new Request(ORIGIN + '/api/demo/unlock', { method: 'POST', headers: { host: HOST, 'content-type': 'application/json' }, body: JSON.stringify({ code: CODE }) });
+  assert.equal((await app(req('/api/auth/signout', { body: {}, headers: { origin: 'https://evil.example' } }))).status, 403);
+  const noOrigin = new Request(ORIGIN + '/api/auth/signout', { method: 'POST', headers: { host: HOST, 'content-type': 'application/json' }, body: JSON.stringify({}) });
   assert.equal((await app(noOrigin)).status, 403);
   assert.equal((await app(req('/api/health', { headers: { origin: 'https://evil.example' } }))).status, 403);
   assert.equal((await app(req('/api/health', { headers: { origin: ORIGIN } }))).status, 200);
-  assert.equal((await app(req('/api/demo/unlock', { body: JSON.stringify({ code: CODE }), headers: { 'content-type': 'text/plain' } }))).status, 415);
+  assert.equal((await app(req('/api/auth/signout', { body: JSON.stringify({}), headers: { 'content-type': 'text/plain' } }))).status, 415);
 });
 
 test('hosted: security headers on API answers and on the app (CSP with Google Fonts, HSTS, nosniff, no framing)', async () => {
@@ -168,142 +170,75 @@ test('hosted: static web app with SPA fallback; unknown assets 404; unknown API 
   assert.equal((await app(req('/', { method: 'DELETE', headers: { origin: ORIGIN } }))).status, 405);
 });
 
-// ------------------------------------------------------------------------------------------------ demo unlock
-
-test('unlock: a good code sets an HttpOnly Secure SameSite=Strict cookie for 12 h; a bad code does not', async () => {
-  const { app } = setup();
-  const before = (await (await app(req('/api/demo'))).json()) as { hosted: boolean; unlocked: boolean; unlockable: boolean };
-  assert.deepEqual([before.hosted, before.unlocked, before.unlockable], [true, false, true]);
-  const bad = await unlock(app, 'wrong-code');
-  assert.equal(bad.status, 403);
-  assert.equal(bad.cookie, null);
-  assert.equal(bad.body.error, 'BAD_DEMO_CODE');
-  const r = await app(req('/api/demo/unlock', { body: { code: ` ${CODE} ` } }));
-  assert.equal(r.status, 200);
-  const set = r.headers.get('set-cookie')!;
-  for (const part of ['rk_demo=', 'HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/', 'Max-Age=43200']) assert.ok(set.includes(part), part);
-  const state = (await (await app(req('/api/demo', { cookie: set.split(';')[0]! }))).json()) as { unlocked: boolean; expiresAt: string };
-  assert.equal(state.unlocked, true);
-  // Lock clears it.
-  const lock = await app(req('/api/demo/lock', { body: {} }));
-  assert.match(lock.headers.get('set-cookie')!, /rk_demo=; .*Max-Age=0/);
-});
-
-test('unlock: the cookie expires after 12 h, and a tampered or foreign-secret cookie unlocks nothing', async () => {
-  let now = new Date('2026-10-09T08:00:00Z');
-  const { app, pp } = setup({ now: () => now, store: await goldenStore() });
-  const { cookie } = await unlock(app);
-  const i = await intentFor(app, cookie!, false);
-  const approvePath = `${intentPath}/${i.id}/approve`;
-  const [name, value] = cookie!.split('=');
-  const [exp, nonce, sig] = value!.split('.');
-  const tampered = `${name}=${Number(exp) + 3_600_000}.${nonce}.${sig}`;
-  for (const c of [tampered, `${name}=${exp}.${nonce}.${'A'.repeat(43)}`, `${name}=garbage`]) {
-    const r = await app(req(approvePath, { body: { contentHash: i.contentHash }, cookie: c }));
-    assert.equal(r.status, 403, c);
-    assert.equal(((await r.json()) as { error: string }).error, 'DEMO_CODE_REQUIRED');
-  }
-  now = new Date('2026-10-09T19:59:00Z');
-  assert.equal(((await (await app(req('/api/demo', { cookie: cookie! }))).json()) as { unlocked: boolean }).unlocked, true);
-  now = new Date('2026-10-09T20:00:01Z');
-  assert.equal(((await (await app(req('/api/demo', { cookie: cookie! }))).json()) as { unlocked: boolean }).unlocked, false);
-  assert.equal((await app(req(approvePath, { body: { contentHash: i.contentHash }, cookie: cookie! }))).status, 403);
-  assert.equal(pp.sends(), 0);
-});
-
-test('unlock: wrong codes are limited per IP and overall; the right code from an address that did not guess still works', async () => {
-  const { app } = setup({ limits: { unlockPerIp: { limit: 3, windowMs: 900_000 }, unlockGlobal: { limit: 5, windowMs: 3_600_000 } } });
-  for (let i = 0; i < 3; i++) assert.equal((await unlock(app, `guess-${i}`)).status, 403);
-  const limited = await unlock(app); // even the right code: this IP is out of attempts
-  assert.equal(limited.status, 429);
-  assert.equal(limited.cookie, null);
-  // Correct codes are never counted.
-  assert.equal((await unlock(app, CODE, '198.51.100.1')).status, 200);
-  assert.equal((await unlock(app, 'x', '198.51.100.2')).status, 403);
-  assert.equal((await unlock(app, 'y', '198.51.100.4')).status, 403);
-  // Past the global limit of wrong codes: an address that already guessed wrong waits…
-  assert.equal((await unlock(app, CODE, '198.51.100.2')).status, 429);
-  // …a first try with the right code is still accepted (review 3: guessing cannot lock judges out).
-  assert.equal((await unlock(app, CODE, '198.51.100.3')).status, 200);
-});
-
-test('unlock: 60 wrong guesses from 12 addresses do not lock out a judge with the right code (review 3)', async () => {
-  const { app } = setup();
-  const codes: Record<number, number> = {};
-  for (let n = 0; n < 60; n++) {
-    const r = await unlock(app, 'wrong', `192.0.2.${Math.floor(n / 5)}`);
-    codes[r.status] = (codes[r.status] ?? 0) + 1;
-  }
-  assert.equal(codes[200] ?? 0, 0);
-  const judge = await unlock(app, CODE, '198.51.100.50');
-  assert.equal(judge.status, 200);
-  assert.ok(judge.cookie);
-});
-
-test('unlock: one address cannot mint unlimited demo sessions with the right code', async () => {
-  const { app } = setup({ limits: { sessionsPerIp: { limit: 2, windowMs: 3_600_000 } } });
-  assert.equal((await unlock(app, CODE, '198.51.100.60')).status, 200);
-  assert.equal((await unlock(app, CODE, '198.51.100.60')).status, 200);
-  assert.equal((await unlock(app, CODE, '198.51.100.60')).status, 429);
-  assert.equal((await unlock(app, CODE, '198.51.100.61')).status, 200);
-});
-
-test('unlock: concurrent guesses never exceed the per-IP limit', async () => {
-  const { app } = setup({ limits: { unlockPerIp: { limit: 4, windowMs: 900_000 } } });
-  const all = await Promise.all(Array.from({ length: 25 }, (_, i) => unlock(app, `guess-${i}`)));
-  assert.equal(all.filter((r) => r.status === 403).length, 4);
-  assert.equal(all.filter((r) => r.status === 429).length, 21);
-});
-
-test('unlock: without a configured demo code nothing can be unlocked', async () => {
-  const { app } = setup({ demoCode: null });
-  assert.equal((await unlock(app)).status, 503);
-  assert.equal(((await (await app(req('/api/demo'))).json()) as { unlockable: boolean }).unlockable, false);
-});
-
 // ------------------------------------------------------------------------------------------------ protected vs open
 
-test('open: health, dispute reads and stored analyses need no demo code', async () => {
+test('open: health and stored analyses need no sign-in; the real dispute is listed and read only for the seller’s workspace', async () => {
   const store = new MemoryAnalysisStore();
-  const input = boundInput();
-  const key = await analysisKey(input, 'gemini-3.8-flash');
-  store.golden.set(key, { key, caseId: CASE } as CaseAnalysis);
-  const { app, model } = setup({ store });
-  assert.equal((await app(req('/api/health'))).status, 200);
-  const d = await app(req(`/api/disputes/${CASE}`));
-  assert.equal(d.status, 200);
-  const a = await app(req(analysisPath, { body: {} }));
-  assert.equal(a.status, 200);
-  assert.equal(((await a.json()) as { origin: string }).origin, 'golden');
+  for (const input of [boundInput(), caseInput(standardCase, { kind: 'simulated' })]) {
+    const key = await analysisKey(input, 'gemini-3.8-flash');
+    store.golden.set(key, { key, caseId: CASE } as CaseAnalysis);
+  }
+  const { app, model, people } = setup({ store });
+  const health = async (cookie?: string) => ((await (await app(req('/api/health', cookie ? { cookie } : {}))).json()) as { bound: string[] }).bound;
+  // Signed out, or another PayPal account's workspace: the case runs on the simulator.
+  for (const cookie of [undefined, people.outsider()]) {
+    assert.deepEqual(await health(cookie), []);
+    const d = await app(req(`/api/disputes/${CASE}`, cookie ? { cookie } : {}));
+    assert.equal(d.status, 404);
+    assert.equal(((await d.json()) as { error: string }).error, 'NOT_BOUND');
+    const a = await app(req(analysisPath, { body: {}, ...(cookie ? { cookie } : {}) }));
+    assert.equal(a.status, 200);
+    assert.equal(((await a.json()) as { input: AnalysisInput }).input.dispute.id === caseInput(standardCase, { kind: 'simulated' }).dispute.id, true);
+  }
+  // The seller's people: the real dispute.
+  const member = people.member();
+  assert.deepEqual(await health(member), [CASE]);
+  assert.equal((await app(req(`/api/disputes/${CASE}`, { cookie: member }))).status, 200);
+  assert.equal(((await (await app(req(analysisPath, { body: {}, cookie: member }))).json()) as { origin: string }).origin, 'golden');
   assert.equal(model.requests.length, 0);
 });
 
-test('protected: evidence send, live re-run, cache-miss analysis and re-check all need the demo code; no model call, nothing sent', async () => {
+test('protected: evidence send, live re-run, cache-miss analysis and re-check need the seller’s workspace; no model call, nothing sent', async () => {
   const store = new MemoryAnalysisStore();
   const input = boundInput();
   const key = await analysisKey(input, 'gemini-3.8-flash');
   store.golden.set(key, { key, caseId: CASE } as CaseAnalysis);
   const g = await goldenFor(CASE, input);
   store.cached.set(g.key, g);
-  const { app, pp, model, counters } = setup({ store });
-  // Composing an intent already needs the demo unlock; approving or sending without it is refused.
-  assert.equal((await app(req(intentPath, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED } }))).status, 403);
+  // The same case on the simulator (what signed-out visitors and other workspaces analyse) has its stored analysis too.
+  const sim = await goldenFor(CASE, caseInput(standardCase, { kind: 'simulated' }));
+  store.cached.set(sim.key, sim);
+  const { app, pp, model, counters, people } = setup({ store });
+  // Composing an intent needs a signed-in person; approving or sending without one is refused.
+  assert.equal((await app(req(intentPath, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED } }))).status, 401);
   const { cookie } = await unlock(app);
   const i = await intentFor(app, cookie!, false);
   const send2 = await app(req(evidencePath, { body: { intentId: i.id } }));
-  assert.equal(send2.status, 403);
+  assert.equal(send2.status, 401);
   const send = await app(req(`${intentPath}/${i.id}/approve`, { body: { contentHash: i.contentHash } }));
-  assert.equal(send.status, 403);
+  assert.equal(send.status, 401);
   const sb = (await send.json()) as { error: string; detail: string };
-  assert.equal(sb.error, 'DEMO_CODE_REQUIRED');
-  assert.match(sb.detail, /cannot be undone/);
-  assert.equal((await app(req(`${analysisPath}?refresh=1`, { body: {} }))).status, 403);
-  assert.equal((await app(req(`${analysisPath}/verify`, { body: { text: 'The parcel was delivered.' } }))).status, 403);
+  assert.equal(sb.error, 'SIGN_IN_REQUIRED');
+  assert.match(sb.detail, /invite link/);
+  assert.equal((await app(req(`${analysisPath}?refresh=1`, { body: {} }))).status, 401);
+  assert.equal((await app(req(`${analysisPath}/verify`, { body: { text: 'The parcel was delivered.' } }))).status, 401);
+  // Another PayPal account's workspace is signed in, but the costly actions are the seller workspace's.
+  const outsider = people.outsider();
+  for (const r of [
+    await app(req(`${analysisPath}?refresh=1`, { body: {}, cookie: outsider })),
+    await app(req(`${analysisPath}/verify`, { body: { text: 'The parcel was delivered.' }, cookie: outsider })),
+  ]) {
+    assert.equal(r.status, 403);
+    const b = (await r.json()) as { error: string; detail: string };
+    assert.equal(b.error, 'SELLER_WORKSPACE_ONLY');
+  }
+  // …and the real dispute is not theirs: for them the case runs on the simulator.
+  assert.equal((await app(req(evidencePath, { body: { intentId: i.id }, cookie: outsider }))).status, 404);
   // A plain POST whose documents miss the cache would run the model: gated too.
   const empty = setup();
   const miss = await empty.app(req(analysisPath, { body: {} }));
-  assert.equal(miss.status, 403);
-  assert.equal(((await miss.json()) as { error: string }).error, 'DEMO_CODE_REQUIRED');
+  assert.equal(miss.status, 401);
+  assert.equal(((await miss.json()) as { error: string }).error, 'SIGN_IN_REQUIRED');
   assert.equal(empty.model.requests.length, 0);
   // Progress never starts work.
   assert.equal((await app(req(`${analysisPath}/progress?key=${'0'.repeat(64)}`))).status, 404);
@@ -312,20 +247,20 @@ test('protected: evidence send, live re-run, cache-miss analysis and re-check al
   assert.deepEqual(Object.values(counters.state().caps).map((c) => c.used), [0, 0, 0]);
 });
 
-test('unlocked: an approved intent goes to PayPal and counts against the daily cap; the approver is the demo session', async () => {
+test('signed in: an approved intent goes to PayPal and counts against the daily cap; the approver is the person, by name and role', async () => {
   const { app, pp, counters } = setup({ store: await goldenStore() });
   const { cookie } = await unlock(app);
   const i = await intentFor(app, cookie!);
-  // Another session (another judge) cannot send what this one approved: for it, the intent does not exist.
+  // Another person (another judge) cannot send what this one approved: for them, the intent does not exist.
   await sleep(5);
-  const other = await unlock(app, CODE, '198.51.100.9');
+  const other = await unlock(app);
   const foreign = await app(req(evidencePath, { body: { intentId: i.id }, cookie: other.cookie! }));
   assert.equal(foreign.status, 404);
   assert.equal(((await foreign.json()) as { error: string }).error, 'UNKNOWN_INTENT');
   const r = await app(req(evidencePath, { body: { intentId: i.id }, cookie: cookie! }));
   assert.equal(r.status, 202);
   const events = ((await (await app(req(`/api/disputes/${CASE}/audit`, { cookie: cookie! }))).json()) as { events: Array<{ kind: string; actor: string }> }).events;
-  assert.match(events.find((e) => e.kind === 'intent_approved')!.actor, /^demo session [0-9a-f]{12}$/);
+  assert.match(events.find((e) => e.kind === 'intent_approved')!.actor, /^Member \d+ \(Member, reviewer · browser\) p_[A-Za-z0-9_-]{16}$/);
   assert.equal(pp.sends(), 1);
   assert.equal(counters.state().caps.evidence!.used, 1);
 });
@@ -425,10 +360,11 @@ test('server-built input: document data a client sends is ignored; the model onl
 });
 
 test('server-built input equals what the web app builds from the dispute the server returned to it', async () => {
-  const { app } = setup({ model: false });
-  const snap = await (await app(req(`/api/disputes/${CASE}`))).json();
+  const { app, people } = setup({ model: false });
+  const cookie = people.member();
+  const snap = await (await app(req(`/api/disputes/${CASE}`, { cookie }))).json();
   const web = caseInput(standardCase, { kind: 'live', snap, failed: null });
-  const r = await app(req(analysisPath, { body: {} }));
+  const r = await app(req(analysisPath, { body: {}, cookie }));
   assert.equal(r.status, 503); // no model, nothing stored: but the input is the one the web app shows
   assert.deepEqual(((await r.json()) as { input: AnalysisInput }).input, web);
 });
@@ -450,11 +386,13 @@ test('client IP: the last X-Forwarded-For hop is the client; entries a client pr
 });
 
 test('rate limits: PayPal reads per IP', async () => {
-  const { app, pp } = setup({ limits: { paypalReads: { limit: 2, windowMs: 300_000 } } });
+  const { app, pp, people } = setup({ limits: { paypalReads: { limit: 2, windowMs: 300_000 } } });
+  const cookie = people.member();
   const s = [];
-  for (let i = 0; i < 3; i++) s.push((await app(req(`/api/disputes/${CASE}`))).status);
+  for (let i = 0; i < 3; i++) s.push((await app(req(`/api/disputes/${CASE}`, { cookie }))).status);
   assert.deepEqual(s, [200, 200, 429]);
-  assert.equal(pp.calls.filter((c) => c.startsWith('GET /v1/customer/disputes')).length, 2);
+  // Two reads for the two answers, plus one the first signed-in request made to learn the dispute's seller (once).
+  assert.equal(pp.calls.filter((c) => c.startsWith('GET /v1/customer/disputes')).length, 3);
 });
 
 // ------------------------------------------------------------------------------------------------ bindings
@@ -497,8 +435,8 @@ test('client text: re-check sentences and evidence fields are validated server-s
 
 // ------------------------------------------------------------------------------------------------ warm-up
 
-test('warm-up: each bound case is analysed once as a system run (no demo code), within the daily cap; then served to anyone', async () => {
-  const { app, model, counters, lines } = setup({ caps: { 'live-analysis': 2 } });
+test('warm-up: each bound case is analysed once as a system run (nobody signed in), within the daily cap; then served to the seller’s people', async () => {
+  const { app, model, counters, lines, people } = setup({ caps: { 'live-analysis': 2 } });
   const first = await app.warmUp();
   assert.deepEqual(first.map((w) => [w.caseId, w.outcome]), [[CASE, 'done']]);
   assert.equal(model.requests.filter((r) => r.stage === 'extract').length, 1);
@@ -508,15 +446,15 @@ test('warm-up: each bound case is analysed once as a system run (no demo code), 
   assert.deepEqual(again.map((w) => w.outcome), ['cached']);
   assert.equal(model.requests.filter((r) => r.stage === 'extract').length, 1);
   assert.equal(counters.state().caps['live-analysis']!.used, 1);
-  // A visitor without the demo code sees it.
-  const r = await app(req(analysisPath, { body: {} }));
+  // Any of the seller's people sees it, without a live run.
+  const r = await app(req(analysisPath, { body: {}, cookie: people.member() }));
   assert.equal(r.status, 200);
   assert.equal(((await r.json()) as { origin: string }).origin, 'cache');
   const log = lines.filter((l) => l.startsWith('warm-up'));
   assert.equal(log.length, 2);
   assert.match(log[0]!, /^warm-up · case PP-R-TVH-10190665 · done · system run/);
-  // The log carries no document text or code.
-  assert.ok(!lines.join('\n').includes('Linen tote') && !lines.join('\n').includes(CODE));
+  // The log carries no document text.
+  assert.ok(!lines.join('\n').includes('Linen tote'));
 });
 
 test('warm-up: skipped (and logged) when the daily cap is reached, PayPal cannot be read, or there is no model key', async () => {

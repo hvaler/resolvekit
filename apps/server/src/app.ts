@@ -36,7 +36,16 @@ export interface Refusal {
 }
 
 /** Who is acting on a request, or why they may not. */
-export type Actor = { ok: true; actor: string; /** The client (hosted: IP behind the trusted proxy). */ client?: string } | { ok: false; refusal: Refusal };
+export type Actor =
+  | {
+      ok: true;
+      actor: string;
+      /** The client (hosted: IP behind the trusted proxy). */
+      client?: string;
+      /** Hosted: the merchant workspace the person acts for (its members share the audit trail). */
+      team?: string;
+    }
+  | { ok: false; refusal: Refusal };
 
 /**
  * Asked right before a costly action, with the request that asks for it. `reserve` refuses (demo code missing,
@@ -50,6 +59,13 @@ export interface CostGate {
    * PayPal is involved, so a demo session is required. Local mode has no gate: the local operator.
    */
   actor(req: Request, unlocked: boolean): Actor;
+  /**
+   * Hosted: whether this request may see and act on the real PayPal disputes, i.e. it comes from the seller's own
+   * workspace. Everyone else gets the same cases on the simulator. Absent (local mode): yes.
+   */
+  live?(req: Request): Promise<boolean>;
+  /** Hosted: the PayPal merchant id the person acts for; a send is refused unless it is the dispute's seller. */
+  merchant?(req: Request): string | null;
 }
 
 export type { Reservation };
@@ -176,6 +192,8 @@ export function withLog(log: ((line: string) => void) | undefined, api: Handler,
 /** The API handler, plus the analyst's input as the server builds it (hosted warm-up, tests). */
 export type Api = Handler & {
   inputFor: (caseId: string) => Promise<AnalysisInput | Response>;
+  /** The PayPal merchant ids that are the seller on a bound dispute (hosted: whose workspace sees real PayPal). */
+  sellerIds: () => Promise<Set<string>>;
   /** Forget the PayPal reads kept for building inputs and invalidate open intents (the bindings changed). */
   forgetReads: () => void;
   /** The intents and audit log (tests, main.ts). */
@@ -236,8 +254,34 @@ export function createApi(opts: ApiOptions): Api {
     return { status: st.status, reasons: st.reasons, checkedAt: st.checkedAt };
   };
 
-  /** Who is acting (hosted: the demo session; local: the operator at this machine). */
+  /** Who is acting (hosted: the signed-in person; local: the operator at this machine). */
   const actorOf = (req: Request, unlocked: boolean): Actor => (opts.gate ? opts.gate.actor(req, unlocked) : { ok: true, actor: LOCAL_OPERATOR });
+  /** Whether this request sees the real PayPal disputes (hosted: the seller's workspace only; local: always). */
+  const viewerLive = async (req?: Request): Promise<boolean> => !req || !opts.gate?.live || (await opts.gate.live(req));
+
+  /** The seller's PayPal merchant id on each bound dispute, from the last read of it. */
+  const sellers = new Map<string, { dispute: string; merchant: string | null }>();
+  const noteSeller = (caseId: string, d: Dispute) => sellers.set(caseId, { dispute: d.dispute_id ?? '', merchant: d.disputed_transactions?.[0]?.seller?.merchant_id ?? null });
+  /** The merchant ids that are the seller on a bound dispute (each dispute read once, then on every fresh read). */
+  const sellerIds = async (): Promise<Set<string>> => {
+    const paypal = opts.paypal;
+    if (paypal) {
+      await Promise.all(
+        Object.keys(opts.bindings).map(async (caseId) => {
+          const b = bindingOf(caseId);
+          if (!b || sellers.get(caseId)?.dispute === b.dispute) return;
+          try {
+            noteSeller(caseId, await paypal.disputes.get(b.dispute));
+          } catch {
+            /* unreadable now: asked again next time */
+          }
+        }),
+      );
+    }
+    const out = new Set<string>();
+    for (const [caseId, s] of sellers) if (s.merchant && bindingOf(caseId)?.dispute === s.dispute) out.add(s.merchant);
+    return out;
+  };
 
   /**
    * The MeterMCP session behind the dispute's disputed capture. `none` (with the reason) when there is no capture,
@@ -278,7 +322,9 @@ export function createApi(opts: ApiOptions): Api {
    */
   const reads = new Map<string, { at: number; snap: DisputeSnapshot }>();
   const readCase = async (caseId: string, disputeId: string, paypal: PayPalClient): Promise<DisputeSnapshot> => {
-    const snap = await snapshotOf(caseId, await paypal.disputes.get(disputeId));
+    const d = await paypal.disputes.get(disputeId);
+    noteSeller(caseId, d);
+    const snap = await snapshotOf(caseId, d);
     reads.set(caseId, { at: now().getTime(), snap });
     return snap;
   };
@@ -290,11 +336,11 @@ export function createApi(opts: ApiOptions): Api {
    * connected at all, in which case the web app runs the case on the simulator and so does this.
    */
   const pins = opts.pins ?? new InputPins();
-  const serverInput = async (caseId: string): Promise<AnalysisInput | Response> => {
+  const serverInput = async (caseId: string, req?: Request): Promise<AnalysisInput | Response> => {
     const demo = CASE_FILES[caseId]!;
     const disputeId = bindingOf(caseId)?.dispute;
     let source: PayPalSource = { kind: 'simulated' };
-    if (disputeId && opts.paypal) {
+    if (disputeId && opts.paypal && (await viewerLive(req))) {
       const cached = reads.get(caseId);
       try {
         const fresh = cached && now().getTime() - cached.at < (opts.readTtlMs ?? 60_000);
@@ -308,9 +354,9 @@ export function createApi(opts: ApiOptions): Api {
   };
 
   /** Whether a case goes to real PayPal: bound, and PayPal connected (the web app decides the same way, from /health). */
-  const boundDispute = async (caseId: string): Promise<string | null> => {
+  const boundDispute = async (caseId: string, req?: Request): Promise<string | null> => {
     const disputeId = bindingOf(caseId)?.dispute;
-    if (!disputeId || !opts.paypal) return null;
+    if (!disputeId || !opts.paypal || !(await viewerLive(req))) return null;
     return (await checkHealth()).paypal === 'unconfigured' ? null : disputeId;
   };
 
@@ -319,9 +365,9 @@ export function createApi(opts: ApiOptions): Api {
    * the read cache) and its binding verified on that read (bindings.ts): an unreadable dispute or a binding that is
    * not this payment fails closed (409, with the reasons). A simulated case is the demo case.
    */
-  const caseState = async (caseId: string): Promise<CaseState | Response> => {
+  const caseState = async (caseId: string, req?: Request): Promise<CaseState | Response> => {
     const demo = CASE_FILES[caseId]!;
-    const disputeId = await boundDispute(caseId);
+    const disputeId = await boundDispute(caseId, req);
     if (!disputeId) {
       const source: PayPalSource = { kind: 'simulated' };
       return { source, input: pins.resolve(caseId, caseInput(demo, source), false), dispute: null, snap: null, disputeId: null };
@@ -336,6 +382,7 @@ export function createApi(opts: ApiOptions): Api {
       mark('unavailable', [why]);
       return json(409, { error: 'BINDING_UNAVAILABLE', detail: `Sending is blocked: ${why}`, reasons: [why] });
     }
+    noteSeller(caseId, dispute);
     const check = verifyBinding({ value: demo.summary.amount, currency: demo.summary.currency, transactionId: demo.summary.transactionId }, binding, dispute);
     mark(check.status, check.reasons);
     if (check.status !== 'verified') {
@@ -465,7 +512,7 @@ export function createApi(opts: ApiOptions): Api {
       const editor = actorOf(req, false);
       if (editor.ok) intents.invalidateCase(caseId, 'a sentence was edited after this intent was composed', editor.actor);
     }
-    const input = await serverInput(caseId);
+    const input = await serverInput(caseId, req);
     if (input instanceof Response) return input;
     if (sub === '/verify') {
       const r = await analyst.verify(input, text, liveGate(req, 'recheck'));
@@ -475,7 +522,7 @@ export function createApi(opts: ApiOptions): Api {
         const label = v.verdict === 'supported' ? 'supported' : v.verdict === 'rejected' ? 'removed' : 'needs review';
         rememberVerdict(`${key}\n${text}`, { state: v.verdict, reason: v.reason, note: `Edited · re-checked by ${v.model}: ${label}`, citations: toCitations(input, v.citations) });
         const who = actorOf(req, false);
-        intents.record({ caseId, kind: 'edit_rechecked', actor: who.ok ? who.actor : 'visitor', detail: `${v.model}: ${label} · text sha256 ${sha256(text).slice(0, 12)}` });
+        intents.record({ caseId, kind: 'edit_rechecked', actor: who.ok ? who.actor : 'visitor', ...(who.ok && who.team ? { team: who.team } : {}), detail: `${v.model}: ${label} · text sha256 ${sha256(text).slice(0, 12)}` });
       }
       return json(r.status, r.body);
     }
@@ -490,6 +537,19 @@ export function createApi(opts: ApiOptions): Api {
     return r;
   };
 
+  /**
+   * Hosted: a real dispute is answered only by its seller's own people. The person's workspace merchant id must be the
+   * seller on the dispute as just read (the gate already hides real disputes from other workspaces; this is the check
+   * on the fresh read itself). Local mode has no merchant check: the operator holds the seller's credentials.
+   */
+  const sellerRefusal = (req: Request, st: CaseState): Response | null => {
+    if (!st.dispute || !opts.gate?.merchant) return null;
+    const merchant = opts.gate.merchant(req);
+    const seller = st.dispute.disputed_transactions?.[0]?.seller?.merchant_id;
+    if (merchant && seller && merchant === seller) return null;
+    return json(403, { error: 'NOT_THE_SELLER', detail: 'Only the PayPal account that is the seller on this dispute, and the members of its workspace, can respond to it' });
+  };
+
   /** POST /api/disputes/:case/intent → compose the exact content to send, from the server's own case and analysis. */
   const createIntent = async (req: Request, caseId: string): Promise<Response> => {
     // Hosted: intents belong to a demo session, so composing one needs the demo unlock (simulated cases included).
@@ -502,12 +562,14 @@ export function createApi(opts: ApiOptions): Api {
     // Caps before any expensive work (PayPal read, composing, hashing); nothing changes when refused.
     const full = intents.admit(caseId, who.actor, who.client ?? 'local');
     if (full) return tooManyIntents(full);
-    const st = await caseState(caseId);
+    const st = await caseState(caseId, req);
     if (st instanceof Response) return st;
+    const notSeller = sellerRefusal(req, st);
+    if (notSeller) return notSeller;
     const composed = await compose(caseId, st, ir);
     if (composed instanceof Response) return composed;
     const intent = intents.create(
-      { ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local', analysisHash: composed.analysisHash },
+      { ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local', team: who.team ?? null, analysisHash: composed.analysisHash },
       composed.analysis,
     );
     if ('ok' in intent) return tooManyIntents(intent);
@@ -570,12 +632,15 @@ export function createApi(opts: ApiOptions): Api {
     if (reserved && !reserved.ok) return refuse(json(reserved.refusal.status, reserved.refusal.body), String((reserved.refusal.body as { error?: string }).error ?? reserved.refusal.status), false);
     let sending = false;
     try {
-      const st = await caseState(caseId);
+      const st = await caseState(caseId, req);
       if (st instanceof Response) {
         const b = (await st.clone().json().catch(() => ({}))) as { error?: string };
         return refuse(st, b.error ?? `refused (${st.status})`, b.error === 'BINDING_INVALID');
       }
       if (!st.dispute) return refuse(json(409, { error: 'NOT_BOUND', detail: 'PayPal is not connected for this case now' }), 'PayPal not connected', false);
+      // On the dispute as just read: the person must act for its seller.
+      const notSeller = sellerRefusal(req, st);
+      if (notSeller) return refuse(notSeller, 'not the seller on this dispute', true);
       // PayPal takes the seller's evidence once. If it already has some (another session sent first), this intent is
       // over: say so plainly instead of composing it again.
       if (st.snap && hasSellerEvidence(st.snap)) {
@@ -659,7 +724,9 @@ export function createApi(opts: ApiOptions): Api {
     if (path === '/api/demo' && req.method === 'GET') return json(200, { hosted: false });
     if (path === '/api/health' && req.method === 'GET') {
       const h = await checkHealth();
-      const bound = h.paypal === 'unconfigured' ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
+      // Hosted: the real disputes are listed only to the seller's workspace; everyone else runs them on the simulator.
+      const live = await viewerLive(req);
+      const bound = h.paypal === 'unconfigured' || !live ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
       return json(200, { ...h, bound, bindings: Object.fromEntries(bound.map((k) => [k, bindingState(k)])) });
     }
     const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
@@ -681,8 +748,8 @@ export function createApi(opts: ApiOptions): Api {
       if (!who.ok) return json(who.refusal.status, who.refusal.body);
       if (sub === 'audit') {
         if (intentId || req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
-        // Local: the operator sees the case's whole trail. Hosted: each demo session sees its own.
-        return json(200, { events: intents.events(caseId, opts.gate ? who.actor : undefined) });
+        // Local: the operator sees the case's whole trail. Hosted: a workspace's members see the workspace's trail.
+        return json(200, { events: intents.events(caseId, opts.gate ? (who.team ? { team: who.team } : who.actor) : undefined) });
       }
       if (m[4] === '/cancel') {
         if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
@@ -697,6 +764,13 @@ export function createApi(opts: ApiOptions): Api {
 
     const disputeId = bindingOf(caseId)?.dispute;
     if (!disputeId) return json(404, { error: 'NOT_BOUND', detail: `Case ${caseId} is not bound to a PayPal dispute` });
+    // Sending needs a signed-in person first (hosted); then, a real dispute is the seller's: for anyone else this case
+    // runs on the simulator.
+    if (sub === 'evidence') {
+      const who = actorOf(req, true);
+      if (!who.ok) return json(who.refusal.status, who.refusal.body);
+    }
+    if (!(await viewerLive(req))) return json(404, { error: 'NOT_BOUND', detail: `Case ${caseId} runs on the simulator for this workspace` });
     const paypal = opts.paypal;
     if (!paypal) return json(503, { error: 'PAYPAL_UNCONFIGURED' });
 
@@ -712,9 +786,11 @@ export function createApi(opts: ApiOptions): Api {
   };
 
   return Object.assign(route, {
-    inputFor: serverInput,
+    inputFor: (caseId: string) => serverInput(caseId),
+    sellerIds,
     forgetReads: () => {
       reads.clear();
+      sellers.clear();
       bindingStatus.clear();
       intents.invalidateAll('the bindings changed');
     },
