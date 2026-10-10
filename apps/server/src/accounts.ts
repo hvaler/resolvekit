@@ -191,24 +191,32 @@ export class AccountStore {
   }
 
   /** The person a PayPal sign-in stands for: the Owner of the workspace of that payer id (created on first sign-in). */
-  signInWithPayPal(p: { payerId: string; name: string; email: string | null }): { person: Person; workspace: Workspace; created: boolean } | { refused: string } {
+  signInWithPayPal(p: { payerId: string; name: string; email: string | null; workspaceName?: string | null }): { person: Person; workspace: Workspace; created: boolean } | { refused: string } {
     const wsId = workspaceIdFor(p.payerId);
     const existing = this.workspaces.get(wsId);
     const owner = existing && [...this.people.values()].find((x) => x.workspaceId === wsId && x.role === 'owner' && x.via === 'paypal' && !x.revokedAt);
     const name = cleanName(p.name) ?? 'PayPal merchant';
+    const wsName = cleanName(p.workspaceName) ?? null;
     const email = maskEmail(p.email);
     if (existing && owner) {
       const before = { ...owner };
+      const wsBefore = existing.name;
       this.commit(
-        () => Object.assign(owner, { name, email, lastActiveAt: this.iso() }),
-        () => Object.assign(owner, before),
+        () => {
+          Object.assign(owner, { name, email, lastActiveAt: this.iso() });
+          if (wsName) existing.name = wsName;
+        },
+        () => {
+          Object.assign(owner, before);
+          existing.name = wsBefore;
+        },
       );
       return { person: owner, workspace: existing, created: false };
     }
     if (!existing && this.workspaces.size >= LIMITS.workspaces) return { refused: 'This demo has reached its number of merchant workspaces' };
     if (this.people.size >= LIMITS.people) return { refused: 'This demo has reached its number of people' };
     const at = this.iso();
-    const ws: Workspace = existing ?? { id: wsId, payerId: p.payerId, name, createdAt: at };
+    const ws: Workspace = existing ?? { id: wsId, payerId: p.payerId, name: wsName ?? name, createdAt: at };
     const person: Person = { id: id('p'), workspaceId: wsId, role: 'owner', name, email, via: 'paypal', reviewer: false, accessUntil: null, inviteId: null, createdAt: at, lastActiveAt: at, revokedAt: null, epoch: 0 };
     this.commit(
       () => {

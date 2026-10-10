@@ -132,6 +132,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     secret: o.sessionSecret,
     origins: o.origins,
     isConnected: async (payerId) => (await refreshSellers()).has(payerId),
+    sellerName: (payerId) => api.sellerName(payerId),
     now,
     log: o.log,
     ...(o.webauthn ? { webauthn: o.webauthn } : {}),

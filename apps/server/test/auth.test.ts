@@ -36,7 +36,7 @@ function sellerPayPal(o: { seller?: { id: string } } = {}) {
       return new Response(JSON.stringify({ links: [] }), { status: 200 });
     }
     const d: Dispute = standardDispute();
-    d.disputed_transactions![0]!.seller = { merchant_id: seller.id };
+    d.disputed_transactions![0]!.seller = { merchant_id: seller.id, name: 'Northwind Goods Ltd' };
     return new Response(JSON.stringify(d), { status: 200 });
   }) as typeof globalThis.fetch;
   return { sends, seller, client: new PayPalClient({ clientId: 'seller', clientSecret: 's', env: 'sandbox', fetch }) };
@@ -98,7 +98,9 @@ async function setup(o: { accounts?: AccountStore; now?: () => Date; seller?: { 
   const live = caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
   const { analyst } = await analystFor([[CASE, live], [CASE, caseInput(standardCase, { kind: 'simulated' })]]);
   const accounts = o.accounts ?? new AccountStore(o.now ? { now: o.now } : {});
+  const lines: string[] = [];
   const app = createHostedApp({
+    log: (l) => lines.push(l),
     paypal: pp.client,
     env: 'sandbox',
     bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
@@ -114,7 +116,7 @@ async function setup(o: { accounts?: AccountStore; now?: () => Date; seller?: { 
     https: true,
     ...(o.now ? { now: o.now } : {}),
   });
-  return { app, pp, platform, authn, accounts };
+  return { app, pp, platform, authn, accounts, lines };
 }
 type App = Awaited<ReturnType<typeof setup>>['app'];
 
@@ -167,6 +169,12 @@ test('paypal: the seller’s account signs in as Owner of a connected workspace;
   assert.equal(m.signedIn, true);
   assert.deepEqual([m.person!.role, m.person!.via, m.person!.name, m.person!.email], ['owner', 'paypal', 'Northwind Goods', 'b•••@example.com']);
   assert.equal(m.workspace!.connected, true);
+  // The seller's workspace takes the business name PayPal gives on its disputes.
+  assert.equal(m.workspace!.name, 'Northwind Goods Ltd');
+  // The single-use return key never reaches the log.
+  const key = new URL(s.platform.state.returnUrl).pathname.split('/').pop()!;
+  assert.ok(s.lines.some((l) => l.startsWith('GET /api/auth/paypal/return/… → 303')));
+  assert.ok(s.lines.every((l) => !l.includes(key)));
   const health = (await (await s.app(req('/api/health', { cookie }))).json()) as { bound: string[] };
   assert.deepEqual(health.bound, [CASE]);
   // Signing in again finds the same workspace and person.
@@ -304,7 +312,7 @@ test('invites: inspect tells what a link opens; joining for this browser makes a
   const { token } = await ownerWithInvite(s, { accessUntil: '2026-12-15T23:59:00Z' });
   const i = await s.app(req('/api/auth/invite/inspect', { body: { token } }));
   const view = (await i.json()) as { workspace: { name: string }; reviewer: boolean; usesLeft: number; accessUntil: string };
-  assert.deepEqual([view.workspace.name, view.reviewer, view.usesLeft, view.accessUntil], ['Northwind Goods', true, 5, '2026-12-15T23:59:00.000Z']);
+  assert.deepEqual([view.workspace.name, view.reviewer, view.usesLeft, view.accessUntil], ['Northwind Goods Ltd', true, 5, '2026-12-15T23:59:00.000Z']);
   assert.equal((await s.app(req('/api/auth/invite/join', { body: { token, name: '<script>' } }))).status, 400);
   const j = await s.app(req('/api/auth/invite/join', { body: { token, name: '  Dana   Ruiz ' } }));
   assert.equal(j.status, 200);

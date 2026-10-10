@@ -183,7 +183,9 @@ export function withLog(log: ((line: string) => void) | undefined, api: Handler,
     } catch {
       res = json(500, { error: 'INTERNAL' });
     }
-    write(`${req.method} ${new URL(req.url).pathname} → ${res.status} · ${Date.now() - t} ms`);
+    // The PayPal sign-in return key is single-use and bound to one browser; it still stays out of the logs.
+    const path = new URL(req.url).pathname.replace(/^(\/api\/auth\/paypal\/return\/)[^/]+$/, '$1…');
+    write(`${req.method} ${path} → ${res.status} · ${Date.now() - t} ms`);
     return res;
   };
 }
@@ -194,6 +196,8 @@ export type Api = Handler & {
   inputFor: (caseId: string) => Promise<AnalysisInput | Response>;
   /** The PayPal merchant ids that are the seller on a bound dispute (hosted: whose workspace sees real PayPal). */
   sellerIds: () => Promise<Set<string>>;
+  /** The seller's business name on the bound disputes, by merchant id (known after sellerIds). */
+  sellerName: (merchantId: string) => string | null;
   /** Forget the PayPal reads kept for building inputs and invalidate open intents (the bindings changed). */
   forgetReads: () => void;
   /** The intents and audit log (tests, main.ts). */
@@ -260,8 +264,13 @@ export function createApi(opts: ApiOptions): Api {
   const viewerLive = async (req?: Request): Promise<boolean> => !req || !opts.gate?.live || (await opts.gate.live(req));
 
   /** The seller's PayPal merchant id on each bound dispute, from the last read of it. */
-  const sellers = new Map<string, { dispute: string; merchant: string | null }>();
-  const noteSeller = (caseId: string, d: Dispute) => sellers.set(caseId, { dispute: d.dispute_id ?? '', merchant: d.disputed_transactions?.[0]?.seller?.merchant_id ?? null });
+  const sellers = new Map<string, { dispute: string; merchant: string | null; name: string | null }>();
+  const noteSeller = (caseId: string, d: Dispute) => {
+    const s = d.disputed_transactions?.[0]?.seller;
+    sellers.set(caseId, { dispute: d.dispute_id ?? '', merchant: s?.merchant_id ?? null, name: s?.name ?? null });
+  };
+  /** The seller's name as PayPal gives it on a bound dispute (after {@link sellerIds} read them), or null. */
+  const sellerName = (merchantId: string): string | null => [...sellers.values()].find((s) => s.merchant === merchantId && s.name)?.name ?? null;
   /** The merchant ids that are the seller on a bound dispute (each dispute read once, then on every fresh read). */
   const sellerIds = async (): Promise<Set<string>> => {
     const paypal = opts.paypal;
@@ -804,6 +813,7 @@ export function createApi(opts: ApiOptions): Api {
   return Object.assign(route, {
     inputFor: (caseId: string) => serverInput(caseId),
     sellerIds,
+    sellerName,
     forgetReads: () => {
       reads.clear();
       sellers.clear();

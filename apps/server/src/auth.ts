@@ -78,6 +78,8 @@ export interface AuthOptions {
   origins: readonly string[];
   /** Whether this payer id is the seller on the bound PayPal disputes (fresh reads). */
   isConnected: (payerId: string) => Promise<boolean>;
+  /** The seller's business name on the bound disputes (names the workspace of the seller's account), or null. */
+  sellerName?: (payerId: string) => string | null;
   now?: () => Date;
   log?: (line: string) => void;
   webauthn?: WebAuthn;
@@ -244,15 +246,17 @@ export function createAuth(o: AuthOptions): Auth {
     if (!state.payer) return fail('not_approved');
     const p = state.payer;
     const name = [p.firstName, p.lastName].filter(Boolean).join(' ') || 'PayPal merchant';
+    // The seller of the bound disputes: its workspace takes the business name PayPal gives on them.
+    const connected = await o.isConnected(p.payerId);
+    const workspaceName = connected ? (o.sellerName?.(p.payerId) ?? null) : null;
     let r;
     try {
-      r = o.accounts.signInWithPayPal({ payerId: p.payerId, name, email: p.email });
+      r = o.accounts.signInWithPayPal({ payerId: p.payerId, name, email: p.email, workspaceName });
     } catch (e) {
       if (e instanceof StorageError) return fail('unavailable');
       throw e;
     }
     if ('refused' in r) return fail('full');
-    const connected = await o.isConnected(r.workspace.payerId);
     log(`paypal sign-in · workspace ${r.workspace.id}${r.created ? ' (new)' : ''} · ${connected ? 'seller of the bound disputes' : 'not the seller of any bound dispute'}`);
     return redirect('/?signed-in=paypal', [clear, signIn(r.person)]);
   };
