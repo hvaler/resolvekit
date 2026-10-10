@@ -11,8 +11,10 @@
  *                                            redirecting the approver's browser to the return URL. The token id alone
  *                                            proves nothing (it is in the approval link): an attacker who starts a
  *                                            sign-in and gets a merchant to approve the link has the cookie but not
- *                                            `k`; the merchant's browser has `k` but not the cookie. The token must also
- *                                            be unused and APPROVED.
+ *                                            `k`; the merchant's browser has `k` but not the cookie. Each token gets
+ *                                            one attempt: an arrival without the cookie (the approver coming back) or
+ *                                            before the approval burns it, so even if PayPal's page showed `k`, an
+ *                                            attacker could not wait for the merchant's approval and use it.
  *   GET  /api/auth/paypal/cancel           → back to the sign-in page
  * Invites and passkeys (Members):
  *   POST /api/auth/invite/inspect {token}                 → what the invite opens (or why not), without using it
@@ -47,6 +49,9 @@ const PENDING_TTL_MS = 15 * 60_000;
 const CHALLENGE_TTL_MS = 5 * 60_000;
 const MAX_CHALLENGES = 2000;
 const MAX_USED_TOKENS = 5000;
+/** PayPal redirects after approving; its token status may lag by a moment. */
+const APPROVAL_RETRIES = 3;
+const APPROVAL_RETRY_MS = 1_000;
 const DAY = 24 * 60 * 60_000;
 
 /** The WebAuthn calls, injectable so tests need no authenticator. */
@@ -199,10 +204,21 @@ export function createAuth(o: AuthOptions): Auth {
     const fail = (code: string) => redirect(`/signin?error=${code}`, [clear]);
     if (!o.identity) return fail('paypal_off');
     const token = url.searchParams.get('ba_token') ?? url.searchParams.get('token');
+    // Any arrival for a token without its starting browser's cookie burns that token: it is the approver's browser
+    // coming back from a link it did not start (phishing), or someone trying tokens. Nobody can finish it afterwards.
+    const burn = () => {
+      if (isAgreementTokenId(token)) {
+        usedTokens.add(token);
+        if (usedTokens.size > MAX_USED_TOKENS) usedTokens.delete(usedTokens.values().next().value!);
+      }
+    };
     // The token must be the one this browser started (signed cookie, not expired, not used before), AND the path must
-    // carry the key of that cookie's nonce, which only PayPal's redirect of the approver delivers (see the header).
+    // carry the key of that cookie's nonce, which reaches a browser through PayPal's redirect of the approver.
     const m = /^(BA-[A-Z0-9]{8,32})\.([A-Za-z0-9_-]{22})\.(\d{1,16})\.([A-Za-z0-9_-]{43})$/.exec(readCookie(req, PENDING_COOKIE) ?? '');
-    if (!m || !isAgreementTokenId(token) || m[1] !== token) return fail('session_mismatch');
+    if (!m || !isAgreementTokenId(token) || m[1] !== token) {
+      burn();
+      return fail('session_mismatch');
+    }
     const expected = Buffer.from(mac(o.secret, `${m[1]}.${m[2]}.${m[3]}`));
     const got = Buffer.from(m[4]!);
     if (expected.length !== got.length || !timingSafeEqual(expected, got) || Number(m[3]) <= now().getTime()) return fail('session_mismatch');
@@ -210,16 +226,22 @@ export function createAuth(o: AuthOptions): Auth {
     const gotK = Buffer.from(k);
     if (wantK.length !== gotK.length || !timingSafeEqual(wantK, gotK)) return fail('session_mismatch');
     if (usedTokens.has(token)) return fail('session_mismatch');
+    // One attempt per token: whatever happens next, it cannot be finished again. An early arrival (before the approval)
+    // therefore ends the sign-in, so nobody can poll this URL waiting for someone else's approval; PayPal redirects only
+    // after approving, so the read is retried briefly in case its status lags the redirect.
+    burn();
     let state;
     try {
       state = await o.identity.identity.read(token);
+      for (let i = 0; !state.payer && i < APPROVAL_RETRIES; i++) {
+        await new Promise((r) => setTimeout(r, APPROVAL_RETRY_MS));
+        state = await o.identity.identity.read(token);
+      }
     } catch (e) {
       log(`paypal sign-in · read failed · ${e instanceof Error ? e.message : 'error'}`);
       return fail('paypal_unavailable');
     }
     if (!state.payer) return fail('not_approved');
-    usedTokens.add(token);
-    if (usedTokens.size > MAX_USED_TOKENS) usedTokens.delete(usedTokens.values().next().value!);
     const p = state.payer;
     const name = [p.firstName, p.lastName].filter(Boolean).join(' ') || 'PayPal merchant';
     let r;

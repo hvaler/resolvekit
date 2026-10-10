@@ -234,18 +234,35 @@ test('paypal: a phished approval signs nobody in — the attacker has the pendin
   assert.equal(s.platform.state.reads, 0);
 });
 
-test('paypal: a token that is not approved signs nobody in; an approved token signs in once (no replay)', async () => {
+test('paypal: each token gets one attempt — an arrival before the approval ends it (no polling for someone else’s approval)', async () => {
   const s = await setup();
   const start = await s.app(req('/api/auth/paypal/start', { body: {} }));
   const pending = pair(cookieFrom(start, 'rk_pp'));
   const r = await s.app(req(s.platform.redirect(), { cookie: pending }));
   assert.equal(r.headers.get('location'), '/signin?error=not_approved');
+  // Approved afterwards: this token is spent; the same browser starts again and signs in.
   s.platform.approve(SELLER_ID);
-  const ok = await s.app(req(s.platform.redirect(), { cookie: pending }));
-  assert.equal(ok.headers.get('location'), '/?signed-in=paypal');
-  const replay = await s.app(req(s.platform.redirect(), { cookie: pending }));
-  assert.equal(replay.headers.get('location'), '/signin?error=session_mismatch');
-  assert.equal(cookieFrom(replay, SESSION_COOKIE), null);
+  const again = await s.app(req(s.platform.redirect(), { cookie: pending }));
+  assert.equal(again.headers.get('location'), '/signin?error=session_mismatch');
+  assert.equal(cookieFrom(again, SESSION_COOKIE), null);
+  const cookie = await paypalSignIn(s, SELLER_ID);
+  assert.equal((await me(s.app, cookie)).signedIn, true);
+});
+
+test('paypal: even with the return key leaked, an attacker cannot use the merchant’s approval — the merchant’s redirect burns the token', async () => {
+  const s = await setup();
+  const start = await s.app(req('/api/auth/paypal/start', { body: {} }));
+  const attacker = pair(cookieFrom(start, 'rk_pp'));
+  // Suppose the attacker read the return URL (with its key) somewhere. The merchant approves; PayPal sends the
+  // merchant's browser back first, without the attacker's cookie.
+  const leaked = s.platform.redirect();
+  s.platform.approve(SELLER_ID);
+  assert.equal((await s.app(req(leaked))).headers.get('location'), '/signin?error=session_mismatch');
+  // Now the attacker, with the cookie and the key: the token is spent.
+  const r = await s.app(req(leaked, { cookie: attacker }));
+  assert.equal(r.headers.get('location'), '/signin?error=session_mismatch');
+  assert.equal(cookieFrom(r, SESSION_COOKIE), null);
+  assert.equal(s.platform.state.reads, 0);
 });
 
 test('paypal: cancelling on PayPal returns to the sign-in page; starts are rate-limited per address', async () => {

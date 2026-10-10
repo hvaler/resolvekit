@@ -337,14 +337,16 @@ export function createApi(opts: ApiOptions): Api {
    */
   const pins = opts.pins ?? new InputPins();
   /**
-   * Analysis keys of inputs built from a real PayPal read: their analyses (which carry the seller's PayPal data) are
-   * answered by /progress only to requests that see the real dispute (hosted: the seller's workspace).
+   * Analysis keys of inputs built WITHOUT a real PayPal read (the simulator): the only analyses /progress answers to a
+   * request that does not see the real dispute. Fail closed: a key this server has not built for the simulator since
+   * it started (a live input's, or any key after a restart) is not answered to them; the web app asks for the analysis
+   * (which records the key) before it polls.
    */
-  const liveKeys = new Set<string>();
-  const markLive = async (input: AnalysisInput) => {
+  const simulatedKeys = new Set<string>();
+  const markSimulated = async (input: AnalysisInput) => {
     if (!opts.analyst) return;
-    liveKeys.add(await opts.analyst.key(input));
-    if (liveKeys.size > 5000) liveKeys.delete(liveKeys.values().next().value!);
+    simulatedKeys.add(await opts.analyst.key(input));
+    if (simulatedKeys.size > 5000) simulatedKeys.delete(simulatedKeys.values().next().value!);
   };
   const serverInput = async (caseId: string, req?: Request): Promise<AnalysisInput | Response> => {
     const demo = CASE_FILES[caseId]!;
@@ -361,7 +363,7 @@ export function createApi(opts: ApiOptions): Api {
     }
     const submitted = source.kind === 'live' && hasSellerEvidence(source.snap);
     const input = pins.resolve(caseId, caseInput(demo, source), submitted);
-    if (source.kind === 'live') await markLive(input);
+    if (source.kind === 'simulated') await markSimulated(input);
     return input;
   };
 
@@ -505,8 +507,8 @@ export function createApi(opts: ApiOptions): Api {
       if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
       const key = url.searchParams.get('key') ?? '';
       if (!/^[0-9a-f]{64}$/.test(key)) return json(400, { error: 'INVALID_KEY' });
-      // The analysis of a real dispute is the seller's: for anyone else it does not exist.
-      if (liveKeys.has(key) && !(await viewerLive(req))) return json(404, { error: 'NO_ANALYSIS', key });
+      // The analysis of a real dispute is the seller's: anyone else gets only analyses of simulated inputs.
+      if (!simulatedKeys.has(key) && !(await viewerLive(req))) return json(404, { error: 'NO_ANALYSIS', key });
       const r = analyst.progress(key);
       return json(r.status, r.body);
     }

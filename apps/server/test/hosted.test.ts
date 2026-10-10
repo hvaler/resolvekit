@@ -491,3 +491,15 @@ test('cross-tenant: the analysis of the real dispute is answered by /progress on
     assert.ok(!(await r.text()).includes('sentences'));
   }
 });
+
+test('cross-tenant: after a restart (no keys remembered), the live analysis is still not answered to other workspaces', async () => {
+  const store = await goldenStore();
+  const first = setup({ store });
+  const member = first.people.member();
+  const live = (await (await first.app(req(analysisPath, { body: {}, cookie: member }))).json()) as { key: string };
+  // A new process over the same analysis store: the key is not known as anything.
+  const restarted = setup({ store });
+  assert.equal((await restarted.app(req(`${analysisPath}/progress?key=${live.key}`, { cookie: restarted.people.outsider() }))).status, 404);
+  assert.equal((await restarted.app(req(`${analysisPath}/progress?key=${live.key}`))).status, 404);
+  assert.equal((await restarted.app(req(`${analysisPath}/progress?key=${live.key}`, { cookie: restarted.people.member() }))).status, 200);
+});
