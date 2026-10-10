@@ -142,7 +142,7 @@ export function AppBar({
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-3.5 max-md:gap-2">
         {caseId ? (
           <>
-            <Link to="/" className="text-[12.5px] text-ink-2 no-underline hover:text-ink">
+            <Link to="/cases" className="text-[12.5px] text-ink-2 no-underline hover:text-ink">
               Cases
             </Link>
             <span aria-hidden="true" className="text-ink-3">

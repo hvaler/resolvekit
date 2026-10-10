@@ -90,7 +90,7 @@ export function SignInPage() {
       <AuthShell>
         <h1 className="m-0 text-[20px] font-semibold">No sign-in here</h1>
         <p className="m-0 text-body-lg leading-normal text-ink-2">This ResolveKit runs on your machine: you are the merchant, and nothing needs a sign-in.</p>
-        <Link to="/" className="font-semibold text-acc">
+        <Link to="/cases" className="font-semibold text-acc">
           Open the cases
         </Link>
       </AuthShell>
@@ -140,7 +140,7 @@ export function SignInPage() {
         or
         <span className="h-px flex-1 bg-line" />
       </div>
-      <Link to="/" className="self-center text-body font-medium text-acc">
+      <Link to="/cases" className="self-center text-body font-medium text-acc">
         Explore without signing in
       </Link>
       <span className="self-center text-[11.5px] text-ink-3">PayPal sandbox · synthetic case data</span>
@@ -197,7 +197,7 @@ export function JoinPage() {
       <AuthShell>
         <h1 className="m-0 text-[20px] font-semibold">{title}</h1>
         <p className="m-0 text-body-lg leading-normal text-ink-2">{invite.message} Ask the workspace owner for a new link.</p>
-        <Link to="/" className="font-medium text-acc">
+        <Link to="/cases" className="font-medium text-acc">
           Explore without signing in
         </Link>
       </AuthShell>
@@ -263,7 +263,7 @@ export function MembersPage() {
       <AuthShell>
         <h1 className="m-0 text-[20px] font-semibold">Owners only</h1>
         <p className="m-0 text-body-lg leading-normal text-ink-2">Only the workspace owner, signed in with PayPal, manages members and invites.</p>
-        <Button onClick={() => navigate('/')}>Back to the cases</Button>
+        <Button onClick={() => navigate('/cases')}>Back to the cases</Button>
       </AuthShell>
     );
   }
@@ -287,7 +287,7 @@ export function MembersPage() {
     <AuthShell wide>
       <div className="flex items-center gap-3">
         <h1 className="m-0 flex-1 text-[20px] font-semibold">Members and invites · {demo?.workspace?.name}</h1>
-        <Link to="/" className="text-body font-medium text-acc">
+        <Link to="/cases" className="text-body font-medium text-acc">
           Back to the cases
         </Link>
       </div>

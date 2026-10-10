@@ -55,6 +55,8 @@ interface Services {
   addAudit: (disputeId: string, who: string, what: string) => void;
   /** The hosted demo's account state (who is signed in, for which workspace); null without sign-in (local, no server). */
   demo: DemoState | null;
+  /** Whether {@link demo} is known yet (the server answered, or there is no server). */
+  accountKnown: boolean;
   /** Sign out of this browser, or of every device; the page reloads signed out. */
   signOut: (everywhere?: boolean) => Promise<void>;
 }
@@ -99,10 +101,15 @@ export function ServicesProvider({
   const intents = useMemo<IntentSource>(() => (server === null ? new LocalIntentClient() : new HttpIntentClient()), [server]);
   const demoClient = useMemo(() => (server === null ? null : new DemoClient()), [server]);
   const [demo, setDemo] = useState<DemoState | null>(null);
+  const [accountKnown, setAccountKnown] = useState(server === null);
   useEffect(() => {
     if (!demoClient) return;
     let live = true;
-    void demoClient.state().then((d) => live && setDemo(d));
+    void demoClient.state().then((d) => {
+      if (!live) return;
+      setDemo(d);
+      setAccountKnown(true);
+    });
     return () => {
       live = false;
     };
@@ -199,8 +206,8 @@ export function ServicesProvider({
 
   const modeKnown = !http || health != null;
   const value = useMemo<Services>(
-    () => ({ intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, signOut }),
-    [intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, signOut],
+    () => ({ intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut }),
+    [intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut],
   );
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }

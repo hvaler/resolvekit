@@ -5,6 +5,7 @@ import { useServices } from './app/services';
 import type { SimulatedOutcome } from './domain/gateway';
 import { JoinPage, MembersPage, SignInPage } from './pages/AuthPages';
 import { CasePage } from './pages/CasePage';
+import { LandingPage } from './pages/LandingPage';
 import { InboxPage } from './pages/InboxPage';
 import { processingDispute } from './fixtures';
 
@@ -79,12 +80,23 @@ function showDevControls(): boolean {
   }
 }
 
+/**
+ * `/`: on the hosted demo a signed-out visitor gets the landing page; signed in (or locally, where there is no
+ * sign-in) it is the inbox, also at `/cases`.
+ */
+function Home() {
+  const { demo, accountKnown } = useServices();
+  if (!accountKnown) return <div className="min-h-[100dvh] bg-bg" />;
+  return demo && !demo.signedIn ? <LandingPage /> : <InboxPage />;
+}
+
 export function App() {
   const recording = useRecording();
   return (
     <>
       <Routes>
-        <Route path="/" element={<InboxPage />} />
+        <Route path="/" element={<Home />} />
+        <Route path="/cases" element={<InboxPage />} />
         <Route path="/cases/:id/*" element={<CasePage />} />
         <Route path="/signin" element={<SignInPage />} />
         <Route path="/join" element={<JoinPage />} />
