@@ -10,9 +10,19 @@ const auth = new AuthClient();
 
 /** A same-site path to go back to after signing in (never another origin, never a protocol-relative URL). */
 export function safeNext(raw: string | null): string {
-  // Browsers read a backslash as a slash: any of them could turn the path into a protocol-relative URL.
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\') || raw.startsWith('/api/')) return '/';
-  return raw;
+  // Browsers read a backslash as a slash and drop tabs and line breaks, so "/\evil" or "/\t/evil" would become
+  // protocol-relative: refuse those characters, then resolve with the browser's own URL parser and keep only a path
+  // on this origin.
+  if (!raw || !raw.startsWith('/') || /[\\\u0000-\u001f\u007f\s]/.test(raw)) return '/';
+  const here = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
+  let u: URL;
+  try {
+    u = new URL(raw, here);
+  } catch {
+    return '/';
+  }
+  if (u.origin !== new URL(here).origin || u.pathname.startsWith('//') || u.pathname.startsWith('/api/')) return '/';
+  return u.pathname + u.search + u.hash;
 }
 
 /** Full reload into the app: which disputes are live depends on who is signed in. */
