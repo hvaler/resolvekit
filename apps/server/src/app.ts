@@ -336,6 +336,16 @@ export function createApi(opts: ApiOptions): Api {
    * connected at all, in which case the web app runs the case on the simulator and so does this.
    */
   const pins = opts.pins ?? new InputPins();
+  /**
+   * Analysis keys of inputs built from a real PayPal read: their analyses (which carry the seller's PayPal data) are
+   * answered by /progress only to requests that see the real dispute (hosted: the seller's workspace).
+   */
+  const liveKeys = new Set<string>();
+  const markLive = async (input: AnalysisInput) => {
+    if (!opts.analyst) return;
+    liveKeys.add(await opts.analyst.key(input));
+    if (liveKeys.size > 5000) liveKeys.delete(liveKeys.values().next().value!);
+  };
   const serverInput = async (caseId: string, req?: Request): Promise<AnalysisInput | Response> => {
     const demo = CASE_FILES[caseId]!;
     const disputeId = bindingOf(caseId)?.dispute;
@@ -350,7 +360,9 @@ export function createApi(opts: ApiOptions): Api {
       }
     }
     const submitted = source.kind === 'live' && hasSellerEvidence(source.snap);
-    return pins.resolve(caseId, caseInput(demo, source), submitted);
+    const input = pins.resolve(caseId, caseInput(demo, source), submitted);
+    if (source.kind === 'live') await markLive(input);
+    return input;
   };
 
   /** Whether a case goes to real PayPal: bound, and PayPal connected (the web app decides the same way, from /health). */
@@ -493,6 +505,8 @@ export function createApi(opts: ApiOptions): Api {
       if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
       const key = url.searchParams.get('key') ?? '';
       if (!/^[0-9a-f]{64}$/.test(key)) return json(400, { error: 'INVALID_KEY' });
+      // The analysis of a real dispute is the seller's: for anyone else it does not exist.
+      if (liveKeys.has(key) && !(await viewerLive(req))) return json(404, { error: 'NO_ANALYSIS', key });
       const r = analyst.progress(key);
       return json(r.status, r.body);
     }

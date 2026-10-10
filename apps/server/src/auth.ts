@@ -5,8 +5,14 @@
  *   POST /api/auth/paypal/start            → { approvalUrl }: a no-charge agreement token of the PLATFORM's PayPal app
  *                                            (packages/paypal identity.ts), bound to this browser by a short-lived
  *                                            signed cookie (SameSite=Lax: PayPal's redirect back is a cross-site GET)
- *   GET  /api/auth/paypal/return?ba_token  → the token must be this browser's, unused and APPROVED; its payer id is the
- *                                            account. Signs in as that workspace's Owner; redirects to the app.
+ *   GET  /api/auth/paypal/return/:k?ba_token → signs in as the Owner of the approving account's workspace, only when
+ *                                            BOTH hold: the browser holds the pending cookie of this token (it started
+ *                                            the sign-in) and the path carries `k`, a key PayPal only reveals by
+ *                                            redirecting the approver's browser to the return URL. The token id alone
+ *                                            proves nothing (it is in the approval link): an attacker who starts a
+ *                                            sign-in and gets a merchant to approve the link has the cookie but not
+ *                                            `k`; the merchant's browser has `k` but not the cookie. The token must also
+ *                                            be unused and APPROVED.
  *   GET  /api/auth/paypal/cancel           → back to the sign-in page
  * Invites and passkeys (Members):
  *   POST /api/auth/invite/inspect {token}                 → what the invite opens (or why not), without using it
@@ -79,6 +85,8 @@ export interface Auth {
 }
 
 const mac = (secret: string, payload: string) => createHmac('sha256', secret).update(`rk-pending|${payload}`).digest('base64url');
+/** The return URL's key for a pending sign-in's nonce (43 chars). */
+const returnKey = (secret: string, nonce: string) => createHmac('sha256', secret).update(`rk-return|${nonce}`).digest('base64url');
 
 function redirect(to: string, cookies: string[] = []): Response {
   const r = new Response(null, { status: 303, headers: { location: to, 'cache-control': 'no-store' } });
@@ -166,10 +174,12 @@ export function createAuth(o: AuthOptions): Auth {
 
   const paypalStart = async () => {
     if (!o.identity) return json(503, { error: 'PAYPAL_SIGNIN_OFF', detail: 'PayPal sign-in is not configured on this server' });
+    // `k` is derived from a fresh nonce kept in the signed cookie; it reaches a browser only through PayPal's redirect.
+    const nonce = randomBytes(16).toString('base64url');
     let t: { tokenId: string; approvalUrl: string };
     try {
       t = await o.identity.identity.start({
-        returnUrl: `${origin}/api/auth/paypal/return`,
+        returnUrl: `${origin}/api/auth/paypal/return/${returnKey(o.secret, nonce)}`,
         cancelUrl: `${origin}/api/auth/paypal/cancel`,
         description: 'ResolveKit: confirm which PayPal account is yours. No charge, no agreement is created.',
       });
@@ -178,24 +188,27 @@ export function createAuth(o: AuthOptions): Auth {
       return json(502, { error: 'PAYPAL_UNAVAILABLE', detail: 'PayPal could not start the sign-in; try again in a moment' });
     }
     const exp = now().getTime() + PENDING_TTL_MS;
-    const payload = `${t.tokenId}.${exp}`;
+    const payload = `${t.tokenId}.${nonce}.${exp}`;
     const r = json(200, { approvalUrl: t.approvalUrl });
     r.headers.set('set-cookie', pendingCookie(`${payload}.${mac(o.secret, payload)}`, PENDING_TTL_MS / 1000));
     return r;
   };
 
-  const paypalReturn = async (req: Request, url: URL) => {
+  const paypalReturn = async (req: Request, url: URL, k: string) => {
     const clear = pendingCookie('', 0);
     const fail = (code: string) => redirect(`/signin?error=${code}`, [clear]);
     if (!o.identity) return fail('paypal_off');
     const token = url.searchParams.get('ba_token') ?? url.searchParams.get('token');
-    // The token must be the one this browser started (signed cookie), not expired and not used before: a link with
-    // someone else's approved token signs nobody in.
-    const m = /^(BA-[A-Z0-9]{8,32})\.(\d{1,16})\.([A-Za-z0-9_-]{43})$/.exec(readCookie(req, PENDING_COOKIE) ?? '');
+    // The token must be the one this browser started (signed cookie, not expired, not used before), AND the path must
+    // carry the key of that cookie's nonce, which only PayPal's redirect of the approver delivers (see the header).
+    const m = /^(BA-[A-Z0-9]{8,32})\.([A-Za-z0-9_-]{22})\.(\d{1,16})\.([A-Za-z0-9_-]{43})$/.exec(readCookie(req, PENDING_COOKIE) ?? '');
     if (!m || !isAgreementTokenId(token) || m[1] !== token) return fail('session_mismatch');
-    const expected = Buffer.from(mac(o.secret, `${m[1]}.${m[2]}`));
-    const got = Buffer.from(m[3]!);
-    if (expected.length !== got.length || !timingSafeEqual(expected, got) || Number(m[2]) <= now().getTime()) return fail('session_mismatch');
+    const expected = Buffer.from(mac(o.secret, `${m[1]}.${m[2]}.${m[3]}`));
+    const got = Buffer.from(m[4]!);
+    if (expected.length !== got.length || !timingSafeEqual(expected, got) || Number(m[3]) <= now().getTime()) return fail('session_mismatch');
+    const wantK = Buffer.from(returnKey(o.secret, m[2]!));
+    const gotK = Buffer.from(k);
+    if (wantK.length !== gotK.length || !timingSafeEqual(wantK, gotK)) return fail('session_mismatch');
     if (usedTokens.has(token)) return fail('session_mismatch');
     let state;
     try {
@@ -422,7 +435,6 @@ export function createAuth(o: AuthOptions): Auth {
     const routes: Record<string, () => Promise<Response> | Response> = {
       '/api/auth/me': () => (get ? me(req) : json(405, { error: 'METHOD_NOT_ALLOWED' })),
       '/api/auth/paypal/start': () => (post ? paypalStart() : json(405, { error: 'METHOD_NOT_ALLOWED' })),
-      '/api/auth/paypal/return': () => (get ? paypalReturn(req, url) : json(405, { error: 'METHOD_NOT_ALLOWED' })),
       '/api/auth/paypal/cancel': () => (get ? redirect('/signin?error=cancelled', [pendingCookie('', 0)]) : json(405, { error: 'METHOD_NOT_ALLOWED' })),
       '/api/auth/invite/inspect': () => (post ? inspect(req) : json(405, { error: 'METHOD_NOT_ALLOWED' })),
       '/api/auth/invite/join': () => (post ? joinBrowser(req) : json(405, { error: 'METHOD_NOT_ALLOWED' })),
@@ -432,6 +444,10 @@ export function createAuth(o: AuthOptions): Auth {
       '/api/auth/passkey/login/verify': () => (post ? loginVerify(req) : json(405, { error: 'METHOD_NOT_ALLOWED' })),
       '/api/auth/signout': () => (post ? signout(req) : json(405, { error: 'METHOD_NOT_ALLOWED' })),
     };
+    const back = /^\/api\/auth\/paypal\/return\/([A-Za-z0-9_-]{43})$/.exec(path);
+    if (back) return get ? paypalReturn(req, url, back[1]!) : Promise.resolve(json(405, { error: 'METHOD_NOT_ALLOWED' }));
+    // Without the key there is no sign-in to finish: back to the sign-in page.
+    if (path === '/api/auth/paypal/return' || path.startsWith('/api/auth/paypal/return/')) return Promise.resolve(redirect('/signin?error=session_mismatch', [pendingCookie('', 0)]));
     const h = routes[path];
     return h ? Promise.resolve(h()) : Promise.resolve(json(404, { error: 'NOT_FOUND' }));
   };

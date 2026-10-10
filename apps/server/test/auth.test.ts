@@ -45,12 +45,13 @@ function sellerPayPal(o: { seller?: { id: string } } = {}) {
 /** The platform's app: agreement tokens. `approve(payerId)` makes the token APPROVED by that account. */
 function platformPayPal() {
   // Each start is a new token (the first one is TOKEN); approving applies to the latest.
-  const state = { status: 'PENDING', payerId: null as string | null, reads: 0, starts: 0, token: TOKEN };
+  const state = { status: 'PENDING', payerId: null as string | null, reads: 0, starts: 0, token: TOKEN, returnUrl: '' };
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
     if (u.pathname === '/v1/billing-agreements/agreement-tokens' && init.method === 'POST') {
       state.token = state.starts++ === 0 ? TOKEN : `BA-${String(7000000000000000 + state.starts)}`;
+      state.returnUrl = (JSON.parse(String(init.body)) as { plan: { merchant_preferences: { return_url: string } } }).plan.merchant_preferences.return_url;
       Object.assign(state, { status: 'PENDING', payerId: null });
       return new Response(JSON.stringify({ token_id: state.token, links: [{ rel: 'approval_url', href: `https://www.sandbox.paypal.com/agreements/approve?ba_token=${state.token}` }] }), { status: 201 });
     }
@@ -63,6 +64,8 @@ function platformPayPal() {
   return {
     state,
     approve: (payerId: string) => Object.assign(state, { status: 'APPROVED', payerId }),
+    /** Where PayPal sends the approver's browser back (the return URL it was given, plus the token). */
+    redirect: () => `${new URL(state.returnUrl).pathname}?token=${state.token}&ba_token=${state.token}`,
     client: new PayPalClient({ clientId: 'platform', clientSecret: 'p', env: 'sandbox', fetch }),
   };
 }
@@ -129,9 +132,8 @@ async function paypalSignIn(s: Awaited<ReturnType<typeof setup>>, payerId: strin
   const start = await s.app(req('/api/auth/paypal/start', { body: {} }));
   assert.equal(start.status, 200);
   const pending = pair(cookieFrom(start, 'rk_pp'));
-  const token = new URL(((await start.json()) as { approvalUrl: string }).approvalUrl).searchParams.get('ba_token')!;
   s.platform.approve(payerId);
-  const back = await s.app(req(`/api/auth/paypal/return?token=${token}&ba_token=${token}`, { cookie: pending }));
+  const back = await s.app(req(s.platform.redirect(), { cookie: pending }));
   assert.equal(back.status, 303, back.headers.get('location') ?? '');
   assert.equal(back.headers.get('location'), '/?signed-in=paypal');
   return pair(cookieFrom(back, SESSION_COOKIE));
@@ -190,23 +192,45 @@ test('paypal: a return without this browser’s pending cookie, with another tok
   const pending = pair(cookieFrom(start, 'rk_pp'));
   s.platform.approve(SELLER_ID);
   const [name, value] = pending.split('=');
-  const [tok, exp, sig] = value!.split('.');
+  const [tok, nonce, exp, sig] = value!.split('.');
+  const path = new URL(s.platform.state.returnUrl).pathname;
   const cases = [
     { cookie: undefined, token: TOKEN },
     { cookie: pending, token: 'BA-1111111111111111' },
-    { cookie: `${name}=${tok}.${Number(exp) + 3_600_000}.${sig}`, token: TOKEN },
-    { cookie: `${name}=${tok}.${exp}.${'A'.repeat(43)}`, token: TOKEN },
+    { cookie: `${name}=${tok}.${nonce}.${Number(exp) + 3_600_000}.${sig}`, token: TOKEN },
+    { cookie: `${name}=${tok}.${nonce}.${exp}.${'A'.repeat(43)}`, token: TOKEN },
     { cookie: pending, token: '../../v1/oauth2/token' },
   ];
   for (const c of cases) {
-    const r = await s.app(req(`/api/auth/paypal/return?ba_token=${encodeURIComponent(c.token)}`, c.cookie ? { cookie: c.cookie } : {}));
+    const r = await s.app(req(`${path}?ba_token=${encodeURIComponent(c.token)}`, c.cookie ? { cookie: c.cookie } : {}));
     assert.equal(r.status, 303);
     assert.equal(r.headers.get('location'), '/signin?error=session_mismatch');
     assert.equal(cookieFrom(r, SESSION_COOKIE), null);
   }
   t += 16 * 60_000;
-  const late = await s.app(req(`/api/auth/paypal/return?ba_token=${TOKEN}`, { cookie: pending }));
+  const late = await s.app(req(`${path}?ba_token=${TOKEN}`, { cookie: pending }));
   assert.equal(late.headers.get('location'), '/signin?error=session_mismatch');
+  assert.equal(s.platform.state.reads, 0);
+});
+
+test('paypal: a phished approval signs nobody in — the attacker has the pending cookie but not the return key; the merchant has the key but not the cookie', async () => {
+  const s = await setup();
+  // The attacker starts a sign-in in their browser and sends the (genuine) PayPal approval link to the merchant.
+  const start = await s.app(req('/api/auth/paypal/start', { body: {} }));
+  const attacker = pair(cookieFrom(start, 'rk_pp'));
+  const link = ((await start.json()) as { approvalUrl: string }).approvalUrl;
+  assert.ok(!link.includes(new URL(s.platform.state.returnUrl).pathname.split('/').pop()!));
+  // The merchant approves on PayPal; PayPal sends the MERCHANT's browser back (no pending cookie there).
+  s.platform.approve(SELLER_ID);
+  const merchant = await s.app(req(s.platform.redirect()));
+  assert.equal(merchant.headers.get('location'), '/signin?error=session_mismatch');
+  assert.equal(cookieFrom(merchant, SESSION_COOKIE), null);
+  // The attacker knows the token id (it is in the link) but not the key: every guess of the return URL fails.
+  for (const path of [`/api/auth/paypal/return?ba_token=${TOKEN}`, `/api/auth/paypal/return/${'A'.repeat(43)}?ba_token=${TOKEN}`, `/api/auth/paypal/return/x?ba_token=${TOKEN}`]) {
+    const r = await s.app(req(path, { cookie: attacker }));
+    assert.equal(r.headers.get('location'), '/signin?error=session_mismatch', path);
+    assert.equal(cookieFrom(r, SESSION_COOKIE), null);
+  }
   assert.equal(s.platform.state.reads, 0);
 });
 
@@ -214,12 +238,12 @@ test('paypal: a token that is not approved signs nobody in; an approved token si
   const s = await setup();
   const start = await s.app(req('/api/auth/paypal/start', { body: {} }));
   const pending = pair(cookieFrom(start, 'rk_pp'));
-  const r = await s.app(req(`/api/auth/paypal/return?ba_token=${TOKEN}`, { cookie: pending }));
+  const r = await s.app(req(s.platform.redirect(), { cookie: pending }));
   assert.equal(r.headers.get('location'), '/signin?error=not_approved');
   s.platform.approve(SELLER_ID);
-  const ok = await s.app(req(`/api/auth/paypal/return?ba_token=${TOKEN}`, { cookie: pending }));
+  const ok = await s.app(req(s.platform.redirect(), { cookie: pending }));
   assert.equal(ok.headers.get('location'), '/?signed-in=paypal');
-  const replay = await s.app(req(`/api/auth/paypal/return?ba_token=${TOKEN}`, { cookie: pending }));
+  const replay = await s.app(req(s.platform.redirect(), { cookie: pending }));
   assert.equal(replay.headers.get('location'), '/signin?error=session_mismatch');
   assert.equal(cookieFrom(replay, SESSION_COOKIE), null);
 });
