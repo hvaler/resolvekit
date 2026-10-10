@@ -67,9 +67,11 @@ not only in the browser:
    bindings, or 30 minutes passing ends an intent (an edit during a send voids the approval if that send fails). A
    failed send can be retried for 30 minutes. The intent keeps the exact analysis it was composed from, so someone
    else re-running the analysis does not change an approved response.
-5. **Intents belong to their session.** In hosted mode composing, reading, approving, cancelling or sending an intent
-   needs the demo unlock; each intent belongs to the demo session that composed it and does not exist for any other
-   (404). One session's actions never invalidate another's intents. Only one intent per dispute can be sending at a
+5. **Intents belong to the person who composed them.** In hosted mode composing, reading, approving, cancelling or
+   sending an intent needs a signed-in person (see [Merchant accounts](#merchant-accounts-hosted-mode)); each intent
+   belongs to the person who composed it and does not exist for anyone else, a teammate included (404). One person's
+   actions never invalidate another's intents; the workspace's members share its audit trail, which names who
+   composed, approved and sent. Only one intent per dispute can be sending at a
    time, and once PayPal accepted one (recorded on the disk), any other intent for that dispute is refused with
    "PayPal already has seller evidence for this dispute", without waiting for PayPal's read. The store is bounded:
    per session one open intent per case, 10 open, 30 stored and 30 compositions per 10 minutes (whatever its
@@ -346,15 +348,18 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
 1. Push the repo to GitHub. In Render: **New → Blueprint**, pick the repo; Render reads `render.yaml`.
 2. Render asks once for the `sync: false` secrets (both services ask for their own copy; use the same values):
    `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (the PayPal **sandbox** app, developer.paypal.com → Apps & Credentials),
-   `GEMINI_API_KEY` (Google AI Studio), `GROQ_API_KEY` (console.groq.com; optional fallback), `DEMO_CODE` (12+
-   random characters; it goes into the Devpost testing instructions) and `BINDINGS_JSON`:
+   `GEMINI_API_KEY` (Google AI Studio), `GROQ_API_KEY` (console.groq.com; optional fallback),
+   `PAYPAL_IDENTITY_CLIENT_ID` / `PAYPAL_IDENTITY_CLIENT_SECRET` on `resolvekit` (a **second** sandbox app, created
+   under **another** sandbox business account: merchants sign in by approving a no-charge request of it, and a seller
+   cannot approve a request of its own app), `DEMO_CODE` on `resolvekit-metermcp` (12+ random characters; judges'
+   MCP clients send it) and `BINDINGS_JSON`:
    `{"PP-R-TVH-10190665":{"dispute":"<sandbox dispute id>","capture":"<its capture id>"},"PP-R-MMC-10190702":{…}}`
    (exactly what `npm run demo:prepare` prints; see `apps/server/bindings.example.json`). Bindings are validated at
    start; a bad one stops the service. A binding without the capture (the old string form) is read and shown but
    cannot send. Without `BINDINGS_JSON` the server reads `/var/data/bindings.json`.
    `PAYPAL_ENV` is `sandbox` in `render.yaml`: in hosted mode both services **refuse to start** on anything else;
    `live` would additionally need `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, which the blueprint never sets.
-3. Render generates `RESOLVEKIT_SESSION_SECRET` (signs the unlock cookie) and `METERMCP_ADMIN_TOKEN` (given to
+3. Render generates `RESOLVEKIT_SESSION_SECRET` (signs the session cookies) and `METERMCP_ADMIN_TOKEN` (given to
    `resolvekit` with `fromService`), and passes MeterMCP's private-network `host:port` as `METERMCP_URL`.
    `RENDER_EXTERNAL_URL` / `PORT` come from Render. A custom domain goes in `RESOLVEKIT_CUSTOM_DOMAINS` /
    `METERMCP_CUSTOM_DOMAINS`.
@@ -362,9 +367,12 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
    committed golden analyses do not match them, and the server **warms up** instead. After boot, and whenever the
    bindings change (a new `BINDINGS_JSON` restarts the service; a changed `/var/data/bindings.json` is picked up within
    30 s), it analyses each bound case once in the background, skipping any whose documents already have a stored
-   analysis. These are system runs: no demo code, but the same hourly limit and daily cap as a visitor's live run. The
-   log says the outcome per case (`warm-up · case … · done | cached | skipped · why`), never document text or keys.
-   Every visitor then sees the analysis without the code.
+   analysis. These are system runs: nobody signed in, but the same hourly limit and daily cap as a live run. The log
+   says the outcome per case (`warm-up · case … · done | cached | skipped · why`), never document text or keys. The
+   seller's workspace then finds the analysis ready.
+   Then sign in once as the merchant (**Sign in → Continue with PayPal**, approve with the sandbox **business** account that
+   is the seller on the bound disputes) and create the reviewer invite link for the judges under **Members and
+   invites**. The link is shown once; it goes into the Devpost testing instructions.
 5. Fresh disputes for the demo: `npm run demo:prepare` (below) creates the payments, tells the sandbox buyer what to
    click, waits for the disputes and prints the `BINDINGS_JSON` to paste.
 6. The agent case shows the real MeterMCP receipt only if the hosted ledger has the session of the disputed capture:
@@ -399,13 +407,12 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
 
 **Hosted mode** (`apps/server/src/hosted.ts`, `apps/metermcp/src/app.ts`, `packages/hosting`)
 
-- Browsing is free: inbox, cases, PayPal reads, stored analyses, health.
-- What costs money or quota or cannot be undone needs the **demo code**: sending evidence to the real PayPal sandbox,
-  live AI runs (including a plain request whose documents have no stored analysis) and AI re-checks of edited
-  sentences. `POST /api/demo/unlock {code}` compares it in constant time and sets an `HttpOnly; Secure;
-  SameSite=Strict` cookie, HMAC-signed with `RESOLVEKIT_SESSION_SECRET`, valid 12 h. Unlock attempts: 5 per IP per
-  15 min, 60 per hour overall, counted before the code is compared. The web app shows **Unlock demo actions** in the
-  app bar; locked actions say **Demo code required** and why.
+- Browsing is free: inbox, cases (on the simulator), stored analyses, health.
+- People sign in ([Merchant accounts](#merchant-accounts-hosted-mode)). The real PayPal disputes, sending evidence to
+  them, live AI runs (including a plain request whose documents have no stored analysis) and AI re-checks of edited
+  sentences belong to the **seller's workspace**: the workspace whose PayPal account is the seller on the bound
+  disputes (Owner, or a member who joined with its invite). Everyone else gets the same cases on the simulator; a
+  locked action says why (**Sign in required** / **Seller workspace only**).
 - Global **daily caps**, persisted on the disk and reserved atomically before the work starts (refunded when it did
   not happen): `DAILY_LIVE_ANALYSES` (60), `DAILY_RECHECKS` (200), `DAILY_EVIDENCE_SENDS` (20), on top of the
   hourly limits (`LIVE_ANALYSES_PER_HOUR` 6, `RECHECKS_PER_HOUR` 30). Live runs and re-checks only analyse inputs the server
@@ -418,13 +425,11 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
   `TRUSTED_PROXY_HOPS` (2 on Render); so a request that bypasses Cloudflare is keyed on its own address and nothing
   a client writes in the header is believed. Per-IP limits are a courtesy, not the security boundary: anyone
   sending from many addresses (proxies, VPNs, Cloudflare Workers egress) can spread requests across keys; the
-  boundary is the demo code, the per-session caps and the global daily caps. The header is believed only when the connection comes from a private address (Render's proxy;
+  boundary is the signed-in person and their workspace, the per-person caps and the global daily caps. The header is believed only when the connection comes from a private address (Render's proxy;
   `TRUSTED_PROXY_PEERS=private|any|none`), else the socket address; IPv6 is keyed per /64. The first request logs,
-  masked, how the address was derived. Wrong demo codes: 5 per address per 15 min and 60 in all per hour (then
-  addresses that already guessed wrong wait); a correct code is never counted, so guessing cannot lock judges out;
-  at most 10 demo sessions per address per hour. Submission intents, approvals and sends need the demo unlock and belong to the demo session
-  that made them (see [How sending works](#how-sending-works-the-security-model)); an already unlocked browser keeps its
-  session when it unlocks again.
+  masked, how the address was derived. Sign-in requests: 40 per address per 15 min, PayPal sign-ins started: 10.
+  Submission intents, approvals and sends need a signed-in person and belong to the person who made them (see
+  [How sending works](#how-sending-works-the-security-model)).
 - Headers on every answer: CSP (own scripts only; Google Fonts; `frame-ancestors 'none'`), HSTS, `nosniff`,
   `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`.
 - MeterMCP: `/mcp` is public for judges' own MCP clients. Free tools work for anyone; **creating a budget** (the
@@ -432,7 +437,35 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
   `DAILY_BUDGETS` (20) per day; without it a paid tool answers `demo_code_required`. Wrong codes: 5 per IP per 15
   min. Return/cancel URLs use `RENDER_EXTERNAL_URL`. Admin routes (`/sessions…`) answer only requests that did not
   come through Render's public proxy (no `X-Forwarded-For`, not the public host) and carry the admin token.
-- Local mode is unchanged (127.0.0.1, per-launch tokens, Vite proxy).
+- Local mode is unchanged (127.0.0.1, per-launch tokens, Vite proxy): no sign-in, the operator is the merchant.
+
+#### Merchant accounts (hosted mode)
+
+`apps/server/src/accounts.ts`, `apps/server/src/auth.ts`, `packages/paypal/src/identity.ts`.
+
+- **A workspace is a merchant**, identified by its PayPal account. **Continue with PayPal** asks PayPal for a
+  no-charge Billing Agreements token of the *platform's* PayPal app (`PAYPAL_IDENTITY_*`); the merchant approves it on
+  PayPal, and the token then names the approving account's `payer_id`, which for a business account is its merchant
+  id (`seller.merchant_id` on its disputes). No agreement is created and no money moves. Verified in the sandbox on
+  2026-10-10. Log in with PayPal (OpenID `userinfo`) answered 400 in the same sandbox, and a seller cannot approve a
+  request of its own app, hence the second app.
+- **Binding the sign-in to the browser that approved.** The return URL carries a key derived from a nonce kept in a
+  short-lived signed cookie of the browser that started (SameSite=Lax, path `/api/auth/paypal`); a sign-in finishes
+  only with both. Each token gets one attempt: an arrival without the cookie (the approver's browser coming back
+  from a link it did not start) or before the approval burns it. A phished approval link therefore signs nobody in.
+- **Roles.** The PayPal account's person is the **Owner**. Members join through **invite links** made by the Owner
+  (one-time or multi-use, an expiry, and for reviewers an access end date; only the token's hash is stored, the token
+  travels in the link's fragment), with a **passkey** (WebAuthn, `@simplewebauthn/server`) or for one browser only.
+  The Owner lists and revokes members and invites; Owners cannot be revoked.
+- **Sessions** are `HttpOnly; Secure; SameSite=Strict` cookies, HMAC-signed with `RESOLVEKIT_SESSION_SECRET`, valid
+  12 h, naming the person and a session epoch: revoking a member, **Sign out of all devices** and the end of reviewer
+  access end every session at once.
+- **Only the seller answers.** `/api/health` lists the bound cases, and `/api/disputes/:case` reads them, only for
+  the seller's workspace. On the fresh read before composing and before sending, the person's workspace merchant id
+  must be the dispute's `seller.merchant_id` (403 `NOT_THE_SELLER` otherwise). The analysis of a real dispute is
+  answered by `/progress` only to the seller's workspace.
+- **Stored** in `<data>/accounts.json`: payer ids, display names, masked emails, passkey public keys, invite token
+  hashes. A change that cannot be written is refused (503) and undone.
 
 **Costs.** Two Starter instances plus 2 GB of disk (see render.com/pricing), PayPal sandbox (free), Gemini/Groq
 usage within the daily caps. A disk rules out zero-downtime deploys (a few seconds of downtime per deploy) and

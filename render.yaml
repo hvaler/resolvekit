@@ -6,7 +6,10 @@
 #   and PayPal's approval return pages; its admin routes answer only apps/server over Render's private network.
 #
 # Secrets are `sync: false`: Render asks for them once, when the Blueprint is first created (not on later syncs).
-# Enter the same DEMO_CODE and the same PayPal sandbox app credentials in both services.
+# Enter the same PayPal sandbox app credentials (the seller's app) in both services. resolvekit also takes a SECOND
+# PayPal app (PAYPAL_IDENTITY_*), owned by another sandbox business account: merchants sign in by approving a
+# no-charge request of that app (a seller cannot approve a request of its own app). MeterMCP keeps a DEMO_CODE for
+# MCP clients, which cannot sign in with a browser.
 
 services:
   - type: web
@@ -39,11 +42,13 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: DEMO_CODE # given to judges in the Devpost testing instructions
+      - key: PAYPAL_IDENTITY_CLIENT_ID # the platform's PayPal app (another sandbox business account): PayPal sign-in
+        sync: false
+      - key: PAYPAL_IDENTITY_CLIENT_SECRET
         sync: false
       - key: BINDINGS_JSON # {"<web case id>":{"dispute":"<PayPal sandbox dispute id>","capture":"<its capture id>"}}; npm run demo:prepare prints it
         sync: false
-      - key: RESOLVEKIT_SESSION_SECRET # signs the demo-unlock cookie
+      - key: RESOLVEKIT_SESSION_SECRET # signs the session and sign-in cookies
         generateValue: true
       - key: METERMCP_URL # private network host:port of MeterMCP (server-to-server only)
         fromService:
@@ -92,7 +97,7 @@ services:
         sync: false
       - key: PAYPAL_CLIENT_SECRET
         sync: false
-      - key: DEMO_CODE # same value as in resolvekit; MCP clients send it as the x-demo-code header
+      - key: DEMO_CODE # given to judges for their MCP clients (x-demo-code header); resolvekit itself uses sign-in
         sync: false
       - key: METERMCP_ADMIN_TOKEN # shared with resolvekit (fromService above)
         generateValue: true

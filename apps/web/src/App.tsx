@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { setRecording, useRecording } from './app/recording';
 import { useServices } from './app/services';
 import type { SimulatedOutcome } from './domain/gateway';
+import { JoinPage, MembersPage, SignInPage } from './pages/AuthPages';
 import { CasePage } from './pages/CasePage';
 import { InboxPage } from './pages/InboxPage';
 import { processingDispute } from './fixtures';
@@ -85,6 +86,9 @@ export function App() {
       <Routes>
         <Route path="/" element={<InboxPage />} />
         <Route path="/cases/:id/*" element={<CasePage />} />
+        <Route path="/signin" element={<SignInPage />} />
+        <Route path="/join" element={<JoinPage />} />
+        <Route path="/workspace" element={<MembersPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {/* Recording mode (demo video) hides the Dev control; everything else on screen is unchanged. */}

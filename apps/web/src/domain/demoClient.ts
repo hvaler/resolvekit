@@ -1,23 +1,44 @@
 /**
- * The hosted demo's lock (`/api/demo…` on the ResolveKit server in hosted mode). Browsing is free; sending evidence
- * to real PayPal and live AI runs need the demo code from the Devpost testing instructions. The unlock is an
- * HttpOnly cookie the server sets: the browser never stores the code. Locally (no hosted server) there is no lock.
+ * The hosted demo's account state (`/api/demo` and `/api/auth/me` on the ResolveKit server in hosted mode). Browsing is
+ * free; composing and approving a response needs a signed-in person; the real PayPal disputes, sending evidence to them
+ * and live AI runs belong to the seller's workspace (signed in with the seller's PayPal account, or joined with its
+ * invite). The session is an HttpOnly cookie the server sets. Locally (no hosted server) there is no sign-in.
  */
 export type DemoAction = 'evidence' | 'live-analysis' | 'recheck';
 
+export interface AccountPerson {
+  id: string;
+  name: string;
+  role: 'owner' | 'member';
+  via: 'paypal' | 'passkey' | 'browser';
+  email: string | null;
+  reviewer: boolean;
+  accessUntil: string | null;
+}
+
+export interface AccountWorkspace {
+  id: string;
+  name: string;
+  /** Its PayPal account is the seller on the connected disputes: they are live for it. */
+  connected: boolean;
+}
+
 export interface DemoState {
-  unlockable: boolean;
-  unlocked: boolean;
+  signedIn: boolean;
+  person: AccountPerson | null;
+  workspace: AccountWorkspace | null;
   expiresAt: string | null;
-  /** Why each action needs the code, as the server words it. */
+  /** How one can sign in on this server. */
+  methods: { paypal: boolean; passkey: boolean };
+  /** The costly actions are open to this person: signed in to the seller's workspace. */
+  unlocked: boolean;
+  /** Why each costly action is the seller workspace's, as the server words it. */
   reasons: Partial<Record<DemoAction, string>>;
   caps: Partial<Record<DemoAction, { limit: number; used: number; remaining: number }>>;
   resetsAt?: string;
 }
 
-export type UnlockResult = { ok: true; state: DemoState } | { ok: false; error: string };
-
-const json = { 'content-type': 'application/json' };
+export const SIGN_IN_FIRST = 'Sign in to do this: with PayPal if you are the merchant, or with the invite link you were given.';
 
 export class DemoClient {
   private readonly base: string;
@@ -27,53 +48,57 @@ export class DemoClient {
     this.fetch = o.fetch ?? ((...a) => globalThis.fetch(...a));
   }
 
-  /** The lock state, or null when this server has no lock (local mode, or no server). */
+  /** The account state, or null when this server has no sign-in (local mode, or no server). */
   async state(): Promise<DemoState | null> {
     try {
-      const r = await this.fetch(`${this.base}/demo`, { credentials: 'same-origin', signal: AbortSignal.timeout(8_000) });
-      if (!r.ok) return null;
-      const b = (await r.json()) as Partial<DemoState> & { hosted?: boolean };
-      return b.hosted ? toState(b) : null;
+      const [d, m] = await Promise.all([
+        this.fetch(`${this.base}/demo`, { credentials: 'same-origin', signal: AbortSignal.timeout(8_000) }),
+        this.fetch(`${this.base}/auth/me`, { credentials: 'same-origin', signal: AbortSignal.timeout(8_000) }).catch(() => null),
+      ]);
+      if (!d.ok) return null;
+      const demo = (await d.json()) as { hosted?: boolean; reasons?: DemoState['reasons']; caps?: DemoState['caps']; resetsAt?: string };
+      if (!demo.hosted) return null;
+      const me = m && m.ok ? ((await m.json()) as { signedIn?: boolean; person?: AccountPerson; workspace?: AccountWorkspace; expiresAt?: string; methods?: DemoState['methods'] }) : {};
+      const signedIn = !!me.signedIn && !!me.person && !!me.workspace;
+      return {
+        signedIn,
+        person: signedIn ? me.person! : null,
+        workspace: signedIn ? me.workspace! : null,
+        expiresAt: signedIn ? (me.expiresAt ?? null) : null,
+        methods: { paypal: !!me.methods?.paypal, passkey: me.methods?.passkey !== false },
+        unlocked: signedIn && !!me.workspace?.connected,
+        reasons: demo.reasons ?? {},
+        caps: demo.caps ?? {},
+        ...(demo.resetsAt ? { resetsAt: demo.resetsAt } : {}),
+      };
     } catch {
       return null;
     }
   }
 
-  async unlock(code: string): Promise<UnlockResult> {
+  async signOut(everywhere = false): Promise<void> {
     try {
-      const r = await this.fetch(`${this.base}/demo/unlock`, { method: 'POST', headers: json, credentials: 'same-origin', body: JSON.stringify({ code }), signal: AbortSignal.timeout(10_000) });
-      const b = (await r.json().catch(() => ({}))) as Partial<DemoState> & { error?: string; detail?: string };
-      if (r.ok) return { ok: true, state: toState(b) };
-      if (r.status === 403) return { ok: false, error: 'That is not the demo code.' };
-      if (r.status === 429) return { ok: false, error: b.detail ?? 'Too many attempts; try again later.' };
-      return { ok: false, error: b.detail ?? `The server answered ${r.status}.` };
+      await this.fetch(`${this.base}/auth/signout`, { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ everywhere }) });
     } catch {
-      return { ok: false, error: 'The server could not be reached.' };
-    }
-  }
-
-  async lock(): Promise<void> {
-    try {
-      await this.fetch(`${this.base}/demo/lock`, { method: 'POST', headers: json, credentials: 'same-origin', body: '{}' });
-    } catch {
-      // Expires on its own.
+      // The session expires on its own.
     }
   }
 }
 
-function toState(b: Partial<DemoState>): DemoState {
-  return {
-    unlockable: !!b.unlockable,
-    unlocked: !!b.unlocked,
-    expiresAt: b.expiresAt ?? null,
-    reasons: b.reasons ?? {},
-    caps: b.caps ?? {},
-    ...(b.resetsAt ? { resetsAt: b.resetsAt } : {}),
-  };
-}
-
-/** Why `action` is locked right now, or null (unlocked, or no lock on this server). */
+/** Why `action` is not open right now, or null (open, or no sign-in on this server). */
 export function lockedReason(demo: DemoState | null, action: DemoAction): string | null {
   if (!demo || demo.unlocked) return null;
-  return demo.reasons[action] ?? 'This action needs the demo code.';
+  if (!demo.signedIn) return SIGN_IN_FIRST;
+  return demo.reasons[action] ?? 'Only the seller’s workspace can do this.';
+}
+
+/** "Dana Ruiz" → "DR". */
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts[parts.length - 1]![0] ?? '') : '')).toUpperCase() || '?';
+}
+
+/** The person's role as shown: "Owner", "Member", "Reviewer". */
+export function roleLabel(p: Pick<AccountPerson, 'role' | 'reviewer'>): string {
+  return p.role === 'owner' ? 'Owner' : p.reviewer ? 'Reviewer' : 'Member';
 }

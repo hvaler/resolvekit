@@ -1,20 +1,26 @@
 # Testing instructions (for Devpost)
 
 Ready to paste into Devpost's "Testing instructions" field. Replace the placeholders before submitting:
-`<APP_URL>` (the `resolvekit` service), `<METERMCP_URL>` (the `resolvekit-metermcp` service), `<DEMO_CODE>`,
-`<SANDBOX_BUYER_EMAIL>` / `<SANDBOX_BUYER_PASSWORD>` (a PayPal sandbox personal account). Never put real values in
-this file; it is public.
+`<APP_URL>` (the `resolvekit` service), `<REVIEWER_LINK>` (the reviewer invite link the merchant creates under
+**Members and invites**), `<METERMCP_URL>` (the `resolvekit-metermcp` service), `<DEMO_CODE>` (MeterMCP's, for MCP
+clients), `<SANDBOX_BUYER_EMAIL>` / `<SANDBOX_BUYER_PASSWORD>` (a PayPal sandbox personal account). Never put real
+values in this file; it is public.
 
 ---
 
-**ResolveKit** is live at **<APP_URL>** (free to use until 15 Dec 2026; no sign-up). Browsing works for everyone.
-Actions that send data to real PayPal or call the AI live need this **demo code: `<DEMO_CODE>`** (click **Unlock demo
-actions** in the top bar). It unlocks your browser for 12 hours.
+**ResolveKit** is live at **<APP_URL>** (free to use until 15 Dec 2026). Browsing works for everyone, on the
+simulator. Each merchant has its own workspace, and only the seller's workspace sees and answers its real PayPal
+disputes. To review as a member of the demo merchant's workspace, open your **reviewer link: <REVIEWER_LINK>**, type
+your name and choose **Create a passkey and join** (or **Join for this browser only**). It takes a few seconds, and
+your name appears in the audit trail of what you approve. Access ends on 15 Dec 2026.
+
+(Merchants sign in with **Continue with PayPal**: they approve a no-charge request in PayPal so ResolveKit knows which
+account is theirs. Any other PayPal sandbox account gets its own workspace, with the cases on the simulator.)
 
 PayPal sandbox buyer account (to approve an agent budget): **<SANDBOX_BUYER_EMAIL>** / **<SANDBOX_BUYER_PASSWORD>**.
 
-**What is real and what is synthetic.** The PayPal side is real: the two cases marked **PayPal sandbox · live** in
-the top bar are bound to real disputes in the PayPal sandbox, read through the Customer Disputes API, and "Submit
+**What is real and what is synthetic.** The PayPal side is real: once you joined, the two cases marked **PayPal
+sandbox · live** in the top bar are bound to real disputes in the PayPal sandbox, read through the Customer Disputes API, and "Submit
 evidence" really calls `provide-evidence`. The AI analysis is real (Google Gemini, Groq as fallback). MeterMCP's
 budgets are real PayPal Orders v2 authorizations and captures in the sandbox. The merchant's documents (order,
 tracking, notes) are synthetic, and so are MeterMCP's tool outputs; other inbox rows run on an in-browser
@@ -31,8 +37,8 @@ says which model made the analysis and when ("cached" = stored; "live" = just ru
 **3. The contradiction.** The order and the shipping label say "Apt 4"; the carrier's delivery record says "Apt 4B". ResolveKit
 shows both values side by side, neutrally (no fraud accusation), and the affected sentences need your review.
 
-**4. Approve and send to real PayPal.** Click **Review what will be sent →** (unlock with the demo code first: on a
-real PayPal case the review is composed by the server for your session). The review shows exactly what the server
+**4. Approve and send to real PayPal.** Click **Review what will be sent →** (signed in through your reviewer link:
+the review is composed by the server for you, and the approval names you). The review shows exactly what the server
 will send, composed on the server from its own copy of the documents and the analysis (supported sentences only,
 with the intent id and content hash), next to the claim ↔ proof list. **Continue to confirm**, tick the approval box
 and **Submit evidence to PayPal**: the server records your approval of that exact content, checks again on a fresh
@@ -53,11 +59,12 @@ with the receipt PDF.
 "unauthorised" booking whose evidence is already recorded (PP-R-QZE-10181290: read-back, draft locked) and a closed
 case resolved in the seller's favour (PP-R-HFA-10176021: outcome, what was sent, no actions).
 
-**6. Optional: re-run the AI.** With the demo code, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
+**6. Optional: re-run the AI.** As a member of the workspace, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
 its stages; editing a sentence sends it to the AI verifier, which re-chooses its citations and judges it again.
 
 **7. Optional: MeterMCP from your own MCP client.** MeterMCP is a metered MCP server at **<METERMCP_URL>/mcp**
-(Streamable HTTP). Add the HTTP header **`x-demo-code: <DEMO_CODE>`** in your client (e.g. MCP Inspector:
+(Streamable HTTP). MCP clients cannot sign in with a browser, so MeterMCP takes a code: add the HTTP header
+**`x-demo-code: <DEMO_CODE>`** in your client (e.g. MCP Inspector:
 Transport "Streamable HTTP", URL above, header under Authentication/Headers). Free tools (`price_list`,
 `get_balance`, `get_receipt`, `close_session`) work without it. The first `deep_report` call of each session fails on purpose (a test switch, so the receipt shows an
 uncharged failure; the receipt says it was injected). Call `quote_lookup`: it answers `payment_required`

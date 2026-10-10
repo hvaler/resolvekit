@@ -1,4 +1,6 @@
 import { analysisByline } from '@resolvekit/analyst';
+import { LOCKED_PREFIX } from '../app/useAnalysis';
+import { SIGN_IN_FIRST } from '../domain/demoClient';
 import type { AnalysisState } from '../app/useAnalysis';
 import type { LiveState } from '../domain/analysisClient';
 import { cx } from './ui';
@@ -125,9 +127,9 @@ export function AnalysisBar({ steps, run, note, label, problem, onReplay, onReru
           Re-run with AI
         </button>
       )}
-      {onRerun && rerunBlocked?.startsWith('Demo code required') && (
+      {onRerun && rerunBlocked?.startsWith(LOCKED_PREFIX) && (
         <span data-testid="rerun-locked" title={rerunBlocked} className="flex-none whitespace-nowrap rounded-sm border border-dashed border-line-2 px-[7px] py-0.5 text-[11px] text-ink-3">
-          Demo code required
+          {rerunBlocked.endsWith(SIGN_IN_FIRST) ? 'Sign in required' : 'Seller workspace only'}
         </span>
       )}
       </span>

@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalysisRequestError, AnalysisUnreachableError, type AnalysisAnswer, type AnalysisClient, type AnalysisOrigin, type LiveState, type VerifyAnswer } from '../domain/analysisClient';
 import { goldenAnalyses } from '../fixtures/golden';
 
+/** How a re-run blocked by the hosted demo's sign-in rules starts (the analysis bar shows a badge for it). */
+export const LOCKED_PREFIX = 'Not open here: ';
+
 const POLL_MS = 700;
 
 /** Where the analysis on screen comes from: the server (golden, cache or a live run) or the golden copy in the app. */
@@ -39,7 +42,7 @@ const docsSignature = documentsSignature;
  * @param input the case's documents as shown, or null while they are not final.
  */
 /**
- * @param locked hosted demo: why live runs and re-checks are locked (demo code needed), or null.
+ * @param locked hosted demo: why live runs and re-checks are not open to this person (sign in / seller workspace), or null.
  */
 export function useAnalysis(caseId: string, input: AnalysisInput | null, client: AnalysisClient | null, locked: { live: string | null; recheck: string | null } = { live: null, recheck: null }): AnalysisHandle {
   // Freeze the input per document set: allowed actions change after sending, the documents do not.
@@ -142,7 +145,7 @@ export function useAnalysis(caseId: string, input: AnalysisInput | null, client:
     };
   }, [sig, load]);
 
-  // Hosted demo: once unlocked, documents with no stored analysis get one (a live run, within the caps).
+  // Hosted demo: once open to this person, documents with no stored analysis get one (a live run, within the caps).
   const wasLocked = useRef(!!locked.live);
   useEffect(() => {
     const unlockedNow = wasLocked.current && !locked.live;
@@ -159,14 +162,14 @@ export function useAnalysis(caseId: string, input: AnalysisInput | null, client:
   const recheck = useCallback(
     async (text: string): Promise<VerifyAnswer> => {
       if (!client || !fixed) throw new Error('the AI verifier runs on the ResolveKit server, which is not connected');
-      if (locked.recheck) throw new Error(`demo code required: ${locked.recheck} Unlock demo actions in the app bar`);
+      if (locked.recheck) throw new Error(locked.recheck);
       return client.verify(caseId, text);
     },
     [caseId, client, fixed, locked.recheck],
   );
 
   let rerunBlocked: string | null = null;
-  if (locked.live) rerunBlocked = `Demo code required: ${locked.live} Unlock demo actions in the app bar.`;
+  if (locked.live) rerunBlocked = `${LOCKED_PREFIX}${locked.live}`;
   else if (!client || !serverUp) rerunBlocked = 'Live runs need the ResolveKit server (npm run server) with a model key';
   else if (live && !live.configured) rerunBlocked = 'No model key (GEMINI_API_KEY / GROQ_API_KEY) on the server';
   else if (live && live.remaining <= 0) rerunBlocked = `Live-run limit reached (${live.limit}/hour); next in ${Math.ceil(live.resetInSec / 60)} min`;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useServices } from '../app/services';
 import { allowedActionsAfter } from '../domain/allowedActions';
 import { compareSentRecorded } from '../domain/compare';
-import { lockedReason } from '../domain/demoClient';
+import { lockedReason, roleLabel } from '../domain/demoClient';
 import { formatCount, notesCountLabel } from '../domain/draft';
 import { EVIDENCE_TYPE_LABEL } from '../domain/evidenceTypes';
 import { intentSubmission, type IntentRequest, type SubmissionIntent } from '../domain/intent';
@@ -15,7 +15,7 @@ import { totalSize } from '../domain/submission';
 import { utcClock, utcStamp } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView } from '../domain/types';
 import { MERCHANT } from './AppBar';
-import { DemoUnlockForm } from './DemoUnlock';
+import { SignInPrompt } from './AccountMenu';
 import { Button, EvidenceTag, Spinner, cx } from './ui';
 
 type Flow = 'review' | 'confirm' | 'sending' | 'error' | 'recorded';
@@ -106,7 +106,7 @@ export interface ApproveFlowProps {
 
 type IntentState = { kind: 'loading' } | { kind: 'ready'; intent: SubmissionIntent; source: IntentSource } | { kind: 'error'; code: string; message: string; reasons: string[] };
 
-/** A hosted visitor without the demo code still runs the simulator: its intent is composed in this browser. */
+/** A signed-out visitor of the hosted demo still runs the simulator: its intent is composed in this browser. */
 const browserIntents = new LocalIntentClient();
 
 /**
@@ -121,17 +121,17 @@ export function ApproveFlow(props: ApproveFlowProps) {
   const [mode] = useState(() => modeOf(id));
   const [ix, setIx] = useState<IntentState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  // Unlocking the demo while the review waits for the code composes it again.
-  const unlocked = !!demo?.unlocked;
+  // Signing in while the review waits composes it again.
+  const signedIn = !!demo?.signedIn;
   useEffect(() => {
-    if (unlocked && ix.kind === 'error' && ix.code === 'DEMO_CODE_REQUIRED') setAttempt((n) => n + 1);
+    if (signedIn && ix.kind === 'error' && ix.code === 'SIGN_IN_REQUIRED') setAttempt((n) => n + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unlocked]);
+  }, [signedIn]);
   useEffect(() => {
     let live = true;
     setIx({ kind: 'loading' });
-    // Real PayPal: always the server. The simulator: the server too, except for a hosted visitor without the code.
-    const source = mode.kind === 'simulator' && demo != null && !demo.unlocked ? browserIntents : intents;
+    // Real PayPal: always the server. The simulator: the server too, except for a signed-out visitor of the hosted demo.
+    const source = mode.kind === 'simulator' && demo != null && !demo.signedIn ? browserIntents : intents;
     source.create(id, props.request, { submission: props.submission, views: props.views }).then(
       (intent) => {
         if (!live) return;
@@ -148,7 +148,7 @@ export function ApproveFlow(props: ApproveFlowProps) {
     return () => {
       live = false;
     };
-    // Composed when the flow opens (edits close it first), and again after unlocking.
+    // Composed when the flow opens (edits close it first), and again after signing in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
   if (ix.kind === 'ready') return <ApproveIntent {...props} intent={ix.intent} source={ix.source} />;
@@ -171,7 +171,7 @@ export function ApproveFlow(props: ApproveFlowProps) {
             </p>
           ) : (
             <div role="alert" data-testid="intent-refused" className="flex flex-col gap-2 rounded-2xl border border-bad-line bg-bad-soft px-[18px] py-4">
-              <strong className="text-[15px] font-semibold">{ix.code === 'DEMO_CODE_REQUIRED' ? 'Demo code required' : 'Nothing can be sent yet'}</strong>
+              <strong className="text-[15px] font-semibold">{ix.code === 'SIGN_IN_REQUIRED' ? 'Sign in required' : ix.code === 'SELLER_WORKSPACE_ONLY' || ix.code === 'NOT_THE_SELLER' ? 'Only the seller’s workspace can send this' : 'Nothing can be sent yet'}</strong>
               <span className="text-body-lg leading-normal">{ix.message}</span>
               {ix.reasons.length > 0 && (
                 <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-body text-ink-2">
@@ -180,14 +180,14 @@ export function ApproveFlow(props: ApproveFlowProps) {
                   ))}
                 </ul>
               )}
-              {ix.code === 'DEMO_CODE_REQUIRED' && <DemoUnlockForm compact />}
+              {ix.code === 'SIGN_IN_REQUIRED' && <SignInPrompt reason="" signedIn={false} />}
             </div>
           )}
         </div>
         <Footer>
           <Button onClick={onClose}>← Back to edit</Button>
           <span className="flex-1" />
-          {ix.kind === 'error' && ix.code !== 'DEMO_CODE_REQUIRED' && <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>}
+          {ix.kind === 'error' && ix.code !== 'SIGN_IN_REQUIRED' && <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>}
         </Footer>
       </div>
     </div>
@@ -209,8 +209,11 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
   const [approving, setApproving] = useState(false);
   const [flow, setFlow] = useState<Flow>('review');
   const [checked, setChecked] = useState(false);
-  // Hosted demo: real PayPal sends need the demo code (the simulator never does).
+  // Hosted demo: real PayPal sends are the seller workspace's (the simulator is anyone's).
   const locked = mode.kind === 'paypal' ? lockedReason(demo, 'evidence') : null;
+  // Who approves: the signed-in person (hosted), or the local merchant.
+  const approver = demo?.person && demo.workspace ? { name: demo.person.name, role: roleLabel(demo.person), workspace: demo.workspace.name } : null;
+  const approverName = approver?.name ?? MERCHANT.name;
   const canSubmit = checked && !locked && !approving;
   const [phase, setPhase] = useState<SendPhase | null>(null);
   const [reached, setReached] = useState<SendPhase[]>([]);
@@ -309,7 +312,7 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
         if (!mounted.current) return;
         setIntent(approved);
         setApprovedAt(approved.approvedAt ? new Date(approved.approvedAt) : new Date());
-        addAudit(id, MERCHANT.name, `Approved intent ${approved.id} · content sha256 ${approved.contentHash.slice(0, 12)}…`);
+        addAudit(id, approverName, `Approved intent ${approved.id} · content sha256 ${approved.contentHash.slice(0, 12)}…`);
       } catch (e) {
         if (mounted.current) setApproveError(e instanceof Error ? e.message : String(e));
         return;
@@ -517,15 +520,14 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
                     className="m-0 mt-0.5 h-[18px] w-[18px] accent-[var(--acc)]"
                   />
                   <span className="text-body-lg leading-normal">
-                    I&apos;m <strong>{MERCHANT.name}</strong> and I approve submitting this evidence to PayPal for dispute{' '}
+                    I&apos;m <strong>{approverName}</strong>{approver ? ` (${approver.role}, ${approver.workspace})` : ''} and I approve submitting this evidence to PayPal for dispute{' '}
                     <span className="font-mono text-body">{id}</span>.
                   </span>
                 </label>
                 {locked && (
                   <div role="note" data-testid="send-locked" className="flex flex-col gap-2.5 rounded-2xl border border-line-2 bg-surface-2 px-4 py-3.5">
-                    <strong className="text-[13.5px] font-semibold">Demo code required</strong>
-                    <span className="text-body leading-normal text-ink-2">{locked}</span>
-                    <DemoUnlockForm compact />
+                    <strong className="text-[13.5px] font-semibold">{demo?.signedIn ? 'Only the seller’s workspace can send this' : 'Sign in required'}</strong>
+                    <SignInPrompt reason={locked} signedIn={!!demo?.signedIn} />
                   </div>
                 )}
               </div>
@@ -537,7 +539,7 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
                 type="button"
                 onClick={() => void submit()}
                 disabled={!canSubmit}
-                title={locked ? `Demo code required: ${locked}` : undefined}
+                title={locked ?? undefined}
                 className="h-[42px] rounded-xl border-0 px-5 text-[14px] font-semibold transition-[background] duration-fast"
                 style={{
                   background: canSubmit ? 'var(--bad)' : 'var(--line)',
@@ -554,7 +556,7 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
         {flow === 'sending' && (
           <div className="flex flex-1 items-center justify-center max-md:px-4">
             <div className="flex w-[520px] flex-col gap-[18px] max-md:w-full">
-              <SendProgress approvedAt={approvedAt} phase={phase} reached={reached} retrying={retrying} />
+              <SendProgress approvedAt={approvedAt} approverName={approverName} phase={phase} reached={reached} retrying={retrying} />
               <span className="pl-8 text-body text-ink-2">
                 {mode.kind === 'paypal'
                   ? `Live PayPal ${mode.env}: we only show "Recorded" after reading the dispute back from PayPal.`
@@ -634,9 +636,9 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
   );
 }
 
-function SendProgress({ approvedAt, phase, reached, retrying }: { approvedAt: Date | null; phase: SendPhase | null; reached: SendPhase[]; retrying: boolean }) {
+function SendProgress({ approvedAt, approverName, phase, reached, retrying }: { approvedAt: Date | null; approverName: string; phase: SendPhase | null; reached: SendPhase[]; retrying: boolean }) {
   const items: [string, SendPhase | 'approved'][] = [
-    [`Approved by ${MERCHANT.name}${approvedAt ? ` · ${utcClock(approvedAt)} UTC` : ''}`, 'approved'],
+    [`Approved by ${approverName}${approvedAt ? ` · ${utcClock(approvedAt)} UTC` : ''}`, 'approved'],
     ...(retrying ? ([['Reading the dispute back before retrying', 'checking']] as [string, SendPhase][]) : []),
     ['Sending evidence to PayPal', 'sending'],
     ['Sent. Waiting for PayPal to confirm', 'awaiting'],

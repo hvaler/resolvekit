@@ -1,31 +1,45 @@
 import { describe, expect, it } from 'vitest';
-import { DemoClient, lockedReason, type DemoState } from './demoClient';
+import { DemoClient, SIGN_IN_FIRST, initials, lockedReason, roleLabel, type DemoState } from './demoClient';
 
-const reply = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+/** Answers by path: /api/demo and /api/auth/me. */
+const server = (demo: unknown, me: unknown, meStatus = 200) =>
+  (async (url: string | URL) => (String(url).endsWith('/auth/me') ? json(meStatus, me) : json(200, demo))) as typeof fetch;
+
+const DEMO = { hosted: true, reasons: { evidence: 'Only the seller’s workspace can send.' }, caps: {} };
+const PERSON = { id: 'p_aaaaaaaaaaaaaaaa', name: 'Dana Ruiz', role: 'member', via: 'passkey', email: null, reviewer: true, accessUntil: '2026-12-15T23:59:00.000Z' };
 
 describe('DemoClient', () => {
-  it('has no lock on a local server (404) or without a server', async () => {
-    expect(await new DemoClient({ fetch: reply(404, { error: 'NOT_FOUND' }) }).state()).toBeNull();
+  it('has no sign-in on a local server (hosted: false or 404) or without a server', async () => {
+    expect(await new DemoClient({ fetch: server({ hosted: false }, {}, 404) }).state()).toBeNull();
+    expect(await new DemoClient({ fetch: (async () => json(404, { error: 'NOT_FOUND' })) as typeof fetch }).state()).toBeNull();
     expect(await new DemoClient({ fetch: (async () => { throw new TypeError('down'); }) as typeof fetch }).state()).toBeNull();
   });
 
-  it('reads the hosted lock', async () => {
-    const s = await new DemoClient({ fetch: reply(200, { hosted: true, unlockable: true, unlocked: false, expiresAt: null, reasons: { evidence: 'Needs the code.' }, caps: {} }) }).state();
-    expect(s).toMatchObject({ unlockable: true, unlocked: false, reasons: { evidence: 'Needs the code.' } });
+  it('signed out: the sign-in methods, nothing open', async () => {
+    const s = await new DemoClient({ fetch: server(DEMO, { signedIn: false, methods: { paypal: true, passkey: true } }) }).state();
+    expect(s).toMatchObject({ signedIn: false, person: null, workspace: null, unlocked: false, methods: { paypal: true, passkey: true } });
   });
 
-  it('unlock: wrong code, too many attempts, success', async () => {
-    expect(await new DemoClient({ fetch: reply(403, { error: 'BAD_DEMO_CODE' }) }).unlock('x')).toEqual({ ok: false, error: 'That is not the demo code.' });
-    expect(await new DemoClient({ fetch: reply(429, { error: 'RATE_LIMITED', detail: 'Too many attempts; try again in 15 min' }) }).unlock('x')).toEqual({ ok: false, error: 'Too many attempts; try again in 15 min' });
-    const ok = await new DemoClient({ fetch: reply(200, { hosted: true, unlockable: true, unlocked: true, expiresAt: '2026-10-09T20:00:00.000Z', reasons: {}, caps: {} }) }).unlock('code');
-    expect(ok.ok && ok.state.unlocked).toBe(true);
+  it('signed in to the seller’s workspace: open; to another workspace: signed in but not open', async () => {
+    const seller = await new DemoClient({ fetch: server(DEMO, { signedIn: true, person: PERSON, workspace: { id: 'ws_1', name: 'Northwind Goods', connected: true }, expiresAt: '2026-10-10T22:00:00.000Z', methods: { paypal: true, passkey: true } }) }).state();
+    expect(seller).toMatchObject({ signedIn: true, unlocked: true, person: { name: 'Dana Ruiz' }, workspace: { name: 'Northwind Goods', connected: true } });
+    const other = await new DemoClient({ fetch: server(DEMO, { signedIn: true, person: { ...PERSON, role: 'owner' }, workspace: { id: 'ws_2', name: 'Elsewhere', connected: false }, methods: { paypal: true, passkey: true } }) }).state();
+    expect(other).toMatchObject({ signedIn: true, unlocked: false });
   });
 
-  it('lockedReason: only while locked on a hosted server', () => {
-    const locked: DemoState = { unlockable: true, unlocked: false, expiresAt: null, reasons: { evidence: 'Cannot be undone.' }, caps: {} };
-    expect(lockedReason(locked, 'evidence')).toBe('Cannot be undone.');
-    expect(lockedReason(locked, 'recheck')).toBe('This action needs the demo code.');
-    expect(lockedReason({ ...locked, unlocked: true }, 'evidence')).toBeNull();
+  it('lockedReason: sign in first; then the server’s reason for other workspaces; nothing when open or local', () => {
+    const base: DemoState = { signedIn: false, person: null, workspace: null, expiresAt: null, methods: { paypal: true, passkey: true }, unlocked: false, reasons: { evidence: 'Cannot be undone.' }, caps: {} };
+    expect(lockedReason(base, 'evidence')).toBe(SIGN_IN_FIRST);
+    const outsider = { ...base, signedIn: true };
+    expect(lockedReason(outsider, 'evidence')).toBe('Cannot be undone.');
+    expect(lockedReason(outsider, 'recheck')).toBe('Only the seller’s workspace can do this.');
+    expect(lockedReason({ ...outsider, unlocked: true }, 'evidence')).toBeNull();
     expect(lockedReason(null, 'evidence')).toBeNull();
+  });
+
+  it('initials and role labels', () => {
+    expect([initials('Dana Ruiz'), initials('Northwind Goods Ltd'), initials('Kim'), initials('  ')]).toEqual(['DR', 'NL', 'K', '?']);
+    expect([roleLabel({ role: 'owner', reviewer: false }), roleLabel({ role: 'member', reviewer: true }), roleLabel({ role: 'member', reviewer: false })]).toEqual(['Owner', 'Reviewer', 'Member']);
   });
 });

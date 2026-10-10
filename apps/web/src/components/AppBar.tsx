@@ -2,11 +2,11 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useServices } from '../app/services';
 import { useTheme } from '../theme/ThemeProvider';
-import { DemoUnlock } from './DemoUnlock';
+import { AccountMenu } from './AccountMenu';
 import { SyncIndicator } from './SyncIndicator';
 import { cx } from './ui';
 
-function Logo() {
+export function Logo() {
   return (
     <Link to="/" className="flex items-center gap-2 text-ink no-underline hover:text-ink" aria-label="ResolveKit, all cases">
       <span aria-hidden="true" className="relative box-border block h-[17px] w-[17px] rounded-md border-2 border-acc">
@@ -117,6 +117,7 @@ export function ModeBadge({ caseId }: { caseId?: string }) {
   );
 }
 
+/** The merchant in local mode (no sign-in): the operator at this machine. Hosted mode names the signed-in person. */
 export const MERCHANT = { name: 'Alex Moreno', initials: 'AM' } as const;
 
 export function AppBar({
@@ -166,11 +167,8 @@ export function AppBar({
         </button>
       )}
       <ModeBadge caseId={caseId} />
-      <DemoUnlock />
       <ThemeControls />
-      <span role="img" aria-label={MERCHANT.name} className="grid h-[26px] w-[26px] place-items-center rounded-full bg-acc-soft text-[10.5px] font-semibold text-acc">
-        {MERCHANT.initials}
-      </span>
+      <AccountMenu fallback={MERCHANT} />
     </header>
   );
 }
