@@ -11,6 +11,8 @@
  *   bound disputes see them live and can act on them; everyone else gets the same cases on the simulator. What costs
  *   money or quota, or cannot be undone (evidence to real PayPal, live AI runs, AI re-checks), is for that workspace
  *   only, within global daily caps persisted on the disk.
+ * - POST /api/paypal/webhook (with PAYPAL_WEBHOOK_ID): PayPal's dispute notifications, outside the browser rules and
+ *   confirmed with PayPal before anything happens (webhook.ts); its own per-IP limit.
  * - Everything else: the built web app (apps/web/dist), with the SPA fallback.
  * - Every response carries the security headers (CSP, HSTS over https, nosniff, frame-ancestors 'none', Referrer-Policy).
  *
@@ -23,6 +25,7 @@ import type { AccountStore } from './accounts.ts';
 import type { LiveGate } from './analysis.ts';
 import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { createApi, json, withLog, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
+import { createWebhookHandler, WEBHOOK_PATH } from './webhook.ts';
 
 /** What the warm-up did for one bound case. */
 export interface WarmUpOutcome {
@@ -63,6 +66,8 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
   /** Whose X-Forwarded-For is believed (default: a proxy on a private address; env TRUSTED_PROXY_PEERS). */
   proxyTrust?: ProxyTrust;
   limits?: Partial<HostedLimits>;
+  /** The id of the webhook registered on the seller's app (PAYPAL_WEBHOOK_ID); absent: no webhook route. */
+  webhookId?: string | null;
 }
 
 export interface HostedLimits {
@@ -76,6 +81,8 @@ export interface HostedLimits {
   paypalStartsPerIp: { limit: number; windowMs: number };
   /** Submission intents composed, per IP (a flood from one address cannot fill the server's intent store). */
   intentsPerIp: { limit: number; windowMs: number };
+  /** PayPal webhook deliveries, per IP (each one costs a verification call to PayPal). */
+  webhookPerIp: { limit: number; windowMs: number };
 }
 
 const MIN = 60_000;
@@ -85,6 +92,7 @@ export const DEFAULT_LIMITS: HostedLimits = {
   authPerIp: { limit: 40, windowMs: 15 * MIN },
   paypalStartsPerIp: { limit: 10, windowMs: 15 * MIN },
   intentsPerIp: { limit: 20, windowMs: 10 * MIN },
+  webhookPerIp: { limit: 120, windowMs: 15 * MIN },
 };
 
 /** Why each costly action is the seller workspace's only (shown by the web app as is). */
@@ -116,6 +124,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const intentLimit = new KeyedLimiter({ ...L.intentsPerIp, now: () => now().getTime() });
   const authLimit = new KeyedLimiter({ ...L.authPerIp, now: () => now().getTime() });
   const paypalStarts = new KeyedLimiter({ ...L.paypalStartsPerIp, now: () => now().getTime() });
+  const webhookLimit = new KeyedLimiter({ ...L.webhookPerIp, now: () => now().getTime() });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
   // The seller merchant ids of the bound disputes, as last read (refreshed before each signed-in request): which
@@ -178,6 +187,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
 
   // Live runs and re-checks analyse inputs the server builds itself (app.ts), behind the seller workspace and the caps.
   api = createApi({ ...o, gate });
+  const webhook =
+    o.webhookId && o.paypal ? createWebhookHandler({ paypal: o.paypal, webhookId: o.webhookId, onEvent: (e) => api.paypalNotified(e), ...(o.log ? { log: o.log } : {}) }) : null;
 
   /** GET /api/demo: hosted mode, the daily caps, and why the costly actions are limited (the web app shows it). */
   const demoState = () => ({ hosted: true, ...o.counters.state(), reasons: LOCKED_REASON });
@@ -188,6 +199,15 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     // Render's health check (and nothing else) needs no Host match: it tells nothing and costs nothing.
     if (path === '/healthz') return req.method === 'GET' || req.method === 'HEAD' ? json(200, { ok: true }) : json(405, { error: 'METHOD_NOT_ALLOWED' });
     if (!hosts.has(hostOf(req))) return json(403, { error: 'FORBIDDEN_HOST' });
+
+    // PayPal's webhook deliveries: no browser, so none of the browser rules below (Origin, session); PayPal confirms
+    // each delivery itself (webhook.ts).
+    if (path === WEBHOOK_PATH) {
+      if (!webhook) return json(404, { error: 'NOT_FOUND' });
+      const w = webhookLimit.take(clientIp(req, hops, trust));
+      if (!w.ok) return tooMany(w.retryAfterSec, 'Too many webhook deliveries from this address');
+      return webhook(req);
+    }
 
     if (path === '/api' || path.startsWith('/api/')) {
       const origin = req.headers.get('origin');

@@ -37,6 +37,7 @@ export function auditLine(e: ServerAuditEvent): { time: string; who: string; wha
     send_failed: `Send failed: ${e.detail ?? ''} · request ${e.requestId ?? ''}`,
     send_refused: `Send refused before PayPal: ${e.detail ?? ''}`,
     edit_rechecked: `Re-checked an edited sentence · ${e.detail ?? ''}`,
+    paypal_notified: `PayPal notified a change (webhook, signature verified) · ${e.detail ?? ''}`,
   };
   return { time, who: e.actor, what: (what[e.kind] ?? `${e.kind}${e.detail ? `: ${e.detail}` : ''}`).trim() };
 }

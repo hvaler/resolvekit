@@ -88,7 +88,9 @@ export type AuditKind =
   | 'sent'
   | 'send_failed'
   | 'edit_rechecked'
-  | 'binding_checked';
+  | 'binding_checked'
+  /** A verified PayPal webhook about the case's dispute; the dispute was read again from PayPal. */
+  | 'paypal_notified';
 
 /** One line of the server's audit log: the source of truth the web app shows. */
 export interface AuditEvent {

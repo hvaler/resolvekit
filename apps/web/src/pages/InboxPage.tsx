@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { usePolling, useServices } from '../app/services';
 import { AppBar } from '../components/AppBar';
 import { InboxGrid } from '../components/inbox/InboxGrid';
+import { PayPalNotices } from '../components/PayPalNotices';
 import { cx } from '../components/ui';
 import { CHIPS, applySnapshot, chipCounts, inboxSummary, toGridRow, type ChipKey, type InboxGridRow } from '../domain/inbox';
 import { boundInboxRow, payPalSource } from '../domain/paypalView';
@@ -59,6 +60,8 @@ export function InboxPage() {
           </div>
           <span className="text-[12.5px] text-ink-3">Sorted by due date. New disputes can take a few minutes to appear and to open.</span>
         </div>
+
+        <PayPalNotices />
 
         <div role="group" aria-label="Saved filters and search" className="flex flex-wrap items-center gap-2">
           <span className="text-[12px] text-ink-3">Saved filters</span>

@@ -20,6 +20,7 @@ ResolveKit runs on the PayPal **Customer Disputes API (v1)** against the free sa
 | Message the buyer | `POST /v1/customer/disputes/{id}/send-message` | Answer in the inquiry stage |
 | Accept the claim | `POST /v1/customer/disputes/{id}/accept-claim` | When the evidence does not support a defence |
 | Refunds | `POST /v2/payments/captures/{id}/refund` | Partial or full refunds |
+| Dispute notifications | Webhook `CUSTOMER.DISPUTE.CREATED` / `.UPDATED` / `.RESOLVED` → `POST /v1/notifications/verify-webhook-signature` | Learn of new and changed disputes without waiting for the next read |
 
 Every behaviour above was verified in the sandbox before building on it. See
 [`docs/sandbox-findings.md`](docs/sandbox-findings.md).
@@ -34,7 +35,9 @@ client in `packages/paypal`:
 | `POST /api/disputes/{case}/intent` | Composes the **submission intent**: exactly what PayPal would receive, built on the server (see [How sending works](#how-sending-works-the-security-model)). Body: `{ evidenceType, edits, resolutions }` only |
 | `POST /api/disputes/{case}/intent/{id}/approve` | The merchant approves that exact content: `{ contentHash }` |
 | `POST /api/disputes/{case}/evidence` | `{ intentId }` and nothing else. Sends the approved intent after re-checking it on a fresh PayPal read. Builds the PDFs on the server from the case's synthetic documents (headed "SYNTHETIC TEST DOCUMENT"); for the agent case with a MeterMCP session, the PDF of the real session receipt instead. Answers `202 { sent: true }` or `{ error, paypalIssue }` (e.g. `EVIDENCE_TYPE_IS_NOT_ALLOWED`) |
-| `GET /api/disputes/{case}/audit` | The server's audit trail of the case: intents composed, approvals (who, when, content hash), sends (PayPal-Request-Id, PayPal's answer), refusals |
+| `GET /api/disputes/{case}/audit` | The server's audit trail of the case: intents composed, approvals (who, when, content hash), sends (PayPal-Request-Id, PayPal's answer and its debug_id), refusals, PayPal notifications |
+| `POST /api/paypal/webhook` | Hosted, with `PAYPAL_WEBHOOK_ID`: PayPal's dispute notifications. No session or Origin (PayPal is the caller), so nothing is believed until PayPal confirms the delivery: the five transmission headers are checked (certificate on a PayPal host), then `verify-webhook-signature` gets the event **byte for byte as received** (never re-serialised). Then `200` at once, and the event is only a hint: the server reads the dispute again from PayPal and invalidates its cached read. Each event id is acted on once. `400` unusable or not confirmed, `413` over 64 KB, `503` PayPal could not confirm now (PayPal delivers again, up to 25 times in 3 days) |
+| `GET /api/paypal/notices` | The latest notifications as re-read from PayPal, shown only to the dispute's seller (a signed-in workspace whose PayPal account is the seller), including disputes not linked to a case yet. The inbox shows them as **PayPal notified** |
 
 The send never reports "recorded". The web app reads the dispute back and only shows **Recorded by PayPal** when PayPal
 lists new evidence `SUBMITTED_BY_SELLER` (`PROVIDE_EVIDENCE`) that was not there before sending **and** that matches

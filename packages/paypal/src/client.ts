@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { DisputesApi } from './disputes.ts';
 import { IdentityApi } from './identity.ts';
 import { OrdersApi, PaymentsApi } from './orders.ts';
+import { WebhooksApi } from './webhooks.ts';
 
 export type PayPalEnv = 'sandbox' | 'live';
 
@@ -28,6 +29,14 @@ export class PayPalError extends Error {
     this.status = status;
     this.body = body;
     this.debugId = debugId;
+  }
+}
+
+/** A JSON body already serialised by the caller, sent byte for byte (webhook verification carries the raw event). */
+export class RawJson {
+  readonly text: string;
+  constructor(text: string) {
+    this.text = text;
   }
 }
 
@@ -67,6 +76,7 @@ export class PayPalClient {
   readonly identity: IdentityApi;
   readonly orders: OrdersApi;
   readonly payments: PaymentsApi;
+  readonly webhooks: WebhooksApi;
   private readonly opts: Required<Omit<PayPalClientOptions, 'fetch'>> & { fetch: typeof fetch };
   private token: { value: string; expiresAt: number } | null = null;
 
@@ -76,6 +86,7 @@ export class PayPalClient {
     this.identity = new IdentityApi(this);
     this.orders = new OrdersApi(this);
     this.payments = new PaymentsApi(this);
+    this.webhooks = new WebhooksApi(this);
   }
 
   /** Get (or reuse) an OAuth token: proves the credentials work without touching any dispute. */
@@ -116,7 +127,10 @@ export class PayPalClient {
     const headers: Record<string, string> = { ...opts.headers, Authorization: `Bearer ${await this.accessToken()}` };
     let payload: BodyInit | undefined;
     if (body instanceof FormData) payload = body;
-    else if (body !== undefined) {
+    else if (body instanceof RawJson) {
+      headers['Content-Type'] = 'application/json';
+      payload = body.text;
+    } else if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
     }
@@ -143,3 +157,4 @@ export class PayPalClient {
 export * from './disputes.ts';
 export * from './identity.ts';
 export * from './orders.ts';
+export * from './webhooks.ts';

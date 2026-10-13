@@ -135,6 +135,9 @@ if (hosted) {
   if (idId && idId === clientId) fail('PAYPAL_IDENTITY_CLIENT_ID must be a different PayPal app than PAYPAL_CLIENT_ID (the seller cannot approve its own app)');
   const identity = idId && idSecret ? new PayPalClient({ clientId: idId, clientSecret: idSecret, env, timeoutMs: 30_000 }) : null;
   if (!identity) log('WARNING: PAYPAL_IDENTITY_CLIENT_ID / _SECRET not set: PayPal sign-in is off (members can still join with invites)');
+  // The webhook registered on the seller's app (PayPalAI pruebas/sandbox.mjs webhook): its id is what PayPal signs for.
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID?.trim() || null;
+  if (webhookId && !/^[A-Z0-9]{10,40}$/.test(webhookId)) fail('PAYPAL_WEBHOOK_ID does not look like a PayPal webhook id');
   // Workspaces, people, passkeys and invites. An unreadable file stops the start (it would drop every membership).
   let accounts: AccountStore;
   try {
@@ -161,8 +164,9 @@ if (hosted) {
     trustedHops: envInt(process.env, 'TRUSTED_PROXY_HOPS', 1),
     // X-Forwarded-For is believed only from a proxy on a private address (Render's), unless set to "any" or "none".
     proxyTrust: process.env.TRUSTED_PROXY_PEERS === 'any' ? 'any' : process.env.TRUSTED_PROXY_PEERS === 'none' ? 'none' : 'private',
+    webhookId,
   });
-  log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · PayPal sign-in ${identity ? 'on' : 'OFF'} · data in ${dataDir}`);
+  log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · PayPal sign-in ${identity ? 'on' : 'OFF'} · PayPal webhook ${webhookId && paypal ? 'on' : 'OFF'} · data in ${dataDir}`);
 } else {
   // Per-launch secret. Only the local Vite proxy reads this file and adds it to /api requests server-side, so the
   // browser never holds it and no other website can send it.

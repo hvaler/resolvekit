@@ -11,7 +11,8 @@
  * Notes, files or tracking in a request body are never sent.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
+import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv, type WebhookEvent } from '@resolvekit/paypal';
+import { workspaceIdFor } from './accounts.ts';
 import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
 import type { AgentReceiptSource, DisputeSnapshot } from '../../web/src/domain/types.ts';
@@ -200,6 +201,8 @@ export type Api = Handler & {
   sellerName: (merchantId: string) => string | null;
   /** Forget the PayPal reads kept for building inputs and invalidate open intents (the bindings changed). */
   forgetReads: () => void;
+  /** A verified PayPal webhook event (webhook.ts): the dispute is read again from PayPal; nothing in it is trusted. */
+  paypalNotified: (e: WebhookEvent) => Promise<void>;
   /** The intents and audit log (tests, main.ts). */
   intents: IntentStore;
 };
@@ -742,9 +745,65 @@ export function createApi(opts: ApiOptions): Api {
     }
   };
 
+  /**
+   * What verified PayPal webhooks said, newest first, as this server re-read each dispute: shown to the dispute's
+   * seller only (hosted), including disputes not bound to any case yet (a new dispute arrives this way).
+   */
+  interface Notice {
+    eventId: string;
+    eventType: string;
+    disputeId: string;
+    caseId: string | null;
+    /** The seller's merchant id, from PayPal's own read of the dispute (never from the payload). */
+    merchant: string | null;
+    status: string | null;
+    reason: string | null;
+    amount: { value: string; currency: string } | null;
+    at: string;
+  }
+  const notices: Notice[] = [];
+  const MAX_NOTICES = 50;
+  const DISPUTE_ID = /^PP-[A-Z0-9-]{4,40}$/;
+
+  const paypalNotified = async (e: WebhookEvent): Promise<void> => {
+    if (!e.event_type.startsWith('CUSTOMER.DISPUTE.')) return log(`paypal webhook · ${e.id} · ${e.event_type} ignored (not a dispute event)`);
+    const disputeId = e.resource?.dispute_id;
+    if (typeof disputeId !== 'string' || !DISPUTE_ID.test(disputeId)) return log(`paypal webhook · ${e.id} · no usable dispute id`);
+    const paypal = opts.paypal;
+    if (!paypal) return;
+    const caseId = Object.keys(opts.bindings).find((k) => bindingOf(k)?.dispute === disputeId) ?? null;
+    // The next view of the case reads PayPal again, even inside the read cache's lifetime.
+    if (caseId) reads.delete(caseId);
+    let d: Dispute;
+    try {
+      d = await paypal.disputes.get(disputeId);
+    } catch (err) {
+      return log(`paypal webhook · ${e.id} · dispute ${disputeId} could not be read now (${failureText(err)}) · it is read again when the case is opened`);
+    }
+    const merchant = d.disputed_transactions?.[0]?.seller?.merchant_id ?? null;
+    if (caseId) noteSeller(caseId, d);
+    const amount = d.dispute_amount?.value && d.dispute_amount.currency_code ? { value: d.dispute_amount.value, currency: d.dispute_amount.currency_code } : null;
+    const at = now().toISOString();
+    notices.unshift({ eventId: e.id, eventType: e.event_type, disputeId, caseId, merchant, status: d.status ?? null, reason: d.reason ?? null, amount, at });
+    if (notices.length > MAX_NOTICES) notices.length = MAX_NOTICES;
+    if (caseId) {
+      const actor = 'PayPal (webhook)';
+      intents.record({ caseId, kind: 'paypal_notified', actor, owner: actor, ...(merchant ? { team: workspaceIdFor(merchant) } : {}), disputeId, detail: `${e.event_type} · dispute ${disputeId} is ${d.status ?? 'without status'} at PayPal` });
+    }
+    log(`paypal webhook · ${e.id} · dispute ${disputeId} re-read · ${d.status ?? '?'}${caseId ? ` · case ${caseId}` : ' · not bound to a case'}`);
+  };
+
+  /** GET /api/paypal/notices: the viewer's own (hosted: the signed-in merchant's disputes; local: all). */
+  const noticesFor = (req: Request): Response => {
+    const merchant = opts.gate ? (opts.gate.merchant?.(req) ?? null) : undefined;
+    const visible = merchant === undefined ? notices : merchant ? notices.filter((n) => n.merchant === merchant) : [];
+    return json(200, { notices: visible.map(({ merchant: _m, ...n }) => n) });
+  };
+
   const route = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
+    if (path === '/api/paypal/notices') return req.method === 'GET' ? noticesFor(req) : json(405, { error: 'METHOD_NOT_ALLOWED' });
     // Local mode has no demo lock; answering here keeps the web app's lock check from logging a 404.
     if (path === '/api/demo' && req.method === 'GET') return json(200, { hosted: false });
     if (path === '/api/health' && req.method === 'GET') {
@@ -820,6 +879,7 @@ export function createApi(opts: ApiOptions): Api {
       bindingStatus.clear();
       intents.invalidateAll('the bindings changed');
     },
+    paypalNotified,
     intents,
   });
 }
