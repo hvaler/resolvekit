@@ -85,7 +85,8 @@ test('a PayPal error while checking the approval keeps the session pending', asy
   pp.approve(pr.order_id);
   pp.failNext(/authorize$/, 500);
   assert.equal(body(await meter.balance('mcp-1')).status, 'pending_approval');
-  pp.failNext(/^GET \/v2\/checkout\/orders/, 503);
+  // A read is retried by the client (408/5xx, twice): PayPal failing every attempt.
+  for (let i = 0; i < 3; i++) pp.failNext(/^GET \/v2\/checkout\/orders/, 503);
   assert.equal(body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' })).error, 'payment_required');
   assert.equal(ledger.calls(pr.session_id).length, 0);
 });
@@ -160,13 +161,12 @@ test('settlement moves money only on a verified CREATED authorization and a capt
   const authUrl = /^GET \/v2\/payments\/authorizations\/[^/]+$/;
   const usd = (value: string) => ({ currency_code: 'USD', value });
   const cases: Array<[string, (pp: Fake) => void, boolean, number]> = [
-    ['authorization read fails', (pp) => pp.failNext(authUrl, 503), true, 0],
+    ['authorization read fails (every retry)', (pp) => [1, 2, 3].forEach(() => pp.failNext(authUrl, 503)), true, 0],
     ['authorization VOIDED', (pp) => pp.failNext(authUrl, 200, { id: 'A', status: 'VOIDED', amount: usd('5.00') }), true, 0],
     ['authorization EXPIRED (void path)', (pp) => pp.failNext(authUrl, 200, { id: 'A', status: 'EXPIRED', amount: usd('5.00') }), false, 0],
     ['authorization CAPTURED on a first attempt', (pp) => pp.failNext(authUrl, 200, { id: 'A', status: 'CAPTURED', amount: usd('5.00') }), true, 0],
     ['authorization does not cover the amount', (pp) => pp.failNext(authUrl, 200, { id: 'A', status: 'CREATED', amount: usd('0.01') }), true, 0],
     ['authorization without amount', (pp) => pp.failNext(authUrl, 200, { id: 'A', status: 'CREATED' }), true, 0],
-    ['capture DECLINED', (pp) => pp.failNext(/capture$/, 201, { id: 'CAPX', status: 'DECLINED' }), true, 1],
     ['capture for another amount', (pp) => pp.failNext(/capture$/, 201, { id: 'CAPX', status: 'COMPLETED', amount: usd('5.00') }), true, 1],
     ['capture without id', (pp) => pp.failNext(/capture$/, 201, { status: 'COMPLETED' }), true, 1],
     ['void not VOIDED', (pp) => pp.failNext(/void$/, 200, { id: 'A', status: 'CREATED' }), false, 1],

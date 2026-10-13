@@ -66,6 +66,20 @@ function retryWait(r: Response, attempt: number): number {
   return Math.min(MAX_RETRY_WAIT_MS, Math.max(0, Number.isFinite(ms) ? ms : 1000 * 2 ** attempt));
 }
 
+/**
+ * A read that failed on PayPal's side (408, 5xx) is safe to repeat: GET only, as the PayPal Server SDK's retry list
+ * has it (2.5.0 DEFAULT_RETRY_CONFIG: statuses 408, 500, 502, 503, 504, methods GET and PUT). Short waits: a read
+ * sits behind a browser request.
+ */
+const READ_RETRY_STATUSES = new Set([408, 500, 502, 503, 504]);
+const READ_RETRY_WAITS_MS = [300, 900];
+
+/** PayPal's debug id: the response header, or `debug_id` in the error body when the header is missing. */
+function debugIdOf(r: Response, body: unknown): string | null {
+  const fromBody = (body as { debug_id?: unknown } | null)?.debug_id;
+  return r.headers.get('paypal-debug-id') ?? (typeof fromBody === 'string' ? fromBody : null);
+}
+
 const BASE: Record<PayPalEnv, string> = {
   sandbox: 'https://api-m.sandbox.paypal.com',
   live: 'https://api-m.paypal.com',
@@ -116,8 +130,8 @@ export class PayPalClient {
   // JSON or multipart request. Every POST carries a PayPal-Request-Id (the caller's own id when given). Whether
   // the Disputes API deduplicates on it is NOT verified, so callers must read the dispute back before any retry.
   // `headers` adds request headers (e.g. Prefer: return=representation); it cannot replace Authorization.
-  // Only 429 is retried here (PayPal refused the request before acting on it), with the same PayPal-Request-Id
-  // and body; any other failure goes to the caller, which knows whether a retry is safe. `noRetry` turns that off
+  // Retried here: 429 (PayPal refused the request before acting on it), with the same PayPal-Request-Id and body;
+  // and a GET that PayPal failed (408, 5xx). Any other failure goes to the caller, which knows whether a retry is safe. `noRetry` turns that off
   // (webhook verification: a delivery PayPal cannot confirm now is answered 503 and PayPal delivers it again).
   async request<T>(
     method: 'GET' | 'POST',
@@ -148,8 +162,13 @@ export class PayPalClient {
         await this.opts.sleep(retryWait(r, attempt));
         continue;
       }
+      if (method === 'GET' && READ_RETRY_STATUSES.has(r.status) && attempt < READ_RETRY_WAITS_MS.length) {
+        await r.body?.cancel();
+        await this.opts.sleep(READ_RETRY_WAITS_MS[attempt]!);
+        continue;
+      }
       const parsed = await readJson(r);
-      if (!r.ok) throw new PayPalError(r.status, parsed, r.headers.get('paypal-debug-id'));
+      if (!r.ok) throw new PayPalError(r.status, parsed, debugIdOf(r, parsed));
       return parsed as T;
     }
   }

@@ -298,6 +298,13 @@ export class Ledger {
     return r.changes === 1;
   }
 
+  /** closing → capture_declined: PayPal refused the capture outright (DECLINED/FAILED); on record, nothing charged. */
+  declinedAtClose(id: string, c: { captureId: string; captureStatus: string; capturedCents: number; reason: string | null; now: string }): void {
+    this.db
+      .prepare("UPDATE sessions SET status = 'capture_declined', capture_id = ?, capture_status = ?, captured_cents = ?, settlement_error = ?, settled_at = NULL WHERE id = ? AND status = 'closing'")
+      .run(c.captureId, c.captureStatus, c.capturedCents, `PayPal answered the capture ${c.captureStatus}${c.reason ? ` (${c.reason})` : ''} at ${c.now}: not charged`, id);
+  }
+
   voided(id: string, c: { authorizationStatus: string | null; now: string }): void {
     this.db
       .prepare("UPDATE sessions SET status = 'voided', authorization_status = ?, captured_cents = 0, settled_at = ?, settlement_error = NULL WHERE id = ? AND status = 'closing'")

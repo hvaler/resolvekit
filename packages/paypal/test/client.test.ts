@@ -36,7 +36,7 @@ test('every PayPal error carries its debug_id in the message, so each log line t
 test('a non-JSON error page from PayPal keeps its status and debug_id instead of becoming a parse error', async () => {
   const { fn } = fakeFetch([{ status: 503, body: '<html><body>Service Unavailable</body></html>', headers: { 'paypal-debug-id': 'abc123' } }]);
   const { c } = client(fn);
-  await assert.rejects(c.orders.get('ORD1'), (e: unknown) => {
+  await assert.rejects(c.request('POST', '/v2/checkout/orders', {}), (e: unknown) => {
     assert.ok(e instanceof PayPalError, String(e));
     assert.equal(e.status, 503);
     assert.equal(e.debugId, 'abc123');
@@ -78,10 +78,27 @@ test('without Retry-After, 429 backs off exponentially; after the last attempt t
   assert.deepEqual(waits, [1000, 2000]);
 });
 
-test('other errors are never retried by the client (5xx retries stay with the callers that read back first)', async () => {
+test('a read PayPal fails (5xx/408) is retried twice with short waits, as the PayPal Server SDK retries GET', async () => {
+  const err = { status: 503, body: '{"name":"SERVICE_UNAVAILABLE"}' };
+  const { fn, calls } = fakeFetch([err, err, { status: 200, body: '{"id":"ORD1","status":"APPROVED"}' }]);
+  const { c, waits } = client(fn);
+  assert.equal((await c.orders.get('ORD1')).status, 'APPROVED');
+  assert.equal(calls.length, 3);
+  assert.deepEqual(waits, [300, 900]);
+  const always = fakeFetch([err, err, err, err]);
+  await assert.rejects(client(always.fn).c.orders.get('ORD1'), (e: PayPalError) => e.status === 503);
+  assert.equal(always.calls.length, 3);
+});
+
+test('a write PayPal fails (5xx) is never retried by the client: the caller reads back first', async () => {
   const { fn, calls } = fakeFetch([{ status: 500, body: '{"name":"INTERNAL_SERVER_ERROR"}' }]);
-  await assert.rejects(client(fn).c.orders.get('ORD1'), (e: PayPalError) => e.status === 500);
+  await assert.rejects(client(fn).c.request('POST', '/v2/checkout/orders/ORD1/authorize', {}, { requestId: 'x-authorize' }), (e: PayPalError) => e.status === 500);
   assert.equal(calls.length, 1);
+});
+
+test('the debug_id comes from the error body when the header is missing', async () => {
+  const { fn } = fakeFetch([{ status: 400, body: '{"name":"INVALID_REQUEST","debug_id":"b0d1e5"}' }]);
+  await assert.rejects(client(fn).c.request('POST', '/v2/checkout/orders', {}), (e: PayPalError) => e.debugId === 'b0d1e5' && /debug_id b0d1e5/.test(e.message));
 });
 
 test('a non-JSON OAuth failure is a PayPalError with its status, without the secret', async () => {

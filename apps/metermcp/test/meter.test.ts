@@ -427,3 +427,68 @@ test('H3: a pending capture PayPal later declines keeps the attempt on record an
   assert.equal((await meter.close(id)).status, 'capture_declined');
   assert.equal(pp.count(/capture$/), 1);
 });
+
+test('APIMatic review: an authorization PayPal already VOIDED with nothing consumed is recorded as voided, not failed forever', async () => {
+  const { meter, pp, ledger } = setup();
+  const id = await openSession(meter, pp);
+  // The void happened at PayPal but its answer was lost: PayPal now reports the authorization VOIDED.
+  pp.auths.get(ledger.session(id)!.authorization_id!)!.status = 'VOIDED';
+  const r = await meter.close(id);
+  assert.equal(r.status, 'voided');
+  assert.equal(pp.count(/void$/), 0);
+  assert.equal(ledger.session(id)!.captured_cents, 0);
+});
+
+test('APIMatic review: VOIDED while calls were consumed is still a failure (nothing can be captured)', async () => {
+  const { meter, pp, ledger } = setup();
+  const id = await openSession(meter, pp);
+  assert.equal(body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'ACME' })).metering.status, 'OK');
+  pp.auths.get(ledger.session(id)!.authorization_id!)!.status = 'VOIDED';
+  assert.equal((await meter.close(id)).status, 'settlement_failed');
+});
+
+test('APIMatic review: an authorization PayPal DENIES ends the session with the reason; the next call asks for a new approval', async () => {
+  const { meter, pp, ledger } = setup();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  pp.authAnswers('DENIED', 'DECLINED_BY_RISK_FRAUD_FILTERS');
+  const b = body(await meter.balance('mcp-1'));
+  assert.equal(b.status, 'declined');
+  assert.match(ledger.session(pr.session_id)!.settlement_error!, /denied the authorization \(DECLINED_BY_RISK_FRAUD_FILTERS\)/);
+  pp.authAnswers('CREATED');
+  const again = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  assert.equal(again.error, 'payment_required');
+  assert.notEqual(again.session_id, pr.session_id);
+});
+
+test('APIMatic review: a PENDING authorization (PayPal review) keeps the session waiting, without failing it', async () => {
+  const { meter, pp, ledger, logs } = setupWithLog();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  pp.authAnswers('PENDING', 'PENDING_REVIEW');
+  assert.equal(body(await meter.balance('mcp-1')).status, 'pending_approval');
+  assert.equal(ledger.session(pr.session_id)!.status, 'pending_approval');
+  assert.ok(logs.some((l) => /PENDING at PayPal \(PENDING_REVIEW\); waiting/.test(l)), logs.join('\n'));
+});
+
+test('APIMatic review: a capture PayPal answers DECLINED at once is capture_declined on record, not a retry loop', async () => {
+  const { meter, pp, ledger } = setup();
+  const id = await openSession(meter, pp);
+  body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'ACME' }));
+  pp.captureAnswers('DECLINED');
+  const r = await meter.close(id);
+  assert.equal(r.status, 'capture_declined');
+  const s = ledger.session(id)!;
+  assert.ok(s.capture_id);
+  assert.match(s.settlement_error!, /answered the capture DECLINED/);
+  assert.equal((await meter.close(id)).status, 'capture_declined');
+  assert.equal(pp.count(/capture$/), 1);
+});
+
+function setupWithLog() {
+  const pp = fakePayPal();
+  const ledger = new Ledger(':memory:');
+  const logs: string[] = [];
+  const meter = new Meter({ ledger, paypal: pp.client, env: 'sandbox', publicUrl: 'http://127.0.0.1:8790', log: (l) => logs.push(l) });
+  return { pp, ledger, meter, logs };
+}

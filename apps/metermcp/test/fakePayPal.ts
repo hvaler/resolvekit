@@ -6,7 +6,7 @@ import { PayPalClient } from '@resolvekit/paypal';
 
 type Money = { currency_code: string; value: string };
 interface FakeOrder { id: string; status: string; amount: Money; customId: string; body: any; authorizationId?: string }
-interface FakeAuth { id: string; status: string; amount: Money; orderId: string; captures: Array<{ id: string; amount: Money; body: any }> }
+interface FakeAuth { id: string; status: string; reason?: string; amount: Money; orderId: string; captures: Array<{ id: string; amount: Money; body: any }> }
 
 export function fakePayPal() {
   const orders = new Map<string, FakeOrder>();
@@ -17,6 +17,8 @@ export function fakePayPal() {
   const captureStatus = new Map<string, string>();
   /** Status the next new capture answers with (PayPal can answer PENDING). */
   let nextCaptureStatus = 'COMPLETED';
+  /** Status (and reason) the next authorization is created with (PayPal can answer PENDING or DENIED). */
+  let nextAuth: { status: string; reason?: string } = { status: 'CREATED' };
   let seq = 0;
   const id = (p: string) => `${p}${String(++seq).padStart(4, '0')}FAKE`;
 
@@ -60,7 +62,7 @@ export function fakePayPal() {
             ? {
                 payments: {
                   authorizations: [
-                    { id: o.authorizationId, status: auths.get(o.authorizationId)!.status, amount: o.amount, expiration_time: '2026-11-06T18:09:13Z', create_time: '2026-10-08T18:09:13Z' },
+                    { id: o.authorizationId, status: auths.get(o.authorizationId)!.status, ...(auths.get(o.authorizationId)!.reason ? { status_details: { reason: auths.get(o.authorizationId)!.reason } } : {}), amount: o.amount, expiration_time: '2026-11-06T18:09:13Z', create_time: '2026-10-08T18:09:13Z' },
                   ],
                 },
               }
@@ -76,7 +78,7 @@ export function fakePayPal() {
       const o = orders.get(m[1]!);
       if (!o) return reply(404, { name: 'RESOURCE_NOT_FOUND' });
       if (o.status !== 'APPROVED') return reply(422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: o.authorizationId ? 'ORDER_ALREADY_AUTHORIZED' : 'ORDER_NOT_APPROVED' }] });
-      const a: FakeAuth = { id: id('AUTH'), status: 'CREATED', amount: o.amount, orderId: o.id, captures: [] };
+      const a: FakeAuth = { id: id('AUTH'), status: nextAuth.status, ...(nextAuth.reason ? { reason: nextAuth.reason } : {}), amount: o.amount, orderId: o.id, captures: [] };
       auths.set(a.id, a);
       o.authorizationId = a.id;
       o.status = 'COMPLETED';
@@ -128,6 +130,10 @@ export function fakePayPal() {
       failures.push({ match, status, body });
     },
     count: (re: RegExp) => calls.filter((c) => re.test(`${c.method} ${c.path}`)).length,
+    /** The next authorization is created with this status (e.g. PENDING, DENIED) and reason. */
+    authAnswers(status: string, reason?: string) {
+      nextAuth = { status, ...(reason ? { reason } : {}) };
+    },
     /** The next capture answers this status (e.g. PENDING). */
     captureAnswers(status: string) {
       nextCaptureStatus = status;

@@ -169,7 +169,7 @@ export function createApp(opts: AppOptions): Handler {
       }
       if (!s) return page('Unknown order', 'MeterMCP has no session for this PayPal order.');
       if (s.status === 'cancelled' && s.settlement_error) {
-        return page('Payment method declined', 'PayPal declined the payment method you chose. Nothing was authorized or charged. Return to your agent: its next paid call gives you a new approval link, where you can choose another payment method.');
+        return page('Payment method declined', 'PayPal declined the payment method you chose, or the authorization. Nothing was authorized or charged. Return to your agent: its next paid call gives you a new approval link, where you can choose another payment method.');
       }
       if (s.status === 'active') return page('Budget approved', 'PayPal authorized the budget. You can close this tab and return to your agent: it is charged only for successful tool calls, and the rest is released when the session closes.');
       return page('Waiting for PayPal', `PayPal reports the order is not approved yet (session ${s.status}). Reload this page in a moment.`);

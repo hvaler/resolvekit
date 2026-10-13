@@ -167,7 +167,7 @@ export class Meter {
     return answer(
       {
         error: 'payment_declined',
-        message: 'PayPal declined the funding source the user chose for the budget. Nothing was authorized or charged. Call the tool again to get a new approval_url, and ask the user to choose another funding source in PayPal.',
+        message: 'PayPal declined the budget (the funding source the user chose, or the authorization itself; see reason). Nothing was authorized or charged. Call the tool again to get a new approval_url, and ask the user to choose another funding source in PayPal.',
         session_id: s.id,
         order_id: s.order_id,
         reason: s.settlement_error,
@@ -265,6 +265,19 @@ export class Meter {
       return this.o.ledger.session(s.id)!;
     }
     if (order.status !== 'COMPLETED') return this.o.ledger.session(s.id)!;
+    // PayPal can hold the authorization (PENDING, e.g. PENDING_REVIEW: wait, it may become CREATED) or refuse it
+    // (DENIED, e.g. DECLINED_BY_RISK_FRAUD_FILTERS: final for this order; the session ends with the reason).
+    const held = order.purchase_units?.[0]?.payments?.authorizations?.[0];
+    const heldWhy = held?.status_details?.reason ? ` (${held.status_details.reason})` : '';
+    if (held?.status === 'DENIED' && order.id === s.order_id) {
+      this.o.ledger.cancel(s.id, this.iso(), `PayPal denied the authorization${heldWhy}`);
+      this.o.log(`session ${s.id}: authorization ${held.id} DENIED by PayPal${heldWhy}, session ended`);
+      return this.o.ledger.session(s.id)!;
+    }
+    if (held?.status === 'PENDING') {
+      this.o.log(`session ${s.id}: authorization ${held.id} PENDING at PayPal${heldWhy}; waiting`);
+      return this.o.ledger.session(s.id)!;
+    }
     const problem = authorizationProblem(s, order, this.o.now());
     if (problem) {
       // Fail closed: the session stays pending_approval (no paid call can run) and the reason is logged.
@@ -375,7 +388,7 @@ export class Meter {
       return answer({
         ...this.balanceOf(declined),
         status: 'declined',
-        message: 'PayPal declined the funding source for this budget; nothing was charged. The next paid call asks for a new approval.',
+        message: 'PayPal declined this budget (see settlement_error); nothing was charged. The next paid call asks for a new approval.',
       });
     }
     if (!s) return answer({ status: 'none', budget_proposal: fromCents(this.budgetCents), currency: CURRENCY, message: 'No session yet: the first paid call asks for a budget.', price_list: priceList() });
@@ -465,6 +478,13 @@ export class Meter {
       // Verify the authorization in PayPal before moving money. CREATED: capture or void. CAPTURED on a retry: only
       // the idempotent replay of our own capture (same PayPal-Request-Id) can succeed. Anything else: fail closed.
       const auth = await paypal.payments.getAuthorization(s.authorization_id);
+      // VOIDED with nothing consumed: the void already happened (ours, whose answer was lost, or the merchant's). Nothing
+      // was charged and the hold is released: record it instead of failing every retry.
+      if (auth.status === 'VOIDED' && charged === 0) {
+        this.o.ledger.voided(id, { authorizationStatus: 'VOIDED', now: this.iso() });
+        this.o.log(`session ${id}: nothing consumed, authorization ${s.authorization_id} already VOIDED at PayPal`);
+        return this.closeResult(this.o.ledger.session(id)!);
+      }
       const retryReplay = auth.status === 'CAPTURED' && charged > 0 && s.settlement_attempts > 1;
       if (auth.status !== 'CREATED' && !retryReplay) throw new Error(`Authorization ${s.authorization_id} is ${auth.status ?? 'without status'} in PayPal; not settled`);
       if (auth.amount?.currency_code !== s.currency || (cents(auth.amount?.value) ?? -1) < charged) {
@@ -484,6 +504,13 @@ export class Meter {
           { requestId: `${id}-settle` },
         );
         if (!capture.id) throw new Error('PayPal returned a capture without id');
+        if (capture.status === 'DECLINED' || capture.status === 'FAILED') {
+          // A refusal is final for this capture (a retry with the same PayPal-Request-Id would replay it): on record,
+          // nothing charged, as when a PENDING capture is declined later.
+          this.o.ledger.declinedAtClose(id, { captureId: capture.id, captureStatus: capture.status, capturedCents: charged, reason: capture.status_details?.reason ?? null, now: this.iso() });
+          this.o.log(`session ${id}: capture ${capture.id} ${capture.status}${capture.status_details?.reason ? ` (${capture.status_details.reason})` : ''}; not charged`);
+          return this.closeResult(this.o.ledger.session(id)!);
+        }
         if (capture.status !== 'COMPLETED' && capture.status !== 'PENDING') throw new Error(`Capture ${capture.id} is ${capture.status ?? 'without status'}`);
         if (capture.amount && (capture.amount.currency_code !== s.currency || cents(capture.amount.value) !== charged)) {
           throw new Error(`Capture ${capture.id} is ${capture.amount.value} ${capture.amount.currency_code}, not ${fromCents(charged)} ${s.currency}`);

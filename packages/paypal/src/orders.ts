@@ -10,7 +10,10 @@ export interface Link { rel: string; href: string; method?: string }
 
 export interface Authorization {
   id: string;
+  /** CREATED, CAPTURED, DENIED, PARTIALLY_CAPTURED, VOIDED, PENDING (PayPal Server SDK 2.5.0 AuthorizationStatus). */
   status?: string;
+  /** Why it is PENDING or DENIED: PENDING_REVIEW, DECLINED_BY_RISK_FRAUD_FILTERS. */
+  status_details?: { reason?: string };
   amount?: Money;
   expiration_time?: string;
   create_time?: string;
@@ -19,7 +22,10 @@ export interface Authorization {
 
 export interface Capture {
   id: string;
+  /** COMPLETED, DECLINED, PARTIALLY_REFUNDED, PENDING, REFUNDED, FAILED (SDK 2.5.0 CaptureStatus). */
   status?: string;
+  /** Why it is PENDING or not completed (SDK CaptureIncompleteReason). */
+  status_details?: { reason?: string };
   amount?: Money;
   final_capture?: boolean;
   invoice_id?: string;
