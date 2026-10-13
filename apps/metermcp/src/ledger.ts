@@ -29,7 +29,7 @@ export type SessionStatus =
   | 'voided'
   /** The capture or void failed: never charged as far as MeterMCP knows; retry with close. */
   | 'settlement_failed'
-  /** The buyer cancelled in PayPal, or the order could not be approved. */
+  /** The buyer cancelled in PayPal, or the order could not be approved (a declined funding source: settlement_error). */
   | 'cancelled';
 
 export type CallStatus = 'PENDING' | 'OK' | 'FAILED';
@@ -197,8 +197,10 @@ export class Ledger {
     return r.changes === 1;
   }
 
-  cancel(id: string, now: string): boolean {
-    const r = this.db.prepare("UPDATE sessions SET status = 'cancelled', closed_at = ? WHERE id = ? AND status = 'pending_approval'").run(now, id);
+  cancel(id: string, now: string, reason: string | null = null): boolean {
+    const r = this.db
+      .prepare("UPDATE sessions SET status = 'cancelled', closed_at = ?, settlement_error = ? WHERE id = ? AND status = 'pending_approval'")
+      .run(now, reason, id);
     return r.changes === 1;
   }
 

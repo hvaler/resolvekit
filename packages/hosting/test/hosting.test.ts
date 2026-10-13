@@ -17,6 +17,7 @@ import {
   StaticSite,
   clientIp,
   demoCookie,
+  insecureOrigin,
   publicOrigins,
   readCookie,
   sameSecret,
@@ -196,6 +197,15 @@ test('publicOrigins: Render URL plus custom domains', () => {
     https: true,
   });
   assert.equal(publicOrigins('http://localhost:10000', undefined).https, false);
+});
+
+test('insecureOrigin: a public origin PayPal returns buyers to must be https; only loopback may be http (local tests)', () => {
+  assert.equal(insecureOrigin(publicOrigins('https://rk.onrender.com', 'demo.example.com').origins), null);
+  assert.equal(insecureOrigin(publicOrigins('http://localhost:10000', undefined).origins), null);
+  assert.equal(insecureOrigin(publicOrigins('http://127.0.0.1:10000', undefined).origins), null);
+  assert.equal(insecureOrigin(publicOrigins('http://[::1]:10000', undefined).origins), null);
+  assert.equal(insecureOrigin(publicOrigins('http://rk.onrender.com', undefined).origins), 'http://rk.onrender.com');
+  assert.equal(insecureOrigin(publicOrigins('http://localhost.evil.example', undefined).origins), 'http://localhost.evil.example');
 });
 
 test('DailyCounters: concurrent takes never exceed the cap; release refunds today only', async () => {

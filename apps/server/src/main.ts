@@ -16,7 +16,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, unwatchFil
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, StaticSite, envInt, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
+import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { FileAnalysisStore, RateLimiter, modelFromEnv } from '@resolvekit/analyst/node';
 import { AccountStore } from './accounts.ts';
@@ -121,6 +121,8 @@ let tokenFile: string | null = null;
 if (hosted) {
   const pub = publicOrigins(process.env.RENDER_EXTERNAL_URL, process.env.RESOLVEKIT_CUSTOM_DOMAINS);
   if (!pub.origins.length) fail('RENDER_EXTERNAL_URL is not set (Render sets it; set it yourself elsewhere)');
+  const insecure = insecureOrigin(pub.origins);
+  if (insecure) fail(`public origin ${insecure} is not https (PayPal returns merchants there; only localhost may be http)`);
   let sessionSecret = process.env.RESOLVEKIT_SESSION_SECRET ?? '';
   if (sessionSecret.length < 32) {
     log('WARNING: RESOLVEKIT_SESSION_SECRET missing or short: using a per-launch secret (sign-ins end on restart)');

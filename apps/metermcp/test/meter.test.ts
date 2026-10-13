@@ -313,6 +313,38 @@ test('an approval PayPal has not seen yet keeps the session pending; the buyer c
   assert.equal(pp.count(/void$|capture$/), 0);
 });
 
+test('a funding source PayPal declines at authorization ends the session with the reason; the next call asks for a new approval', async () => {
+  const { meter, pp, ledger } = setup();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  pp.failNext(/authorize$/, 422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'INSTRUMENT_DECLINED' }] });
+  const declined = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  assert.equal(declined.error, 'payment_declined');
+  assert.equal(declined.session_id, pr.session_id);
+  assert.match(declined.message, /another funding source/);
+  assert.equal(ledger.session(pr.session_id)!.status, 'cancelled');
+  assert.match(ledger.session(pr.session_id)!.settlement_error!, /INSTRUMENT_DECLINED/);
+  // Polling never re-sends the declined authorization.
+  const b = body(await meter.balance('mcp-1'));
+  assert.equal(b.status, 'declined');
+  assert.equal(pp.count(/authorize$/), 1);
+  // The next paid call starts a new budget: a new order with its own approval link.
+  const again = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  assert.equal(again.error, 'payment_required');
+  assert.notEqual(again.order_id, pr.order_id);
+  assert.notEqual(again.session_id, pr.session_id);
+});
+
+test('an authorization error that is not a decline keeps the session pending; the next poll retries it', async () => {
+  const { meter, pp, ledger } = setup();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  pp.failNext(/authorize$/, 500);
+  assert.equal(body(await meter.balance('mcp-1')).status, 'pending_approval');
+  assert.equal(ledger.session(pr.session_id)!.status, 'pending_approval');
+  assert.equal(body(await meter.balance('mcp-1')).status, 'active');
+});
+
 test('request hashes are stable: canonical JSON ignores key order', () => {
   assert.equal(canonicalJson({ b: 1, a: { d: [1, { y: 2, x: 1 }], c: 'x' } }), '{"a":{"c":"x","d":[1,{"x":1,"y":2}]},"b":1}');
   assert.equal(requestHash('s', 1, 't', { a: 1, b: 2 }), requestHash('s', 1, 't', { b: 2, a: 1 }));

@@ -88,6 +88,13 @@ const isAnswer = (x: SessionRow | ToolAnswer): x is ToolAnswer => Array.isArray(
 
 export const INJECTED_FAILURE = 'UPSTREAM_UNAVAILABLE (injected by the METERMCP_FAIL_FIRST test switch)';
 
+/** A 422 whose issue is INSTRUMENT_DECLINED: the buyer must choose another funding source in a new approval. */
+function isInstrumentDeclined(e: unknown): boolean {
+  if (!(e instanceof PayPalError) || e.status !== 422) return false;
+  const details = (e.body as { details?: Array<{ issue?: string }> } | null)?.details ?? [];
+  return details.some((d) => d.issue === 'INSTRUMENT_DECLINED');
+}
+
 function why(e: unknown): string {
   if (e instanceof PayPalError) return e.message;
   if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) return 'PayPal timed out';
@@ -150,6 +157,20 @@ export class Meter {
         session_id: s.id,
         order_id: s.order_id,
         approval_url: s.approval_url,
+        status: s.status,
+      },
+      true,
+    );
+  }
+
+  private paymentDeclined(s: SessionRow): ToolAnswer {
+    return answer(
+      {
+        error: 'payment_declined',
+        message: 'PayPal declined the funding source the user chose for the budget. Nothing was authorized or charged. Call the tool again to get a new approval_url, and ask the user to choose another funding source in PayPal.',
+        session_id: s.id,
+        order_id: s.order_id,
+        reason: s.settlement_error,
         status: s.status,
       },
       true,
@@ -228,6 +249,14 @@ export class Meter {
       order = await paypal.orders.get(orderId);
       if (order.status === 'APPROVED') order = await paypal.orders.authorize(orderId, { requestId: `${s.id}-authorize` });
     } catch (e) {
+      if (isInstrumentDeclined(e)) {
+        // The buyer's funding source was refused: this order's authorization is not retried (the same
+        // PayPal-Request-Id could only replay the refusal). The session ends; the next paid call asks for a new
+        // approval, where the buyer can choose another funding source.
+        this.o.ledger.cancel(s.id, this.iso(), `PayPal declined the funding source (INSTRUMENT_DECLINED, ${why(e)})`);
+        this.o.log(`session ${s.id}: authorization declined by PayPal, session ended (${why(e)})`);
+        return this.o.ledger.session(s.id)!;
+      }
       this.o.log(`session ${s.id}: approval check failed (${why(e)})`);
       return this.o.ledger.session(s.id)!;
     }
@@ -270,6 +299,7 @@ export class Meter {
     if (isAnswer(got)) return got;
     const s = got;
     if (s.status === 'pending_approval') return this.paymentRequired(s, tool);
+    if (s.status === 'cancelled') return this.paymentDeclined(s);
     if (s.status !== 'active') {
       return answer({ error: 'session_closed', session_id: s.id, status: s.status, message: 'This session is closing or awaiting settlement; no more paid calls. Call close_session to finish settlement.' }, true);
     }
@@ -339,6 +369,15 @@ export class Meter {
   async balance(mcpSession: string): Promise<ToolAnswer> {
     let s = this.o.ledger.openSessionFor(mcpSession);
     if (s?.status === 'pending_approval') s = await this.checkApproval(s);
+    // The latest session ended with a declined funding source: say so instead of "no session".
+    const declined = s?.status === 'cancelled' ? s : s ? null : this.o.ledger.latestSessionFor(mcpSession);
+    if (declined?.status === 'cancelled' && declined.settlement_error) {
+      return answer({
+        ...this.balanceOf(declined),
+        status: 'declined',
+        message: 'PayPal declined the funding source for this budget; nothing was charged. The next paid call asks for a new approval.',
+      });
+    }
     if (!s) return answer({ status: 'none', budget_proposal: fromCents(this.budgetCents), currency: CURRENCY, message: 'No session yet: the first paid call asks for a budget.', price_list: priceList() });
     return answer(this.balanceOf(s));
   }

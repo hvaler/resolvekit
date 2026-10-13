@@ -161,9 +161,9 @@ function fromPayPalError(e: unknown): Response {
   return json(502, { error: 'PAYPAL_UNREACHABLE' });
 }
 
-/** A short reason for the audit log (codes only). */
+/** A short reason for the audit log (codes, and PayPal's debug_id to trace the request with PayPal). */
 function failureText(e: unknown): string {
-  if (e instanceof PayPalError) return `PayPal ${e.status}${paypalIssue(e) ? ` ${paypalIssue(e)}` : ''}`;
+  if (e instanceof PayPalError) return `PayPal ${e.status}${paypalIssue(e) ? ` ${paypalIssue(e)}` : ''}${e.debugId ? ` · debug_id ${e.debugId}` : ''}`;
   return isTimeout(e) ? 'PayPal timed out' : 'PayPal unreachable';
 }
 

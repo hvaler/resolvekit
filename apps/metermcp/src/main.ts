@@ -18,7 +18,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, envInt, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
+import { DailyCounters, envInt, insecureOrigin, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { createApp, type HostedMeterOptions } from './app.ts';
 import { Ledger } from './ledger.ts';
@@ -61,6 +61,8 @@ if (hosted) {
   token = process.env.METERMCP_ADMIN_TOKEN ?? '';
   if (token.length < 32) fail('METERMCP_ADMIN_TOKEN missing or shorter than 32 characters');
   const pub = publicOrigins(publicUrl, process.env.METERMCP_CUSTOM_DOMAINS);
+  const insecure = insecureOrigin(pub.origins);
+  if (insecure) fail(`public URL ${insecure} is not https (PayPal returns buyers there; set METERMCP_PUBLIC_URL; only localhost may be http)`);
   const demoCode = process.env.DEMO_CODE?.trim() || null;
   if (!demoCode) log('WARNING: DEMO_CODE is not set: no budget can be created');
   hostedOpts = {

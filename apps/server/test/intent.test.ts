@@ -71,7 +71,7 @@ const evidencePath = `/api/disputes/${CASE}/evidence`;
 const request = (over: Record<string, unknown> = {}) => ({ evidenceType: 'PROOF_OF_FULFILLMENT', edits: {}, resolutions: RESOLVED, ...over });
 
 type App = Awaited<ReturnType<typeof setup>>['app'];
-type Intent = { id: string; contentHash: string; notes: string; files: Array<{ name: string }>; carrier: string; tracking: string; requestId: string; status: string; disputeId: string | null; approvedBy: string | null; sentences: Array<{ id: string; text: string; edited: boolean }> };
+type Intent = { id: string; contentHash: string; notes: string; files: Array<{ name: string }>; carrier: string; tracking: string; requestId: string; status: string; reason?: string | null; disputeId: string | null; approvedBy: string | null; sentences: Array<{ id: string; text: string; edited: boolean }> };
 
 async function propose(app: App, over: Record<string, unknown> = {}): Promise<Intent> {
   const r = await app(post(intentPath, request(over)));
@@ -262,6 +262,9 @@ test('H1: a failed send can be retried with the same intent and the same PayPal-
   const i = await propose(app);
   assert.equal((await approve(app, i)).status, 200);
   assert.equal((await app(post(evidencePath, { intentId: i.id }))).status, 502);
+  // The audit keeps PayPal's debug_id, so the failed request can be traced with PayPal.
+  const failed = (await (await app(get(`${intentPath}/${i.id}`))).json()) as Intent;
+  assert.match(failed.reason ?? '', /PayPal 500 INTERNAL_SERVER_ERROR · debug_id dbg1/);
   status = 200;
   assert.equal((await app(post(evidencePath, { intentId: i.id }))).status, 202);
   assert.deepEqual(pp.sends.map((s) => new Headers(s.init.headers).get('paypal-request-id')), [i.requestId, i.requestId]);

@@ -513,3 +513,14 @@ export function publicOrigins(externalUrl: string | undefined, customDomains: st
   const hosts = origins.map((o) => new URL(o).host.toLowerCase());
   return { origins, hosts, https: origins.length > 0 && origins.every((o) => o.startsWith('https://')) };
 }
+
+/**
+ * The first public origin that is not https, or null. PayPal returns buyers and merchants to these origins
+ * (return_url / cancel_url), so a hosted service refuses to start on one; only loopback may be http (local runs).
+ */
+export function insecureOrigin(origins: readonly string[]): string | null {
+  return origins.find((o) => {
+    const u = new URL(o);
+    return u.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  }) ?? null;
+}
