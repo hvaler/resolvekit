@@ -46,7 +46,9 @@ services:
         sync: false
       - key: PAYPAL_IDENTITY_CLIENT_SECRET
         sync: false
-      - key: PAYPAL_WEBHOOK_ID # the CUSTOMER.DISPUTE.* webhook registered on the seller's app for <this URL>/api/paypal/webhook (not secret)
+      - key: PAYPAL_WEBHOOK_ID # the CUSTOMER.DISPUTE.* webhook registered on the seller's app for <this URL>/api/paypal/webhook/<PAYPAL_WEBHOOK_KEY>
+        sync: false
+      - key: PAYPAL_WEBHOOK_KEY # secret segment of that URL (32+ URL-safe characters)
         sync: false
       - key: BINDINGS_JSON # {"<web case id>":{"dispute":"<PayPal sandbox dispute id>","capture":"<its capture id>"}}; npm run demo:prepare prints it
         sync: false

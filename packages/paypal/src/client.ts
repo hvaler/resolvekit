@@ -117,12 +117,13 @@ export class PayPalClient {
   // the Disputes API deduplicates on it is NOT verified, so callers must read the dispute back before any retry.
   // `headers` adds request headers (e.g. Prefer: return=representation); it cannot replace Authorization.
   // Only 429 is retried here (PayPal refused the request before acting on it), with the same PayPal-Request-Id
-  // and body; any other failure goes to the caller, which knows whether a retry is safe.
+  // and body; any other failure goes to the caller, which knows whether a retry is safe. `noRetry` turns that off
+  // (webhook verification: a delivery PayPal cannot confirm now is answered 503 and PayPal delivers it again).
   async request<T>(
     method: 'GET' | 'POST',
     path: string,
     body?: unknown | FormData,
-    opts: { requestId?: string; headers?: Record<string, string> } = {},
+    opts: { requestId?: string; headers?: Record<string, string>; noRetry?: boolean } = {},
   ): Promise<T> {
     const headers: Record<string, string> = { ...opts.headers, Authorization: `Bearer ${await this.accessToken()}` };
     let payload: BodyInit | undefined;
@@ -142,7 +143,7 @@ export class PayPalClient {
         body: payload,
         signal: AbortSignal.timeout(this.opts.timeoutMs),
       });
-      if (r.status === 429 && attempt < RATE_LIMIT_ATTEMPTS - 1) {
+      if (r.status === 429 && !opts.noRetry && attempt < RATE_LIMIT_ATTEMPTS - 1) {
         await r.body?.cancel();
         await this.opts.sleep(retryWait(r, attempt));
         continue;

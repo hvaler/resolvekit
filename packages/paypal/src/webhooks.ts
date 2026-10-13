@@ -90,7 +90,7 @@ export class WebhooksApi {
     });
     // `{...head fields, "webhook_event": <raw bytes>}`: the event is spliced in, not re-serialised.
     const body = `${head.slice(0, -1)},"webhook_event":${rawEvent}}`;
-    const r = await this.c.request<{ verification_status?: string }>('POST', '/v1/notifications/verify-webhook-signature', new RawJson(body));
+    const r = await this.c.request<{ verification_status?: string }>('POST', '/v1/notifications/verify-webhook-signature', new RawJson(body), { noRetry: true });
     return r.verification_status === 'SUCCESS';
   }
 }

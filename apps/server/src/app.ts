@@ -93,6 +93,8 @@ export interface ApiOptions {
   pins?: InputPins | null;
   /** How long a PayPal read of a bound case is reused to build the analyst's input (default 60 s). */
   readTtlMs?: number;
+  /** Waits before each read of a dispute a webhook named (default 0, 2 s, 10 s: three tries). */
+  webhookReadWaitsMs?: number[];
   /** Submission intents and the audit log (persisted on the data dir by main.ts). Default: in memory. */
   intents?: IntentStore | null;
 }
@@ -184,8 +186,9 @@ export function withLog(log: ((line: string) => void) | undefined, api: Handler,
     } catch {
       res = json(500, { error: 'INTERNAL' });
     }
-    // The PayPal sign-in return key is single-use and bound to one browser; it still stays out of the logs.
-    const path = new URL(req.url).pathname.replace(/^(\/api\/auth\/paypal\/return\/)[^/]+$/, '$1…');
+    // The PayPal sign-in return key is single-use and bound to one browser; it still stays out of the logs. So does the
+    // webhook URL's secret key.
+    const path = new URL(req.url).pathname.replace(/^(\/api\/auth\/paypal\/return\/|\/api\/paypal\/webhook\/)[^/]+$/, '$1…');
     write(`${req.method} ${path} → ${res.status} · ${Date.now() - t} ms`);
     return res;
   };
@@ -764,6 +767,7 @@ export function createApi(opts: ApiOptions): Api {
   const notices: Notice[] = [];
   const MAX_NOTICES = 50;
   const DISPUTE_ID = /^PP-[A-Z0-9-]{4,40}$/;
+  const WEBHOOK_READ_WAITS_MS = opts.webhookReadWaitsMs ?? [0, 2_000, 10_000];
 
   const paypalNotified = async (e: WebhookEvent): Promise<void> => {
     if (!e.event_type.startsWith('CUSTOMER.DISPUTE.')) return log(`paypal webhook · ${e.id} · ${e.event_type} ignored (not a dispute event)`);
@@ -774,12 +778,19 @@ export function createApi(opts: ApiOptions): Api {
     const caseId = Object.keys(opts.bindings).find((k) => bindingOf(k)?.dispute === disputeId) ?? null;
     // The next view of the case reads PayPal again, even inside the read cache's lifetime.
     if (caseId) reads.delete(caseId);
-    let d: Dispute;
-    try {
-      d = await paypal.disputes.get(disputeId);
-    } catch (err) {
-      return log(`paypal webhook · ${e.id} · dispute ${disputeId} could not be read now (${failureText(err)}) · it is read again when the case is opened`);
+    // PayPal will not deliver an acknowledged event again, so a failed read is retried here a few times.
+    let d: Dispute | null = null;
+    let lastError: unknown = null;
+    for (const wait of WEBHOOK_READ_WAITS_MS) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      try {
+        d = await paypal.disputes.get(disputeId);
+        break;
+      } catch (err) {
+        lastError = err;
+      }
     }
+    if (!d) return log(`paypal webhook · ${e.id} · dispute ${disputeId} could not be read (${failureText(lastError)}) · it is read again when the case is opened`);
     const merchant = d.disputed_transactions?.[0]?.seller?.merchant_id ?? null;
     if (caseId) noteSeller(caseId, d);
     const amount = d.dispute_amount?.value && d.dispute_amount.currency_code ? { value: d.dispute_amount.value, currency: d.dispute_amount.currency_code } : null;
@@ -787,8 +798,9 @@ export function createApi(opts: ApiOptions): Api {
     notices.unshift({ eventId: e.id, eventType: e.event_type, disputeId, caseId, merchant, status: d.status ?? null, reason: d.reason ?? null, amount, at });
     if (notices.length > MAX_NOTICES) notices.length = MAX_NOTICES;
     if (caseId) {
-      const actor = 'PayPal (webhook)';
-      intents.record({ caseId, kind: 'paypal_notified', actor, owner: actor, ...(merchant ? { team: workspaceIdFor(merchant) } : {}), disputeId, detail: `${e.event_type} · dispute ${disputeId} is ${d.status ?? 'without status'} at PayPal` });
+      // One audit bucket per seller workspace, so one busy merchant cannot push another's history out.
+      const team = merchant ? workspaceIdFor(merchant) : null;
+      intents.record({ caseId, kind: 'paypal_notified', actor: 'PayPal (webhook)', owner: `PayPal (webhook) · ${team ?? 'unknown seller'}`, ...(team ? { team } : {}), disputeId, detail: `${e.event_type} · dispute ${disputeId} is ${d.status ?? 'without status'} at PayPal` });
     }
     log(`paypal webhook · ${e.id} · dispute ${disputeId} re-read · ${d.status ?? '?'}${caseId ? ` · case ${caseId}` : ' · not bound to a case'}`);
   };

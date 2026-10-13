@@ -62,3 +62,15 @@ test('verify reads anything but SUCCESS as not verified', async () => {
   const c = new PayPalClient({ clientId: 'id', clientSecret: 'secret', env: 'sandbox', fetch });
   assert.equal(await c.webhooks.verify(webhookTransmission(goodHeaders()) as WebhookTransmission, 'W', '{"id":"WH-1A2B3C4D5E6F","event_type":"X"}'), false);
 });
+
+test('verify is not retried on 429: the delivery is answered 503 and PayPal delivers it again later', async () => {
+  let calls = 0;
+  const fetch = (async (url: string | URL) => {
+    if (new URL(String(url)).pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
+    calls++;
+    return new Response('{"name":"RATE_LIMIT_REACHED"}', { status: 429 });
+  }) as typeof globalThis.fetch;
+  const c = new PayPalClient({ clientId: 'id', clientSecret: 'secret', env: 'sandbox', fetch, sleep: async () => {} });
+  await assert.rejects(c.webhooks.verify(webhookTransmission(goodHeaders()) as WebhookTransmission, 'W', '{"id":"WH-1A2B3C4D5E6F","event_type":"X"}'));
+  assert.equal(calls, 1);
+});

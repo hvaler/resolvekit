@@ -15,7 +15,8 @@ const ELSEWHERE = 'PP-R-OTHER-3';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** PayPal: verify answers `verdict()` (or fails), dispute reads by id; every call recorded. */
-function paypal(o: { verdict?: () => string | number } = {}) {
+function paypal(o: { verdict?: () => string | number; failReads?: number } = {}) {
+  let failReads = o.failReads ?? 0;
   const calls: string[] = [];
   const verifyBodies: string[] = [];
   const disputes: Record<string, Dispute> = {
@@ -33,13 +34,19 @@ function paypal(o: { verdict?: () => string | number } = {}) {
       return typeof v === 'number' ? new Response('{"name":"INTERNAL_SERVER_ERROR"}', { status: v }) : new Response(JSON.stringify({ verification_status: v }), { status: 200 });
     }
     const d = disputes[decodeURIComponent(u.pathname.split('/').pop()!)];
+    if (d && d.dispute_id !== BOUND && failReads > 0) {
+      failReads--;
+      return new Response('{"name":"INTERNAL_SERVICE_ERROR"}', { status: 500 });
+    }
     return d ? new Response(JSON.stringify(d), { status: 200 }) : new Response('{"name":"RESOURCE_NOT_FOUND"}', { status: 404 });
   }) as typeof globalThis.fetch;
   return { calls, verifyBodies, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { webhookId?: string | null; verdict?: () => string | number } = {}) {
-  const pp = paypal(o.verdict ? { verdict: o.verdict } : {});
+const KEY = 'k'.repeat(16) + '0123456789abcdef0123';
+
+function setup(o: { webhook?: { id: string; key: string; verifyLimit?: { perMinute: number; inFlight: number } } | null; verdict?: () => string | number; failReads?: number } = {}) {
+  const pp = paypal({ ...(o.verdict ? { verdict: o.verdict } : {}), ...(o.failReads ? { failReads: o.failReads } : {}) });
   const people = testAccounts();
   const lines: string[] = [];
   const app = createHostedApp({
@@ -55,7 +62,8 @@ function setup(o: { webhookId?: string | null; verdict?: () => string | number }
     origins: [ORIGIN],
     hosts: [HOST],
     https: true,
-    webhookId: o.webhookId === undefined ? 'WEBHOOK0123456789' : o.webhookId,
+    webhook: o.webhook === undefined ? { id: 'WEBHOOK0123456789', key: KEY } : o.webhook,
+    webhookReadWaitsMs: [0, 1, 1],
   });
   return { app, pp, people, lines };
 }
@@ -65,8 +73,8 @@ const event = (type: string, disputeId: string, over: Record<string, unknown> = 
   JSON.stringify({ id: `WH-TEST${String(++seq).padStart(6, '0')}-ABCDEF`, event_type: type, create_time: '2026-10-13T10:00:00Z', resource_type: 'dispute', resource: { dispute_id: disputeId, status: 'RESOLVED' }, ...over });
 
 /** A delivery as PayPal makes it: no Origin, no cookie, the five transmission headers. */
-const delivery = (body: string, headers: Record<string, string> = {}) =>
-  new Request(`${ORIGIN}/api/paypal/webhook`, {
+const delivery = (body: string, headers: Record<string, string> = {}, key = KEY) =>
+  new Request(`${ORIGIN}/api/paypal/webhook/${key}`, {
     method: 'POST',
     headers: {
       host: HOST,
@@ -185,18 +193,41 @@ test('unusable deliveries are refused before PayPal is asked: foreign certificat
   assert.equal(pp.verifyBodies.length, 0);
 });
 
-test('the webhook route needs no Origin or session, answers only POST, and does not exist without PAYPAL_WEBHOOK_ID', async () => {
+test('the webhook route needs no Origin or session, answers only POST, and does not exist without its configuration', async () => {
   const { app } = setup();
-  assert.equal((await app(get('/api/paypal/webhook'))).status, 405);
-  const off = setup({ webhookId: null }).app;
+  assert.equal((await app(get(`/api/paypal/webhook/${KEY}`))).status, 405);
+  const off = setup({ webhook: null }).app;
   assert.equal((await off(delivery(event('CUSTOMER.DISPUTE.CREATED', NEW)))).status, 404);
 });
 
-test('non-dispute events and events without a dispute id are acknowledged and ignored', async () => {
+test('without the URL’s secret key a delivery is 404 and PayPal is never asked (strangers cannot spend the seller app’s calls)', async () => {
+  const { app, pp } = setup();
+  for (const key of ['wrong'.repeat(8), KEY.slice(0, -1), `${KEY}/x`]) assert.equal((await app(delivery(event('CUSTOMER.DISPUTE.CREATED', NEW), {}, key))).status, 404, key);
+  assert.equal((await app(new Request(`${ORIGIN}/api/paypal/webhook`, { method: 'POST', headers: { host: HOST } }))).status, 403);
+  assert.equal(pp.verifyBodies.length, 0);
+});
+
+test('non-dispute events and events without a dispute id are acknowledged without asking PayPal', async () => {
   const { app, pp, people } = setup();
   assert.equal((await app(delivery(event('PAYMENT.CAPTURE.COMPLETED', NEW)))).status, 200);
   assert.equal((await app(delivery(event('CUSTOMER.DISPUTE.CREATED', 'not-a-dispute')))).status, 200);
   await sleep(30);
   assert.deepEqual(await notices(app, people.ownerCookie), []);
+  assert.equal(pp.verifyBodies.length, 0);
   assert.ok(!pp.calls.some((c) => c === `GET /v1/customer/disputes/${NEW}` || c.endsWith('/not-a-dispute')));
+});
+
+test('confirmations are capped across all callers: over the cap the answer is 503 (PayPal delivers again) without asking PayPal', async () => {
+  const { app, pp } = setup({ webhook: { id: 'WEBHOOK0123456789', key: KEY, verifyLimit: { perMinute: 2, inFlight: 4 } } });
+  const codes = [];
+  for (let i = 0; i < 4; i++) codes.push((await app(delivery(event('CUSTOMER.DISPUTE.CREATED', NEW), { 'x-forwarded-for': `198.51.100.${i}` }))).status);
+  assert.deepEqual(codes, [200, 200, 503, 503]);
+  assert.equal(pp.verifyBodies.length, 2);
+});
+
+test('a dispute read that fails right after a verified event is retried, so the notice is not lost', async () => {
+  const { app, people } = setup({ failReads: 2 });
+  assert.equal((await app(delivery(event('CUSTOMER.DISPUTE.CREATED', NEW)))).status, 200);
+  await until(async () => (await notices(app, people.ownerCookie)).length > 0);
+  assert.equal((await notices(app, people.ownerCookie))[0]!.disputeId, NEW);
 });
