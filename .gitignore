@@ -21,3 +21,5 @@ apps/server/data/
 
 # Local tooling state (Ovillo hooks)
 _hilo/
+
+.superpowers/
