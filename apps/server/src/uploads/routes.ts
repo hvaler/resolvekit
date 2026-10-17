@@ -8,7 +8,8 @@
  *   POST   /api/cases/:id/uploads/:u/confirm       { lines, sha256 } → E<n>, the original dropped
  *   POST   /api/cases/:id/uploads/:u/discard       before confirmation: files removed
  *   DELETE /api/cases/:id/uploads/:u               owners and full members: files removed; refused while a send
- *                                                   attaching it is in flight, and voids the unsent intents attaching it
+ *                                                   attaching it is in flight, voids the unsent intents attaching it and
+ *                                                   purges the analyses that read it
  *
  * Nothing of an upload leaves this server here: OCR is local, nothing is sent to PayPal or a model. Audit details and
  * log lines carry ids and file names only, never text or bytes. A pending upload past its expiry is discarded the
@@ -70,6 +71,11 @@ export interface UploadRoutesOptions {
    * outcome), and invalidating the unsent ones when it is deleted. Absent: none.
    */
   attachedTo?: { sending(uploadId: string): boolean; invalidate(rec: UploadRecord, actor: string): void };
+  /**
+   * Deleting an upload forgets what quotes it: the analyses (by key) that read it, whatever hangs from them (running
+   * job, progress, re-check verdicts), and the case's pinned input. May throw if a stored file cannot be removed.
+   */
+  purge?: (analysisKeys: string[], caseId: string) => void;
 }
 
 const json = (status: number, body: unknown) =>
@@ -328,7 +334,13 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (!canDeleteUpload(s.person)) return refuse(403, 'FORBIDDEN', 'Only owners and full members delete uploads');
     // Checked and done in one synchronous step: a send cannot start in between (its start is synchronous too).
     if (o.attachedTo?.sending(rec.id)) return refuse(409, 'SEND_IN_PROGRESS', 'A response attaching this upload is being sent to PayPal right now; delete it once the outcome is known');
-    const next = store.update(rec.id, { status: 'deleted' });
+    // The analyses that read it (and what hangs from them) go first: if that fails the upload stays, and deleting can be retried.
+    try {
+      o.purge?.(rec.analysisKeys, rec.caseId);
+    } catch {
+      return refuse(500, 'PURGE_FAILED', 'The analyses that quote this upload could not be removed, so it was not deleted; try again');
+    }
+    const next = store.update(rec.id, { status: 'deleted', analysisKeys: [] });
     audit(s, 'upload_deleted', next);
     o.attachedTo?.invalidate(next, s.person.label);
     return json(200, { upload: view(next) });

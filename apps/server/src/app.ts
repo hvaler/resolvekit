@@ -770,7 +770,7 @@ export function createApi(opts: ApiOptions): Api {
     const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1', liveGate(req, 'live-analysis'));
     // The uploads remember the analyses that read them (deleting one purges those).
     const key = (r.body as { key?: unknown }).key;
-    if (uploadIds.length && typeof key === 'string') uploads.noteAnalysisKey(uploadIds, key);
+    if (uploadIds.length && typeof key === 'string' && (r.status === 200 || r.status === 202)) uploads.noteAnalysisKey(uploadIds, key);
     // The input goes back with the answer: the web app maps the analysis onto exactly these documents.
     return json(r.status, { ...(r.body as object), input });
   };
@@ -1045,6 +1045,13 @@ export function createApi(opts: ApiOptions): Api {
       invalidate: (rec, actor) => {
         for (const i of intents.usingUpload(rec.id)) if (i.status !== 'sending') intents.invalidate(i.id, `evidence ${rec.evidenceId ?? rec.id} it attaches was deleted`, actor);
       },
+    },
+    // Deleting an upload forgets what quotes it: stored analyses, jobs and progress, re-check verdicts, the case's pin.
+    purge: (keys, caseId) => {
+      opts.analyst?.forget(keys);
+      for (const k of verified.keys()) if (keys.some((key) => k.startsWith(`${key}
+`))) verified.delete(k);
+      pins.forget(caseId);
     },
     log,
     now,

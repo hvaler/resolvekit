@@ -130,6 +130,8 @@ export class AnalystService {
       onUsage: (u) => this.o.onUsage?.(caseId, u),
     }).then(
       (a) => {
+        // Forgotten while it ran (its upload was deleted): the result is dropped, not stored.
+        if (this.jobs.get(key) !== job) return;
         this.o.store.put(a);
         job.result = a;
         job.status = 'done';
@@ -141,6 +143,14 @@ export class AnalystService {
         this.log(`analysis failed · case ${caseId} · ${job.error}`);
       },
     );
+  }
+
+  /** Drop what is held for these analyses: running or finished job, progress, stored copy. Throws if a stored file stays. */
+  forget(keys: string[]) {
+    for (const key of keys) {
+      this.jobs.delete(key);
+      this.o.store.delete(key);
+    }
   }
 
   /** The answer once the run of `key` (if one is running) has finished. */
@@ -224,6 +234,11 @@ export class InputPins {
       this.save();
     }
     return input;
+  }
+
+  /** Drop the case's pinned input (it may quote a deleted upload). */
+  forget(caseId: string): void {
+    if (this.pins.delete(caseId)) this.save();
   }
 
   private save() {

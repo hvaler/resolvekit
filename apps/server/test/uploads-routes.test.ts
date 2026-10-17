@@ -1,14 +1,14 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { request as httpRequest, createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { DailyCounters } from '@resolvekit/hosting';
-import { MemoryAnalysisStore, RateLimiter, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst/node';
+import { FileAnalysisStore, MemoryAnalysisStore, RateLimiter, type AnalysisInput, type AnalystModel, type CaseAnalysis } from '@resolvekit/analyst/node';
 import { standardCase } from '@resolvekit/cases';
 import { PayPalClient } from '@resolvekit/paypal';
 import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
@@ -71,7 +71,7 @@ const SECRET_WORDS = 'Account 9988776655 balance 4321.09 SECRETWORD';
 const fixture = new Uint8Array(readFileSync(new URL('./fixtures/tracking.png', import.meta.url)));
 const TIMEOUT = { timeout: 120_000 };
 
-function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: Partial<HostedLimits>; storageBytes?: number } = {}) {
+function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: Partial<HostedLimits>; storageBytes?: number; analysisDir?: string; script?: Parameters<typeof fakeModel>[0]; model?: (m: AnalystModel) => AnalystModel } = {}) {
   const calls: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
@@ -80,11 +80,11 @@ function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: P
     const id = decodeURIComponent(u.pathname.split('/').pop()!);
     return new Response(JSON.stringify({ ...standardDispute(), dispute_id: id }), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
-  const fm = fakeModel(standardScript);
+  const fm = fakeModel(o.script ?? standardScript);
   const analyst = new AnalystService({
-    model: fm.model,
+    model: o.model ? o.model(fm.model) : fm.model,
     primaryModel: 'gemini-3.8-flash',
-    store: new MemoryAnalysisStore(),
+    store: o.analysisDir ? new FileAnalysisStore({ dir: o.analysisDir, golden: new Map() }) : new MemoryAnalysisStore(),
     liveLimit: new RateLimiter({ limit: 50, windowMs: 3_600_000 }),
     verifyLimit: new RateLimiter({ limit: 50, windowMs: 3_600_000 }),
   });
@@ -710,7 +710,7 @@ test('unknown cases (inherited names too) are 404, and an archived upload cannot
 });
 
 test("the analysis input includes the workspace's confirmed uploads of the active dispute only", TIMEOUT, async () => {
-  const { app, people, store } = setup();
+  const { app, people, store } = setup({ caps: { 'live-analysis': 10 } });
   const cookie = people.fullMember('Ana Lopez');
   // Confirmed, with line 2 corrected by the person: "Not delivered" was a misreading.
   const t = await pasteText(app, cookie, 'UPS tracking\nNot delivered 8 Oct 2026', 'tracking.txt');
@@ -767,6 +767,99 @@ test("the analysis input includes the workspace's confirmed uploads of the activ
   const list = (await call(app, P, { cookie })).body.uploads as unknown as (View & { document: Doc | null })[];
   assert.deepEqual(list.find((u) => u.id === t.body.upload.id)!.document, e7);
   assert.equal(list.find((u) => u.status === 'pending')!.document, null);
+});
+
+// ------------------------------------------------------------------------------------- deletion purges what quotes the upload
+
+const TOKEN = 'TOKEN-7f3a';
+/** The standard script, plus a fact quoting the uploaded line (its statement carries the token into the analysis). */
+const tokenScript = {
+  ...standardScript,
+  extract: { ...standardScript.extract, facts: [...standardScript.extract.facts, { id: 'z', doc: 'E7', quote: `${TOKEN} courier note`, statement: `Courier note ${TOKEN}`, at: null }] },
+  recheck: { facts: [], verdict: 'supported', reason: '', rewrite: '' },
+};
+type Progress = { status: number; body: { status?: string; error?: string } };
+const progressOf = (app: App, key: string, cookie: string) => call(app, `/api/cases/${CASE}/analysis/progress?key=${key}`, { cookie }) as unknown as Promise<Progress>;
+const analyseAs = (app: App, cookie: string) => call(app, `/api/cases/${CASE}/analysis`, { body: {}, cookie }) as unknown as Promise<{ status: number; body: { key: string; status: string } }>;
+async function untilReady(app: App, key: string, cookie: string) {
+  for (let i = 0; i < 300; i++) {
+    const p = await progressOf(app, key, cookie);
+    if (p.body.status === 'ready' || p.body.status === 'failed') return p;
+    await sleepMs(10);
+  }
+  throw new Error('analysis never settled');
+}
+const cacheText = (dir: string) => readdirSync(dir).map((f) => `${f}\n${readFileSync(join(dir, f), 'utf8')}`).join('\n');
+
+async function confirmedToken(app: App, cookie: string) {
+  const t = await pasteText(app, cookie, `${TOKEN} courier note\nParcel left with neighbour`, 'courier.txt');
+  const red = await call(app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie });
+  const conf = await call(app, `${P}/${t.body.upload.id}/confirm`, { body: { lines: [`${TOKEN} courier note`, 'Parcel left with neighbour'], sha256: red.body.upload.sha256 }, cookie });
+  assert.equal(conf.status, 200, JSON.stringify(conf.body));
+  return t.body.upload.id;
+}
+
+test('after deleting an upload no stored analysis, pin or progress answer contains its text', TIMEOUT, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-purge-'));
+  const { app, people, store } = setup({ analysisDir: dir, script: tokenScript, caps: { 'live-analysis': 10, recheck: 10 } });
+  const cookie = people.fullMember('Ana Lopez');
+  const id = await confirmedToken(app, cookie);
+
+  const first = await analyseAs(app, cookie);
+  assert.equal(first.status, 202, JSON.stringify(first.body));
+  const oldKey = first.body.key;
+  const ready = await untilReady(app, oldKey, cookie);
+  assert.equal(ready.body.status, 'ready');
+  assert.ok(JSON.stringify(ready.body).includes(TOKEN), 'the analysis quotes the upload');
+  assert.ok(cacheText(dir).includes(TOKEN), 'and so does the stored file');
+  const checked = await call(app, `/api/cases/${CASE}/analysis/verify`, { body: { text: 'Courier left it with the neighbour.' }, cookie });
+  assert.equal(checked.status, 200, JSON.stringify(checked.body));
+  assert.deepEqual(store.get(id)!.analysisKeys, [oldKey]);
+
+  const del = await call(app, `${P}/${id}`, { method: 'DELETE', cookie });
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+
+  // The stored file is gone, and nothing in the cache directory mentions the token.
+  assert.deepEqual(readdirSync(dir), []);
+  // The old key answers nothing: no analysis, no running job, no progress.
+  const old = await progressOf(app, oldKey, cookie);
+  assert.equal(old.status, 404);
+  assert.ok(!JSON.stringify(old.body).includes(TOKEN));
+  // Without the upload the input has another key; a later analysis does not quote the upload.
+  const again = await analyseAs(app, cookie);
+  assert.equal(again.status, 202, JSON.stringify(again.body));
+  assert.notEqual(again.body.key, oldKey);
+  const fresh = await untilReady(app, again.body.key, cookie);
+  assert.equal(fresh.body.status, 'ready');
+  assert.ok(!JSON.stringify(fresh.body).includes(TOKEN));
+  assert.ok(!cacheText(dir).includes(TOKEN));
+  const recheck = await call(app, `/api/cases/${CASE}/analysis/verify`, { body: { text: 'Courier left it with the neighbour.' }, cookie });
+  assert.equal(recheck.status, 200, JSON.stringify(recheck.body));
+  assert.ok(!JSON.stringify(recheck.body).includes(TOKEN));
+  // The record forgot its keys.
+  assert.deepEqual(store.get(id)!.analysisKeys, []);
+});
+
+test('deleting an upload while its analysis is still running: the finished result is dropped, never stored', TIMEOUT, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-purge-run-'));
+  let open!: () => void;
+  const gate = new Promise<void>((ok) => (open = ok));
+  const { app, people } = setup({
+    analysisDir: dir,
+    caps: { 'live-analysis': 10, recheck: 10 },
+    script: tokenScript,
+    model: (m) => ({ ...m, generate: async (r) => (await gate, m.generate(r)) }),
+  });
+  const cookie = people.fullMember('Ana Lopez');
+  const id = await confirmedToken(app, cookie);
+  const first = await analyseAs(app, cookie);
+  assert.equal(first.status, 202, JSON.stringify(first.body));
+  const del = await call(app, `${P}/${id}`, { method: 'DELETE', cookie });
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+  open();
+  await sleepMs(300);
+  assert.deepEqual(readdirSync(dir), [], 'the run that quoted the upload stored nothing');
+  assert.equal((await progressOf(app, first.body.key, cookie)).status, 404);
 });
 
 // ------------------------------------------------------------------------------------- attachments and the send

@@ -2,7 +2,7 @@
  * Server-side store of analyses by key: the local cache of live runs (git-ignored) first, then the committed golden
  * analyses (packages/analyst/golden, made by the real model for the demo cases). Node only.
  */
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { CaseAnalysis } from './types.ts';
@@ -14,6 +14,8 @@ export type AnalysisOrigin = 'golden' | 'cache' | 'live';
 export interface AnalysisStore {
   get(key: string): { analysis: CaseAnalysis; origin: Exclude<AnalysisOrigin, 'live'> } | null;
   put(a: CaseAnalysis): void;
+  /** Forget a live/cached analysis (the golden ones are committed and stay). */
+  delete(key: string): void;
 }
 
 const isKey = (k: string) => /^[0-9a-f]{64}$/.test(k);
@@ -65,7 +67,17 @@ export class FileAnalysisStore implements AnalysisStore {
     if (!isKey(a.key)) return;
     this.memory.set(a.key, a);
     mkdirSync(this.dir, { recursive: true });
-    writeFileSync(join(this.dir, `${a.key}.json`), JSON.stringify(a, null, 2));
+    // tmp + rename: a reader (or a crash) never meets half a file
+    const file = join(this.dir, `${a.key}.json`);
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(a, null, 2));
+    renameSync(tmp, file);
+  }
+  /** Remove the live copy (memory and file). Throws if the file cannot be removed: deleting must not look done when it is not. */
+  delete(key: string) {
+    if (!isKey(key)) return;
+    this.memory.delete(key);
+    rmSync(join(this.dir, `${key}.json`), { force: true });
   }
 }
 
@@ -80,5 +92,8 @@ export class MemoryAnalysisStore implements AnalysisStore {
   }
   put(a: CaseAnalysis) {
     this.cached.set(a.key, a);
+  }
+  delete(key: string) {
+    this.cached.delete(key);
   }
 }

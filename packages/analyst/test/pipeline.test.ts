@@ -3,6 +3,10 @@ import { test } from 'node:test';
 import { analyzeCase, recheckSentence } from '../src/pipeline.ts';
 import { SYSTEM, renderDocuments } from '../src/prompts.ts';
 import { fakeModel, input, standardScript } from './fake.ts';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { FileAnalysisStore } from '../src/cache.ts';
 
 test('pipeline: facts must quote their document verbatim; invented quotes are dropped and counted', async () => {
   const { model } = fakeModel(standardScript);
@@ -137,4 +141,20 @@ test('recheck: citations only come from the analysis’ own facts, re-verified a
   const gone = await recheckSentence(a, other, 'UPS delivered to Apt 4B.', { model: fakeModel({ recheck: { facts: ['F5'], verdict: 'supported', reason: '', rewrite: '' } }).model });
   assert.ok(gone.citations.every((c) => !c.valid));
   assert.equal(gone.verdict, 'rejected');
+});
+
+test('FileAnalysisStore.delete removes the file and a later get misses', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-store-'));
+  const store = new FileAnalysisStore({ dir, golden: new Map() });
+  const a = await analyzeCase(input(), { model: fakeModel(standardScript).model, key: 'ab'.repeat(32) });
+  store.put(a);
+  assert.ok(existsSync(join(dir, `${a.key}.json`)));
+  assert.deepEqual(readdirSync(dir), [`${a.key}.json`], 'no temporary file is left behind');
+  assert.ok(store.get(a.key));
+  store.delete(a.key);
+  assert.ok(!existsSync(join(dir, `${a.key}.json`)));
+  assert.equal(store.get(a.key), null);
+  assert.equal(new FileAnalysisStore({ dir, golden: new Map() }).get(a.key), null, 'a fresh store misses too');
+  store.delete(a.key); // deleting what is not there is fine
+  rmSync(dir, { recursive: true, force: true });
 });
