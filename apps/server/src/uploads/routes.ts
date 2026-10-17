@@ -75,7 +75,7 @@ export interface UploadRoutesOptions {
    * Deleting an upload forgets what quotes it: the analyses (by key) that read it, whatever hangs from them (running
    * job, progress, re-check verdicts), and the case's pinned input. May throw if a stored file cannot be removed.
    */
-  purge?: (analysisKeys: string[], caseId: string) => void;
+  purge?: (analysisKeys: string[], caseId: string, uploadId: string) => void;
 }
 
 const json = (status: number, body: unknown) =>
@@ -336,7 +336,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (o.attachedTo?.sending(rec.id)) return refuse(409, 'SEND_IN_PROGRESS', 'A response attaching this upload is being sent to PayPal right now; delete it once the outcome is known');
     // The analyses that read it (and what hangs from them) go first: if that fails the upload stays, and deleting can be retried.
     try {
-      o.purge?.(rec.analysisKeys, rec.caseId);
+      o.purge?.(rec.analysisKeys, rec.caseId, rec.id);
     } catch {
       return refuse(500, 'PURGE_FAILED', 'The analyses that quote this upload could not be removed, so it was not deleted; try again');
     }

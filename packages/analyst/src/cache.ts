@@ -51,6 +51,12 @@ export class FileAnalysisStore implements AnalysisStore {
   constructor(o: { dir: string; goldenDir?: string; golden?: Map<string, CaseAnalysis> }) {
     this.dir = o.dir;
     this.golden = o.golden ?? loadGolden(o.goldenDir);
+    // A crash between write and rename leaves a temporary file: it may hold an analysis nothing refers to.
+    try {
+      for (const f of readdirSync(this.dir)) if (f.endsWith('.tmp')) rmSync(join(this.dir, f), { force: true });
+    } catch {
+      /* no directory yet */
+    }
   }
   /** The latest live run of these documents wins over the committed golden one. */
   get(key: string) {

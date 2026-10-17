@@ -18,7 +18,7 @@ import {
 } from '@resolvekit/analyst/node';
 import { canonicalJson } from '@resolvekit/analyst';
 import { documentsSignature } from '@resolvekit/cases';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export interface LiveState {
@@ -236,16 +236,31 @@ export class InputPins {
     return input;
   }
 
-  /** Drop the case's pinned input (it may quote a deleted upload). */
+  /** Drop the case's pinned input (it may quote a deleted upload). Fails closed: throws if the file cannot be rewritten. */
   forget(caseId: string): void {
-    if (this.pins.delete(caseId)) this.save();
+    const prev = this.pins.get(caseId);
+    if (!prev) return;
+    this.pins.delete(caseId);
+    try {
+      this.write();
+    } catch (e) {
+      this.pins.set(caseId, prev);
+      throw e;
+    }
+  }
+
+  /** tmp + rename, so a reader or a crash never meets half a file. */
+  private write() {
+    if (!this.file) return;
+    mkdirSync(dirname(this.file), { recursive: true });
+    const tmp = `${this.file}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.pins)));
+    renameSync(tmp, this.file);
   }
 
   private save() {
-    if (!this.file) return;
     try {
-      mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, JSON.stringify(Object.fromEntries(this.pins)));
+      this.write();
     } catch {
       /* best effort: without it, a restart needs one new run after sending */
     }

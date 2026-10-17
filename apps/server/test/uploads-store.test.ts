@@ -168,8 +168,13 @@ test('ids and workspace ids are validated so paths cannot escape the dir', () =>
 test('noteAnalysisKey records a key once on the given uploads', () => {
   const s = new UploadStore({ dir: tmp() });
   const r = s.create(base(), bytes(1));
-  s.noteAnalysisKey([r.id, NONE], 'k1');
-  s.noteAnalysisKey([r.id], 'k1');
+  s.update(r.id, { status: 'confirmed' });
+  // Ids that are not confirmed (here an unknown one) are returned and noted nowhere.
+  assert.deepEqual(s.noteAnalysisKey([r.id, NONE], 'k1'), [NONE]);
+  assert.deepEqual(s.noteAnalysisKey([r.id], 'k1'), []);
+  assert.deepEqual(s.get(r.id)!.analysisKeys, ['k1']);
+  s.update(r.id, { status: 'deleted' });
+  assert.deepEqual(s.noteAnalysisKey([r.id], 'k2'), [r.id]);
   assert.deepEqual(s.get(r.id)!.analysisKeys, ['k1']);
 });
 

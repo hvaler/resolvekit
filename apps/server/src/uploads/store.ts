@@ -164,12 +164,22 @@ export class UploadStore {
     return n;
   }
 
-  /** Remember that these uploads fed the analysis with `key`. */
-  noteAnalysisKey(ids: string[], key: string): void {
+  /** The ids that are not a confirmed upload any more (deleted, discarded, archived, gone): what an analysis read may be stale. */
+  notConfirmed(ids: string[]): string[] {
+    return ids.filter((id) => this.records.get(id)?.status !== 'confirmed');
+  }
+
+  /**
+   * Remember that these uploads fed the analysis with `key`. Returns the ids that are no longer confirmed (deleted
+   * while the analysis was being started): nothing is remembered for them, the caller must purge `key` at once.
+   */
+  noteAnalysisKey(ids: string[], key: string): string[] {
+    const gone = this.notConfirmed(ids);
     for (const id of ids) {
       const r = this.records.get(id);
-      if (r && !r.analysisKeys.includes(key)) this.update(id, { analysisKeys: [...r.analysisKeys, key] });
+      if (r && !gone.includes(id) && !r.analysisKeys.includes(key)) this.update(id, { analysisKeys: [...r.analysisKeys, key] });
     }
+    return gone;
   }
 
   /** Discard expired pending/reviewing uploads (record kept), and remove directories and files nothing refers to. */

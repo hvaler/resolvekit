@@ -409,6 +409,16 @@ export class IntentStore {
     this.pins.set(hash, analysis);
   }
 
+  /**
+   * Drop the pinned analyses of every intent (sent ones included) that attaches this upload or was composed from an
+   * input containing it: they quote it. The intent keeps its content and audit; only the analysis copy goes.
+   */
+  dropPinsUsing(uploadId: string) {
+    for (const i of [...this.intents.values(), ...this.tombstones.values()]) {
+      if (i.analysisHash && (i.request.attachments?.includes(uploadId) || i.inputUploads?.includes(uploadId))) this.pins.delete(i.analysisHash);
+    }
+  }
+
   analysisPin(hash: string | undefined): CaseAnalysis | null {
     return hash ? (this.pins.get(hash) ?? null) : null;
   }

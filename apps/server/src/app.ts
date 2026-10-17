@@ -320,6 +320,14 @@ export function createApi(opts: ApiOptions): Api {
     if (verified.size > MAX_VERIFIED) verified.delete(verified.keys().next().value!);
   };
 
+  /** Forget the analyses with these keys and everything that hangs from them (job, progress, stored file, re-check verdicts). */
+  const forgetAnalyses = (keys: string[]) => {
+    opts.analyst?.forget(keys);
+    for (const k of [...verified.keys()]) if (keys.some((key) => k.startsWith(`${key}
+`))) verified.delete(k);
+  };
+  const staleUpload = () => json(409, { error: 'UPLOAD_CHANGED', detail: 'An upload this analysis read was deleted while it was being made; the analysis was dropped. Try again.' });
+
   /** The case's binding, normalised (string or object form), or null. */
   const bindingOf = (caseId: string): Binding | null => toBinding(opts.bindings[caseId]);
   /**
@@ -760,6 +768,11 @@ export function createApi(opts: ApiOptions): Api {
       if (r.status === 200) {
         const v = r.body as { verdict: Recheck['state']; reason: string | null; citations: Parameters<typeof toCitations>[1]; model: string };
         const key = await analyst.key(input);
+        // An upload the check read was deleted meanwhile: nothing of this answer is kept or shown.
+        if (uploads.notConfirmed(uploadIds).length) {
+          forgetAnalyses([key]);
+          return staleUpload();
+        }
         const label = v.verdict === 'supported' ? 'supported' : v.verdict === 'rejected' ? 'removed' : 'needs review';
         rememberVerdict(`${key}\n${text}`, { state: v.verdict, reason: v.reason, note: `Edited · re-checked by ${v.model}: ${label}`, citations: toCitations(input, v.citations) });
         const who = actorOf(req, false);
@@ -770,7 +783,13 @@ export function createApi(opts: ApiOptions): Api {
     const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1', liveGate(req, 'live-analysis'));
     // The uploads remember the analyses that read them (deleting one purges those).
     const key = (r.body as { key?: unknown }).key;
-    if (uploadIds.length && typeof key === 'string' && (r.status === 200 || r.status === 202)) uploads.noteAnalysisKey(uploadIds, key);
+    if (uploadIds.length && typeof key === 'string' && (r.status === 200 || r.status === 202)) {
+      // An upload deleted between reading it and starting the run: purge what quotes it now, nothing is shown.
+      if (uploads.noteAnalysisKey(uploadIds, key).length) {
+        forgetAnalyses([key]);
+        return staleUpload();
+      }
+    }
     // The input goes back with the answer: the web app maps the analysis onto exactly these documents.
     return json(r.status, { ...(r.body as object), input });
   };
@@ -1047,10 +1066,9 @@ export function createApi(opts: ApiOptions): Api {
       },
     },
     // Deleting an upload forgets what quotes it: stored analyses, jobs and progress, re-check verdicts, the case's pin.
-    purge: (keys, caseId) => {
-      opts.analyst?.forget(keys);
-      for (const k of verified.keys()) if (keys.some((key) => k.startsWith(`${key}
-`))) verified.delete(k);
+    purge: (keys, caseId, uploadId) => {
+      forgetAnalyses(keys);
+      intents.dropPinsUsing(uploadId);
       pins.forget(caseId);
     },
     log,

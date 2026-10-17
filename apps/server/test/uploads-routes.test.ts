@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { request as httpRequest, createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +12,7 @@ import { FileAnalysisStore, MemoryAnalysisStore, RateLimiter, type AnalysisInput
 import { standardCase } from '@resolvekit/cases';
 import { PayPalClient } from '@resolvekit/paypal';
 import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
-import { AnalystService } from '../src/analysis.ts';
+import { AnalystService, InputPins } from '../src/analysis.ts';
 import { createApi, createApp, type ActingPerson } from '../src/app.ts';
 import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
 import { IntentStore } from '../src/intents.ts';
@@ -113,7 +113,7 @@ function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: P
     ...(o.storageBytes ? { uploadStorageBytes: o.storageBytes } : {}),
     limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 }, ...o.limits },
   });
-  return { app, calls, model: fm, people, lines, store, intents, bindings, counters };
+  return { app, calls, model: fm, people, lines, store, intents, bindings, counters, analyst };
 }
 
 type Init = { method?: string; body?: unknown; type?: string; cookie?: string; headers?: Record<string, string> };
@@ -844,7 +844,7 @@ test('deleting an upload while its analysis is still running: the finished resul
   const dir = mkdtempSync(join(tmpdir(), 'rk-purge-run-'));
   let open!: () => void;
   const gate = new Promise<void>((ok) => (open = ok));
-  const { app, people } = setup({
+  const { app, people, analyst } = setup({
     analysisDir: dir,
     caps: { 'live-analysis': 10, recheck: 10 },
     script: tokenScript,
@@ -854,12 +854,122 @@ test('deleting an upload while its analysis is still running: the finished resul
   const id = await confirmedToken(app, cookie);
   const first = await analyseAs(app, cookie);
   assert.equal(first.status, 202, JSON.stringify(first.body));
+  const finished = analyst.settled(first.body.key); // waits for the job itself (taken before it is forgotten)
   const del = await call(app, `${P}/${id}`, { method: 'DELETE', cookie });
   assert.equal(del.status, 200, JSON.stringify(del.body));
   open();
-  await sleepMs(300);
+  await finished;
   assert.deepEqual(readdirSync(dir), [], 'the run that quoted the upload stored nothing');
   assert.equal((await progressOf(app, first.body.key, cookie)).status, 404);
+});
+
+
+/** Holds the `n`th call of `analyst.key` (1-based, counted from now) until `release()`; `held` resolves when it is held. */
+function holdKeyCall(analyst: AnalystService, n: number) {
+  let calls = 0;
+  let release!: () => void;
+  let reached!: () => void;
+  const gate = new Promise<void>((ok) => (release = ok));
+  const held = new Promise<void>((ok) => (reached = ok));
+  const real = analyst.key.bind(analyst);
+  analyst.key = async (input) => {
+    const k = await real(input);
+    if (++calls === n) {
+      reached();
+      await gate;
+    }
+    return k;
+  };
+  return { release, held };
+}
+
+test('a DELETE between reading the uploads and starting the run: the run is purged at once, nothing quoting the upload is kept or shown', TIMEOUT, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-purge-race-'));
+  const { app, people, analyst, store, model } = setup({ analysisDir: dir, script: tokenScript, caps: { 'live-analysis': 10, recheck: 10 } });
+  const cookie = people.fullMember('Ana Lopez');
+  const id = await confirmedToken(app, cookie);
+  const h = holdKeyCall(analyst, 1);
+  const posting = analyseAs(app, cookie);
+  await h.held;
+  const del = await call(app, `${P}/${id}`, { method: 'DELETE', cookie });
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+  h.release();
+  const r = await posting;
+  assert.equal(r.status, 409, JSON.stringify(r.body).slice(0, 300));
+  assert.ok(!JSON.stringify(r.body).includes(TOKEN));
+  // The run that started in the gap finishes (its last stage was asked) and finds nothing to store.
+  while (!model.requests.some((q) => q.stage === 'explain')) await sleepMs(5);
+  await new Promise((ok) => setImmediate(ok));
+  assert.deepEqual(store.get(id)!.analysisKeys, []);
+  assert.deepEqual(readdirSync(dir), []);
+  const after = await analyseAs(app, cookie);
+  assert.equal(after.status, 202);
+  assert.equal((await untilReady(app, after.body.key, cookie)).body.status, 'ready');
+  assert.ok(!cacheText(dir).includes(TOKEN));
+});
+
+test('a DELETE between the verifier and remembering its verdict: no verdict is kept and nothing is shown', TIMEOUT, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-purge-verify-'));
+  const { app, people, analyst, store } = setup({ analysisDir: dir, script: tokenScript, caps: { 'live-analysis': 10, recheck: 10 } });
+  const cookie = people.fullMember('Ana Lopez');
+  const id = await confirmedToken(app, cookie);
+  const first = await analyseAs(app, cookie);
+  assert.equal((await untilReady(app, first.body.key, cookie)).body.status, 'ready');
+  // analyst.verify calls key() first, the route a second time: hold that one.
+  const h = holdKeyCall(analyst, 2);
+  const verifying = call(app, `/api/cases/${CASE}/analysis/verify`, { body: { text: 'Courier left it with the neighbour.' }, cookie });
+  await h.held;
+  assert.equal((await call(app, `${P}/${id}`, { method: 'DELETE', cookie })).status, 200);
+  h.release();
+  const r = await verifying;
+  assert.equal(r.status, 409, JSON.stringify(r.body).slice(0, 300));
+  assert.ok(!JSON.stringify(r.body).includes(TOKEN));
+  assert.deepEqual(readdirSync(dir), []);
+  assert.equal((await progressOf(app, first.body.key, cookie)).status, 404);
+  assert.deepEqual(store.get(id)!.analysisKeys, []);
+});
+
+test('deleting an upload drops the analysis pins of intents that attach it or were composed with it, sent ones included', TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+  const e8 = await s.confirmText(cookie, `${TOKEN} email\nIt arrived.`, 'email.txt');
+  const quoting = { id: 'S7', text: `Quoting ${TOKEN}.`, noteId: null, citations: [{ doc: 'E8', quote: `${TOKEN} email`, valid: true }], verdict: 'supported', reason: null, decidedBy: 'model', rewrite: null } as unknown as CaseAnalysis['sentences'][number];
+  await s.analyse(cookie, [quoting]);
+  const pinned = (i: { analysisHash?: string }) => JSON.stringify(s.intents.analysisPin(i.analysisHash) ?? null);
+  // Attaches E7 only, but was composed from an input that also contained E8.
+  const i = await s.approved(cookie, { attachments: [e7.id] });
+  const stored = s.intents.peek(i.id)!;
+  assert.ok(pinned(stored).includes(TOKEN), 'the pin quotes the upload before deletion');
+  assert.equal((await s.send(cookie, i.id)).status, 202);
+  assert.equal(s.intents.peek(i.id)!.status, 'sent');
+  assert.ok(pinned(stored).includes(TOKEN));
+  assert.equal((await call(s.app, `${P}/${e8.id}`, { method: 'DELETE', cookie })).status, 200);
+  assert.equal(pinned(stored), 'null');
+  assert.equal(s.intents.peek(i.id)!.status, 'sent', 'the sent intent keeps its status');
+});
+
+test('InputPins.forget fails closed: a pin file that cannot be rewritten makes the purge fail and the pin stays', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-pins-'));
+  const file = join(dir, 'pins.json');
+  const pins = new InputPins({ file });
+  const inp = { caseId: 'C', caseKind: 'standard', dispute: {}, documents: [], merchantNotes: [] } as unknown as AnalysisInput;
+  pins.resolve('C', inp, false);
+  assert.ok(readFileSync(file, 'utf8').includes('"C"'));
+  unlinkSync(file);
+  mkdirSync(file); // a directory where the file belongs: the rename fails
+  assert.throws(() => pins.forget('C'));
+  // still held: a retry once the disk allows it rewrites the file without it
+  rmdirSync(file);
+  pins.forget('C');
+  assert.ok(!readFileSync(file, 'utf8').includes('"C"'));
+});
+
+test('a stray temporary file in the analysis cache is swept at startup', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-tmp-'));
+  writeFileSync(join(dir, `${'ab'.repeat(32)}.json.123.tmp`), TOKEN);
+  new FileAnalysisStore({ dir, golden: new Map() });
+  assert.deepEqual(readdirSync(dir), []);
 });
 
 // ------------------------------------------------------------------------------------- attachments and the send
