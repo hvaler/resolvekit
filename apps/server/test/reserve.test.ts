@@ -5,6 +5,7 @@ import { standardCase } from '@resolvekit/cases';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
 import { parseBindingPools } from '../src/bindings.ts';
 import { createHostedApp } from '../src/hosted.ts';
+import { UploadStore } from '../src/uploads/store.ts';
 import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
@@ -69,13 +70,14 @@ function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW,
     return d ? new Response(JSON.stringify(d), { status: 200 }) : new Response('{"name":"RESOURCE_NOT_FOUND"}', { status: 404 });
   }) as typeof globalThis.fetch;
   const people = testAccounts(now);
+  const store = new UploadStore({ dir: null, now });
   const app = createHostedApp({
     paypal: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }),
     env: 'sandbox',
     bindings: p.bindings,
     reserve: p.reserve,
     log: (l) => lines.push(l),
-    counters: new DailyCounters({ file: null, limits: { 'live-analysis': 5 } }),
+    counters: new DailyCounters({ file: null, limits: { 'live-analysis': 5, upload: 40 } }),
     site: null,
     accounts: people.accounts,
     identity: null,
@@ -85,9 +87,10 @@ function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW,
     https: true,
     webhook: { id: 'WEBHOOK0123456789', key: 'k'.repeat(40) },
     opsToken: OPS,
+    uploads: store,
     now,
   });
-  return { app, reads, lines, people };
+  return { app, reads, lines, people, store };
 }
 
 type Status = { ok: boolean; problems: string[]; bindings: Record<string, { dispute: string; status: string; used: boolean; reserve: number }> };
@@ -187,4 +190,71 @@ test('a judge who only opens the case moves it on too (no operator check needed)
   assert.equal((await view()).status, 200);
   const next = (await (await view()).json()) as { origin?: { disputeId?: string } };
   assert.equal(next.origin?.disputeId, B.dispute);
+});
+
+// ------------------------------------------------------------------------------------------------ uploads
+
+const UP = `/api/cases/${CASE}/uploads`;
+type UpView = { id: string; status: string; sha256: string | null };
+const api = async (app: ReturnType<typeof setup>['app'], path: string, cookie: string, body?: unknown) => {
+  const r = await app(new Request(`${ORIGIN}${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { host: HOST, 'x-forwarded-for': '203.0.113.7', cookie, ...(body === undefined ? {} : { origin: ORIGIN, 'content-type': 'application/json' }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }));
+  return { status: r.status, body: (await r.json()) as { upload?: UpView; uploads?: UpView[]; error?: string } };
+};
+const pasted = async (app: ReturnType<typeof setup>['app'], cookie: string) => {
+  const r = await api(app, UP, cookie, { text: ['From: buyer', 'The parcel arrived, thanks.'].join('\n'), name: 'email.txt' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  return r.body.upload!;
+};
+
+test('when the case moves to the next dispute its uploads are archived and the next judge starts clean', async () => {
+  let t = NOW;
+  const old = new Date(NOW.getTime() - 60 * MIN).toISOString();
+  const disputes: Record<string, Dispute> = { [A.dispute]: poolDispute(A), [B.dispute]: poolDispute(B) };
+  const { app, people, store, lines } = setup({ [CASE]: [A, B] }, disputes, () => t);
+  const judge = people.member('Judge 1');
+  const up = await pasted(app, judge);
+  const red = await api(app, `${UP}/${up.id}/redact`, judge, { removals: [] });
+  assert.equal(red.status, 200, JSON.stringify(red.body));
+  const conf = await api(app, `${UP}/${up.id}/confirm`, judge, { sha256: red.body.upload!.sha256, lines: (red.body as { readLines?: string[] }).readLines });
+  assert.equal(conf.status, 200, JSON.stringify(conf.body));
+  const pending = await pasted(app, judge);
+  assert.equal((await api(app, UP, judge)).body.uploads!.length, 2);
+
+  // The seller's evidence goes in on A; once it is used, the next read moves the case to B.
+  disputes[A.dispute] = poolDispute(A, { evidenceAt: old });
+  await status(app);
+  const s = await status(app);
+  assert.equal(s.bindings[CASE]!.dispute, B.dispute);
+
+  assert.equal(store.get(up.id)!.status, 'archived');
+  assert.equal(store.get(pending.id)!.status, 'archived');
+  assert.deepEqual((await api(app, UP, people.member('Judge 2'))).body.uploads, []);
+  assert.ok(lines.some((l) => l.includes(`reserve · case ${CASE}: 2 upload(s) archived`)), lines.join(' | '));
+  assert.ok(!lines.some((l) => l.includes('parcel arrived')));
+});
+
+test('an upload pending before a rotation cannot be confirmed afterwards (409 UPLOAD_ARCHIVED)', async () => {
+  const old = new Date(NOW.getTime() - 60 * MIN).toISOString();
+  const disputes: Record<string, Dispute> = { [A.dispute]: poolDispute(A), [B.dispute]: poolDispute(B) };
+  const { app, people } = setup({ [CASE]: [A, B] }, disputes);
+  const judge = people.member('Judge 1');
+  const up = await pasted(app, judge);
+  const red = await api(app, `${UP}/${up.id}/redact`, judge, { removals: [] });
+  assert.equal(red.status, 200, JSON.stringify(red.body));
+  const lines = (red.body as { readLines?: string[] }).readLines;
+
+  disputes[A.dispute] = poolDispute(A, { evidenceAt: old });
+  await status(app);
+  assert.equal((await status(app)).bindings[CASE]!.dispute, B.dispute);
+
+  const conf = await api(app, `${UP}/${up.id}/confirm`, judge, { sha256: red.body.upload!.sha256, lines });
+  assert.equal(conf.status, 409);
+  assert.equal(conf.body.error, 'UPLOAD_ARCHIVED');
+  const again = await api(app, `${UP}/${up.id}/redact`, judge, { removals: [] });
+  assert.equal(again.status, 409);
+  assert.equal(again.body.error, 'UPLOAD_ARCHIVED');
 });
