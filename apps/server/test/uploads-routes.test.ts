@@ -512,40 +512,122 @@ test('local mode: the guard lets PNG bodies through to the upload route only', T
 
 // ------------------------------------------------------------------------------------------------ fix round 1
 
-test('at most 3 large uploads are read at once: a 4th is refused before reading (503 BUSY)', TIMEOUT, async () => {
-  let handled = 0;
-  const server = createServer(toNodeListener(async (r) => (handled++, await r.arrayBuffer(), new Response('{}', { status: 200 })), 'http://127.0.0.1'));
+const MB = 1024 * 1024;
+const sleepMs = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+/** A node listener on a free port (X-Forwarded-For believed, so each test client can be its own address). */
+async function listen(handler: Parameters<typeof toNodeListener>[0], o: Parameters<typeof toNodeListener>[2] = {}) {
+  const lines: string[] = [];
+  const server = createServer(toNodeListener(handler, 'http://127.0.0.1', { proxyTrust: 'any', trustedHops: 1, log: (l) => lines.push(l), ...o }));
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   const { port } = server.address() as { port: number };
-  const MB = 1024 * 1024;
-  const post = (body: Buffer) =>
+  /** A complete POST of `body` from `ip`. */
+  const post = (body: Buffer, ip: string) =>
     new Promise<number>((resolve) => {
-      const r = httpRequest({ host: '127.0.0.1', port, path: P, method: 'POST', headers: { 'content-type': 'image/png', 'content-length': body.length } }, (res) => (res.resume(), resolve(res.statusCode ?? 0)));
+      const r = httpRequest({ host: '127.0.0.1', port, path: P, method: 'POST', headers: { 'content-type': 'image/png', 'content-length': body.length, 'x-forwarded-for': ip } }, (res) => (res.resume(), resolve(res.statusCode ?? 0)));
+      r.on('error', () => resolve(-1));
       r.end(body);
     });
-  // Three uploads of 1 MB, each stuck after 1 KB: they hold the three large-body slots.
-  const held = Array.from({ length: 3 }, () => {
-    const r = httpRequest({ host: '127.0.0.1', port, path: P, method: 'POST', headers: { 'content-type': 'image/png', 'content-length': MB } });
+  /** A 1 MB upload from `ip` stuck after 1 KB; `closed` resolves when the server drops it. */
+  const hold = (ip: string) => {
+    const r = httpRequest({ host: '127.0.0.1', port, path: P, method: 'POST', headers: { 'content-type': 'image/png', 'content-length': MB, 'x-forwarded-for': ip } });
+    const closed = new Promise<void>((ok) => r.on('close', () => ok()));
     r.on('error', () => {});
     r.write(Buffer.alloc(1024));
-    return r;
-  });
+    return { r, closed };
+  };
+  const close = async () => {
+    server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+  };
+  return { server, port, post, hold, close, lines };
+}
+
+test('at most 3 large uploads are read at once: a 4th is refused before reading (503 BUSY)', TIMEOUT, async () => {
+  let handled = 0;
+  const l = await listen(async (r) => (handled++, await r.arrayBuffer(), new Response('{}', { status: 200 })));
+  // Three uploads of 1 MB from three addresses, each stuck after 1 KB: they hold the three large-body slots.
+  const held = ['198.51.100.1', '198.51.100.2', '198.51.100.3'].map(l.hold);
   try {
-    await new Promise((ok) => setTimeout(ok, 100));
-    const busy = await rawPost(server, P, { 'content-type': 'image/png', 'content-length': MB }, [Buffer.alloc(1024)]);
+    await sleepMs(100);
+    const busy = await rawPost(l.server, P, { 'content-type': 'image/png', 'content-length': MB, 'x-forwarded-for': '198.51.100.4' }, [Buffer.alloc(1024)]);
     assert.equal(busy.status, 503);
     assert.match(busy.body, /BUSY/);
     // A small one (up to 256 KB) needs no slot.
-    assert.equal(await post(Buffer.alloc(1024)), 200);
+    assert.equal(await l.post(Buffer.alloc(1024), '198.51.100.5'), 200);
     // The held ones go away: their slots are free again.
-    for (const r of held) r.destroy();
-    await new Promise((ok) => setTimeout(ok, 100));
-    assert.equal(await post(Buffer.alloc(MB)), 200);
+    for (const h of held) h.r.destroy();
+    await sleepMs(100);
+    assert.equal(await l.post(Buffer.alloc(MB), '198.51.100.6'), 200);
     assert.equal(handled, 2);
   } finally {
-    for (const r of held) r.destroy();
-    server.closeAllConnections();
-    await new Promise((ok) => server.close(ok));
+    for (const h of held) h.r.destroy();
+    await l.close();
+  }
+});
+
+test('one large body at a time per address: a second one from the same address is refused before reading (503 BUSY)', TIMEOUT, async () => {
+  const l = await listen(async (r) => (await r.arrayBuffer(), new Response('{}', { status: 200 })));
+  const held = l.hold('203.0.113.50');
+  try {
+    await sleepMs(100);
+    const second = await rawPost(l.server, P, { 'content-type': 'image/png', 'content-length': MB, 'x-forwarded-for': '203.0.113.50' }, [Buffer.alloc(1024)]);
+    assert.equal(second.status, 503);
+    assert.match(second.body, /BUSY/);
+    // Another address is not held up.
+    assert.equal(await l.post(Buffer.alloc(MB), '203.0.113.51'), 200);
+  } finally {
+    held.r.destroy();
+    await l.close();
+  }
+});
+
+test('a large body that does not arrive within the deadline is dropped and its slot freed', TIMEOUT, async () => {
+  const l = await listen(async (r) => (await r.arrayBuffer(), new Response('{}', { status: 200 })), { largeBodyDeadlineMs: 300 });
+  try {
+    const slow = l.hold('203.0.113.60');
+    // Trickle a little more, far slower than 1 MB in 300 ms.
+    const trickle = setInterval(() => slow.r.write(Buffer.alloc(16)), 50);
+    const t0 = Date.now();
+    await slow.closed;
+    clearInterval(trickle);
+    const took = Date.now() - t0;
+    assert.ok(took >= 250 && took < 5000, `closed after ${took} ms`);
+    // The same address has its slot back.
+    assert.equal(await l.post(Buffer.alloc(MB), '203.0.113.60'), 200);
+  } finally {
+    await l.close();
+  }
+});
+
+test('the node listener never crashes on a bad request: 400 for one it cannot build, 500 for a failing handler, no details', TIMEOUT, async () => {
+  let fail = false;
+  const l = await listen(async () => {
+    if (fail) throw new Error('secret detail 9988776655');
+    return new Response('{}', { status: 200 });
+  });
+  try {
+    // TRACE is a method Node accepts and a Fetch Request refuses to be built with.
+    const traced = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const r = httpRequest({ host: '127.0.0.1', port: l.port, path: '/api/health', method: 'TRACE' }, (res) => {
+        let body = '';
+        res.on('data', (c) => (body += c));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+      });
+      r.on('error', reject);
+      r.end();
+    });
+    assert.equal(traced.status, 400);
+    assert.match(traced.body, /BAD_REQUEST/);
+    fail = true;
+    const broken = await rawPost(l.server, '/api/health', { 'content-type': 'application/json', 'content-length': 2 }, [Buffer.from('{}')]);
+    assert.equal(broken.status, 500);
+    assert.ok(!broken.body.includes('secret'), broken.body);
+    assert.ok(l.lines.length >= 2 && l.lines.every((x) => !x.includes('secret') && !x.includes('9988776655')), JSON.stringify(l.lines));
+    // Still serving.
+    fail = false;
+    assert.equal(await l.post(Buffer.alloc(16), '203.0.113.70'), 200);
+  } finally {
+    await l.close();
   }
 });
 

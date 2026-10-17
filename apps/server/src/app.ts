@@ -207,7 +207,8 @@ export function createApp(opts: AppOptions): Handler {
   // The uploads' refund signal is for hosted mode's per-address limit only.
   const local: Handler = async (req) => {
     const res = await api(req);
-    res.headers.delete(REFUSED_EARLY);
+    // Only the upload routes' own (mutable) responses carry it; any other response is left untouched.
+    if (res.headers.has(REFUSED_EARLY)) res.headers.delete(REFUSED_EARLY);
     return res;
   };
   return withLog(opts.log, local, (req) => guard(req, opts));

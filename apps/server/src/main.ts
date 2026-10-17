@@ -17,7 +17,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, unwatchFil
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
+import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor, type ProxyTrust } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { FileAnalysisStore, RateLimiter, modelFromEnv, modelProbesFromEnv } from '@resolvekit/analyst/node';
 import { AccountStore } from './accounts.ts';
@@ -136,6 +136,13 @@ sweepUploads('at start');
 const uploadSweep = setInterval(() => sweepUploads('hourly'), HOUR);
 uploadSweep.unref();
 
+/** How the client address is derived behind the proxy: hosted.ts's per-IP limits and node.ts's large-body slots. */
+const clientAddress = {
+  trustedHops: envInt(process.env, 'TRUSTED_PROXY_HOPS', 1),
+  // X-Forwarded-For is believed only from a proxy on a private address (Render's), unless set to "any" or "none".
+  proxyTrust: (process.env.TRUSTED_PROXY_PEERS === 'any' ? 'any' : process.env.TRUSTED_PROXY_PEERS === 'none' ? 'none' : 'private') as ProxyTrust,
+};
+
 let app: Handler;
 let hostedApp: HostedApp | null = null;
 let tokenFile: string | null = null;
@@ -190,9 +197,7 @@ if (hosted) {
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
-    trustedHops: envInt(process.env, 'TRUSTED_PROXY_HOPS', 1),
-    // X-Forwarded-For is believed only from a proxy on a private address (Render's), unless set to "any" or "none".
-    proxyTrust: process.env.TRUSTED_PROXY_PEERS === 'any' ? 'any' : process.env.TRUSTED_PROXY_PEERS === 'none' ? 'none' : 'private',
+    ...clientAddress,
     webhook,
     opsToken,
     modelProbes: modelProbesFromEnv(process.env),
@@ -208,7 +213,8 @@ if (hosted) {
   app = createApp({ paypal, env, bindings, reserve, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads });
 }
 
-const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`));
+// The listener derives the client address as hosted mode does (one large upload body per address at a time).
+const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`, { ...(hosted ? clientAddress : {}), log }));
 server.listen(port, host, () => {
   log(`ResolveKit server on http://${host}:${port} · PayPal ${paypal ? env : 'unconfigured'} · ${Object.keys(bindings).length} bound case(s)`);
   log(`Analyst: ${analystConfig ? `${analystConfig.primary.provider}/${analystConfig.primary.model} (providers: ${analystConfig.available.join(', ')})` : 'no model key: stored analyses only'}`);
