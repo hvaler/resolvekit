@@ -81,7 +81,12 @@ export function createUploadsClient(caseId: string, o: { base?: string; fetch?: 
   const post = <T>(path: string, body: unknown) => call<T>(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const one = (id: string) => `/${encodeURIComponent(id)}`;
   return {
-    listUploads: async () => (await call<{ uploads: UploadRecordView[] }>('', { method: 'GET' }, 15_000)).uploads,
+    listUploads: async () => {
+      const body = await call<{ uploads?: unknown }>('', { method: 'GET' }, 15_000);
+      // Not a list (e.g. a static host answering /api with a page): there is no ResolveKit server behind it.
+      if (!Array.isArray(body.uploads)) throw new UploadRequestError(0, { error: 'SERVER_UNREACHABLE', detail: 'The ResolveKit server did not answer' });
+      return body.uploads as UploadRecordView[];
+    },
     /** A PNG or JPEG, sent as is; the server reads its text locally (OCR). */
     uploadImage: (file: File) => call<ReadAnswer>('', { method: 'POST', headers: { 'content-type': file.type || 'image/png', 'x-upload-name': encodeURIComponent(file.name) }, body: file }),
     uploadText: (text: string, name: string) => post<ReadAnswer>('', { text, name }),
@@ -223,14 +228,36 @@ export interface UploadsListState {
 export type UploadsListEvent =
   | { type: 'loaded'; uploads: UploadRecordView[] }
   | { type: 'refused'; reason: string }
-  | { type: 'failed'; error: string }
+  /** `status` 0: unreachable; `code` the server's error code, `HTTP_<status>` when the answer carried none. */
+  | { type: 'failed'; error: string; status: number; code: string }
   | { type: 'put'; id: string; upload: UploadRecordView | null };
 
 const SHOWN: UploadStatus[] = ['pending', 'reviewing', 'confirmed'];
 
+/** Unreachable, or a 5xx that is not the uploads route answering (no error code of its own). */
+const serverAbsent = (status: number, code: string) => status === 0 || (status >= 500 && code === `HTTP_${status}`);
+
+/** Delays before retrying a failed list: 2, 5, 10, 20 s, then every 30 s, about two minutes in all; null: stop. */
+export function listRetryDelay(attempt: number): number | null {
+  const d = [2_000, 5_000, 10_000, 20_000, 30_000, 30_000, 30_000];
+  return d[attempt] ?? null;
+}
+
 /**
- * A failed list never stands for "no uploads": until one has come back the list is not known (nothing is analysed
- * as if there were none); after that, a failure keeps the last list and says so.
+ * The uploads that go into the analysis input, or null while it must wait: someone who can have uploads waits for a
+ * known list; anyone else (signed out, another workspace) is analysed without uploads, whatever the list did.
+ */
+const NO_UPLOADS: UploadRecordView[] = [];
+
+export function uploadsForInput(s: UploadsListState, canHaveUploads: boolean): UploadRecordView[] | null {
+  if (!canHaveUploads) return NO_UPLOADS;
+  return s.known ? s.uploads : null;
+}
+
+/**
+ * A failed list never stands for "no uploads" while the uploads route is there: until one has come back the list is
+ * not known (nothing is analysed as if there were none); after that, a failure keeps the last list and says so. With
+ * no server behind the request at all, the list is known and empty (no analysis can read an upload then).
  */
 export function uploadsListReducer(s: UploadsListState, e: UploadsListEvent): UploadsListState {
   switch (e.type) {
@@ -239,7 +266,9 @@ export function uploadsListReducer(s: UploadsListState, e: UploadsListEvent): Up
     case 'refused':
       return { uploads: [], known: true, refused: e.reason, error: null };
     case 'failed':
-      return { ...s, error: e.error };
+      // No server behind the request (unreachable, or a proxy/deploy 5xx without the route's own code): no upload can be
+      // in any analysis either, so the list is known and empty and the analysis is not held.
+      return serverAbsent(e.status, e.code) ? { ...s, known: true, error: e.error } : { ...s, error: e.error };
     case 'put': {
       const rest = s.uploads.filter((x) => x.id !== e.id);
       const uploads = e.upload && SHOWN.includes(e.upload.status) ? [...rest, e.upload].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : rest;

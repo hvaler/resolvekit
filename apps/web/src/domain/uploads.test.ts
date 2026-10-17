@@ -8,6 +8,9 @@ import type { CaseFile, SentenceView } from './types';
 import {
   approvalRequest,
   canEditUpload,
+  createUploadsClient,
+  listRetryDelay,
+  uploadsForInput,
   citedCorrections,
   provenanceOf,
   uploadsListReducer,
@@ -236,12 +239,13 @@ describe('merchant uploads in the case', () => {
 
   it('the uploads list is known only once it came back; a failure says so and keeps what was known', () => {
     const start: UploadsListState = { uploads: [], known: false, refused: null, error: null };
-    const failed = uploadsListReducer(start, { type: 'failed', error: 'The ResolveKit server could not be reached' });
-    expect(failed).toEqual({ uploads: [], known: false, refused: null, error: 'The ResolveKit server could not be reached' });
+    // The uploads route answered a real error: not known (the seller's analysis waits for it).
+    const failed = uploadsListReducer(start, { type: 'failed', error: 'Upload storage failed', status: 500, code: 'STORAGE' });
+    expect(failed).toEqual({ uploads: [], known: false, refused: null, error: 'Upload storage failed' });
     const loaded = uploadsListReducer(failed, { type: 'loaded', uploads: [confirmed()] });
     expect(loaded).toEqual({ uploads: [confirmed()], known: true, refused: null, error: null });
     // A later failure keeps the list it had (and says so); it is still known.
-    expect(uploadsListReducer(loaded, { type: 'failed', error: 'x' })).toEqual({ ...loaded, error: 'x' });
+    expect(uploadsListReducer(loaded, { type: 'failed', error: 'x', status: 500, code: 'STORAGE' })).toEqual({ ...loaded, error: 'x' });
     // Not this person's to see: known, empty, with the server's reason.
     expect(uploadsListReducer(loaded, { type: 'refused', reason: 'Sign in' })).toEqual({ uploads: [], known: true, refused: 'Sign in', error: null });
     // One upload after an action.
@@ -249,5 +253,38 @@ describe('merchant uploads in the case', () => {
     const put = uploadsListReducer(loaded, { type: 'put', id: p.id, upload: p });
     expect(put.uploads.map((x) => x.id)).toEqual([confirmed().id, p.id]);
     expect(uploadsListReducer(put, { type: 'put', id: p.id, upload: null }).uploads.map((x) => x.id)).toEqual([confirmed().id]);
+  });
+
+  it('a server that is not there (unreachable, a proxy or deploy 5xx without an error code) means no uploads: the analysis is not held', () => {
+    const start: UploadsListState = { uploads: [], known: false, refused: null, error: null };
+    const down = uploadsListReducer(start, { type: 'failed', error: 'The ResolveKit server could not be reached', status: 0, code: 'SERVER_UNREACHABLE' });
+    expect(down).toEqual({ uploads: [], known: true, refused: null, error: 'The ResolveKit server could not be reached' });
+    expect(uploadsListReducer(start, { type: 'failed', error: 'HTTP 502', status: 502, code: 'HTTP_502' }).known).toBe(true);
+    // A 5xx with the route's own error code is the uploads route failing: held.
+    expect(uploadsListReducer(start, { type: 'failed', error: 'x', status: 503, code: 'ANALYST_UNAVAILABLE' }).known).toBe(false);
+    // Coming back replaces the empty list.
+    expect(uploadsListReducer(down, { type: 'loaded', uploads: [confirmed()] })).toEqual({ uploads: [confirmed()], known: true, refused: null, error: null });
+  });
+
+  it('only someone who can have uploads waits for the list; anyone else is analysed without uploads', () => {
+    const waiting: UploadsListState = { uploads: [], known: false, refused: null, error: 'x' };
+    expect(uploadsForInput(waiting, true)).toBeNull();
+    expect(uploadsForInput(waiting, false)).toEqual([]);
+    const loaded: UploadsListState = { uploads: [confirmed()], known: true, refused: null, error: null };
+    expect(uploadsForInput(loaded, true)).toEqual([confirmed()]);
+    expect(uploadsForInput(loaded, false)).toEqual([]);
+  });
+
+  it('a failed list is retried by itself: 2, 5, 10, 20 s, then every 30 s for about two minutes', () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(listRetryDelay)).toEqual([2000, 5000, 10000, 20000, 30000, 30000, 30000, null]);
+  });
+
+  it('a list answer that is not a list (a static host answering /api with a page) is the server not being there', async () => {
+    const html = (async () => new Response('<!doctype html><p>hi</p>', { status: 200, headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch;
+    await expect(createUploadsClient('PP-1', { fetch: html }).listUploads()).rejects.toMatchObject({ status: 0, code: 'SERVER_UNREACHABLE' });
+    const proxy = (async () => new Response('Bad gateway', { status: 502 })) as unknown as typeof fetch;
+    await expect(createUploadsClient('PP-1', { fetch: proxy }).listUploads()).rejects.toMatchObject({ status: 502, code: 'HTTP_502' });
+    const ok = (async () => Response.json({ uploads: [confirmed()] })) as unknown as typeof fetch;
+    expect(await createUploadsClient('PP-1', { fetch: ok }).listUploads()).toEqual([confirmed()]);
   });
 });

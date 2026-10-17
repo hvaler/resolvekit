@@ -26,7 +26,7 @@ import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
-import { approvalRequest, canEditUpload, confirmedUploads, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
+import { approvalRequest, canEditUpload, confirmedUploads, uploadsForInput, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
 import { caseFiles, processingDispute } from '../fixtures';
 
 /** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
@@ -66,7 +66,11 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const caseDocs = useMemo(() => caseView(demo, source), [demo, source.kind, liveSnap]);
   // This workspace's uploads of the case (server only): confirmed ones are evidence after the case's own documents.
   const uploadsClient = useMemo(() => (analysisClient ? createUploadsClient(id) : null), [analysisClient, id]);
-  const up = useUploads(uploadsClient);
+  // Reloaded when the person or workspace changes (signing in after the page loaded).
+  const up = useUploads(uploadsClient, `${demoLock?.person?.id ?? ''}:${demoLock?.workspace?.id ?? ''}`);
+  // Signed out or another workspace: no uploads can be theirs, so their analysis never waits for the list.
+  const canHaveUploads = !lockedReason(demoLock, 'upload');
+  const inputUploads = uploadsForInput(up, canHaveUploads);
   const confirmedUps = useMemo(() => confirmedUploads(up.uploads), [up.uploads]);
   const pendingUps = up.uploads.filter((u) => u.status !== 'confirmed');
   const corrections = useMemo(() => uploadCorrections(up.uploads), [up.uploads]);
@@ -79,8 +83,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const docsFinal = documentsFinal(source);
   // The uploads' documents exactly as the server adds them (after the list is known, so the input is built once).
   const input = useMemo(
-    () => (docsFinal && up.known ? withUploadDocuments(buildInput(caseDocs, { allowedActions: allowed }), up.uploads) : null),
-    [docsFinal, caseDocs, allowed.join(','), up.known, up.uploads],
+    () => (docsFinal && inputUploads ? withUploadDocuments(buildInput(caseDocs, { allowedActions: allowed }), inputUploads) : null),
+    [docsFinal, caseDocs, allowed.join(','), inputUploads],
   );
   const locked = useMemo(() => ({ live: lockedReason(demoLock, 'live-analysis'), recheck: lockedReason(demoLock, 'recheck') }), [demoLock]);
   // The server's reason when this person cannot add evidence here (signed out, another workspace).
@@ -248,12 +252,12 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                 {uploadError}
               </p>
             )}
-            {up.error && (
+            {up.error && canHaveUploads && (
               <div role="alert" data-testid="uploads-error" className="flex flex-wrap items-center gap-2 rounded-lg border border-bad-line bg-bad-soft px-3 py-2 text-[12.5px]">
                 <span className="min-w-0 flex-1">
                   {up.known
-                    ? `The uploads of this case could not be read again (${up.error}); the list below is the last one read.`
-                    : `The uploads of this case could not be read (${up.error}). The analysis waits until they are: it would otherwise leave out confirmed evidence.`}
+                    ? `The uploads of this case could not be read (${up.error}); ${up.uploads.length ? 'the list below is the last one read' : 'none are shown'}. Trying again by itself.`
+                    : `The uploads of this case could not be read (${up.error}). The analysis waits until they are: it would otherwise leave out confirmed evidence. Trying again by itself.`}
                 </span>
                 <MiniButton onClick={() => void up.reload()}>Retry</MiniButton>
               </div>
