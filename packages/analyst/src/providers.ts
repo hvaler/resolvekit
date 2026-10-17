@@ -185,3 +185,34 @@ export function modelFromEnv(env: Record<string, string | undefined>, o: { fetch
     available: [gemini, groq].filter(Boolean).map((m) => m!.provider),
   };
 }
+
+/** One tiny call to one provider: resolves when it answered, throws its ModelError otherwise. */
+export interface ModelProbe {
+  /** "provider/model". */
+  name: string;
+  probe: () => Promise<void>;
+}
+
+const PROBE: ModelRequest = {
+  stage: 'probe',
+  system: 'You are a health check. Answer with the JSON object asked for, nothing else.',
+  user: 'Return {"ok": true}.',
+  schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' } }, required: ['ok'] },
+  maxOutputTokens: 256,
+};
+
+/**
+ * The operator's check (/api/ops/status?probe=models): each configured provider on its own, without retries or
+ * fallback, so a broken fallback key shows up even while the primary answers.
+ */
+export function modelProbesFromEnv(env: Record<string, string | undefined>, o: { fetch?: typeof fetch } = {}): ModelProbe[] {
+  const models: AnalystModel[] = [];
+  if (env.GEMINI_API_KEY) models.push(new GeminiModel({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || GEMINI_MODEL, fetch: o.fetch }));
+  if (env.GROQ_API_KEY) models.push(new GroqModel({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL || GROQ_MODEL, fetch: o.fetch, tpm: Number(env.GROQ_TPM) || 8_000 }));
+  return models.map((m) => ({
+    name: `${m.provider}/${m.model}`,
+    probe: async () => {
+      await m.generate(PROBE);
+    },
+  }));
+}

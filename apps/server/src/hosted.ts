@@ -19,7 +19,7 @@
  * There is no per-launch token here: the browser talks to the API directly, so a secret in it would not be one. The
  * protection is the signed-in person and their workspace, the Origin check and SameSite=Strict for CSRF, and the caps.
  */
-import { APP_CSP, KeyedLimiter, clientIp, describeClientIp, type ProxyTrust, hostOf, withSecurityHeaders, type DailyCounters, type StaticSite } from '@resolvekit/hosting';
+import { APP_CSP, KeyedLimiter, clientIp, describeClientIp, type ProxyTrust, hostOf, sameSecret, withSecurityHeaders, type DailyCounters, type StaticSite } from '@resolvekit/hosting';
 import type { PayPalClient } from '@resolvekit/paypal';
 import type { AccountStore } from './accounts.ts';
 import type { LiveGate } from './analysis.ts';
@@ -71,6 +71,13 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
    * and the URL's secret key (PAYPAL_WEBHOOK_KEY). Absent: no webhook route.
    */
   webhook?: { id: string; key: string; verifyLimit?: { perMinute: number; inFlight: number } } | null;
+  /**
+   * The operator's token (RESOLVEKIT_OPS_TOKEN) for GET /api/ops/status, which `npm run demo:check` reads: PayPal,
+   * the webhook, each binding verified now and the last warm-up. Absent: no such route.
+   */
+  opsToken?: string | null;
+  /** Each configured AI provider's health check, run by /api/ops/status?probe=models (modelProbesFromEnv). */
+  modelProbes?: readonly { name: string; probe: () => Promise<void> }[];
 }
 
 export interface HostedLimits {
@@ -107,6 +114,9 @@ export const LOCKED_REASON: Record<CostlyAction, string> = {
 const SIGN_IN_REASON = 'Sign in to compose and approve responses: with PayPal (merchants) or with the invite link you were given.';
 
 const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks' };
+
+/** The operator's check (demo:check). */
+export const OPS_PATH = '/api/ops/status';
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -198,12 +208,55 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   /** GET /api/demo: hosted mode, the daily caps, and why the costly actions are limited (the web app shows it). */
   const demoState = () => ({ hosted: true, ...o.counters.state(), reasons: LOCKED_REASON });
 
+  /** The last warm-up's outcome per bound case (null until one finished): the operator's check reports it. */
+  let lastWarmUp: WarmUpOutcome[] | null = null;
+  /** GET /api/ops/status: what would let a judge down, checked now. `problems` empty means the demo is ready. */
+  const PROBE_TIMEOUT_MS = 30_000;
+  const probeModels = () =>
+    Promise.all(
+      (o.modelProbes ?? []).map(async (m) => {
+        try {
+          await Promise.race([m.probe(), new Promise((_, no) => setTimeout(() => no(new Error(`no answer in ${PROBE_TIMEOUT_MS / 1000} s`)), PROBE_TIMEOUT_MS).unref?.())]);
+          return { name: m.name, ok: true };
+        } catch (e) {
+          return { name: m.name, ok: false, error: e instanceof Error ? e.message : 'failed' };
+        }
+      }),
+    );
+  const opsStatus = async (probe: boolean) => {
+    const [r, models] = await Promise.all([api.opsReport(), probe ? probeModels() : Promise.resolve(null)]);
+    const problems: string[] = [];
+    if (models && models.length === 0) problems.push('no AI model is configured (GEMINI_API_KEY / GROQ_API_KEY)');
+    for (const m of models ?? []) if (!m.ok) problems.push(`AI model ${m.name}: ${m.error}`);
+    if (r.paypal === 'unconfigured') problems.push(`PayPal is not connected${r.error ? ` (${r.error})` : ''}`);
+    if (!webhook) problems.push('the PayPal webhook is off (PAYPAL_WEBHOOK_ID / PAYPAL_WEBHOOK_KEY)');
+    const cases = Object.keys(r.bindings);
+    if (cases.length === 0) problems.push('no case is bound to a real PayPal dispute (BINDINGS_JSON)');
+    for (const [caseId, b] of Object.entries(r.bindings)) {
+      if (b.status !== 'verified') problems.push(`binding ${caseId} → ${b.dispute} is ${b.status}${b.reasons.length ? `: ${b.reasons.join('; ')}` : ''}`);
+    }
+    for (const w of lastWarmUp ?? []) {
+      if (w.outcome === 'failed' || w.outcome === 'skipped') problems.push(`warm-up · case ${w.caseId} · ${w.outcome} · ${w.detail}`);
+    }
+    return { ok: problems.length === 0, problems, ...r, webhook: webhook ? 'on' : 'off', warmUp: lastWarmUp, models, caps: o.counters.state(), checkedAt: now().toISOString() };
+  };
+
   const handle = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
     // Render's health check (and nothing else) needs no Host match: it tells nothing and costs nothing.
     if (path === '/healthz') return req.method === 'GET' || req.method === 'HEAD' ? json(200, { ok: true }) : json(405, { error: 'METHOD_NOT_ALLOWED' });
     if (!hosts.has(hostOf(req))) return json(403, { error: 'FORBIDDEN_HOST' });
+
+    // The operator's check (demo:check): a script, so no Origin or session; the token, or the route does not exist.
+    if (path === OPS_PATH) {
+      if (!o.opsToken) return json(404, { error: 'NOT_FOUND' });
+      const t = authLimit.take(clientIp(req, hops, trust));
+      if (!t.ok) return tooMany(t.retryAfterSec, 'Too many requests from this address');
+      const bearer = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1] ?? '';
+      if (!bearer || !sameSecret(bearer, o.opsToken)) return json(404, { error: 'NOT_FOUND' });
+      return req.method === 'GET' ? json(200, await opsStatus(url.searchParams.get('probe') === 'models')) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+    }
 
     // PayPal's webhook deliveries: no browser, so none of the browser rules below (Origin, session); PayPal confirms
     // each delivery itself (webhook.ts).
@@ -322,6 +375,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
         log(`warm-up · case ${caseId} · ${w.outcome} · ${w.detail}`);
         out.push(w);
       }
+      lastWarmUp = out;
       return out;
     };
     // One warm-up at a time; a request during one runs after it (the bindings may have changed meanwhile).

@@ -208,7 +208,16 @@ export type Api = Handler & {
   paypalNotified: (e: WebhookEvent) => Promise<void>;
   /** The intents and audit log (tests, main.ts). */
   intents: IntentStore;
+  /** For the operator's check (hosted /api/ops/status): PayPal's state and each binding verified on a fresh read now. */
+  opsReport: () => Promise<OpsReport>;
 };
+
+/** What the operator's check sees: PayPal connected, and each bound case's binding as a fresh read verified it. */
+export interface OpsReport {
+  paypal: PayPalEnv | 'unconfigured';
+  error?: string;
+  bindings: Record<string, { dispute: string; capture: string | null; status: BindingState | 'unchecked'; reasons: string[]; checkedAt: string | null }>;
+}
 
 /** sha256 hex of a string. */
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -893,7 +902,28 @@ export function createApi(opts: ApiOptions): Api {
     },
     paypalNotified,
     intents,
+    opsReport,
   });
+
+  /** Each binding read from PayPal now (the same read and check as before a send), whoever asks. */
+  async function opsReport(): Promise<OpsReport> {
+    const h = await checkHealth();
+    const bindings: OpsReport['bindings'] = {};
+    for (const caseId of Object.keys(opts.bindings)) {
+      const b = bindingOf(caseId);
+      if (!b) continue;
+      if (h.paypal !== 'unconfigured') {
+        try {
+          await caseState(caseId);
+        } catch (e) {
+          bindingStatus.set(caseId, { status: 'unavailable', reasons: [failureText(e)], checkedAt: now().toISOString(), binding: b });
+        }
+      }
+      const st = bindingState(caseId);
+      bindings[caseId] = { dispute: b.dispute, capture: b.capture, status: st?.status ?? 'unchecked', reasons: st?.reasons ?? [], checkedAt: st?.checkedAt ?? null };
+    }
+    return { ...h, bindings };
+  }
 }
 
 /** The record of a stored intent, for tests. */

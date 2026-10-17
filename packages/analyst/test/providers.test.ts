@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ModelError, withFallback, withRetries, type AnalystModel, type ModelRequest } from '../src/model.ts';
-import { GeminiModel, GroqModel, modelFromEnv } from '../src/providers.ts';
+import { GeminiModel, GroqModel, modelFromEnv, modelProbesFromEnv } from '../src/providers.ts';
 
 const req: ModelRequest = { stage: 'extract', system: 'sys', user: 'secret document text', schema: { type: 'object', additionalProperties: false, properties: {} }, maxOutputTokens: 100 };
 const noSleep = async () => {};
@@ -108,4 +108,25 @@ test('providers: HTTP errors become ModelError without the provider body; 429 is
   assert.equal(err.retryable, true);
   assert.equal(err.retryAfterMs, 7000);
   assert.ok(!err.message.includes('secret'));
+});
+
+test('probes: one per provider with a key, each its own provider (no fallback hides a broken key)', async () => {
+  const hosts: string[] = [];
+  const fetch = (async (url: string | URL) => {
+    const u = new URL(String(url));
+    hosts.push(u.host);
+    if (u.host === 'api.groq.com') return new Response(JSON.stringify({ error: { code: 'invalid_api_key', message: 'Invalid API Key' } }), { status: 401 });
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"ok":true}' }] } }], usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 3 } }), { status: 200 });
+  }) as unknown as typeof globalThis.fetch;
+  const probes = modelProbesFromEnv({ GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q' }, { fetch });
+  assert.deepEqual(probes.map((p) => p.name), ['gemini/gemini-3.8-flash', 'groq/openai/gpt-oss-120b']);
+  await probes[0]!.probe();
+  const err = await probes[1]!.probe().catch((e: unknown) => e);
+  assert.ok(err instanceof ModelError);
+  assert.equal(err.status, 401);
+  assert.deepEqual(hosts, ['generativelanguage.googleapis.com', 'api.groq.com']);
+});
+
+test('probes: none without keys', () => {
+  assert.deepEqual(modelProbesFromEnv({}), []);
 });

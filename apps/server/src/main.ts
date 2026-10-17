@@ -9,7 +9,8 @@
  * Env (hosted): RENDER_EXTERNAL_URL (set by Render) · RESOLVEKIT_CUSTOM_DOMAINS · RESOLVEKIT_SESSION_SECRET ·
  * PAYPAL_IDENTITY_CLIENT_ID + PAYPAL_IDENTITY_CLIENT_SECRET (the platform's PayPal app, for PayPal sign-in) ·
  * RESOLVEKIT_DATA_DIR (the disk) · BINDINGS_JSON (or RESOLVEKIT_BINDINGS, a file) · METERMCP_URL + METERMCP_ADMIN_TOKEN ·
- * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · TRUSTED_PROXY_HOPS (1).
+ * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · TRUSTED_PROXY_HOPS (1) ·
+ * RESOLVEKIT_OPS_TOKEN (the operator's check, npm run demo:check).
  */
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
@@ -18,7 +19,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
-import { FileAnalysisStore, RateLimiter, modelFromEnv } from '@resolvekit/analyst/node';
+import { FileAnalysisStore, RateLimiter, modelFromEnv, modelProbesFromEnv } from '@resolvekit/analyst/node';
 import { AccountStore } from './accounts.ts';
 import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
@@ -143,6 +144,9 @@ if (hosted) {
   if (webhookId && !/^[A-Z0-9]{10,40}$/.test(webhookId)) fail('PAYPAL_WEBHOOK_ID does not look like a PayPal webhook id');
   if (webhookId && (!webhookKey || !WEBHOOK_KEY.test(webhookKey))) fail('PAYPAL_WEBHOOK_KEY (32+ URL-safe characters, the secret segment of the webhook URL) is required with PAYPAL_WEBHOOK_ID');
   const webhook = webhookId && webhookKey ? { id: webhookId, key: webhookKey } : null;
+  // The operator's check (npm run demo:check → GET /api/ops/status): off without the token.
+  const opsToken = process.env.RESOLVEKIT_OPS_TOKEN?.trim() || null;
+  if (opsToken && !WEBHOOK_KEY.test(opsToken)) fail('RESOLVEKIT_OPS_TOKEN must be 32+ URL-safe characters');
   // Workspaces, people, passkeys and invites. An unreadable file stops the start (it would drop every membership).
   let accounts: AccountStore;
   try {
@@ -170,8 +174,10 @@ if (hosted) {
     // X-Forwarded-For is believed only from a proxy on a private address (Render's), unless set to "any" or "none".
     proxyTrust: process.env.TRUSTED_PROXY_PEERS === 'any' ? 'any' : process.env.TRUSTED_PROXY_PEERS === 'none' ? 'none' : 'private',
     webhook,
+    opsToken,
+    modelProbes: modelProbesFromEnv(process.env),
   });
-  log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · PayPal sign-in ${identity ? 'on' : 'OFF'} · PayPal webhook ${webhook && paypal ? 'on' : 'OFF'} · data in ${dataDir}`);
+  log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · PayPal sign-in ${identity ? 'on' : 'OFF'} · PayPal webhook ${webhook && paypal ? 'on' : 'OFF'} · ops check ${opsToken ? 'on' : 'OFF'} · data in ${dataDir}`);
 } else {
   // Per-launch secret. Only the local Vite proxy reads this file and adds it to /api requests server-side, so the
   // browser never holds it and no other website can send it.

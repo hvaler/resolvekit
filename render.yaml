@@ -52,6 +52,8 @@ services:
         sync: false
       - key: BINDINGS_JSON # {"<web case id>":{"dispute":"<PayPal sandbox dispute id>","capture":"<its capture id>"}}; npm run demo:prepare prints it
         sync: false
+      - key: RESOLVEKIT_OPS_TOKEN # the operator's check (npm run demo:check → GET /api/ops/status); 32+ URL-safe characters, the same in your local .env
+        sync: false
       - key: RESOLVEKIT_SESSION_SECRET # signs the session and sign-in cookies
         generateValue: true
       - key: METERMCP_URL # private network host:port of MeterMCP (server-to-server only)

@@ -385,6 +385,11 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
    disk.)
 7. PayPal accepts evidence once per dispute. To let the next judge send for real, open a fresh sandbox dispute and
    update `BINDINGS_JSON` (the service restarts with the new binding).
+8. Check it: set the same `RESOLVEKIT_OPS_TOKEN` (32+ random URL-safe characters) on the `resolvekit` service and in
+   your local `.env`, then `npm run demo:check` after every deploy. Read-only, it prints one PASS/FAIL line per item:
+   both services up, the landing page, PayPal connected, the webhook on, each binding verified on a fresh PayPal read,
+   each AI provider answering one tiny call (`--no-models` skips it), and the last warm-up of the bound cases. It
+   exits 1 when anything failed. Without the token on the server, `GET /api/ops/status` does not exist.
 
 **Prepare fresh demo disputes** (`apps/server/scripts/demo-prepare.ts`; you are the sandbox buyer, nothing is faked):
 
