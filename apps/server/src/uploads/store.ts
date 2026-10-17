@@ -40,6 +40,8 @@ export interface UploadRecord {
   expiresAt: string;
   confirmedAt: string | null;
   analysisKeys: string[];
+  /** How many redactions were attempted (each runs OCR; the routes cap it). Absent: none. */
+  redactions?: number;
 }
 
 /** What the caller knows when an upload starts; the store fills in the rest. */

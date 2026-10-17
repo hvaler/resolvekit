@@ -1,17 +1,26 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PEER_HEADER } from '@resolvekit/hosting';
 import type { Handler } from './app.ts';
+import { CASE_FILES } from './documents.ts';
 import { MAX_FILE_BYTES } from './uploads/limits.ts';
-import { UPLOAD_PATH } from './uploads/routes.ts';
+import { UPLOAD_PATH, isImageType } from './uploads/routes.ts';
 
 const MAX_BODY = 256 * 1024;
+/** Bodies over {@link MAX_BODY} being read at once (each up to MAX_FILE_BYTES in memory). */
+const MAX_LARGE_IN_FLIGHT = 3;
+/** After a refusal, how long the rest of the body is dropped (so the client reads the answer, not a reset). */
+const DRAIN_MS = 1_000;
 
-/** The body limit of a request: an evidence file on the upload route, 256 KB anywhere else. */
-export function bodyLimit(method: string, path: string): number {
-  return method === 'POST' && UPLOAD_PATH.test(path) ? MAX_FILE_BYTES : MAX_BODY;
+/**
+ * The body limit of a request: MAX_FILE_BYTES for an image (image/png, image/jpeg) posted to the upload route of a
+ * case that exists, 256 KB for everything else. Decided on the request line and headers alone, before reading.
+ */
+export function bodyLimit(method: string, path: string, contentType: string | null | undefined): number {
+  const caseId = UPLOAD_PATH.exec(path)?.[1];
+  return method === 'POST' && caseId && Object.hasOwn(CASE_FILES, caseId) && isImageType(contentType ?? null) ? MAX_FILE_BYTES : MAX_BODY;
 }
 
-/** The whole body, or null as soon as it passes `limit` (nothing more is read). */
+/** The whole body, or null as soon as it passes `limit` (nothing more is kept). */
 function readBody(req: IncomingMessage, limit: number): Promise<Buffer | null> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -20,7 +29,6 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer | null> {
       size += c.length;
       if (size > limit) {
         req.off('data', onData);
-        req.pause();
         resolve(null);
         return;
       }
@@ -32,29 +40,48 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer | null> {
   });
 }
 
-/** After a 413, how long the rest of the body is dropped (so the client reads the answer, not a reset) before closing. */
-const DRAIN_MS = 1_000;
+/**
+ * Answer without reading the body, and close the connection. The answer is written whole (with its length) at once;
+ * the rest of the body is dropped, never kept, until the client stops or {@link DRAIN_MS} pass, then the socket closes.
+ */
+function refuseUnread(req: IncomingMessage, res: ServerResponse, status: number, error: string) {
+  const body = JSON.stringify({ error });
+  res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), connection: 'close' });
+  res.write(body);
+  const timer = setTimeout(() => {
+    res.end();
+    req.socket.destroy();
+  }, DRAIN_MS);
+  timer.unref();
+  req.once('end', () => {
+    clearTimeout(timer);
+    res.end();
+  });
+  req.resume();
+}
 
 /**
- * Adapt a Web `Request → Response` handler to node:http. Bodies over the path's limit ({@link bodyLimit}) are refused
- * with 413: on the declared Content-Length before anything is read, or as soon as the limit is passed. Nothing more
- * is kept: the rest is dropped for {@link DRAIN_MS} at most, then the connection is closed.
+ * Adapt a Web `Request → Response` handler to node:http (one listener per process). Bodies over the request's limit
+ * ({@link bodyLimit}) are refused with 413: on the declared Content-Length before anything is read, or as soon as the
+ * limit is passed. At most {@link MAX_LARGE_IN_FLIGHT} bodies over 256 KB (or of unknown length) are read at once;
+ * beyond that, 503 BUSY before reading.
  */
 export function toNodeListener(handler: Handler, origin: string) {
+  let large = 0;
   return async (req: IncomingMessage, res: ServerResponse) => {
     const method = req.method ?? 'GET';
-    const limit = bodyLimit(method, (req.url ?? '/').split('?')[0]!);
-    const tooLarge = () => {
-      res.writeHead(413, { 'content-type': 'application/json' }).end('{"error":"BODY_TOO_LARGE"}');
-      req.resume();
-      setTimeout(() => {
-        if (!req.complete) req.socket.destroy();
-      }, DRAIN_MS).unref();
-    };
-    const declared = Number(req.headers['content-length']);
-    if (Number.isFinite(declared) && declared > limit) return tooLarge();
-    const body = await readBody(req, limit);
-    if (body === null) return tooLarge();
+    const limit = bodyLimit(method, (req.url ?? '/').split('?')[0]!, req.headers['content-type']);
+    const declared = req.headers['content-length'] === undefined ? NaN : Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > limit) return refuseUnread(req, res, 413, 'BODY_TOO_LARGE');
+    if (limit > MAX_BODY && !(declared <= MAX_BODY)) {
+      if (large >= MAX_LARGE_IN_FLIGHT) return refuseUnread(req, res, 503, 'BUSY');
+      large++;
+      res.once('close', () => large--);
+    }
+    // A client that goes away mid-body gets no answer (and frees its slot).
+    const body = await readBody(req, limit).catch(() => undefined);
+    if (body === undefined) return void res.destroy();
+    if (body === null) return refuseUnread(req, res, 413, 'BODY_TOO_LARGE');
     const headers = new Headers();
     for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
     // The TCP peer, for hosted mode's client IP when no proxy is in front; a client-sent copy never survives.

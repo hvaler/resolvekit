@@ -121,11 +121,20 @@ const pins = new InputPins({ file: join(dataDir, 'analysis-inputs.json') });
 // Submission intents (what the merchant approved, exactly) and the approval/send audit log: the server's record.
 const intents = new IntentStore({ file: join(dataDir, 'intents.json'), eventsFile: join(dataDir, 'audit-events.jsonl') });
 
-// Merchant evidence uploads, outside any web-served path. At start, expired pending uploads and leftovers of
-// interrupted writes are removed (counts only in the log).
+// Merchant evidence uploads, outside any web-served path. At start and every hour, expired pending uploads and
+// leftovers of interrupted writes are removed (counts only in the log; the routes also refuse an expired one at once).
 const uploads = new UploadStore({ dir: join(dataDir, 'uploads') });
-const swept = uploads.sweep();
-log(`uploads · sweep at start · ${swept.expired} expired · ${swept.orphans} leftover(s) removed`);
+const sweepUploads = (when: string) => {
+  try {
+    const s = uploads.sweep();
+    if (when === 'at start' || s.expired || s.orphans) log(`uploads · sweep ${when} · ${s.expired} expired · ${s.orphans} leftover(s) removed`);
+  } catch (e) {
+    log(`uploads · sweep ${when} failed · ${(e as Error).name}`);
+  }
+};
+sweepUploads('at start');
+const uploadSweep = setInterval(() => sweepUploads('hourly'), HOUR);
+uploadSweep.unref();
 
 let app: Handler;
 let hostedApp: HostedApp | null = null;
@@ -236,6 +245,7 @@ if (watchBindings) {
 
 const stop = () => {
   intents.flush();
+  clearInterval(uploadSweep);
   void closeOcr();
   if (tokenFile) rmSync(tokenFile, { force: true });
   if (watchBindings) unwatchFile(bindingsFile);

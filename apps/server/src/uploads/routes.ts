@@ -10,7 +10,11 @@
  *   DELETE /api/cases/:id/uploads/:u               owners and full members: files removed
  *
  * Nothing of an upload leaves this server here: OCR is local, nothing is sent to PayPal or a model. Audit details and
- * log lines carry ids and file names only, never text or bytes.
+ * log lines carry ids and file names only, never text or bytes. A pending upload past its expiry is discarded the
+ * first time a route meets it.
+ *
+ * A refusal given before any decoding or OCR carries the {@link REFUSED_EARLY} header: hosted mode gives the address
+ * its upload slot back for those only (and strips the header). Work once started is never refunded.
  */
 import type { ActingPerson, Reservation } from '../app.ts';
 import { CASE_FILES } from '../documents.ts';
@@ -19,19 +23,28 @@ import { UploadError, sanitiseImage, type Rect } from './image.ts';
 import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE } from './limits.ts';
 import { ocrPng } from './ocr.ts';
 import { canDeleteUpload, canEditUpload } from './permissions.ts';
-import type { UploadRecord, UploadStatus, UploadStore } from './store.ts';
+import type { UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
 import { pastedTextPdf, redactText, textLines, type TextRemoval } from './text.ts';
 
-/** The one route that takes a raw file body (node.ts sizes its body limit, the guards let images through). */
-export const UPLOAD_PATH = /^\/api\/cases\/[A-Za-z0-9-]{1,64}\/uploads$/;
+/** The one route that takes a raw file body; group 1 is the case id (node.ts sizes its body limit with it). */
+export const UPLOAD_PATH = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/uploads$/;
+/** A redaction (each one runs OCR): metered per address like an upload. */
+export const REDACT_PATH = /^\/api\/cases\/[A-Za-z0-9-]{1,64}\/uploads\/upl-[0-9a-f]{24}\/redact$/;
+/** Set on a refusal given before any decoding or OCR (internal: hosted.ts strips it). */
+export const REFUSED_EARLY = 'x-rk-refused-early';
+/** Redactions per upload. */
+export const MAX_REDACTS = 5;
 const ROUTE = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/uploads(?:\/(upl-[0-9a-f]{24})(?:\/(image|redact|confirm|discard))?)?$/;
 const IMAGE_TYPES = ['image/png', 'image/jpeg'];
 
 const mediaType = (contentType: string | null) => (contentType ?? '').split(';')[0]!.trim().toLowerCase();
 
+/** image/png or image/jpeg. */
+export const isImageType = (contentType: string | null): boolean => IMAGE_TYPES.includes(mediaType(contentType));
+
 /** Whether a request may carry an image body: POST to the upload route with image/png or image/jpeg. */
 export function acceptsImageBody(method: string, path: string, contentType: string | null): boolean {
-  return method === 'POST' && UPLOAD_PATH.test(path) && IMAGE_TYPES.includes(mediaType(contentType));
+  return method === 'POST' && UPLOAD_PATH.test(path) && isImageType(contentType);
 }
 
 export interface UploadRoutesOptions {
@@ -69,9 +82,9 @@ const STRAY = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/g;
 /** In a confirmed line, also no line break (a tab stays, as in pasted text). */
 const LINE_STRAY = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
 
-/** The record as the web app sees it (no workspace id, no analysis keys). */
+/** The record as the web app sees it (no workspace id, no analysis keys, no counters). */
 function view(r: UploadRecord) {
-  const { workspaceId: _w, analysisKeys: _a, ...v } = r;
+  const { workspaceId: _w, analysisKeys: _a, redactions: _r, ...v } = r;
   return v;
 }
 
@@ -120,11 +133,13 @@ async function readJson(req: Request): Promise<{ ok: true; body: unknown } | { o
   }
 }
 
-/** What the person is acting in: their workspace, the case and the dispute active now. */
+/** What the person is acting in: their workspace, the case and the dispute active now; and whether work started. */
 interface Scope {
   caseId: string;
   person: ActingPerson;
   disputeId: string | null;
+  /** Decoding or OCR has run for this request: from here on, nothing is refunded. */
+  worked: boolean;
 }
 
 export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: URL) => Promise<Response | null> {
@@ -135,15 +150,27 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
   const audit = (s: Scope, kind: AuditEvent['kind'], r: UploadRecord) =>
     o.record({ caseId: s.caseId, kind, actor: s.person.label, team: s.person.workspaceId, disputeId: s.disputeId, detail: [r.id, r.evidenceId, r.name].filter(Boolean).join(' · ') });
 
-  const shownCount = (s: Scope) => store.list({ workspaceId: s.person.workspaceId, caseId: s.caseId, boundDisputeId: s.disputeId, statuses: SHOWN }).length;
+  /** A pending or reviewing upload past its expiry is discarded now (files and text purged); null then. */
+  const unlessExpired = (r: UploadRecord): UploadRecord | null => {
+    if (!EDITABLE.includes(r.status) || r.expiresAt > now().toISOString()) return r;
+    store.update(r.id, { status: 'discarded' });
+    o.record({ caseId: r.caseId, kind: 'upload_discarded', actor: 'ResolveKit (expired)', team: r.workspaceId, disputeId: r.boundDisputeId, detail: `${r.id} · ${r.name} · expired` });
+    return null;
+  };
+  /** The uploads shown in the case for this workspace and dispute (expired ones discarded on the way). */
+  const shown = (s: Scope) =>
+    store
+      .list({ workspaceId: s.person.workspaceId, caseId: s.caseId, boundDisputeId: s.disputeId, statuses: SHOWN })
+      .map(unlessExpired)
+      .filter((r): r is UploadRecord => r !== null);
+
   const tooMany = () => refuse(409, 'TOO_MANY_UPLOADS', `A case takes at most ${MAX_UPLOADS_PER_CASE} uploads; discard or delete one first`);
   const storageFull = () => refuse(507, 'STORAGE_FULL', 'The demo has no room for more uploads right now');
   const hasRoom = (bytes: number) => store.usedBytes() + bytes <= maxStorage;
-  /** Pending or reviewing, for the dispute active now. */
   const archived = (s: Scope, r: UploadRecord) => r.status === 'archived' || r.boundDisputeId !== s.disputeId;
   const archivedRefusal = () => refuse(409, 'UPLOAD_ARCHIVED', 'The case moved to another PayPal dispute since this was uploaded; upload it again for the current one');
 
-  /** POST /uploads: an image (raw body) or pasted text (JSON). */
+  /** POST /uploads: an image (raw body) or pasted text (JSON). Limits and the day's unit are checked before any work. */
   const add = async (req: Request, s: Scope): Promise<Response> => {
     const declared = Number(req.headers.get('content-length') ?? '');
     if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) return refuse(413, 'TOO_LARGE', `Files up to ${MAX_FILE_BYTES / 1024 / 1024} MB`);
@@ -151,15 +178,10 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     let kind: UploadRecord['kind'];
     let original: Uint8Array;
     let name: string;
-    let png: Uint8Array | null = null;
-    let readLines: string[] = [];
-    if (IMAGE_TYPES.includes(type)) {
+    let text: string | null = null;
+    if (isImageType(type)) {
       original = new Uint8Array(await req.arrayBuffer());
       if (original.length > MAX_FILE_BYTES) return refuse(413, 'TOO_LARGE', `Files up to ${MAX_FILE_BYTES / 1024 / 1024} MB`);
-      if (shownCount(s) >= MAX_UPLOADS_PER_CASE) return tooMany();
-      if (!hasRoom(original.length)) return storageFull();
-      // Decoded (type by magic bytes, size checked first) and re-encoded as a PNG for OCR: what OCR sees is pixels only.
-      png = sanitiseImage(original, []).png;
       kind = 'image';
       name = cleanName(req.headers.get('x-upload-name'), type === 'image/png' ? 'image.png' : 'image.jpg');
     } else if (type === 'application/json') {
@@ -167,34 +189,39 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       if (!parsed.ok) return refuse(400, 'INVALID_JSON');
       const b = parsed.body;
       if (!isObject(b) || typeof b.text !== 'string' || (b.name !== undefined && typeof b.name !== 'string')) return refuse(400, 'INVALID_UPLOAD', 'The body must be { "text": "…", "name": "…" }');
-      const text = b.text.replace(/\r\n?/g, '\n').replace(STRAY, ' ');
+      text = b.text.replace(/\r\n?/g, '\n').replace(STRAY, ' ');
       if (!text.trim()) return refuse(400, 'EMPTY_TEXT', 'There is no text to add');
       if (text.length > MAX_TEXT_CHARS) return refuse(413, 'TOO_LONG', `Pasted text up to ${MAX_TEXT_CHARS} characters`);
       original = new TextEncoder().encode(text);
-      if (shownCount(s) >= MAX_UPLOADS_PER_CASE) return tooMany();
-      if (!hasRoom(original.length)) return storageFull();
       kind = 'text';
       name = cleanName(b.name, 'pasted text');
-      readLines = textLines(text);
     } else {
       return refuse(415, 'UNSUPPORTED_TYPE', 'Upload a PNG or JPEG image, or paste text');
     }
-
+    if (shown(s).length >= MAX_UPLOADS_PER_CASE) return tooMany();
+    if (!hasRoom(original.length)) return storageFull();
     const reserved = o.reserve?.(req) ?? null;
     if (reserved && !reserved.ok) return json(reserved.refusal.status, reserved.refusal.body);
-    // OCR of the original, here, so the person sees what is in it before covering anything. The answer goes back to
-    // them only; it is not stored.
-    if (png) readLines = (await ocrPng(png)).map((l) => l.text);
-    // Checked again right before storing (synchronously with it): concurrent uploads cannot pass the limits.
-    if (shownCount(s) >= MAX_UPLOADS_PER_CASE || !hasRoom(original.length)) {
-      if (reserved?.ok) reserved.release();
-      return shownCount(s) >= MAX_UPLOADS_PER_CASE ? tooMany() : storageFull();
+
+    // From here on the day's unit is spent, whatever happens.
+    let readLines: string[];
+    if (kind === 'image') {
+      s.worked = true;
+      // Decoded (type by magic bytes, size checked first) and re-encoded as a PNG: what OCR sees is pixels only. The
+      // text goes back to the person only; it is not stored.
+      readLines = (await ocrPng(sanitiseImage(original, []).png)).map((l) => l.text);
+      // Checked again in the same synchronous step as storing: concurrent uploads cannot pass the limits.
+      if (shown(s).length >= MAX_UPLOADS_PER_CASE) return tooMany();
+      if (!hasRoom(original.length)) return storageFull();
+    } else {
+      readLines = textLines(text!);
     }
     let rec: UploadRecord;
     try {
       rec = store.create({ workspaceId: s.person.workspaceId, caseId: s.caseId, boundDisputeId: s.disputeId, kind, name, uploadedBy: { id: s.person.id, label: s.person.label, name: s.person.name } }, original);
     } catch (e) {
-      if (reserved?.ok) reserved.release();
+      // Pasted text did no work worth a unit; an image's decode and OCR did.
+      if (!s.worked && reserved?.ok) reserved.release();
       throw e;
     }
     audit(s, 'upload_added', rec);
@@ -209,25 +236,32 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     const parsed = await readJson(req);
     if (!parsed.ok) return refuse(400, 'INVALID_JSON');
     const b = isObject(parsed.body) ? parsed.body : {};
+    const rects = rec.kind === 'image' && b.removals === undefined ? parseRects(b.rects) : null;
+    const removals = rec.kind === 'text' && b.rects === undefined ? parseRemovals(b.removals) : null;
+    if (rec.kind === 'image' && !rects) return refuse(400, 'BAD_REDACTION', `rects: up to ${MAX_ITEMS} areas { x, y, w, h } in whole pixels`);
+    if (rec.kind === 'text' && !removals) return refuse(400, 'BAD_REDACTION', `removals: up to ${MAX_ITEMS} spans { start, end }`);
+    // Read again: another redact may have counted while this body was read.
+    const done = store.get(rec.id)?.redactions ?? 0;
+    if (done >= MAX_REDACTS) return refuse(409, 'TOO_MANY_REDACTS', `An upload can be redacted ${MAX_REDACTS} times; discard it and upload it again`);
     const original = store.original(rec.id);
     if (!original) return refuse(404, 'NOT_FOUND', 'The original of this upload is gone');
-    let patch: Parameters<UploadStore['update']>[1];
+    // Counted before the work, so failed attempts count too.
+    store.update(rec.id, { redactions: done + 1 });
+    s.worked = true;
+
+    let patch: UploadPatch;
     let file: Uint8Array;
-    if (rec.kind === 'image') {
-      const rects = b.removals === undefined ? parseRects(b.rects) : null;
-      if (!rects) return refuse(400, 'BAD_REDACTION', `rects: up to ${MAX_ITEMS} areas { x, y, w, h } in whole pixels`);
+    if (rects) {
       const s1 = sanitiseImage(original, rects);
       if (!hasRoom(s1.png.length)) return storageFull();
       const readLines = (await ocrPng(s1.png)).map((l) => l.text);
       patch = { status: 'reviewing', rects, removals: [], readLines, sha256: s1.sha256, size: s1.png.length, mime: 'image/png' };
       file = s1.png;
     } else {
-      const removals = b.rects === undefined ? parseRemovals(b.removals) : null;
-      if (!removals) return refuse(400, 'BAD_REDACTION', `removals: up to ${MAX_ITEMS} spans { start, end }`);
-      const lines = textLines(redactText(new TextDecoder().decode(original), removals));
+      const lines = textLines(redactText(new TextDecoder().decode(original), removals!));
       const doc = pastedTextPdf({ title: rec.name, by: rec.uploadedBy.name.slice(0, 80), lines });
       if (!hasRoom(doc.pdf.length)) return storageFull();
-      patch = { status: 'reviewing', rects: [], removals, readLines: lines, sha256: doc.sha256, size: doc.pdf.length, mime: 'application/pdf' };
+      patch = { status: 'reviewing', rects: [], removals: removals!, readLines: lines, sha256: doc.sha256, size: doc.pdf.length, mime: 'application/pdf' };
       file = doc.pdf;
     }
     // Someone may have discarded, deleted or confirmed it while OCR ran.
@@ -250,13 +284,14 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       return refuse(400, 'BAD_LINES', `lines: one string per line, up to ${MAX_LINE} characters, without line breaks or control characters`);
     }
     // Checked after the body was read (nothing awaits from here on, so nothing changes in between).
-    const cur = store.get(rec.id);
-    if (!cur || DEAD.includes(cur.status)) return refuse(404, 'NOT_FOUND', 'No such upload in this case');
+    const got = store.get(rec.id);
+    const cur = got && !DEAD.includes(got.status) ? unlessExpired(got) : null;
+    if (!cur) return refuse(404, 'NOT_FOUND', 'No such upload in this case');
     if (archived(s, cur)) return archivedRefusal();
     if (cur.status !== 'reviewing') return refuse(409, 'WRONG_STATUS', cur.status === 'pending' ? 'Cover what must not be shared first (redact), even if nothing needs covering' : `This upload is ${cur.status}`);
     if (lines.length !== cur.readLines.length || lines.join('').length > MAX_TEXT_CHARS) return refuse(400, 'BAD_LINES', `lines: exactly the ${cur.readLines.length} lines read from the sanitised file, corrected where needed`);
     if (b.sha256 !== cur.sha256) return refuse(409, 'UPLOAD_CHANGED', 'The file changed since you reviewed it; review it again');
-    const shown = Math.max(
+    const highest = Math.max(
       0,
       ...CASE_FILES[s.caseId]!.evidence.map((e) => evidenceNumber(e.id)),
       ...store.list({ workspaceId: s.person.workspaceId, caseId: s.caseId, boundDisputeId: s.disputeId }).map((r) => evidenceNumber(r.evidenceId)),
@@ -265,12 +300,13 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       const read = cur.readLines[i]!;
       return text === read ? { text, correctedBy: null, original: null } : { text, correctedBy: s.person.label, original: read };
     });
-    const next = store.update(cur.id, { status: 'confirmed', evidenceId: `E${shown + 1}`, lines: final, confirmedAt: now().toISOString() }, { original: null });
+    const next = store.update(cur.id, { status: 'confirmed', evidenceId: `E${highest + 1}`, lines: final, confirmedAt: now().toISOString() }, { original: null });
     audit(s, 'upload_confirmed', next);
     return json(200, { upload: view(next) });
   };
 
   const discard = (s: Scope, rec: UploadRecord): Response => {
+    if (rec.status === 'archived') return refuse(404, 'NOT_FOUND', 'No such upload in this case');
     if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'A reviewer discards only their own uploads');
     if (!EDITABLE.includes(rec.status)) return refuse(409, 'WRONG_STATUS', rec.status === 'confirmed' ? 'A confirmed upload is deleted, not discarded' : `This upload is ${rec.status}`);
     const next = store.update(rec.id, { status: 'discarded' });
@@ -302,37 +338,47 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     return new Response(bytes as BodyInit, { status: 200, headers: { 'content-type': type, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'content-disposition': 'inline' } });
   };
 
+  const handle = async (req: Request, url: URL, s: Scope, m: RegExpExecArray): Promise<Response> => {
+    const uploadId = m[2];
+    const sub = m[3];
+    if (!uploadId) {
+      if (req.method === 'POST') return add(req, s);
+      return json(200, { uploads: shown(s).map(view) });
+    }
+    const got = store.get(uploadId);
+    // Another workspace's upload, one that is gone or expired, does not exist for this request.
+    const rec = got && got.workspaceId === s.person.workspaceId && got.caseId === s.caseId && !DEAD.includes(got.status) ? unlessExpired(got) : null;
+    if (!rec) return refuse(404, 'NOT_FOUND', 'No such upload in this case');
+    if (!sub) return remove(s, rec);
+    if (sub === 'image') return image(url, s, rec);
+    if (sub === 'redact') return redact(req, s, rec);
+    if (sub === 'confirm') return confirm(req, s, rec);
+    return discard(s, rec);
+  };
+
   return async (req, url) => {
     const m = ROUTE.exec(url.pathname);
     if (!m) return null;
     const caseId = m[1]!;
-    const uploadId = m[2];
-    const sub = m[3];
-    const method = !uploadId ? ['GET', 'POST'] : !sub ? ['DELETE'] : sub === 'image' ? ['GET'] : ['POST'];
-    if (!method.includes(req.method)) return refuse(405, 'METHOD_NOT_ALLOWED');
-    if (!CASE_FILES[caseId]) return refuse(404, 'UNKNOWN_CASE');
+    let s: Scope | null = null;
+    const early = (r: Response) => {
+      if (r.status >= 400 && !s?.worked) r.headers.set(REFUSED_EARLY, '1');
+      return r;
+    };
+    const method = !m[2] ? ['GET', 'POST'] : !m[3] ? ['DELETE'] : m[3] === 'image' ? ['GET'] : ['POST'];
+    if (!method.includes(req.method)) return early(refuse(405, 'METHOD_NOT_ALLOWED'));
+    if (!Object.hasOwn(CASE_FILES, caseId)) return early(refuse(404, 'UNKNOWN_CASE'));
     const person = o.person(req);
-    if (!person) return refuse(401, 'SIGN_IN_REQUIRED', 'Sign in to add evidence: with PayPal (merchants) or with the invite link you were given.');
-    if (!(await o.isLive(req))) return refuse(403, 'SELLER_WORKSPACE_ONLY', 'Evidence uploads are for the seller’s workspace on this demo.');
-    const s: Scope = { caseId, person, disputeId: o.caseBinding(caseId) };
+    if (!person) return early(refuse(401, 'SIGN_IN_REQUIRED', 'Sign in to add evidence: with PayPal (merchants) or with the invite link you were given.'));
+    if (!(await o.isLive(req))) return early(refuse(403, 'SELLER_WORKSPACE_ONLY', 'Evidence uploads are for the seller’s workspace on this demo.'));
+    s = { caseId, person, disputeId: o.caseBinding(caseId), worked: false };
     try {
-      if (!uploadId) {
-        if (req.method === 'POST') return await add(req, s);
-        return json(200, { uploads: store.list({ workspaceId: person.workspaceId, caseId, boundDisputeId: s.disputeId, statuses: SHOWN }).map(view) });
-      }
-      const rec = store.get(uploadId);
-      // Another workspace's upload, or one that is gone, does not exist for this request.
-      if (!rec || rec.workspaceId !== person.workspaceId || rec.caseId !== caseId || DEAD.includes(rec.status)) return refuse(404, 'NOT_FOUND', 'No such upload in this case');
-      if (!sub) return remove(s, rec);
-      if (sub === 'image') return image(url, s, rec);
-      if (sub === 'redact') return await redact(req, s, rec);
-      if (sub === 'confirm') return await confirm(req, s, rec);
-      return discard(s, rec);
+      return early(await handle(req, url, s, m));
     } catch (e) {
       if (!(e instanceof UploadError)) throw e;
       // Codes and fixed messages only: an UploadError never carries content.
       if (e.code === 'STORAGE') o.log(`uploads · case ${caseId} · ${e.message}`);
-      return refuse(e.status, e.code, e.message);
+      return early(refuse(e.status, e.code, e.message));
     }
   };
 }

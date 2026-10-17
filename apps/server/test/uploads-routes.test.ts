@@ -92,6 +92,7 @@ function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: P
   const store = new UploadStore({ dir: null });
   const intents = new IntentStore();
   const bindings: Record<string, { dispute: string; capture: string }> = { [CASE]: { dispute: REAL, capture: STD_CAPTURE } };
+  const counters = new DailyCounters({ file: o.capsFile ?? null, limits: { upload: 40, ...o.caps } });
   const app = createHostedApp({
     paypal: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }),
     env: 'sandbox',
@@ -99,7 +100,7 @@ function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: P
     log: (l) => lines.push(l),
     analyst,
     site: null,
-    counters: new DailyCounters({ file: o.capsFile ?? null, limits: { upload: 40, ...o.caps } }),
+    counters,
     accounts: people.accounts,
     identity: null,
     sessionSecret: TEST_SECRET,
@@ -111,7 +112,7 @@ function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: P
     ...(o.storageBytes ? { uploadStorageBytes: o.storageBytes } : {}),
     limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 }, ...o.limits },
   });
-  return { app, calls, model: fm, people, lines, store, intents, bindings };
+  return { app, calls, model: fm, people, lines, store, intents, bindings, counters };
 }
 
 type Init = { method?: string; body?: unknown; type?: string; cookie?: string; headers?: Record<string, string> };
@@ -223,13 +224,13 @@ test("the upload's content reaches no external service before confirmation", TIM
 });
 
 /** POST with these headers, write `chunks` without ending the body, and resolve on the response. */
-function rawPost(server: Server, path: string, headers: Record<string, string | number>, chunks: Buffer[]): Promise<{ status: number; body: string }> {
+function rawPost(server: Server, path: string, headers: Record<string, string | number>, chunks: Buffer[]): Promise<{ status: number; body: string; connection?: string }> {
   const { port } = server.address() as { port: number };
   return new Promise((resolve, reject) => {
     const r = httpRequest({ host: '127.0.0.1', port, path, method: 'POST', headers }, (res) => {
       let body = '';
       res.on('data', (c) => (body += c));
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body, connection: res.headers.connection }));
       res.on('error', () => resolve({ status: res.statusCode ?? 0, body }));
     });
     r.on('error', (e) => reject(e));
@@ -247,6 +248,7 @@ test('a 6 MB body is refused before it is read whole (413) and a GIF is refused 
     const declared = await rawPost(server, P, { 'content-type': 'image/png', 'content-length': 6 * 1024 * 1024 }, [Buffer.alloc(1024)]);
     assert.equal(declared.status, 413);
     assert.match(declared.body, /BODY_TOO_LARGE/);
+    assert.equal(declared.connection, 'close');
     // Chunked, no length, the body never ended: refused once the limit is passed.
     const chunked = await rawPost(server, P, { 'content-type': 'image/png', 'transfer-encoding': 'chunked' }, Array.from({ length: 6 }, () => Buffer.alloc(1024 * 1024)));
     assert.equal(chunked.status, 413);
@@ -261,6 +263,12 @@ test('a 6 MB body is refused before it is read whole (413) and a GIF is refused 
     assert.deepEqual(seen, [body.length]);
     const other = await rawPost(server, `/api/disputes/${CASE}/intent`, { 'content-type': 'application/json', 'content-length': body.length }, [body]);
     assert.equal(other.status, 413);
+    // The upload route's 5 MB are for images of a real case only.
+    const asJson = await rawPost(server, P, { 'content-type': 'application/json', 'content-length': body.length }, [body]);
+    assert.equal(asJson.status, 413);
+    const noCase = await rawPost(server, '/api/cases/constructor/uploads', { 'content-type': 'image/png', 'content-length': body.length }, [body]);
+    assert.equal(noCase.status, 413);
+    assert.equal(handled, 1);
   } finally {
     server.closeAllConnections();
     await new Promise((ok) => server.close(ok));
@@ -500,4 +508,120 @@ test('local mode: the guard lets PNG bodies through to the upload route only', T
   const body = (await r.json()) as Answer;
   assert.equal(body.upload.uploadedBy.label, 'local operator');
   assert.equal((await local(`/api/disputes/${CASE}/intent`, fixture)).status, 415);
+});
+
+// ------------------------------------------------------------------------------------------------ fix round 1
+
+test('at most 3 large uploads are read at once: a 4th is refused before reading (503 BUSY)', TIMEOUT, async () => {
+  let handled = 0;
+  const server = createServer(toNodeListener(async (r) => (handled++, await r.arrayBuffer(), new Response('{}', { status: 200 })), 'http://127.0.0.1'));
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
+  const { port } = server.address() as { port: number };
+  const MB = 1024 * 1024;
+  const post = (body: Buffer) =>
+    new Promise<number>((resolve) => {
+      const r = httpRequest({ host: '127.0.0.1', port, path: P, method: 'POST', headers: { 'content-type': 'image/png', 'content-length': body.length } }, (res) => (res.resume(), resolve(res.statusCode ?? 0)));
+      r.end(body);
+    });
+  // Three uploads of 1 MB, each stuck after 1 KB: they hold the three large-body slots.
+  const held = Array.from({ length: 3 }, () => {
+    const r = httpRequest({ host: '127.0.0.1', port, path: P, method: 'POST', headers: { 'content-type': 'image/png', 'content-length': MB } });
+    r.on('error', () => {});
+    r.write(Buffer.alloc(1024));
+    return r;
+  });
+  try {
+    await new Promise((ok) => setTimeout(ok, 100));
+    const busy = await rawPost(server, P, { 'content-type': 'image/png', 'content-length': MB }, [Buffer.alloc(1024)]);
+    assert.equal(busy.status, 503);
+    assert.match(busy.body, /BUSY/);
+    // A small one (up to 256 KB) needs no slot.
+    assert.equal(await post(Buffer.alloc(1024)), 200);
+    // The held ones go away: their slots are free again.
+    for (const r of held) r.destroy();
+    await new Promise((ok) => setTimeout(ok, 100));
+    assert.equal(await post(Buffer.alloc(MB)), 200);
+    assert.equal(handled, 2);
+  } finally {
+    for (const r of held) r.destroy();
+    server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+  }
+});
+
+test('each redact counts in the per-address upload limit, and an upload takes at most 5 redacts (TOO_MANY_REDACTS)', TIMEOUT, async () => {
+  const limited = setup({ limits: { uploadsPerIp: { limit: 3, windowMs: 600_000 } } });
+  const c1 = limited.people.fullMember();
+  const t = await pasteText(limited.app, c1);
+  assert.equal((await call(limited.app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie: c1 })).status, 200);
+  assert.equal((await call(limited.app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie: c1 })).status, 200);
+  const over = await call(limited.app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie: c1 });
+  assert.equal(over.status, 429);
+  assert.equal(over.body.error, 'RATE_LIMITED');
+
+  const { app, people } = setup();
+  const cookie = people.fullMember();
+  const img = await uploadPng(app, cookie);
+  for (let i = 0; i < 5; i++) assert.equal((await call(app, `${P}/${img.body.upload.id}/redact`, { body: { rects: [] }, cookie })).status, 200);
+  const sixth = await call(app, `${P}/${img.body.upload.id}/redact`, { body: { rects: [] }, cookie });
+  assert.equal(sixth.status, 409);
+  assert.equal(sixth.body.error, 'TOO_MANY_REDACTS');
+  // The internal refund signal never reaches the browser.
+  assert.equal(sixth.res.headers.get('x-rk-refused-early'), null);
+});
+
+test('no refund after work: an upload refused after its OCR keeps its daily unit and its address slot; one refused before any work gives both back', TIMEOUT, async () => {
+  const { app, people, counters } = setup({ limits: { uploadsPerIp: { limit: 12, windowMs: 600_000 } } });
+  const cookie = people.fullMember();
+  const ids: string[] = [];
+  for (let i = 0; i < 9; i++) ids.push((await pasteText(app, cookie, `note ${i}`)).body.upload.id);
+  // Two images at once with room for one: both pass the first check and are read; the second is refused after.
+  const [a, b] = await Promise.all([uploadPng(app, cookie), uploadPng(app, cookie)]);
+  assert.deepEqual([a.status, b.status].sort(), [201, 409]);
+  assert.equal(counters.state().caps.upload!.used, 11);
+  // Refused before any work (the case is full): nothing is taken.
+  const full = await pasteText(app, cookie, 'eleven');
+  assert.equal(full.status, 409);
+  assert.equal(full.res.headers.get('x-rk-refused-early'), null);
+  assert.equal(counters.state().caps.upload!.used, 11);
+  // Address slots used so far: 9 + 2 (the one refused after OCR is not given back) = 11 of 12.
+  assert.equal((await call(app, `${P}/${ids[0]}/discard`, { body: {}, cookie })).status, 200);
+  assert.equal((await pasteText(app, cookie, 'twelve')).status, 201);
+  assert.equal((await call(app, `${P}/${ids[1]}/discard`, { body: {}, cookie })).status, 200);
+  const limited = await pasteText(app, cookie, 'thirteen');
+  assert.equal(limited.status, 429);
+  assert.equal(limited.body.error, 'RATE_LIMITED');
+  assert.equal(counters.state().caps.upload!.used, 12);
+});
+
+test('an upload past its expiry cannot be redacted, confirmed or shown', TIMEOUT, async () => {
+  const { app, people, store, intents } = setup();
+  const cookie = people.fullMember();
+  const t = await pasteText(app, cookie);
+  const red = await call(app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie });
+  const img = await uploadPng(app, cookie);
+  const past = new Date(Date.now() - 1000).toISOString();
+  store.update(t.body.upload.id, { expiresAt: past });
+  store.update(img.body.upload.id, { expiresAt: past });
+  assert.equal((await call(app, `${P}/${t.body.upload.id}/confirm`, { body: { lines: red.body.readLines, sha256: red.body.upload.sha256 }, cookie })).status, 404);
+  assert.equal((await call(app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie })).status, 404);
+  assert.equal((await call(app, `${P}/${img.body.upload.id}/image?v=original`, { cookie })).status, 404);
+  assert.equal(store.get(t.body.upload.id)!.status, 'discarded');
+  assert.equal(store.get(img.body.upload.id)!.status, 'discarded');
+  assert.equal(store.original(img.body.upload.id), null);
+  assert.equal((await call(app, P, { cookie })).body.uploads!.length, 0);
+  assert.ok(intents.events(CASE).some((e) => e.kind === 'upload_discarded' && e.detail?.includes('expired')));
+});
+
+test('unknown cases (inherited names too) are 404, and an archived upload cannot be discarded (404) but can be deleted', TIMEOUT, async () => {
+  const { app, people, store } = setup();
+  const cookie = people.fullMember();
+  for (const id of ['constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+    assert.equal((await call(app, `/api/cases/${id}/uploads`, { cookie })).status, 404, id);
+    assert.equal((await call(app, `/api/cases/${id}/uploads`, { body: { text: 'x' }, cookie })).status, 404, id);
+  }
+  const t = await pasteText(app, cookie, 'to archive');
+  store.archiveCase(CASE, REAL);
+  assert.equal((await call(app, `${P}/${t.body.upload.id}/discard`, { body: {}, cookie })).status, 404);
+  assert.equal((await call(app, `${P}/${t.body.upload.id}`, { method: 'DELETE', cookie })).status, 200);
 });

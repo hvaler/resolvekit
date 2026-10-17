@@ -27,7 +27,7 @@ import type { LiveGate } from './analysis.ts';
 import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
-import { acceptsImageBody, UPLOAD_PATH } from './uploads/routes.ts';
+import { acceptsImageBody, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
 
 /** What the warm-up did for one bound case. */
 export interface WarmUpOutcome {
@@ -127,8 +127,6 @@ const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'li
 export const OPS_PATH = '/api/ops/status';
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-/** Upload answers given before any OCR ran (signed out, not the seller, caps, limits, malformed or unsupported). */
-const UPLOAD_REFUSED_EARLY = [400, 401, 403, 404, 409, 413, 415, 429, 503, 507];
 
 const tooMany = (retryAfterSec: number, detail: string) => {
   const r = json(429, { error: 'RATE_LIMITED', detail, retryAfterSec });
@@ -345,15 +343,18 @@ export function createHostedApp(o: HostedOptions): HostedApp {
           return tooMany(r.retryAfterSec, `Too many PayPal reads; try again in ${r.retryAfterSec} s`);
         }
       }
-      // Uploads (/api/cases/…, never a PayPal read): a file read and OCR'd here, so limited per address too.
-      const uploading = req.method === 'POST' && UPLOAD_PATH.test(path);
+      // Uploads and redactions (/api/cases/…, never a PayPal read): a file decoded and OCR'd here, limited per address.
+      const uploading = req.method === 'POST' && (UPLOAD_PATH.test(path) || REDACT_PATH.test(path));
       if (uploading) {
         const t = uploadLimit.take(ip);
         if (!t.ok) return tooMany(t.retryAfterSec, `Too many uploads from this address; try again in ${Math.ceil(t.retryAfterSec / 60)} min`);
       }
       const res = await api(req);
-      // An upload refused before its file was read gives its slot back.
-      if (uploading && UPLOAD_REFUSED_EARLY.includes(res.status)) uploadLimit.release(ip);
+      // Only a refusal the routes mark as given before any decoding or OCR gives the slot back; the mark stays here.
+      if (res.headers.has(REFUSED_EARLY)) {
+        if (uploading) uploadLimit.release(ip);
+        res.headers.delete(REFUSED_EARLY);
+      }
       // A composition that did not create an intent gives its slot back; one refused before reading PayPal (no
       // session, a cap, a malformed request) gives back its PayPal read too. Nothing else changed on the server.
       if (composing && res.status !== 201) {

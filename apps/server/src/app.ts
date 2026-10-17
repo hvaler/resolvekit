@@ -26,7 +26,7 @@ import { IntentStore, publicIntent, type StoredIntent } from './intents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
 import { checkAgainstDispute } from './validate.ts';
-import { acceptsImageBody, createUploadRoutes } from './uploads/routes.ts';
+import { REFUSED_EARLY, acceptsImageBody, createUploadRoutes } from './uploads/routes.ts';
 import { UploadStore } from './uploads/store.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
@@ -203,7 +203,14 @@ function failureText(e: unknown): string {
 
 /** Local mode: every request passes {@link guard} first. */
 export function createApp(opts: AppOptions): Handler {
-  return withLog(opts.log, createApi(opts), (req) => guard(req, opts));
+  const api = createApi(opts);
+  // The uploads' refund signal is for hosted mode's per-address limit only.
+  const local: Handler = async (req) => {
+    const res = await api(req);
+    res.headers.delete(REFUSED_EARLY);
+    return res;
+  };
+  return withLog(opts.log, local, (req) => guard(req, opts));
 }
 
 /** Runs `pre` (a guard) and then `api`; a throw becomes 500; one log line per request (method, path, status, time). */
