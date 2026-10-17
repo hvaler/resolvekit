@@ -38,6 +38,11 @@ export function auditLine(e: ServerAuditEvent): { time: string; who: string; wha
     send_refused: `Send refused before PayPal: ${e.detail ?? ''}`,
     edit_rechecked: `Re-checked an edited sentence · ${e.detail ?? ''}`,
     paypal_notified: `PayPal notified a change (webhook, signature verified) · ${e.detail ?? ''}`,
+    upload_added: `Added evidence (pending review) · ${e.detail ?? ''}`,
+    upload_redacted: `Covered what must not be shared · ${e.detail ?? ''}`,
+    upload_confirmed: `Confirmed evidence · ${e.detail ?? ''}`,
+    upload_discarded: `Discarded an upload · ${e.detail ?? ''}`,
+    upload_deleted: `Deleted evidence · ${e.detail ?? ''}`,
   };
   return { time, who: e.actor, what: (what[e.kind] ?? `${e.kind}${e.detail ? `: ${e.detail}` : ''}`).trim() };
 }

@@ -3,7 +3,8 @@
  *
  * - Host must be one of the service's public hosts (RENDER_EXTERNAL_HOSTNAME, custom domains). `/healthz` is exempt.
  * - /api: a state-changing request must come from the service's own origin (Origin header); a present Origin must be
- *   ours on reads too; POST bodies are JSON only; per-IP rate limits (client IP behind one trusted proxy hop).
+ *   ours on reads too; POST bodies are JSON only (an evidence upload may also be image/png or image/jpeg, on its own
+ *   route only); per-IP rate limits (client IP behind one trusted proxy hop).
  * - Browsing is free. People sign in (auth.ts): a merchant with PayPal (Owner), members through an invite link with a
  *   passkey or for one browser. The session is an HttpOnly, Secure, SameSite=Strict cookie signed with the server's
  *   secret, valid 12 h. Composing and approving a response needs a signed-in person.
@@ -26,6 +27,7 @@ import type { LiveGate } from './analysis.ts';
 import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
+import { acceptsImageBody, UPLOAD_PATH } from './uploads/routes.ts';
 
 /** What the warm-up did for one bound case. */
 export interface WarmUpOutcome {
@@ -95,6 +97,8 @@ export interface HostedLimits {
   intentsPerIp: { limit: number; windowMs: number };
   /** PayPal webhook deliveries, per IP (each one costs a verification call to PayPal). */
   webhookPerIp: { limit: number; windowMs: number };
+  /** Evidence uploads (POST /api/cases/:id/uploads: a file read and OCR'd on this server), per IP. */
+  uploadsPerIp: { limit: number; windowMs: number };
 }
 
 const MIN = 60_000;
@@ -105,6 +109,7 @@ export const DEFAULT_LIMITS: HostedLimits = {
   paypalStartsPerIp: { limit: 10, windowMs: 15 * MIN },
   intentsPerIp: { limit: 20, windowMs: 10 * MIN },
   webhookPerIp: { limit: 120, windowMs: 15 * MIN },
+  uploadsPerIp: { limit: 20, windowMs: 10 * MIN },
 };
 
 /** Why each costly action is the seller workspace's only (shown by the web app as is). */
@@ -112,15 +117,18 @@ export const LOCKED_REASON: Record<CostlyAction, string> = {
   evidence: 'Sending evidence to a real PayPal dispute cannot be undone, so only the seller’s workspace can do it: sign in with the seller’s PayPal account, or join its workspace with an invite.',
   'live-analysis': 'A live AI run uses model quota, so on this public demo only the seller’s workspace runs it. The stored analysis stays on screen.',
   recheck: 'Re-checking an edited sentence calls the AI model, so on this public demo only the seller’s workspace runs it.',
+  upload: 'Adding evidence stores and reads a file on this server, so on this public demo only the seller’s workspace adds it.',
 };
 const SIGN_IN_REASON = 'Sign in to compose and approve responses: with PayPal (merchants) or with the invite link you were given.';
 
-const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks' };
+const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks', upload: 'evidence uploads' };
 
 /** The operator's check (demo:check). */
 export const OPS_PATH = '/api/ops/status';
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+/** Upload answers given before any OCR ran (signed out, not the seller, caps, limits, malformed or unsupported). */
+const UPLOAD_REFUSED_EARLY = [400, 401, 403, 404, 409, 413, 415, 429, 503, 507];
 
 const tooMany = (retryAfterSec: number, detail: string) => {
   const r = json(429, { error: 'RATE_LIMITED', detail, retryAfterSec });
@@ -140,6 +148,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const authLimit = new KeyedLimiter({ ...L.authPerIp, now: () => now().getTime() });
   const paypalStarts = new KeyedLimiter({ ...L.paypalStartsPerIp, now: () => now().getTime() });
   const webhookLimit = new KeyedLimiter({ ...L.webhookPerIp, now: () => now().getTime() });
+  const uploadLimit = new KeyedLimiter({ ...L.uploadsPerIp, now: () => now().getTime() });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
   // The seller merchant ids of the bound disputes, as last read (refreshed before each signed-in request): which
@@ -252,7 +261,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     if (r.paypal === 'unconfigured') problems.push(`PayPal is not connected${r.error ? ` (${r.error})` : ''}`);
     if (!webhook) problems.push('the PayPal webhook is off (PAYPAL_WEBHOOK_ID / PAYPAL_WEBHOOK_KEY)');
     const caps = o.counters.storageProblem();
-    if (caps) problems.push(`${caps} (evidence sends, live AI runs and re-checks are refused)`);
+    if (caps) problems.push(`${caps} (evidence sends, live AI runs, re-checks and uploads are refused)`);
     const cases = Object.keys(r.bindings);
     if (cases.length === 0) problems.push('no case is bound to a real PayPal dispute (BINDINGS_JSON)');
     for (const [caseId, b] of Object.entries(r.bindings)) {
@@ -299,8 +308,9 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       if (STATE_CHANGING.has(req.method) ? !origin || !o.origins.includes(origin) : origin != null && !o.origins.includes(origin)) {
         return json(403, { error: 'FORBIDDEN_ORIGIN' });
       }
-      if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') ?? '')) {
-        return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json' });
+      const type = req.headers.get('content-type');
+      if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(type ?? '') && !acceptsImageBody(req.method, path, type)) {
+        return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json (an evidence upload may be image/png or image/jpeg)' });
       }
       const ip = clientIp(req, hops, trust);
       if (!derivationLogged) {
@@ -335,7 +345,15 @@ export function createHostedApp(o: HostedOptions): HostedApp {
           return tooMany(r.retryAfterSec, `Too many PayPal reads; try again in ${r.retryAfterSec} s`);
         }
       }
+      // Uploads (/api/cases/…, never a PayPal read): a file read and OCR'd here, so limited per address too.
+      const uploading = req.method === 'POST' && UPLOAD_PATH.test(path);
+      if (uploading) {
+        const t = uploadLimit.take(ip);
+        if (!t.ok) return tooMany(t.retryAfterSec, `Too many uploads from this address; try again in ${Math.ceil(t.retryAfterSec / 60)} min`);
+      }
       const res = await api(req);
+      // An upload refused before its file was read gives its slot back.
+      if (uploading && UPLOAD_REFUSED_EARLY.includes(res.status)) uploadLimit.release(ip);
       // A composition that did not create an intent gives its slot back; one refused before reading PayPal (no
       // session, a cap, a malformed request) gives back its PayPal read too. Nothing else changed on the server.
       if (composing && res.status !== 201) {

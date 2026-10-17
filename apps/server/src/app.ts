@@ -26,9 +26,11 @@ import { IntentStore, publicIntent, type StoredIntent } from './intents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
 import { checkAgainstDispute } from './validate.ts';
+import { acceptsImageBody, createUploadRoutes } from './uploads/routes.ts';
+import { UploadStore } from './uploads/store.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
-export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck';
+export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload';
 
 /** A refusal as status + JSON body. */
 export interface Refusal {
@@ -118,6 +120,10 @@ export interface ApiOptions {
   webhookReadWaitsMs?: number[];
   /** Submission intents and the audit log (persisted on the data dir by main.ts). Default: in memory. */
   intents?: IntentStore | null;
+  /** Merchant evidence uploads (on the data dir by main.ts). Default: in memory. */
+  uploads?: UploadStore | null;
+  /** Total size of stored upload files (default MAX_STORAGE_BYTES, uploads/limits.ts). */
+  uploadStorageBytes?: number;
 }
 
 /** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
@@ -149,7 +155,8 @@ function sameSecret(a: string, b: string): boolean {
  * Refuse anything that is not the ResolveKit web app on this machine. Submitting evidence is irreversible on a real
  * PayPal dispute, so: Host must be this server (blocks DNS rebinding), a present Origin must be a local web origin,
  * every request carries the per-launch token (other sites cannot read it), and POST bodies must be
- * application/json (a text/plain "simple" cross-site POST is refused).
+ * application/json (a text/plain "simple" cross-site POST is refused); only the evidence upload route also takes
+ * image/png and image/jpeg (not "simple" types either).
  */
 export function guard(req: Request, opts: Pick<AppOptions, 'port' | 'token' | 'allowedOrigins'>): Response | null {
   const host = req.headers.get('host') ?? new URL(req.url).host;
@@ -158,8 +165,9 @@ export function guard(req: Request, opts: Pick<AppOptions, 'port' | 'token' | 'a
   if (origin != null && !opts.allowedOrigins.includes(origin)) return json(403, { error: 'FORBIDDEN_ORIGIN' });
   const token = req.headers.get(TOKEN_HEADER);
   if (!opts.token || !token || !sameSecret(token, opts.token)) return json(401, { error: 'MISSING_OR_BAD_TOKEN' });
-  if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') ?? '')) {
-    return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json' });
+  const type = req.headers.get('content-type');
+  if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(type ?? '') && !acceptsImageBody(req.method, new URL(req.url).pathname, type)) {
+    return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json (an evidence upload may be image/png or image/jpeg)' });
   }
   return null;
 }
@@ -912,6 +920,19 @@ export function createApi(opts: ApiOptions): Api {
     return json(200, { notices: visible.map(({ merchant: _m, ...n }) => n) });
   };
 
+  /** Merchant evidence uploads: the seller's workspace (local: the operator), the case's active dispute. */
+  const uploadRoutes = createUploadRoutes({
+    store: opts.uploads ?? new UploadStore({ dir: null, now }),
+    person: personOf,
+    isLive: (req) => viewerLive(req),
+    reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'upload') : null,
+    caseBinding: (caseId) => bindingOf(caseId)?.dispute ?? null,
+    record: (e) => intents.record(e),
+    log,
+    now,
+    ...(opts.uploadStorageBytes ? { maxStorageBytes: opts.uploadStorageBytes } : {}),
+  });
+
   const route = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -927,6 +948,8 @@ export function createApi(opts: ApiOptions): Api {
     }
     const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
+    const up = await uploadRoutes(req, url);
+    if (up) return up;
     const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|intent|audit)(?:\/(int-[0-9a-f]{32})(\/approve|\/cancel)?)?)?$/.exec(path);
     if (!m) return json(404, { error: 'NOT_FOUND' });
     const caseId = m[1]!;

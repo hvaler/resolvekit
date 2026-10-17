@@ -9,7 +9,7 @@
  * Env (hosted): RENDER_EXTERNAL_URL (set by Render) · RESOLVEKIT_CUSTOM_DOMAINS · RESOLVEKIT_SESSION_SECRET ·
  * PAYPAL_IDENTITY_CLIENT_ID + PAYPAL_IDENTITY_CLIENT_SECRET (the platform's PayPal app, for PayPal sign-in) ·
  * RESOLVEKIT_DATA_DIR (the disk) · BINDINGS_JSON (or RESOLVEKIT_BINDINGS, a file) · METERMCP_URL + METERMCP_ADMIN_TOKEN ·
- * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · TRUSTED_PROXY_HOPS (1) ·
+ * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · DAILY_UPLOADS (40) · TRUSTED_PROXY_HOPS (1) ·
  * RESOLVEKIT_OPS_TOKEN (the operator's check, npm run demo:check).
  */
 import { randomBytes } from 'node:crypto';
@@ -29,6 +29,9 @@ import { createHostedApp, type HostedApp } from './hosted.ts';
 import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
 import { MeterMcpClient } from './metermcp.ts';
+import { DAILY_UPLOADS } from './uploads/limits.ts';
+import { closeOcr } from './uploads/ocr.ts';
+import { UploadStore } from './uploads/store.ts';
 import { toNodeListener } from './node.ts';
 
 const hosted = process.env.RESOLVEKIT_MODE === 'hosted';
@@ -118,6 +121,12 @@ const pins = new InputPins({ file: join(dataDir, 'analysis-inputs.json') });
 // Submission intents (what the merchant approved, exactly) and the approval/send audit log: the server's record.
 const intents = new IntentStore({ file: join(dataDir, 'intents.json'), eventsFile: join(dataDir, 'audit-events.jsonl') });
 
+// Merchant evidence uploads, outside any web-served path. At start, expired pending uploads and leftovers of
+// interrupted writes are removed (counts only in the log).
+const uploads = new UploadStore({ dir: join(dataDir, 'uploads') });
+const swept = uploads.sweep();
+log(`uploads · sweep at start · ${swept.expired} expired · ${swept.orphans} leftover(s) removed`);
+
 let app: Handler;
 let hostedApp: HostedApp | null = null;
 let tokenFile: string | null = null;
@@ -163,11 +172,12 @@ if (hosted) {
       'live-analysis': envInt(process.env, 'DAILY_LIVE_ANALYSES', 60),
       recheck: envInt(process.env, 'DAILY_RECHECKS', 200),
       evidence: envInt(process.env, 'DAILY_EVIDENCE_SENDS', 20),
+      upload: envInt(process.env, 'DAILY_UPLOADS', DAILY_UPLOADS),
     },
   });
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
-    paypal, env, bindings, reserve, log, meterMcp, analyst, pins, intents, site, counters, accounts, identity, sessionSecret,
+    paypal, env, bindings, reserve, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, identity, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
@@ -186,7 +196,7 @@ if (hosted) {
   tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('../.runtime-token', import.meta.url));
   writeFileSync(tokenFile, token, { mode: 0o600 });
   const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
-  app = createApp({ paypal, env, bindings, reserve, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents });
+  app = createApp({ paypal, env, bindings, reserve, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads });
 }
 
 const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`));
@@ -226,6 +236,7 @@ if (watchBindings) {
 
 const stop = () => {
   intents.flush();
+  void closeOcr();
   if (tokenFile) rmSync(tokenFile, { force: true });
   if (watchBindings) unwatchFile(bindingsFile);
   server.close(() => process.exit(0));
