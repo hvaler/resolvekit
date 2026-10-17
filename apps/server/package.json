@@ -13,9 +13,12 @@
     "@resolvekit/hosting": "*",
     "@resolvekit/paypal": "*",
     "@resolvekit/pdf": "*",
-    "@simplewebauthn/server": "13.3.3"
+    "@simplewebauthn/server": "13.3.3",
+    "jpeg-js": "0.4.4",
+    "pngjs": "7.0.0"
   },
   "devDependencies": {
-    "@types/node": "24.13.5"
+    "@types/node": "24.13.5",
+    "@types/pngjs": "6.0.5"
   }
 }
