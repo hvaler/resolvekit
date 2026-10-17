@@ -38,6 +38,8 @@ export interface EvidenceLine {
   text: string;
   /** Fragment key a sentence can cite, e.g. "E1.addr". Lines sharing a key are cited together. */
   fragment?: string;
+  /** On a merchant upload: who corrected this line by hand (its text is their reading of the file). */
+  corrected?: string;
 }
 
 export interface KeyValueRow {
@@ -89,8 +91,8 @@ export interface Evidence {
    * the PayPal read (see domain/paypalView `withPayPal`); on a simulated case it is demo data and says so.
    */
   paypalRecord?: 'capture';
-  /** Where an agent-case document comes from: the real MeterMCP session, or the demo case. Shown on the card. */
-  sourceLabel?: { kind: 'metermcp' | 'demo'; text: string; /** Full text for the tooltip when `text` is shortened. */ title?: string };
+  /** Where a document comes from: the real MeterMCP session, the demo case, or a merchant upload. Shown on the card. */
+  sourceLabel?: { kind: 'metermcp' | 'demo' | 'upload'; text: string; /** Full text for the tooltip when `text` is shortened. */ title?: string };
   body: EvidenceBody;
 }
 

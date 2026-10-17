@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { isFragmentLit, useHighlight, useHoverHighlight, type Highlight } from '../app/highlight';
 import type { Evidence, EvidenceLine, KeyValueRow } from '../domain/types';
 import { ReceiptGrid } from './ReceiptGrid';
@@ -22,6 +23,11 @@ function SourceLines({ id, lines, hl }: { id: string; lines: EvidenceLine[]; hl:
             className={cx('px-2.5 py-[3px] font-mono text-mono-frag transition-[background] duration-fast', lit && 'bg-hl shadow-rule-acc')}
           >
             {l.text}
+            {l.corrected && (
+              <span data-testid="corrected-mark" className="ml-2 whitespace-nowrap rounded-xs border border-warn-line bg-warn-soft px-1 py-px font-sans text-[10.5px] text-warn">
+                corrected by {l.corrected}
+              </span>
+            )}
             {lit && <span className="sr-only"> (cited)</span>}
           </span>
         );
@@ -56,12 +62,15 @@ export function EvidenceCard({
   used,
   contradictionOpen,
   contradictionLabel = 'Contradiction',
+  actions,
 }: {
   evidence: Evidence;
   used: number;
   contradictionOpen: boolean;
   /** Badge text while the contradiction this document is part of is open, e.g. "Address contradiction". */
   contradictionLabel?: string;
+  /** Controls for the document (e.g. deleting an upload), after its badges. */
+  actions?: ReactNode;
 }) {
   const { hl } = useHighlight();
   const hover = useHoverHighlight();
@@ -96,7 +105,11 @@ export function EvidenceCard({
             title={e.sourceLabel.title ?? e.sourceLabel.text}
             className={cx(
               'max-w-full truncate whitespace-nowrap rounded-sm px-[7px] py-0.5 text-[11.5px] font-medium',
-              e.sourceLabel.kind === 'metermcp' ? 'border border-ok-line bg-ok-soft text-ok' : 'border border-dashed border-info-line bg-info-soft text-info',
+              e.sourceLabel.kind === 'metermcp'
+                ? 'border border-ok-line bg-ok-soft text-ok'
+                : e.sourceLabel.kind === 'upload'
+                  ? 'border border-acc-line bg-acc-soft text-acc'
+                  : 'border border-dashed border-info-line bg-info-soft text-info',
             )}
           >
             {e.sourceLabel.text}
@@ -105,6 +118,7 @@ export function EvidenceCard({
         <span className={cx('text-[12px]', used ? 'text-ink-2' : 'text-ink-3')}>
           {usedText(used, e.caption)}
         </span>
+        {actions}
       </div>
 
       {e.meta && (

@@ -4,7 +4,7 @@
  * and live AI runs belong to the seller's workspace (signed in with the seller's PayPal account, or joined with its
  * invite). The session is an HttpOnly cookie the server sets. Locally (no hosted server) there is no sign-in.
  */
-export type DemoAction = 'evidence' | 'live-analysis' | 'recheck';
+export type DemoAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload';
 
 export interface AccountPerson {
   id: string;

@@ -1,11 +1,13 @@
 import { buildInput, withAnalysis } from '@resolvekit/analyst';
 import { caseView, documentsFinal } from '@resolvekit/cases';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
 import { usePayPalSource, usePolling, useSecondsSince, useServices } from '../app/services';
 import { useAnalysis } from '../app/useAnalysis';
 import { useCaseDraft } from '../app/useCaseDraft';
+import { useUploads } from '../app/useUploads';
+import { AddEvidencePanel, PendingUploads } from '../components/AddEvidence';
 import { AnalysisBar, analysisLabel } from '../components/AnalysisBar';
 import { AppBar } from '../components/AppBar';
 import { ApproveFlow } from '../components/ApproveFlow';
@@ -16,12 +18,15 @@ import { EvidenceCard } from '../components/EvidenceCard';
 import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
+import { UploadReview } from '../components/UploadReview';
+import { MiniButton } from '../components/ui';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
 import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
+import { approvalRequest, confirmedUploads, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
 import { caseFiles, processingDispute } from '../fixtures';
 
 /** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
@@ -58,15 +63,29 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   // `source` is rebuilt every render; its kind and PayPal snapshot are what matter.
   // The agent case's mandate/receipt/settlement from the real MeterMCP session when the server found one. The same
   // assembly (@resolvekit/cases) builds the analyst's input on the server.
-  const docs = useMemo(() => caseView(demo, source), [demo, source.kind, liveSnap]);
+  const caseDocs = useMemo(() => caseView(demo, source), [demo, source.kind, liveSnap]);
+  // This workspace's uploads of the case (server only): confirmed ones are evidence after the case's own documents.
+  const uploadsClient = useMemo(() => (analysisClient ? createUploadsClient(id) : null), [analysisClient, id]);
+  const up = useUploads(uploadsClient);
+  const confirmedUps = useMemo(() => confirmedUploads(up.uploads), [up.uploads]);
+  const pendingUps = up.uploads.filter((u) => u.status !== 'confirmed');
+  const corrections = useMemo(() => uploadCorrections(up.uploads), [up.uploads]);
+  const docs = useMemo(() => (confirmedUps.length ? { ...caseDocs, evidence: [...caseDocs.evidence, ...confirmedUps.map(uploadEvidence)] } : caseDocs), [caseDocs, confirmedUps]);
 
   const submitted = !!snap && hasSellerEvidence(snap);
   const allowed: readonly ActionCode[] = caseAllowedActions(source, snapshots[id], demo.allowedActions);
 
   // The analyst reads the documents exactly as shown: once PayPal's (and MeterMCP's) data is in for a bound case.
   const docsFinal = documentsFinal(source);
-  const input = useMemo(() => (docsFinal ? buildInput(docs, { allowedActions: allowed }) : null), [docsFinal, docs, allowed.join(',')]);
+  // The uploads' documents exactly as the server adds them (after the list is known, so the input is built once).
+  const input = useMemo(
+    () => (docsFinal && up.known ? withUploadDocuments(buildInput(caseDocs, { allowedActions: allowed }), up.uploads) : null),
+    [docsFinal, caseDocs, allowed.join(','), up.known, up.uploads],
+  );
   const locked = useMemo(() => ({ live: lockedReason(demoLock, 'live-analysis'), recheck: lockedReason(demoLock, 'recheck') }), [demoLock]);
+  // The server's reason when this person cannot add evidence here (signed out, another workspace).
+  const uploadRefused = lockedReason(demoLock, 'upload') ?? up.refused;
+  const uploadLocked = uploadRefused ?? (uploadsClient ? null : 'Adding evidence needs the ResolveKit server (npm run server)');
   const analysis = useAnalysis(id, input, analysisClient, locked);
   const an = analysis.state;
   // A case that starts further on (evidence recorded, closed) also shows what happened at PayPal after the documents.
@@ -78,7 +97,35 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   }, [docs, an, later.length]);
   const status = snap?.status ?? demo.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
-  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, actor: actorName(demoLock), scope: demoLock?.person?.id ?? 'local', analysis });
+  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, actor: actorName(demoLock), scope: demoLock?.person?.id ?? 'local', analysis, corrections });
+  // Confirmed evidence no analysis on screen has read yet: said so, never shown as if it were included.
+  const unread = notAnalysed(up.uploads, an.kind === 'ready' ? an.input : null);
+
+  const [adding, setAdding] = useState(false);
+  const [review, setReview] = useState<{ upload: UploadRecordView; readLines: string[] } | null>(null);
+  /** Pasted texts of this page's uploads (removals are offsets into them); never stored. */
+  const pasted = useRef(new Map<string, string>());
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploadAction = async (f: () => Promise<void>) => {
+    setUploadError(null);
+    try {
+      await f();
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const discardUpload = (u: UploadRecordView) =>
+    void uploadAction(async () => {
+      await uploadsClient!.discard(u.id);
+      up.put(u.id, null);
+    });
+  const deleteUpload = (u: UploadRecordView) => {
+    if (!window.confirm(`Delete ${u.evidenceId} (${u.name})? The analyses that read it are deleted too.`)) return;
+    void uploadAction(async () => {
+      await uploadsClient!.remove(u.id);
+      up.put(u.id, null);
+    });
+  };
 
   // Keep the approve flow open once started, even after the case becomes "submitted".
   const flowOpen = useRef(false);
@@ -162,14 +209,46 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
               ) : (
                 <button
                   type="button"
-                  disabled
-                  title="Uploading evidence is not available in this demo"
+                  disabled={!!uploadLocked || submitted}
+                  aria-expanded={adding}
+                  onClick={() => setAdding((a) => !a)}
+                  title={uploadLocked ?? (submitted ? 'Evidence was already submitted to PayPal' : undefined)}
                   className="rounded-md border border-line-2 bg-surface px-2.5 py-[5px] text-[12px] text-ink-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   + Add evidence
                 </button>
               )}
             </div>
+            {uploadRefused && c.kind !== 'agent' && (
+              <p className="m-0 text-[12px] text-ink-3" data-testid="upload-locked">
+                {uploadRefused}
+              </p>
+            )}
+            {adding && uploadsClient && !uploadLocked && (
+              <AddEvidencePanel
+                client={uploadsClient}
+                onClose={() => setAdding(false)}
+                onAdded={(a, text) => {
+                  if (text != null) pasted.current.set(a.upload.id, text);
+                  up.put(a.upload.id, a.upload);
+                  setAdding(false);
+                  setReview({ upload: a.upload, readLines: a.readLines });
+                }}
+              />
+            )}
+            {unread.length > 0 && (
+              <p role="status" data-testid="analysis-pending" className="m-0 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
+                Analysis pending: it does not include {unread.join(', ')} yet
+                {an.kind === 'running' || an.kind === 'loading' ? ' · the analysis including it is running' : an.kind === 'unavailable' ? ` · ${an.reason}` : ''}. The draft is not based on{' '}
+                {unread.length === 1 ? 'it' : 'them'}.
+              </p>
+            )}
+            {uploadError && (
+              <p role="alert" className="m-0 rounded-lg border border-bad-line bg-bad-soft px-3 py-2 text-[12.5px]">
+                {uploadError}
+              </p>
+            )}
+            <PendingUploads uploads={pendingUps} onReview={(u) => setReview({ upload: u, readLines: u.readLines })} onDiscard={discardUpload} />
             {c.notice && (
               <p
                 role="note"
@@ -183,15 +262,19 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
               </p>
             )}
             {c.checklist && <ChecklistCard title={c.checklist.title} items={c.checklist.items} states={d.checklistStates} />}
-            {c.evidence.map((e) => (
-              <EvidenceCard
-                key={e.id}
-                evidence={e}
-                used={d.used[e.id] ?? 0}
-                contradictionOpen={!!e.contradictionId && d.contradictionsVisible && d.resolutionOf(e.contradictionId).status === 'open'}
-                contradictionLabel={contradictionLabel(c.contradictions.find((k) => k.id === e.contradictionId)?.blockerName)}
-              />
-            ))}
+            {c.evidence.map((e) => {
+              const u = confirmedUps.find((x) => x.evidenceId === e.id);
+              return (
+                <EvidenceCard
+                  key={e.id}
+                  evidence={e}
+                  used={d.used[e.id] ?? 0}
+                  contradictionOpen={!!e.contradictionId && d.contradictionsVisible && d.resolutionOf(e.contradictionId).status === 'open'}
+                  contradictionLabel={contradictionLabel(c.contradictions.find((k) => k.id === e.contradictionId)?.blockerName)}
+                  {...(u && !submitted && demoLock?.person?.reviewer !== true ? { actions: <MiniButton onClick={() => deleteUpload(u)}>Delete</MiniButton> } : {})}
+                />
+              );
+            })}
           </section>
           <ResponseComposer
             c={c}
@@ -210,9 +293,29 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           c={c}
           views={d.views}
           submission={submission}
-          request={{ evidenceType: d.evidenceType!, edits: d.edits, resolutions: d.resolutions, confirmedCorrections: [], attachments: [] }}
+          request={approvalRequest({ evidenceType: d.evidenceType!, edits: d.edits, resolutions: d.resolutions, views: d.views, corrections, confirmed: d.confirmedCorrections, attachments: [] })}
+          uploads={confirmedUps}
+          corrections={corrections}
           actionsBefore={actionsBefore.current}
           onClose={() => navigate(`/cases/${id}`)}
+        />
+      )}
+      {review && uploadsClient && (
+        <UploadReview
+          key={review.upload.id}
+          upload={review.upload}
+          readLines={review.readLines}
+          pastedText={pasted.current.get(review.upload.id) ?? null}
+          client={uploadsClient}
+          onChange={(u, readLines) => {
+            const uid = review.upload.id;
+            up.put(uid, u);
+            if (!u || u.status === 'confirmed') {
+              pasted.current.delete(uid);
+              setReview(null);
+            } else setReview({ upload: u, readLines: readLines ?? review.readLines });
+          }}
+          onClose={() => setReview(null)}
         />
       )}
     </HighlightProvider>

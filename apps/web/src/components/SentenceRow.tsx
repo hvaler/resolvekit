@@ -54,9 +54,11 @@ export interface SentenceRowProps {
   onApplySuggestion?: () => void;
   /** The response was sent: the sentence is shown as sent, not editable. */
   readOnly?: boolean;
+  /** The sentence rests on a line the merchant corrected in an upload: one click confirms it reads it correctly. */
+  confirmCorrection?: { line: number; evidenceId: string; onConfirm: () => void };
 }
 
-export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCancel, suggestion, onApplySuggestion, readOnly = false }: SentenceRowProps) {
+export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCancel, suggestion, onApplySuggestion, readOnly = false, confirmCorrection }: SentenceRowProps) {
   const { hl } = useHighlight();
   const [draft, setDraft] = useState(s.text);
   const [hidden, setHidden] = useState(false);
@@ -169,6 +171,15 @@ export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCanc
           <div className="text-label leading-[1.45]" style={{ color: T.fg }}>
             {s.reason}
           </div>
+        )}
+        {!readOnly && !editing && confirmCorrection && s.state === 'needs_review' && (
+          <button
+            type="button"
+            onClick={confirmCorrection.onConfirm}
+            className="self-start rounded-sm border border-warn-line bg-surface px-2 py-0.5 text-[11.5px]"
+          >
+            Confirm it reads line {confirmCorrection.line} of {confirmCorrection.evidenceId} correctly
+          </button>
         )}
         {showNote && <div className="text-[11.5px] text-ink-3">{s.note}</div>}
       </div>

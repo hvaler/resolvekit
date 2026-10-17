@@ -28,4 +28,14 @@ describe('the Vite proxy only forwards the app’s own /api calls', () => {
     expect(apiProxyDecision('POST', { ...own, 'content-type': 'text/plain' })).toMatchObject({ allow: false, status: 415 });
     expect(apiProxyDecision('POST', { ...own, 'content-type': undefined })).toMatchObject({ allow: false, status: 415 });
   });
+
+  it('forwards an image only as an evidence upload (POST /cases/:id/uploads), nothing else that is not JSON', () => {
+    const png = { ...own, 'content-type': 'image/png' };
+    expect(apiProxyDecision('POST', png, '/cases/PP-D-4417/uploads')).toEqual({ allow: true });
+    expect(apiProxyDecision('POST', { ...own, 'content-type': 'image/jpeg' }, '/cases/PP-D-4417/uploads?x=1')).toEqual({ allow: true });
+    expect(apiProxyDecision('POST', png)).toMatchObject({ allow: false, status: 415 });
+    expect(apiProxyDecision('POST', png, '/cases/PP-D-4417/uploads/upl-0123456789abcdef01234567/redact')).toMatchObject({ allow: false, status: 415 });
+    expect(apiProxyDecision('POST', png, '/disputes/PP-D-4417/intent')).toMatchObject({ allow: false, status: 415 });
+    expect(apiProxyDecision('POST', { ...own, 'content-type': 'image/svg+xml' }, '/cases/PP-D-4417/uploads')).toMatchObject({ allow: false, status: 415 });
+  });
 });

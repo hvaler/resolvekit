@@ -4,7 +4,7 @@ import { allowedActionsAfter } from '../domain/allowedActions';
 import { compareSentRecorded } from '../domain/compare';
 import { actorName, lockedReason, roleLabel } from '../domain/demoClient';
 import { approvalTarget } from '../domain/paypalView';
-import { formatCount, notesCountLabel } from '../domain/draft';
+import { formatCount, notesCountLabel, type Correction } from '../domain/draft';
 import { EVIDENCE_TYPE_LABEL } from '../domain/evidenceTypes';
 import { intentSubmission, type IntentRequest, type SubmissionIntent } from '../domain/intent';
 import { IntentError, LocalIntentClient, auditLine, type IntentSource, type ServerAuditEvent } from '../domain/intentClient';
@@ -14,7 +14,8 @@ import { quoteFor } from '../domain/quotes';
 import { STATUS_DISPLAY, statusExplanation } from '../domain/status';
 import { totalSize } from '../domain/submission';
 import { utcClock, utcStamp } from '../domain/time';
-import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView } from '../domain/types';
+import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView, SubmissionFile } from '../domain/types';
+import { attachmentChoices, type AttachmentChoice, type UploadRecordView } from '../domain/uploads';
 import { SignInPrompt } from './AccountMenu';
 import { Button, EvidenceTag, Spinner, cx } from './ui';
 
@@ -102,6 +103,21 @@ export interface ApproveFlowProps {
   /** Actions PayPal allowed before sending. */
   actionsBefore: readonly ActionCode[];
   onClose: () => void;
+  /** The case's confirmed uploads: offered as attachments (the cited ones ticked). */
+  uploads?: readonly UploadRecordView[];
+  /** Corrected lines of those uploads, by fragment key. */
+  corrections?: ReadonlyMap<string, Correction>;
+}
+
+const NO_CORRECTIONS: ReadonlyMap<string, Correction> = new Map();
+
+/** What a file to PayPal is, as the review says it: a synthetic demo document, the MeterMCP receipt, or an upload. */
+function fileProvenance(f: SubmissionFile, choices: readonly AttachmentChoice[]): string {
+  if (f.source === 'upload') {
+    const u = choices.find((x) => f.name.startsWith(`${x.evidenceId}-`));
+    return u ? [u.evidenceId, u.provenance, u.corrected].filter(Boolean).join(' · ') : 'Uploaded evidence';
+  }
+  return f.source === 'receipt' ? 'MeterMCP receipt' : 'Synthetic demo document';
 }
 
 type IntentState = { kind: 'loading' } | { kind: 'ready'; intent: SubmissionIntent; source: IntentSource } | { kind: 'error'; code: string; message: string; reasons: string[] };
@@ -121,6 +137,11 @@ export function ApproveFlow(props: ApproveFlowProps) {
   const [mode] = useState(() => modeOf(id));
   const [ix, setIx] = useState<IntentState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  // The uploads offered as attachments, fixed when the flow opens; the cited ones are proposed.
+  const [choices] = useState(() => attachmentChoices(props.uploads ?? [], props.views));
+  const [selected, setSelected] = useState<string[]>(() => choices.filter((x) => x.selected).map((x) => x.id));
+  const request = useMemo(() => ({ ...props.request, attachments: [...selected].sort() }), [props.request, selected]);
+  const toggle = (id: string) => setSelected((all) => (all.includes(id) ? all.filter((x) => x !== id) : [...all, id]));
   // Signing in while the review waits composes it again.
   const signedIn = !!demo?.signedIn;
   useEffect(() => {
@@ -132,7 +153,7 @@ export function ApproveFlow(props: ApproveFlowProps) {
     setIx({ kind: 'loading' });
     // Real PayPal: always the server. The simulator: the server too, except for a signed-out visitor of the hosted demo.
     const source = mode.kind === 'simulator' && demo != null && !demo.signedIn ? browserIntents : intents;
-    source.create(id, props.request, { submission: props.submission, views: props.views }).then(
+    source.create(id, request, { submission: props.submission, views: props.views }).then(
       (intent) => {
         if (!live) return;
         // The server decides real PayPal vs simulator the same way the app does; if they disagree, nothing is sent.
@@ -148,10 +169,10 @@ export function ApproveFlow(props: ApproveFlowProps) {
     return () => {
       live = false;
     };
-    // Composed when the flow opens (edits close it first), and again after signing in.
+    // Composed when the flow opens (edits close it first), again after signing in, and when the attachments change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt]);
-  if (ix.kind === 'ready') return <ApproveIntent {...props} intent={ix.intent} source={ix.source} />;
+  }, [attempt, request.attachments.join(',')]);
+  if (ix.kind === 'ready') return <ApproveIntent {...props} request={request} intent={ix.intent} source={ix.source} choices={choices} selected={selected} onToggle={toggle} />;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--scrim)] px-6 pt-[34px] max-md:px-0 max-md:pt-0">
       <div role="dialog" aria-modal="true" aria-labelledby="approve-title" className="flex w-[min(720px,100%)] flex-col overflow-hidden rounded-3xl bg-surface shadow-modal max-md:h-[100dvh] max-md:rounded-none">
@@ -195,7 +216,19 @@ export function ApproveFlow(props: ApproveFlowProps) {
 }
 
 /** The flow over a composed intent: review → confirm (approve on the server) → send → read back. */
-function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onClose }: ApproveFlowProps & { intent: SubmissionIntent; source: IntentSource }) {
+function ApproveIntent({
+  c,
+  views,
+  request,
+  intent: composed,
+  source,
+  actionsBefore,
+  onClose,
+  corrections = NO_CORRECTIONS,
+  choices,
+  selected,
+  onToggle,
+}: ApproveFlowProps & { intent: SubmissionIntent; source: IntentSource; choices: readonly AttachmentChoice[]; selected: readonly string[]; onToggle: (uploadId: string) => void }) {
   const { gatewayFor, modeOf, applySnapshot, addAudit, audit, demo, snapshots } = useServices();
   const id = c.summary.id;
   // Decided once when the flow opens: a submission never switches between the simulator and real PayPal mid-way.
@@ -250,6 +283,14 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
   // The sentences the server put in the notes, with the proof this screen shows for each.
   const supported = composed.sentences.map((x) => ({ id: x.id, text: x.text, citations: views.find((v) => v.id === x.id)?.citations ?? [] }));
   const removed = views.filter((v) => v.state === 'rejected');
+  // What the merchant confirmed about their own corrections: part of what they approve.
+  const confirmations = (composed.confirmedCorrections ?? request.confirmedCorrections).flatMap((pair) => {
+    const [sid, fragment] = pair.split('@') as [string, string];
+    const k = corrections.get(fragment);
+    const num = views.find((v) => v.id === sid)?.num;
+    return k && num ? [{ pair, num, k }] : [];
+  });
+  const correctedIn = (fragments: readonly string[]) => fragments.flatMap((f) => (corrections.has(f) ? [corrections.get(f)!] : []));
   const digital = !!c.fulfillment.digital;
 
   const run = async (retry: boolean) => {
@@ -389,13 +430,38 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
                         {s.citations.map((ct) => (
                           <div key={ct.evidenceId} className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-2">
                             <EvidenceTag id={ct.evidenceId} size="sm" />
-                            <span className="font-mono text-mono-frag">{quoteFor(c.evidence, ct)}</span>
+                            <span className="font-mono text-mono-frag">
+                              {quoteFor(c.evidence, ct)}
+                              {correctedIn(ct.fragments).map((k) => (
+                                <span key={k.fragment} className="ml-1.5 font-sans text-[11px] text-warn">
+                                  · line {k.line} corrected by {k.by}
+                                </span>
+                              ))}
+                            </span>
                           </div>
                         ))}
                       </div>
                     </div>
                   ))}
                 </div>
+                {confirmations.length > 0 && (
+                  <div className="flex flex-col gap-2" data-testid="confirmed-corrections">
+                    <h3 className="m-0 text-body font-semibold">What depends on your corrections · confirmed</h3>
+                    <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                      {confirmations.map(({ pair, num, k }) => (
+                        <li key={pair} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2 rounded-xl border border-warn-line bg-warn-soft px-3.5 py-2 text-[12.5px]">
+                          <span aria-hidden="true" className="font-bold text-ok">
+                            ✓
+                          </span>
+                          <span>
+                            Sentence {num} relies on line {k.line} of {k.evidenceId} as corrected by {k.by} (<span className="font-mono">{k.text}</span>). You confirmed it reads the
+                            file correctly; this confirmation is part of what you approve. <span className="font-mono text-ink-3">{pair}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {removed.length > 0 && (
                   <div className="flex flex-col gap-2">
                     <h3 className="m-0 text-body font-semibold text-bad">Not sent · removed by the analyst</h3>
@@ -442,14 +508,43 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
                       </Row>
                     </>
                   )}
-                  <Row k="Files" ddClass="flex flex-col gap-1 font-mono text-mono-frag leading-[1.4]">
+                  <Row k="Files" ddClass="flex flex-col gap-1.5 font-mono text-mono-frag leading-[1.4]">
                     {fileList.map((f) => (
-                      <span key={f.name}>
-                        {f.name} · {f.size}
+                      <span key={f.name} className="flex flex-col">
+                        <span>
+                          {f.name} · {f.size}
+                        </span>
+                        <span className="font-sans text-[11.5px] text-ink-3" data-testid="file-provenance">
+                          {fileProvenance(f, choices)}
+                          {f.sha256 ? ` · sha256 ${f.sha256.slice(0, 12)}…` : ''}
+                        </span>
                       </span>
                     ))}
                   </Row>
                 </Dl>
+                {choices.length > 0 && (
+                  <fieldset className="m-0 flex flex-col gap-1.5 rounded-xl border border-line bg-surface px-3.5 py-3">
+                    <legend className="px-1 text-[12.5px] font-semibold">Attachments</legend>
+                    {c.attachments.map((a) => (
+                      <label key={a.name} className="grid grid-cols-[18px_minmax(0,1fr)] items-start gap-2 text-[12.5px] text-ink-2">
+                        <input type="checkbox" checked disabled className="m-0 mt-0.5" />
+                        <span>
+                          <span className="font-mono text-mono-frag">{a.name}</span> · {fileProvenance({ name: a.name, size: a.size, source: c.kind === 'agent' ? 'receipt' : 'demo' }, choices)} · always attached
+                        </span>
+                      </label>
+                    ))}
+                    {choices.map((u) => (
+                      <label key={u.id} className="grid cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-start gap-2 text-[12.5px]">
+                        <input type="checkbox" checked={selected.includes(u.id)} onChange={() => onToggle(u.id)} className="m-0 mt-0.5 accent-[var(--acc)]" />
+                        <span>
+                          <span className="font-mono text-mono-frag">{u.evidenceId}</span> {u.name} · {u.provenance}
+                          {u.corrected ? ` · ${u.corrected}` : ''} · {u.cited ? 'cited in your response' : 'not cited'}
+                        </span>
+                      </label>
+                    ))}
+                    <span className="text-[11.5px] text-ink-3">Your uploads go to PayPal as the covered files you confirmed; changing this list composes the response again.</span>
+                  </fieldset>
+                )}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between text-[12.5px]">
                     <span className="font-semibold">Notes text, as PayPal will receive it</span>
@@ -501,7 +596,7 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
                     {supported.length} supported sentences · {formatCount(submission.notes.length)} characters
                   </Row>
                   <Row k="Files">
-                    {fileList.length} PDF{fileList.length === 1 ? '' : 's'} · {totalSize(fileList)}
+                    {fileList.length} file{fileList.length === 1 ? '' : 's'} · {totalSize(fileList)}
                   </Row>
                   <Row k="Not sent" ddClass="text-ink-2">
                     {removed.length ? `${removed.length} removed sentence${removed.length > 1 ? 's' : ''} (no supporting evidence)` : 'Nothing removed'}

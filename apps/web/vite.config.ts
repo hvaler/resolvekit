@@ -20,7 +20,7 @@ function readToken(): string | null {
 
 // Runs before Vite's proxy: only the app's own calls are forwarded and get the token (see proxyGuard.ts).
 const guard: Connect.NextHandleFunction = (req, res, next) => {
-  const d = apiProxyDecision(req.method ?? 'GET', req.headers);
+  const d = apiProxyDecision(req.method ?? 'GET', req.headers, req.url ?? '');
   if (d.allow) return next();
   res.statusCode = d.status;
   res.setHeader('content-type', 'application/json');

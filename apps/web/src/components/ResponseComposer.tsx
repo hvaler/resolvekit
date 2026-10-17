@@ -239,6 +239,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
           {d.views.map((v) => {
             const base = c.sentences.find((s) => s.id === v.id);
             const sug = base?.suggestion;
+            const k = d.toConfirm(v)[0];
             return (
               <SentenceRow
                 key={v.id}
@@ -255,6 +256,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
                     }
                   : {})}
                 readOnly={submitted}
+                {...(k ? { confirmCorrection: { line: k.line, evidenceId: k.evidenceId, onConfirm: () => d.confirmCorrection(v.id, k) } } : {})}
               />
             );
           })}

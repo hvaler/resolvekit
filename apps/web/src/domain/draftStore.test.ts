@@ -34,6 +34,13 @@ describe('the draft survives a reload', () => {
     expect(loadDraft(s, key)).toEqual(draft);
   });
 
+  it('the confirmations of corrected upload lines come back with the draft, and alone keep it', () => {
+    const s = memory();
+    const only: SavedDraft = { edits: {}, rechecks: {}, resolutions: {}, confirmedCorrections: ['S1@E7.l2'], action: 'provide_evidence', evidenceType: 'PROOF_OF_FULFILLMENT' };
+    saveDraft(s, key, only);
+    expect(loadDraft(s, key)).toEqual(only);
+  });
+
   it('another person, case or analysis has its own (none here)', () => {
     const s = memory();
     saveDraft(s, key, draft);

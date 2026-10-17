@@ -1,6 +1,6 @@
 /**
  * The response draft as one person left it (edits, the verifier's verdicts on them, contradiction resolutions, the
- * chosen action and evidence type), kept in this browser so a reload does not lose the work. A draft is not a
+ * confirmations of what rests on corrected upload lines, the chosen action and evidence type), kept in this browser so a reload does not lose the work. A draft is not a
  * record: what is approved and sent is composed and kept by the server (intents, audit). Keyed by person, case and
  * analysis: another analysis (a re-run, or the case moved to another dispute) has other sentences, so its draft
  * starts over. Any storage failure means "no saved draft", never an error.
@@ -12,6 +12,8 @@ export interface SavedDraft {
   edits: Record<string, string>;
   rechecks: Record<string, Recheck>;
   resolutions: Record<string, ContradictionResolution>;
+  /** `sentenceId@fragment` pairs the merchant confirmed (domain/draft.ts `correctionPair`). Absent: none. */
+  confirmedCorrections?: string[];
   action: ActionCode;
   evidenceType: EvidenceType | null;
 }
@@ -46,6 +48,7 @@ export function loadDraft(storage: DraftStorage | null | undefined, key: string)
       edits,
       rechecks,
       resolutions: d.resolutions as Record<string, ContradictionResolution>,
+      ...(Array.isArray(d.confirmedCorrections) ? { confirmedCorrections: d.confirmedCorrections.filter((p): p is string => typeof p === 'string') } : {}),
       action: d.action as ActionCode,
       evidenceType: typeof d.evidenceType === 'string' ? (d.evidenceType as EvidenceType) : null,
     };
@@ -57,7 +60,7 @@ export function loadDraft(storage: DraftStorage | null | undefined, key: string)
 export function saveDraft(storage: DraftStorage | null | undefined, key: string, d: SavedDraft): void {
   if (!storage) return;
   try {
-    const empty = !Object.keys(d.edits).length && !Object.keys(d.resolutions).length;
+    const empty = !Object.keys(d.edits).length && !Object.keys(d.resolutions).length && !d.confirmedCorrections?.length;
     if (empty) storage.removeItem(key);
     else storage.setItem(key, JSON.stringify({ v: 1, ...d }));
   } catch {
