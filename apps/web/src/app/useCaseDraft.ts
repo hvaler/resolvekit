@@ -82,8 +82,8 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
   const contradictionsVisible = ready && run > c.analysis.contradictionStep;
 
   const views = useMemo(
-    () => deriveSentences(c.sentences, { edits, rechecks, checking, analysisStep: run, rejectionStep: c.analysis.rejectionStep }),
-    [c, edits, rechecks, checking, run],
+    () => deriveSentences(c.sentences, { edits, rechecks, checking, analysisStep: run, rejectionStep: c.analysis.rejectionStep, contradictions: c.contradictions, resolutions }),
+    [c, edits, rechecks, checking, run, resolutions],
   );
 
   const reset = useCallback(() => {

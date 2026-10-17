@@ -25,7 +25,7 @@ import {
   screenPrompt,
   verifyPrompt,
 } from './prompts.ts';
-import { decideAction, requirementsFor } from './rules.ts';
+import { contestedReason, decideAction, requirementsFor } from './rules.ts';
 import type {
   AnalysisInput,
   CallUsage,
@@ -163,7 +163,7 @@ export function capContested(
   for (const k of contradictions) {
     const [one, other] = cites(k.a) && !cites(k.b) ? [k.a, k.b] : cites(k.b) && !cites(k.a) ? [k.b, k.a] : [null, null];
     if (one && other) {
-      return { ...v, verdict: 'needs_review', reason: `Why: it relies on ${one.doc} ("${one.value}"), which ${other.doc} contradicts ("${other.value}"). State both or resolve the contradiction.`, decidedBy: 'deterministic' };
+      return { ...v, verdict: 'needs_review', reason: contestedReason({ doc: one.doc, value: one.value, otherDoc: other.doc, otherValue: other.value }), decidedBy: 'deterministic' };
     }
   }
   return v;

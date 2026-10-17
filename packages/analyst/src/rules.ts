@@ -151,3 +151,28 @@ export const ACTION_TITLE: Record<RecommendedAction, string> = {
   accept_claim: 'Recommended: Accept the claim.',
   make_offer: 'Recommended: Make an offer.',
 };
+
+/** One side of a contradiction a sentence leans on, and the side it leaves out. */
+export interface ContestedSide {
+  doc: string;
+  value: string;
+  otherDoc: string;
+  otherValue: string;
+}
+
+/** The review reason of a sentence citing one side of a contradiction but not the other (capContested). */
+export function contestedReason(s: ContestedSide): string {
+  return `Why: it relies on ${s.doc} ("${s.value}"), which ${s.otherDoc} contradicts ("${s.otherValue}"). State both or resolve the contradiction.`;
+}
+
+const CONTESTED = /^Why: it relies on (\S+) \("(.*)"\), which (\S+) contradicts \("(.*)"\)\. State both or resolve the contradiction\.$/;
+
+/**
+ * Which contradiction holds a sentence back, when that is its only reason for review (the reason is exactly
+ * {@link contestedReason}); null for any other reason. Lets the draft release the sentence once the merchant has
+ * resolved that contradiction, on the client and where the server composes the submission alike.
+ */
+export function contestedBy(reason: string | null | undefined): ContestedSide | null {
+  const m = reason ? CONTESTED.exec(reason) : null;
+  return m ? { doc: m[1]!, value: m[2]!, otherDoc: m[3]!, otherValue: m[4]! } : null;
+}

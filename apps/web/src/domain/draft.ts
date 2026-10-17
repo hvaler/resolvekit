@@ -1,3 +1,4 @@
+import { contestedBy } from '@resolvekit/analyst';
 import type {
   ActionCode,
   Citation,
@@ -33,6 +34,24 @@ export interface DraftContext {
   analysisStep: number;
   /** Step index at which rejected sentences are revealed. Before that they read "Checking support…". */
   rejectionStep: number;
+  /**
+   * The case's contradictions and how the merchant settled them: a sentence held back only because it cites one
+   * side of a contradiction the merchant resolved (with a note) is released. Absent: nothing is released.
+   */
+  contradictions?: readonly Contradiction[];
+  resolutions?: Readonly<Record<string, ContradictionResolution>>;
+}
+
+/** The contradiction a contested review reason names, if the merchant resolved it with a note. */
+function resolvedContest(reason: string | null, ctx: DraftContext): { k: Contradiction; by: string; note: string } | null {
+  const side = contestedBy(reason);
+  if (!side || !ctx.contradictions) return null;
+  const is = (x: Contradiction['a'], doc: string, value: string) => x.evidenceId === doc && x.value === value;
+  const k = ctx.contradictions.find(
+    (c) => (is(c.a, side.doc, side.value) && is(c.b, side.otherDoc, side.otherValue)) || (is(c.b, side.doc, side.value) && is(c.a, side.otherDoc, side.otherValue)),
+  );
+  const r = k ? ctx.resolutions?.[k.id] : undefined;
+  return k && r?.status === 'resolved' ? { k, by: r.by, note: r.note } : null;
 }
 
 /** Derive what each sentence shows: verdict, edits, re-check in progress, analysis still running. */
@@ -61,6 +80,14 @@ export function deriveSentences(base: readonly DraftSentence[], ctx: DraftContex
     }
     if (ctx.checking === s.id) state = 'checking';
     if (s.verdict === 'rejected' && ctx.analysisStep < ctx.rejectionStep + 1) state = 'pending';
+    if (state === 'needs_review') {
+      const settled = resolvedContest(reason, ctx);
+      if (settled) {
+        state = 'supported';
+        reason = null;
+        note = `Released: ${settled.k.blockerName.replace(/^the /, '')} resolved by ${settled.by} ("${settled.note}")`;
+      }
+    }
 
     return { id: s.id, num: i + 1, text, state, citations, reason, note, edited: edit !== undefined, ...(s.origin === 'merchant_note' ? { fromNote: true } : {}) };
   });

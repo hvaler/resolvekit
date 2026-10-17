@@ -164,3 +164,14 @@ test('rules: in the claim stage PayPal offers no message, so missing critical ev
   const after = decideAction({ dispute: { ...dispute, allowedActions: ['send_message', 'accept_claim', 'escalate'], requestedEvidence: null }, checklist: [item('description', 'present')], sentences: [supported] })!;
   assert.deepEqual([after.action, after.rule], ['send_message', 'PayPal does not take evidence now; a message is the way to add to the case']);
 });
+
+test('a contested reason says which side of which contradiction holds the sentence back (and nothing else does)', async () => {
+  const { capContested } = await import('../src/pipeline.ts');
+  const { contestedBy } = await import('../src/rules.ts');
+  const k = { id: 'C1', title: 't', shortName: 'address contradiction', explanation: '', sentenceId: null, rewrite: null, a: { doc: 'E1', quote: 'Ship to: 12 Example Street, Apt 4', value: 'Apt 4' }, b: { doc: 'E3', quote: 'Delivered to: 12 Example Street, Apt 4B', value: 'Apt 4B' } };
+  const ok = { verdict: 'supported' as const, reason: null, decidedBy: 'model' as const, rewrite: null };
+  const held = capContested(ok, [{ doc: 'E3', quote: k.b.quote, valid: true }], [k]);
+  assert.deepEqual(contestedBy(held.reason), { doc: 'E3', value: 'Apt 4B', otherDoc: 'E1', otherValue: 'Apt 4' });
+  assert.equal(contestedBy('Why: "UPS" does not appear in the cited evidence.'), null);
+  assert.equal(contestedBy(null), null);
+});

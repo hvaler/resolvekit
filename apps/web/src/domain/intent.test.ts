@@ -62,6 +62,16 @@ describe('composeSubmission (shared by the server and the web app)', () => {
     expect(isComposeProblem(blocked) && blocked.error).toBe('DRAFT_BLOCKED');
   });
 
+  it('the server releases a sentence held back only by a contradiction the request resolves, as the draft does', () => {
+    const contested = { ...c.sentences[1]!, reason: 'Why: it relies on E3 ("Apt 4B"), which E1 contradicts ("Apt 4"). State both or resolve the contradiction.' };
+    const cc = { ...c, sentences: [c.sentences[0]!, contested, c.sentences[2]!] };
+    const open = composeSubmission(base({ c: cc }));
+    expect(isComposeProblem(open) && open.blockers).toEqual(['sentence 2 needs review', 'the address contradiction is open']);
+    const r = composeSubmission(base({ c: cc, req: { evidenceType: 'PROOF_OF_FULFILLMENT', edits: {}, resolutions: { C1: { status: 'resolved', note: 'Same building', by: 'x' } } } }));
+    expect(isComposeProblem(r)).toBe(false);
+    expect(!isComposeProblem(r) && r.sentences.map((x) => x.id)).toEqual(['S1', 'S2']);
+  });
+
   it('a request carrying notes, files or tracking is refused: the server composes them', () => {
     for (const extra of [{ notes: 'x' }, { files: [] }, { tracking: '1Z' }]) {
       const r = parseIntentRequest({ evidenceType: 'PROOF_OF_FULFILLMENT', ...extra });

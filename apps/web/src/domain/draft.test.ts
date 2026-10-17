@@ -164,3 +164,40 @@ describe('checklist', () => {
     expect(checklistSummary(resolved)).toBe('5 of 5 present');
   });
 });
+
+describe('a sentence held back only by a contradiction the merchant resolved', () => {
+  const K = standardTestContradictions;
+  const held: DraftSentence = {
+    id: 'S9',
+    text: 'UPS delivered the parcel to 12 Example Street, Apt 4B.',
+    verdict: 'needs_review',
+    citations: [],
+    reason: 'Why: it relies on E3 ("Apt 4B"), which E1 contradicts ("Apt 4"). State both or resolve the contradiction.',
+  };
+  const resolved: Record<string, ContradictionResolution> = { C1: { status: 'resolved', note: 'Same building: unit 4B', by: 'Judge 2' } };
+
+  it('is released once that contradiction is resolved, and says by whom', () => {
+    const v = byId(deriveSentences([held], { ...done, contradictions: K, resolutions: resolved }), 'S9');
+    expect(v.state).toBe('supported');
+    expect(v.reason).toBeNull();
+    expect(v.note).toMatch(/Judge 2/);
+  });
+
+  it('stays in review while it is open or only explained in another sentence', () => {
+    for (const r of [{}, { C1: { status: 'open' } }, { C1: { status: 'explained', sentenceNum: 4 } }] as Record<string, ContradictionResolution>[]) {
+      expect(byId(deriveSentences([held], { ...done, contradictions: K, resolutions: r }), 'S9').state).toBe('needs_review');
+    }
+  });
+
+  it('any other reason for review is not lifted by a resolution', () => {
+    const other = { ...held, reason: 'Why: "UPS" does not appear in the cited evidence.' };
+    expect(byId(deriveSentences([other], { ...done, contradictions: K, resolutions: resolved }), 'S9').state).toBe('needs_review');
+  });
+
+  it('an edit the verifier held back for the same contradiction is released too', () => {
+    const rechecks: Record<string, Recheck> = { S9: { state: 'needs_review', reason: held.reason!, note: 'Edited · re-checked by gemini-3.8-flash: needs review' } };
+    const ok = { ...held, verdict: 'supported' as const, reason: undefined };
+    const v = byId(deriveSentences([ok], { ...done, edits: { S9: 'UPS delivered it to Apt 4B.' }, rechecks, contradictions: K, resolutions: resolved }), 'S9');
+    expect(v.state).toBe('supported');
+  });
+});

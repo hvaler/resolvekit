@@ -201,8 +201,6 @@ export function composeSubmission(x: ComposeInput): Composed | ComposeProblem {
     rechecks[id] = r;
   }
   const edits = Object.fromEntries(Object.entries(req.edits).filter(([id]) => rechecks[id]));
-  const views = deriveSentences(c.sentences, { edits, rechecks, checking: null, analysisStep: c.analysis.steps.length, rejectionStep: c.analysis.rejectionStep });
-
   const resolutions: Record<string, ContradictionResolution> = {};
   const resolutionNotes: { contradictionId: string; note: string }[] = [];
   for (const k of c.contradictions) {
@@ -214,6 +212,9 @@ export function composeSubmission(x: ComposeInput): Composed | ComposeProblem {
       resolutions[k.id] = { status: 'explained', sentenceNum: c.sentences.findIndex((s) => s.id === k.explainSentenceId) + 1 };
     }
   }
+  // The same sentence rules as the draft, with the resolutions as validated here (a contested sentence is released
+  // only by a contradiction resolved with a note).
+  const views = deriveSentences(c.sentences, { edits, rechecks, checking: null, analysisStep: c.analysis.steps.length, rejectionStep: c.analysis.rejectionStep, contradictions: c.contradictions, resolutions });
 
   const options = evidenceTypeOptions(c.summary.reason, c.requestedEvidenceType, c.evidenceTypes);
   const selected = options.find((o) => o.type === req.evidenceType);
