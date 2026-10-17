@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluate, type Observed } from '../scripts/demo-check-lib.ts';
+import { appUrlProblem, evaluate, type Observed } from '../scripts/demo-check-lib.ts';
 
 const goodOps = {
   ok: true,
@@ -71,4 +71,12 @@ test('fewer than 2 left in reserve: a warning line, still ready', () => {
   const r = evaluate(o);
   assert.equal(r.ok, true);
   assert.ok(r.lines.some((l) => l.warn && /reserve/.test(l.detail)), r.lines.map((l) => l.detail).join(' | '));
+});
+
+test('the ops token only goes over https (or to this machine)', () => {
+  assert.equal(appUrlProblem('https://resolvekit-i3j2.onrender.com'), null);
+  assert.equal(appUrlProblem('http://127.0.0.1:8787'), null);
+  assert.equal(appUrlProblem('http://localhost:8787'), null);
+  assert.match(appUrlProblem('http://resolvekit-i3j2.onrender.com') ?? '', /https/);
+  assert.match(appUrlProblem('not a url') ?? '', /URL/);
 });

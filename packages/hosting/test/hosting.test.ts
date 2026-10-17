@@ -288,3 +288,19 @@ test('DailyCounters: the cap is reported as such, apart from storage', () => {
   assert.deepEqual(c.reserve('live'), { ok: true });
   assert.deepEqual(c.reserve('live'), { ok: false, reason: 'cap' });
 });
+
+test('DailyCounters: once the unreadable caps file is fixed, reservations work again without a restart', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-counters-'));
+  try {
+    const file = join(dir, 'caps.json');
+    writeFileSync(file, '{ not json');
+    const c = new DailyCounters({ file, limits: { live: 2 } });
+    assert.equal(c.take('live'), false);
+    writeFileSync(file, JSON.stringify({ day: new Date().toISOString().slice(0, 10), counts: { live: 1 } }));
+    assert.deepEqual(c.reserve('live'), { ok: true });
+    assert.equal(c.storageProblem(), null);
+    assert.equal(c.remaining('live'), 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

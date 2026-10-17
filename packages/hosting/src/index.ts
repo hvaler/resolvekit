@@ -233,7 +233,13 @@ export class DailyCounters {
     this.file = o.file;
     this.limits = { ...o.limits };
     this.now = o.now ?? (() => new Date());
+    this.load();
+  }
+
+  /** Read the caps file (at start, and again while it is unreadable: fixing it needs no restart). */
+  private load() {
     if (this.file) {
+      this.broken = null;
       let text: string | null = null;
       try {
         text = readFileSync(this.file, 'utf8');
@@ -287,6 +293,7 @@ export class DailyCounters {
    * only once it is on disk: if saving fails it is undone and refused, so a restart can never forget a costly action.
    */
   reserve(name: string): { ok: true } | { ok: false; reason: 'cap' | 'storage' } {
+    if (this.broken?.kind === 'unreadable') this.load();
     if (this.broken?.kind === 'unreadable') return { ok: false, reason: 'storage' };
     if (this.remaining(name) <= 0) return { ok: false, reason: 'cap' };
     this.counts[name] = (this.counts[name] ?? 0) + 1;

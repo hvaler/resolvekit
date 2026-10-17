@@ -130,3 +130,12 @@ test('probes: one per provider with a key, each its own provider (no fallback hi
 test('probes: none without keys', () => {
   assert.deepEqual(modelProbesFromEnv({}), []);
 });
+
+test('probes: a provider that does not answer fails within the probe timeout', async () => {
+  const fetch = ((_: unknown, init: RequestInit = {}) =>
+    new Promise((_, no) => init.signal?.addEventListener('abort', () => no(new DOMException('timed out', 'TimeoutError'))))) as unknown as typeof globalThis.fetch;
+  const [p] = modelProbesFromEnv({ GEMINI_API_KEY: 'g' }, { fetch, timeoutMs: 50 });
+  const t = Date.now();
+  await assert.rejects(p!.probe());
+  assert.ok(Date.now() - t < 2000);
+});

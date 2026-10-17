@@ -10,7 +10,7 @@
  * Exit 0 when every line passed, 1 otherwise. Run it after each deploy and daily during judging. The token comes
  * from .env (node --env-file-if-exists) and is never printed.
  */
-import { evaluate, type Observed, type OpsBody } from './demo-check-lib.ts';
+import { appUrlProblem, evaluate, type Observed, type OpsBody } from './demo-check-lib.ts';
 
 const DEFAULT_APP = 'https://resolvekit-i3j2.onrender.com';
 const DEFAULT_METERMCP = 'https://resolvekit-metermcp.onrender.com';
@@ -37,6 +37,12 @@ async function main() {
   const token = process.env.RESOLVEKIT_OPS_TOKEN?.trim();
   if (!token) {
     console.error('[demo:check] RESOLVEKIT_OPS_TOKEN is not set (.env): it must be the same as on the resolvekit service');
+    process.exitCode = 2;
+    return;
+  }
+  const bad = appUrlProblem(app);
+  if (bad) {
+    console.error(`[demo:check] ${bad}`);
     process.exitCode = 2;
     return;
   }

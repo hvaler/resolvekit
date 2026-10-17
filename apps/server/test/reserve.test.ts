@@ -55,7 +55,7 @@ function poolDispute(b: { dispute: string; capture: string }, state: { evidenceA
   };
 }
 
-function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW) {
+function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW, delayMs = 0) {
   const p = parseBindingPools(raw);
   const reads: string[] = [];
   const lines: string[] = [];
@@ -64,6 +64,7 @@ function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW)
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
     const id = decodeURIComponent(u.pathname.split('/').pop()!);
     reads.push(id);
+    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
     const d = disputes[id];
     return d ? new Response(JSON.stringify(d), { status: 200 }) : new Response('{"name":"RESOURCE_NOT_FOUND"}', { status: 404 });
   }) as typeof globalThis.fetch;
@@ -146,4 +147,33 @@ test('used and nothing in reserve: the case keeps it, and the check says the res
   assert.equal(s.bindings[CASE]!.used, true);
   assert.equal(s.ok, false);
   assert.ok(s.problems.some((p) => p.includes(CASE) && /reserve/.test(p)), s.problems.join(' | '));
+});
+
+test('two reads at once of a used dispute move the case one step, not two (no reserve dispute is skipped)', async () => {
+  const old = new Date(NOW.getTime() - 60 * MIN).toISOString();
+  const { app } = setup({ [CASE]: [A, B, C] }, { [A.dispute]: poolDispute(A, { evidenceAt: old }), [B.dispute]: poolDispute(B), [C.dispute]: poolDispute(C) }, () => NOW, 20);
+  await Promise.all([status(app), status(app), status(app)]);
+  const s = await status(app);
+  assert.equal(s.bindings[CASE]!.dispute, B.dispute);
+  assert.equal(s.bindings[CASE]!.reserve, 1);
+});
+
+test('seller evidence without a usable date: the 15 min run from when the server first saw it used', async () => {
+  let t = NOW;
+  const used = poolDispute(A, { evidenceAt: 'not a date' });
+  const { app } = setup({ [CASE]: [A, B] }, { [A.dispute]: used, [B.dispute]: poolDispute(B) }, () => t);
+  await status(app);
+  assert.equal((await status(app)).bindings[CASE]!.dispute, A.dispute);
+  t = new Date(NOW.getTime() + 16 * MIN);
+  await status(app);
+  assert.equal((await status(app)).bindings[CASE]!.dispute, B.dispute);
+});
+
+test('an evidence date in the future counts as now (it cannot hold the case longer than 15 min)', async () => {
+  let t = NOW;
+  const { app } = setup({ [CASE]: [A, B] }, { [A.dispute]: poolDispute(A, { evidenceAt: new Date(NOW.getTime() + 600 * MIN).toISOString() }), [B.dispute]: poolDispute(B) }, () => t);
+  await status(app);
+  t = new Date(NOW.getTime() + 16 * MIN);
+  await status(app);
+  assert.equal((await status(app)).bindings[CASE]!.dispute, B.dispute);
 });

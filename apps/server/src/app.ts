@@ -366,12 +366,14 @@ export function createApi(opts: ApiOptions): Api {
    * A fresh read of a bound case from PayPal, with the agent case's MeterMCP session: what GET /api/disputes answers,
    * and what the analyst's input is built from. Throws what PayPal throws.
    */
-  const reads = new Map<string, { at: number; snap: DisputeSnapshot }>();
+  // Keyed by case, and holding the dispute it read: a read that finishes after the case moved to another dispute of its
+  // reserve is never taken for the new one.
+  const reads = new Map<string, { at: number; dispute: string; snap: DisputeSnapshot }>();
   const readCase = async (caseId: string, disputeId: string, paypal: PayPalClient): Promise<DisputeSnapshot> => {
     const d = await paypal.disputes.get(disputeId);
     noteSeller(caseId, d);
     const snap = await snapshotOf(caseId, d);
-    reads.set(caseId, { at: now().getTime(), snap });
+    reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
     return snap;
   };
 
@@ -401,7 +403,7 @@ export function createApi(opts: ApiOptions): Api {
     if (disputeId && opts.paypal && (await viewerLive(req))) {
       const cached = reads.get(caseId);
       try {
-        const fresh = cached && now().getTime() - cached.at < (opts.readTtlMs ?? 60_000);
+        const fresh = cached && cached.dispute === disputeId && now().getTime() - cached.at < (opts.readTtlMs ?? 60_000);
         source = { kind: 'live', snap: fresh ? cached.snap : await readCase(caseId, disputeId, opts.paypal), failed: null };
       } catch (e) {
         if ((await checkHealth()).paypal !== 'unconfigured') return fromPayPalError(e);
@@ -450,7 +452,7 @@ export function createApi(opts: ApiOptions): Api {
       return json(409, { error: 'BINDING_INVALID', detail: 'Sending is blocked: the bound PayPal dispute is not this case’s payment', reasons: check.reasons });
     }
     const snap = await snapshotOf(caseId, dispute);
-    reads.set(caseId, { at: now().getTime(), snap });
+    reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
     const source: PayPalSource = { kind: 'live', snap, failed: null };
     const state = { source, input: pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), dispute, snap, disputeId };
     // This request goes on with what it read; the next one reads the next dispute of the reserve, if this one is used.
@@ -462,22 +464,34 @@ export function createApi(opts: ApiOptions): Api {
   const ROTATE_AFTER_MS = opts.rotateAfterMs ?? 15 * 60_000;
   /** Whether the active dispute of each case was used when last read (the operator's check reports it). */
   const usedNow = new Map<string, boolean>();
-  /** Since when a dispute is used for the demo: closed (at once), or PayPal's date of the seller's evidence; null: unused. */
-  const usedSince = (snap: DisputeSnapshot): number | null => {
+  /** When this server first saw each dispute used: the grace's start when PayPal gives the evidence no usable date. */
+  const firstSeenUsed = new Map<string, number>();
+  /**
+   * Since when a dispute is used for the demo: closed (at once), or the seller's evidence, by PayPal's date (a date in
+   * the future counts as when this server first saw it used, as does one with no usable date); null: unused.
+   */
+  const usedSince = (disputeId: string, snap: DisputeSnapshot): number | null => {
     if (snap.status === 'RESOLVED') return 0;
     const ev = sellerEvidence(snap);
     if (ev.length === 0) return null;
-    const t = Math.max(...ev.map((e) => Date.parse(e.date ?? e.storedAt)));
-    return Number.isFinite(t) ? t : 0;
+    const t = now().getTime();
+    const seen = firstSeenUsed.get(disputeId) ?? t;
+    if (firstSeenUsed.size > 1000) firstSeenUsed.clear();
+    firstSeenUsed.set(disputeId, seen);
+    const dates = ev.map((e) => Date.parse(e.date ?? e.storedAt)).filter(Number.isFinite);
+    return dates.length ? Math.min(Math.max(...dates), seen) : seen;
   };
   const rotateIfUsed = (caseId: string, binding: Binding, snap: DisputeSnapshot) => {
-    const since = usedSince(snap);
+    // Another read of this case may have moved it on while this one waited for PayPal: one step per used dispute.
+    if (bindingOf(caseId)?.dispute !== binding.dispute) return;
+    const since = usedSince(binding.dispute, snap);
     usedNow.set(caseId, since != null);
     const queue = opts.reserve?.[caseId];
     if (since == null || !queue?.length || now().getTime() - since < ROTATE_AFTER_MS) return;
     const next = queue.shift()!;
     (opts.bindings as Record<string, string | Binding>)[caseId] = next;
     reads.delete(caseId);
+    sellers.delete(caseId);
     bindingStatus.delete(caseId);
     usedNow.delete(caseId);
     log(`reserve · case ${caseId}: ${binding.dispute} is used (${snap.status === 'RESOLVED' ? 'resolved' : 'seller evidence recorded'}) → ${next.dispute} · ${queue.length} left in reserve`);
@@ -729,6 +743,11 @@ export function createApi(opts: ApiOptions): Api {
         return refuse(st, b.error ?? `refused (${st.status})`, b.error === 'BINDING_INVALID');
       }
       if (!st.dispute) return refuse(json(409, { error: 'NOT_BOUND', detail: 'PayPal is not connected for this case now' }), 'PayPal not connected', false);
+      // What was just read and verified must be the very dispute this intent was approved for (the case may have moved
+      // to the next dispute of its reserve in between; the content hash would differ too, this says why).
+      if (st.disputeId !== boundId) {
+        return refuse(json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${boundId}; the case is bound to ${st.disputeId} now` }), 'the case moved to another dispute', true);
+      }
       // On the dispute as just read: the person must act for its seller.
       const notSeller = sellerRefusal(req, st);
       if (notSeller) return refuse(notSeller, 'not the seller on this dispute', true);

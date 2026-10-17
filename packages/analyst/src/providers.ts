@@ -205,10 +205,12 @@ const PROBE: ModelRequest = {
  * The operator's check (/api/ops/status?probe=models): each configured provider on its own, without retries or
  * fallback, so a broken fallback key shows up even while the primary answers.
  */
-export function modelProbesFromEnv(env: Record<string, string | undefined>, o: { fetch?: typeof fetch } = {}): ModelProbe[] {
+export function modelProbesFromEnv(env: Record<string, string | undefined>, o: { fetch?: typeof fetch; timeoutMs?: number } = {}): ModelProbe[] {
+  // A short timeout of its own: a provider that hangs fails the check instead of holding the request for 90 s.
+  const timeoutMs = o.timeoutMs ?? 20_000;
   const models: AnalystModel[] = [];
-  if (env.GEMINI_API_KEY) models.push(new GeminiModel({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || GEMINI_MODEL, fetch: o.fetch }));
-  if (env.GROQ_API_KEY) models.push(new GroqModel({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL || GROQ_MODEL, fetch: o.fetch, tpm: Number(env.GROQ_TPM) || 8_000 }));
+  if (env.GEMINI_API_KEY) models.push(new GeminiModel({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || GEMINI_MODEL, fetch: o.fetch, timeoutMs }));
+  if (env.GROQ_API_KEY) models.push(new GroqModel({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL || GROQ_MODEL, fetch: o.fetch, timeoutMs, tpm: Number(env.GROQ_TPM) || 8_000 }));
   return models.map((m) => ({
     name: `${m.provider}/${m.model}`,
     probe: async () => {

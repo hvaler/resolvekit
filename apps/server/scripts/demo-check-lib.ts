@@ -28,6 +28,19 @@ export interface Line {
   detail: string;
 }
 
+/** Why the ops token must not go to this URL (null: it may): https only, or plain http to this machine. */
+export function appUrlProblem(url: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return `not a URL: ${url}`;
+  }
+  if (u.protocol === 'https:') return null;
+  if (u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)) return null;
+  return `the ops token is only sent over https (or to this machine): ${u.origin}`;
+}
+
 export function evaluate(o: Observed): { ok: boolean; lines: Line[] } {
   const lines: Line[] = [];
   const add = (ok: boolean, what: string, detail = '') => lines.push({ ok, what, detail });
