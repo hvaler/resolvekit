@@ -48,6 +48,16 @@ export type NewUpload = Pick<UploadRecord, 'workspaceId' | 'caseId' | 'boundDisp
 const ID = /^upl-[0-9a-f]{24}$/;
 const WORKSPACE = /^[A-Za-z0-9_-]{1,64}$/;
 const LIVE: UploadStatus[] = ['pending', 'reviewing'];
+const DEAD: UploadStatus[] = ['discarded', 'deleted'];
+const FILES = ['original.bin', 'sanitised.png', 'sanitised.pdf'];
+
+/** Fields an update can never change: who the upload is and what it is bound to. */
+type Pinned = 'id' | 'workspaceId' | 'caseId' | 'boundDisputeId' | 'kind' | 'uploadedBy';
+export type UploadPatch = Partial<Omit<UploadRecord, Pinned>>;
+const PINNED: string[] = ['id', 'workspaceId', 'caseId', 'boundDisputeId', 'kind', 'uploadedBy'];
+
+/** A discarded or deleted upload keeps its record for the audit but none of its content. */
+const purged = (r: UploadRecord): UploadRecord => ({ ...r, rects: [], removals: [], readLines: [], lines: [] });
 
 const storage = (what: string, cause?: unknown) => new UploadError('STORAGE', `Upload storage failed: ${what}`, { cause });
 
@@ -112,13 +122,16 @@ export class UploadStore {
   }
 
   /** Merge `patch` into the record; `files.original: null` deletes the original, `files.sanitised` is stored per `mime`. */
-  update(id: string, patch: Partial<UploadRecord>, files: { original?: Uint8Array | null; sanitised?: Uint8Array | null } = {}): UploadRecord {
+  update(id: string, patch: UploadPatch, files: { original?: Uint8Array | null; sanitised?: Uint8Array | null } = {}): UploadRecord {
     const cur = this.live(id);
     if (!cur) throw new UploadError('NOT_FOUND', 'Upload not found');
-    const next: UploadRecord = { ...cur, ...structuredClone(patch), id: cur.id, workspaceId: cur.workspaceId };
+    const clean = Object.fromEntries(Object.entries(patch).filter(([k, v]) => v !== undefined && !PINNED.includes(k)));
+    let next: UploadRecord = { ...cur, ...structuredClone(clean) };
+    const dead = DEAD.includes(next.status);
+    if (dead) next = purged(next);
     let restore: (() => void) | null = null;
     try {
-      if (files.sanitised) {
+      if (files.sanitised && !dead) {
         if (!next.mime) throw storage('sanitised file without a mime type');
         const name = this.sanitisedName(next.mime);
         const before = this.readFile(next, name);
@@ -131,7 +144,8 @@ export class UploadStore {
       throw e instanceof UploadError ? e : storage('update', e);
     }
     this.records.set(next.id, next);
-    if (files.original === null) this.removeFile(next, 'original.bin');
+    if (dead) this.dropFiles(next, false);
+    else if (files.original === null) this.removeFile(next, 'original.bin');
     else if (files.original) this.writeFile(next, 'original.bin', files.original);
     return structuredClone(next);
   }
@@ -162,10 +176,21 @@ export class UploadStore {
     let expired = 0, orphans = 0;
     for (const r of [...this.records.values()]) {
       if (LIVE.includes(r.status) && r.expiresAt <= nowIso) {
-        this.dropFiles(r, false);
-        this.records.set(r.id, { ...r, status: 'discarded' });
-        try { this.writeRecord(this.records.get(r.id)!); } catch { /* the in-memory state is already discarded; the next sweep retries */ }
+        const d = purged({ ...r, status: 'discarded' });
+        this.records.set(r.id, d);
+        try { this.writeRecord(d); } catch { /* the in-memory state is already discarded; the next sweep retries */ }
+        this.dropFiles(d, false);
         expired++;
+      } else if (DEAD.includes(r.status)) {
+        const leftover = FILES.some((f) => this.sizeOf(r, f) > 0 || this.readFile(r, f));
+        const text = r.lines.length + r.readLines.length + r.removals.length + r.rects.length > 0;
+        if (leftover || text) {
+          const d = purged(r);
+          this.records.set(r.id, d);
+          try { this.writeRecord(d); } catch { /* retried next sweep */ }
+          this.dropFiles(d, false);
+          orphans++;
+        }
       } else if (!LIVE.includes(r.status) && this.readFile(r, 'original.bin')) {
         this.removeFile(r, 'original.bin');
         orphans++;
@@ -178,7 +203,7 @@ export class UploadStore {
   usedBytes(): number {
     let n = 0;
     for (const r of this.records.values()) {
-      for (const name of ['original.bin', 'sanitised.png', 'sanitised.pdf']) n += this.sizeOf(r, name);
+      for (const name of FILES) n += this.sizeOf(r, name);
     }
     return n;
   }
@@ -248,12 +273,12 @@ export class UploadStore {
   /** Remove every file of an upload; with `all` also its record and directory. */
   private dropFiles(r: UploadRecord, all: boolean): void {
     if (!this.dir) {
-      for (const name of ['original.bin', 'sanitised.png', 'sanitised.pdf']) this.mem.delete(this.memKey(r, name));
+      for (const name of FILES) this.mem.delete(this.memKey(r, name));
       return;
     }
     try {
       if (all) rmSync(this.path(r), { recursive: true, force: true });
-      else for (const name of ['original.bin', 'sanitised.png', 'sanitised.pdf']) this.removeFile(r, name);
+      else for (const name of FILES) this.removeFile(r, name);
     } catch { /* invalid ids never reach the disk */ }
   }
 

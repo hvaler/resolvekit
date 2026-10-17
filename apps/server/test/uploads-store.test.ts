@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UploadStore, type NewUpload } from '../src/uploads/store.ts';
@@ -51,7 +51,7 @@ test('sweep expires pending uploads after 24 h and removes their original, page 
   let t = new Date('2026-10-17T10:00:00Z');
   const s = new UploadStore({ dir, now: () => t });
   const old = s.create(base(), bytes(10));
-  s.update(old.id, { status: 'reviewing', mime: 'application/pdf' }, { sanitised: bytes(3) });
+  s.update(old.id, { status: 'reviewing', mime: 'application/pdf', readLines: ['SECRET-LINE'], lines: [{ text: 'SECRET-LINE', correctedBy: null, original: null }] }, { sanitised: bytes(3) });
   const keep = s.create(base({ name: 'later.png' }), bytes(5));
   const confirmed = s.create(base({ name: 'c.png' }), bytes(5));
   s.update(confirmed.id, { status: 'confirmed', mime: 'image/png' }, { original: null, sanitised: bytes(2) });
@@ -59,6 +59,9 @@ test('sweep expires pending uploads after 24 h and removes their original, page 
   const fresh = s.create(base({ name: 'fresh.png' }), bytes(5));
   const res = s.sweep();
   assert.equal(res.expired, 2);
+  assert.deepEqual(s.get(old.id)!.lines, []);
+  assert.deepEqual(s.get(old.id)!.readLines, []);
+  assert.equal(readFileSync(join(dir, 'ws1', old.id, 'record.json'), 'utf8').includes('SECRET-LINE'), false);
   assert.equal(s.get(old.id)!.status, 'discarded');
   assert.equal(s.get(keep.id)!.status, 'discarded');
   assert.equal(s.get(confirmed.id)!.status, 'confirmed');
@@ -168,4 +171,33 @@ test('noteAnalysisKey records a key once on the given uploads', () => {
   s.noteAnalysisKey([r.id, NONE], 'k1');
   s.noteAnalysisKey([r.id], 'k1');
   assert.deepEqual(s.get(r.id)!.analysisKeys, ['k1']);
+});
+
+for (const end of ['discarded', 'deleted'] as const) {
+  test(`${end} uploads end with only record.json and no text, and usedBytes drops`, () => {
+    const dir = tmp();
+    const s = new UploadStore({ dir });
+    const r = s.create(base(), bytes(10));
+    s.update(r.id, { status: 'reviewing', mime: 'image/png', rects: [{ x: 0, y: 0, w: 1, h: 1 }], readLines: ['SECRET-LINE'], lines: [{ text: 'SECRET-LINE', correctedBy: null, original: null }], removals: [{ start: 0, end: 1 }] }, { sanitised: bytes(6) });
+    assert.equal(s.usedBytes(), 16);
+    const u = s.update(r.id, { status: end });
+    assert.deepEqual([u.lines, u.readLines, u.removals, u.rects], [[], [], [], []]);
+    assert.deepEqual(readdirSync(join(dir, 'ws1', r.id)), ['record.json']);
+    assert.equal(readFileSync(join(dir, 'ws1', r.id, 'record.json'), 'utf8').includes('SECRET-LINE'), false);
+    assert.equal(s.usedBytes(), 0);
+    assert.equal(s.sanitised(r.id), null);
+    // a crash left the sanitised file behind: sweep removes it
+    writeFileSync(join(dir, 'ws1', r.id, 'sanitised.png'), bytes(4));
+    assert.equal(new UploadStore({ dir }).sweep().orphans, 1);
+    assert.deepEqual(readdirSync(join(dir, 'ws1', r.id)), ['record.json']);
+  });
+}
+
+test('update cannot rewrite identity or binding fields, and undefined does not overwrite', () => {
+  const s = new UploadStore({ dir: tmp() });
+  const r = s.create(base(), bytes(1));
+  const bad = { boundDisputeId: 'PP-D-9', caseId: 'C9', workspaceId: 'ws9', kind: 'text', uploadedBy: { id: 'x', label: 'x', name: 'x' }, id: NONE, name: undefined, status: 'reviewing' } as never;
+  const u = s.update(r.id, bad);
+  assert.deepEqual([u.boundDisputeId, u.caseId, u.workspaceId, u.kind, u.uploadedBy, u.id, u.name, u.status], ['PP-D-1', 'C1', 'ws1', 'image', who, r.id, 'proof.png', 'reviewing']);
+  assert.equal(s.get(NONE), null);
 });
