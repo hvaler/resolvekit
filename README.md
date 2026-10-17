@@ -201,13 +201,13 @@ rules as every other document.
 
 - **Nothing leaves the server before the merchant confirms it.** Text is read on the server itself (local OCR for
   images); no upload, byte or text, goes to Google, Groq or PayPal until it is covered where needed, read again and
-  confirmed. Logs and audit details carry ids and file names, never upload text or bytes.
+  confirmed. Logs and audit details carry ids and file names (so do not name a file with sensitive text), never upload text or bytes.
 - **What PayPal receives is the sanitised file**: the merchant's covered areas are burned into the PNG (the original
   is dropped on confirmation), and pasted text is sent as a PDF made by ResolveKit with the removed passages marked.
   A line the merchant corrected after the OCR is kept as their reading, shown as "corrected by <name>", and a
   sentence that depends on it needs the person's explicit confirmation before it can be sent.
-- **Limits**: 5 MB and 4096 px (16 MP) per image, 20,000 characters of pasted text, 10 uploads per case, 5 redactions
-  per upload, 40 uploads a day on the hosted demo, 300 MB of storage.
+- **Limits**: 5 MB and 4096 px (16 MP) per image, 20,000 characters of pasted text, 10 uploads per case, 5 redaction
+  passes per upload, 40 uploads a day on the hosted demo, 300 MB of storage.
 - **Pending uploads last 24 hours**: one that is not confirmed or discarded in that time is discarded the first
   time it is met. **Deleting an upload** (owners and members) removes its files and purges the stored analyses that
   quoted it; the audit trail keeps the event, not the text. Uploads belong to the workspace and to the dispute that

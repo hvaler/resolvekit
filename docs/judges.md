@@ -42,25 +42,31 @@ its document. The verifier may also mark a sentence **Needs review** (it says wh
 shows** rewrites it and checks it again, live. The bar above the send button lists what is still open.
 
 **4. Add your own evidence.** In the seller's workspace (open as the reviewer through your link) the case file has
-**+ Add evidence**. Upload a screenshot (PNG or JPEG, up to 5 MB) or paste text, for example an email thread. Nothing
-you add leaves the ResolveKit server yet: the text is read on the server itself (local OCR for images), not by Google,
-Groq or PayPal. **Cover what must not leave** (an account number, a balance, an unrelated line): on an image, drag
-rectangles over it; on pasted text, select the passages to remove. The covered areas are burned into the sanitised
-file and the text under them is dropped. **Read again**: the page shows the text read from the sanitised file; you
-can **correct** a line the OCR misread (the correction is kept and shown with your name) and then **Confirm** (or
-**Discard**: an unconfirmed upload is deleted by itself after 24 hours). A confirmed upload becomes the next
-evidence number (E7, E8…). The case file says the analysis has not read it yet: press **Re-run with AI** (30–60 s), and the new analysis includes it and can cite it, in the same way as the demo documents:
-hover a citation to see the exact words in the uploaded text. A sentence that rests on a line you corrected asks for
-your explicit confirmation before it can be sent. When you send, PayPal receives the sanitised file (the PNG, or a
-PDF made from pasted text) with the rest of the evidence on the bound case. Uploads belong to the workspace, so
-they stay for the next person until the case moves to its next sandbox dispute (they are then archived), and a full
-member can delete one at any time (a reviewer can only discard their own before confirming).
+**+ Add evidence**.
+
+- Upload a screenshot (PNG or JPEG, up to 5 MB) or paste text, for example an email thread. Nothing you add leaves
+  the ResolveKit server yet: the text is read on the server itself (local OCR for images), not by Google, Groq or PayPal.
+- **Cover what must not be shared** (an account number, a balance, an unrelated line): on an image, drag rectangles
+  over it; on pasted text, **Remove what must not be shared** by selecting the passages. The covered areas are burned
+  into the sanitised file and the text under them is dropped.
+- **Read again from the covered image**: the page shows the text read from the sanitised file. You can correct a line
+  the OCR misread (the correction is marked "corrected by you", with your name).
+- **Confirm as evidence** (or **Discard**; an unconfirmed upload is deleted by itself after 24 hours). A confirmed
+  upload becomes the next evidence number (E7, E8…).
+- The case file says the analysis has not read it yet: press **Re-run with AI** (30–60 s). The new analysis includes
+  it and can cite it like the demo documents: hover a citation to see the exact words in the uploaded text.
+- A sentence that rests on a line you corrected asks for your explicit confirmation before it can be sent.
+- When you send, PayPal receives the sanitised file (the PNG, or a PDF made from pasted text) with the rest of the
+  evidence on the bound case.
+- Uploads belong to the workspace: they stay for the next person until the case moves to its next sandbox dispute
+  (they are then archived). A full member can delete one at any time; a reviewer can only discard their own before
+  confirming.
 
 *Real vs synthetic.* What you upload is yours, and it is real in what it does: it is read, redacted, cited and sent
 to the PayPal sandbox. The case around it (order, tracking, buyer message) is still synthetic, so a screenshot that
-contradicts the demo documents will show as a contradiction. Please do not upload personal data you care about: the
+contradicts the demo documents will show as a contradiction. File names are kept in the audit trail (the text is not), so do not name a file with sensitive text, and do not upload personal data you care about: the
 PayPal side is a sandbox, and the app is a demo. *Limits:* up to 10 uploads per case, 5 MB and 4096 px (16 MP) per
-image, 20,000 characters of pasted text, 5 redactions per upload, 40 uploads per day in total; the AI-read analysis
+image, 20,000 characters of pasted text, 5 covering passes per upload, 40 uploads per day in total; the AI-read analysis
 counts against the live-run limits below.
 
 **5. Approve and send to real PayPal.** Click **Review what will be sent →** (signed in through your reviewer link:
