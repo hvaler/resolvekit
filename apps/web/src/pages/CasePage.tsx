@@ -78,7 +78,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   }, [docs, an, later.length]);
   const status = snap?.status ?? demo.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
-  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, actor: actorName(demoLock), analysis });
+  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, actor: actorName(demoLock), scope: demoLock?.person?.id ?? 'local', analysis });
 
   // Keep the approve flow open once started, even after the case becomes "submitted".
   const flowOpen = useRef(false);

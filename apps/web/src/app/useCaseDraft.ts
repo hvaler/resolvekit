@@ -1,6 +1,7 @@
 import { PENDING_STEPS, STAGES, toCitations } from '@resolvekit/analyst';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { actionableBlockers, checklistState, citationUse, deriveSentences, draftBlockers, draftCounts, notesText, type Recheck } from '../domain/draft';
+import { browserStorage, draftKey, loadDraft, saveDraft } from '../domain/draftStore';
 import { defaultEvidenceType, evidenceTypeOptions, selectEvidenceType } from '../domain/evidenceTypes';
 import type { ActionCode, CaseFile, ContradictionResolution, EvidenceType } from '../domain/types';
 import { replayStepMs, useRecording } from './recording';
@@ -43,8 +44,10 @@ export interface CaseDraftOptions {
   /** Evidence has been recorded by PayPal for this dispute. */
   submitted: boolean;
   onAudit: (who: string, what: string) => void;
-  /** Who is acting in this browser (actorName): named on what they resolve here. */
+  /** Who is acting in this browser (actorName): named on what they edit and resolve here. */
   actor: string;
+  /** Whose draft this is in this browser's storage: the signed-in person's id, or "local". */
+  scope: string;
   /** The real analysis behind `c` (see useAnalysis). */
   analysis: AnalysisHandle;
 }
@@ -102,6 +105,26 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     reset();
   }, [identity, reset]);
 
+  // The draft as this person left it for this analysis survives a reload (domain/draftStore). Restored once per key,
+  // after the reset above; saved on every change after that.
+  const storeKey = ready ? draftKey({ scope: opts.scope, caseId: c.summary.id, analysis: identity }) : null;
+  const hydrated = useRef<string | null>(null);
+  useEffect(() => {
+    if (!storeKey || hydrated.current === storeKey) return;
+    hydrated.current = storeKey;
+    const saved = loadDraft(browserStorage(), storeKey);
+    if (!saved) return;
+    setEdits(saved.edits);
+    setRechecks(saved.rechecks);
+    setResolutions(saved.resolutions);
+    setAction(saved.action);
+    if (saved.evidenceType) setEvidenceType(saved.evidenceType);
+  }, [storeKey]);
+  useEffect(() => {
+    if (!storeKey || hydrated.current !== storeKey) return;
+    saveDraft(browserStorage(), storeKey, { edits, rechecks, resolutions, action, evidenceType });
+  }, [storeKey, edits, rechecks, resolutions, action, evidenceType]);
+
   const recheck = opts.analysis.recheck;
   const input = ready ? an.input : null;
   const saveEdit = useCallback(
@@ -119,7 +142,7 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
       });
       setEditing(null);
       setChecking(id);
-      onAudit('Alex Moreno', why ?? `Edited sentence ${num}`);
+      onAudit(actor, why ?? `Edited sentence ${num}`);
       // The edit is verified by the model on the server: citations chosen again, support judged from them.
       void recheck(t).then(
         (r) => {
@@ -143,7 +166,7 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
         },
       );
     },
-    [c, onAudit, recheck, input],
+    [c, onAudit, actor, recheck, input],
   );
 
   const explain = useCallback(
