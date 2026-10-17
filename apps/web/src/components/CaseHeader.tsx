@@ -96,6 +96,11 @@ export function CaseHeader({ view: v, statusHighlight = false, processing = fals
             <>
               <span className="text-[14px] font-medium">{v.due.at}</span>
               <span className="font-mono text-caption font-medium leading-[1.3] text-ink-2">{v.due.left}</span>
+              {v.dueClock && (
+                <span title="Simulated cases keep their dates: the time left is counted from this instant, so they read the same any day." className="text-[11.5px] text-info">
+                  {v.dueClock}
+                </span>
+              )}
             </>
           ) : (
             <>

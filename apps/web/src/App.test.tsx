@@ -26,6 +26,8 @@ describe('routes render without errors', () => {
     expect(html).toContain('8 disputes · 5 waiting for you · 2 due within 48 h · 1 new, still processing at PayPal');
     expect(html).toContain('Needs my approval');
     expect(html).toContain('Search disputes');
+    // All eight run on the simulator here: the inbox says their due times are on the demo clock.
+    expect(html).toContain('Simulated disputes run on a demo clock (8 Oct 2026 19:00 UTC), so their due times read the same any day.');
   });
 
   it('standard case file', () => {

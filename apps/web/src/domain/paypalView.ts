@@ -12,7 +12,7 @@
 import { utcDate, utcDateTime, type PayPalSource } from '@resolvekit/cases';
 import { bindingMismatch, moneyText } from './binding';
 import type { GatewayMode } from './httpGateway';
-import { dueHours, formatDue, formatDueAt, outcomeText, type InboxDispute } from './inbox';
+import { DEMO_CLOCK_TEXT, dueHours, formatDue, formatDueAt, outcomeText, type InboxDispute } from './inbox';
 import { hasSellerEvidence } from './recorded';
 import type { DisputeSnapshot, DisputeStatus, DisputeSummary } from './types';
 
@@ -102,6 +102,8 @@ export interface HeaderView {
   statusEmpty: string;
   statusDetail: string;
   due: { at: string; left: string } | null;
+  /** A simulated case's due time is on the demo clock: "on the demo clock · 8 Oct 2026 19:00 UTC"; null on PayPal's. */
+  dueClock: string | null;
   /** Shown when there is no due date: the reason, never a stale date. */
   dueEmpty: { text: string; sub: string | null };
   transactionId: string;
@@ -140,6 +142,7 @@ function fromDemo(s: DisputeSummary, status: DisputeStatus, statusDetail: string
     statusEmpty: '',
     statusDetail,
     due: s.respondBy ? { at: s.respondBy, left: s.timeLeft ?? '' } : null,
+    dueClock: s.respondBy ? `on the demo clock · ${DEMO_CLOCK_TEXT}` : null,
     dueEmpty: settled ? noSellerDeadline(snap!) : { text: 'Set when it opens', sub: null },
     transactionId: s.transactionId,
     transactionText: s.captureText,
@@ -162,6 +165,7 @@ function withoutPayPal(why: string, notice: HeaderView['notice']): HeaderView {
     statusEmpty: why,
     statusDetail: why,
     due: null,
+    dueClock: null,
     dueEmpty: { text: '—', sub: why },
     transactionId: '—',
     transactionText: why,
@@ -204,6 +208,7 @@ export function caseHeaderView({ summary, source, simulatedStatus, statusDetail,
         statusEmpty: '',
         statusDetail: source.failed ? `${statusDetail} · saved` : statusDetail,
         due: s.respondBy && h != null ? { at: utcDate(s.respondBy) ?? s.respondBy, left: `${formatDue(h)} left` } : null,
+        dueClock: null,
         dueEmpty: noSellerDeadline(s),
         transactionId: tx?.id ?? '—',
         transactionText: tx

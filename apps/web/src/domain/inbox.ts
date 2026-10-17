@@ -3,6 +3,7 @@
  * text, the saved-filter chips (as AG Grid filter models), the "Totals at risk" row and how a fresh read
  * from PayPal changes a row.
  */
+import { utcDateTime } from '@resolvekit/cases';
 import { STAGE_LABEL } from './status';
 import { hasSellerEvidence } from './recorded';
 import type { BuyerItemType, DisputeSnapshot, DisputeStatus } from './types';
@@ -242,6 +243,22 @@ export function computeTotals(rows: Iterable<InboxGridRow>): TotalsRow {
 export const TOTALS_STATUSES: readonly DisputeStatus[] = ['WAITING_FOR_SELLER_RESPONSE', 'UNDER_REVIEW', 'WAITING_FOR_BUYER_RESPONSE'];
 
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * The demo clock: the synthetic disputes' due times are computed from this instant, so they read the same whenever
+ * the demo runs (their documents are dated around it). Bound disputes use PayPal's dates and the real clock.
+ */
+export const DEMO_CLOCK = new Date('2026-10-08T19:00:00Z');
+/** "8 Oct 2026 19:00 UTC". */
+export const DEMO_CLOCK_TEXT = utcDateTime(DEMO_CLOCK.toISOString())!;
+
+/** Said next to the inbox when some rows run on the demo clock; null when none do. */
+export function clockNote(n: { simulated: number; bound: number }): string | null {
+  if (n.simulated === 0) return null;
+  return n.bound > 0
+    ? `Simulated disputes run on a demo clock (${DEMO_CLOCK_TEXT}); the ${n.bound} on real PayPal ${n.bound === 1 ? 'uses' : 'use'} PayPal’s dates.`
+    : `Simulated disputes run on a demo clock (${DEMO_CLOCK_TEXT}), so their due times read the same any day.`;
+}
 
 /** "8 disputes · 5 waiting for you · 2 due within 48 h · 1 new, still processing at PayPal". */
 export function inboxSummary(rows: readonly InboxGridRow[]): string {

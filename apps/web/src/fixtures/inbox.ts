@@ -1,11 +1,11 @@
-import type { InboxDispute } from '../domain/inbox';
+import { DEMO_CLOCK, type InboxDispute } from '../domain/inbox';
 import type { ActionCode, DisputeSummary } from '../domain/types';
 
 /**
- * The demo clock for the synthetic disputes: due times are computed from this instant, so the inbox reads
- * the same whenever the demo runs ("now" = 8 Oct 2026 19:00 UTC, as in the design).
+ * The demo clock for the synthetic disputes (domain/inbox.ts): due times are computed from this instant, so the
+ * inbox reads the same whenever the demo runs, and the app says so.
  */
-export const DEMO_NOW = new Date('2026-10-08T19:00:00Z');
+export const DEMO_NOW = DEMO_CLOCK;
 
 /**
  * The eight synthetic disputes in the inbox. Due dates agree with the case files' "time left"; readiness is the

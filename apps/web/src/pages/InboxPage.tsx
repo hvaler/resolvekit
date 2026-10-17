@@ -5,7 +5,7 @@ import { AppBar } from '../components/AppBar';
 import { InboxGrid } from '../components/inbox/InboxGrid';
 import { PayPalNotices } from '../components/PayPalNotices';
 import { cx } from '../components/ui';
-import { CHIPS, applySnapshot, chipCounts, inboxSummary, toGridRow, type ChipKey, type InboxGridRow } from '../domain/inbox';
+import { CHIPS, applySnapshot, chipCounts, clockNote, inboxSummary, toGridRow, type ChipKey, type InboxGridRow } from '../domain/inbox';
 import { boundInboxRow, payPalSource } from '../domain/paypalView';
 import { DEMO_NOW, inbox } from '../fixtures';
 
@@ -13,21 +13,26 @@ import { DEMO_NOW, inbox } from '../fixtures';
  * Inbox rows. A dispute bound to real PayPal takes every PayPal field from PayPal (or "—" while reading / when
  * unreachable) and its due time from the real clock; the synthetic ones take the simulator's read on the demo clock.
  */
-function useRows(): InboxGridRow[] {
+function useRows(): { rows: InboxGridRow[]; clock: { simulated: number; bound: number } } {
   const { snapshots, modeOf, modeKnown, readErrors } = useServices();
-  return useMemo(
-    () =>
-      inbox.map((d) => {
-        const src = payPalSource(modeKnown ? modeOf(d.id) : null, snapshots[d.id], readErrors[d.id]);
-        if (src.kind === 'simulated' || src.kind === 'checking') return toGridRow(applySnapshot(d, snapshots[d.id]), DEMO_NOW);
-        return toGridRow(boundInboxRow(d, src), new Date());
-      }),
-    [snapshots, modeOf, modeKnown, readErrors],
-  );
+  return useMemo(() => {
+    const clock = { simulated: 0, bound: 0 };
+    const rows = inbox.map((d) => {
+      const src = payPalSource(modeKnown ? modeOf(d.id) : null, snapshots[d.id], readErrors[d.id]);
+      if (src.kind === 'simulated' || src.kind === 'checking') {
+        clock.simulated++;
+        return toGridRow(applySnapshot(d, snapshots[d.id]), DEMO_NOW);
+      }
+      clock.bound++;
+      return toGridRow(boundInboxRow(d, src), new Date());
+    });
+    return { rows, clock };
+  }, [snapshots, modeOf, modeKnown, readErrors]);
 }
 
 export function InboxPage() {
-  const rows = useRows();
+  const { rows, clock } = useRows();
+  const note = clockNote(clock);
   const navigate = useNavigate();
   const { snapshots, sync, refreshAll, modeKnown } = useServices();
   // Rows are hidden until it is known which disputes are real PayPal ones, so no demo value stands in for PayPal's.
@@ -58,7 +63,10 @@ export function InboxPage() {
             <h1 className="m-0 text-title-lg">Disputes</h1>
             <span className="text-[13.5px] text-ink-2">{modeKnown ? inboxSummary(rows) : 'Loading disputes…'}</span>
           </div>
-          <span className="text-[12.5px] text-ink-3">Sorted by due date. New disputes can take a few minutes to appear and to open.</span>
+          <div className="flex flex-col items-end gap-[3px] text-right max-md:items-start max-md:text-left">
+            <span className="text-[12.5px] text-ink-3">Sorted by due date. New disputes can take a few minutes to appear and to open.</span>
+            {modeKnown && note && <span className="text-[12px] text-info">{note}</span>}
+          </div>
         </div>
 
         <PayPalNotices />

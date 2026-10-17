@@ -268,3 +268,18 @@ describe('inbox row of a bound dispute', () => {
     expect(withUnread.n).toBe(base.n + 1);
   });
 });
+
+describe('the demo clock', () => {
+  it('a simulated case says its due time is on the demo clock, with the instant', () => {
+    const v = header({ kind: 'simulated' });
+    expect(v.dueClock).toBe('on the demo clock · 8 Oct 2026 19:00 UTC');
+    const html = renderToString(createElement(CaseHeader, { view: v }));
+    expect(html).toContain('on the demo clock · 8 Oct 2026 19:00 UTC');
+  });
+
+  it('a bound case’s due time is PayPal’s, on the real clock: no demo-clock line', () => {
+    const v = header(live(waiting()));
+    expect(v.dueClock).toBeNull();
+    expect(renderToString(createElement(CaseHeader, { view: v }))).not.toContain('demo clock');
+  });
+});

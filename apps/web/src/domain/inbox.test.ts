@@ -3,6 +3,7 @@ import { DEMO_NOW, caseFiles, inbox, initialSnapshots, processingOpening } from 
 import { goldenAnalyses } from '../fixtures/golden';
 import {
   CHIPS,
+  clockNote,
   applySnapshot,
   chipCounts,
   chipFilterModel,
@@ -182,5 +183,13 @@ describe('applying a fresh read from PayPal', () => {
 
   it('shows PayPal’s CHARGEBACK stage as "Claim"', () => {
     expect(row('PP-R-BLW-10187733').stageLabel).toBe('Claim');
+  });
+});
+
+describe('the demo clock note', () => {
+  it('says which rows run on the demo clock and which on PayPal’s, only when there are simulated rows', () => {
+    expect(clockNote({ simulated: 7, bound: 1 })).toBe('Simulated disputes run on a demo clock (8 Oct 2026 19:00 UTC); the 1 on real PayPal uses PayPal’s dates.');
+    expect(clockNote({ simulated: 8, bound: 0 })).toBe('Simulated disputes run on a demo clock (8 Oct 2026 19:00 UTC), so their due times read the same any day.');
+    expect(clockNote({ simulated: 0, bound: 2 })).toBeNull();
   });
 });
