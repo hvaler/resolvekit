@@ -41,7 +41,29 @@ both sources) in the draft, or **Mark resolved…** records your note in the aud
 its document. The verifier may also mark a sentence **Needs review** (it says why): **Rephrase to what the evidence
 shows** rewrites it and checks it again, live. The bar above the send button lists what is still open.
 
-**4. Approve and send to real PayPal.** Click **Review what will be sent →** (signed in through your reviewer link:
+**4. Add your own evidence.** In the seller's workspace (open as the reviewer through your link) the case file has
+**+ Add evidence**. Upload a screenshot (PNG or JPEG, up to 5 MB) or paste text, for example an email thread. Nothing
+you add leaves the ResolveKit server yet: the text is read on the server itself (local OCR for images), not by Google,
+Groq or PayPal. **Cover what must not leave** (an account number, a balance, an unrelated line): on an image, drag
+rectangles over it; on pasted text, select the passages to remove. The covered areas are burned into the sanitised
+file and the text under them is dropped. **Read again**: the page shows the text read from the sanitised file; you
+can **correct** a line the OCR misread (the correction is kept and shown with your name) and then **Confirm** (or
+**Discard**: an unconfirmed upload is deleted by itself after 24 hours). A confirmed upload becomes the next
+evidence number (E7, E8…). The case file says the analysis has not read it yet: press **Re-run with AI** (30–60 s), and the new analysis includes it and can cite it, in the same way as the demo documents:
+hover a citation to see the exact words in the uploaded text. A sentence that rests on a line you corrected asks for
+your explicit confirmation before it can be sent. When you send, PayPal receives the sanitised file (the PNG, or a
+PDF made from pasted text) with the rest of the evidence on the bound case. Uploads belong to the workspace, so
+they stay for the next person until the case moves to its next sandbox dispute (they are then archived), and a full
+member can delete one at any time (a reviewer can only discard their own before confirming).
+
+*Real vs synthetic.* What you upload is yours, and it is real in what it does: it is read, redacted, cited and sent
+to the PayPal sandbox. The case around it (order, tracking, buyer message) is still synthetic, so a screenshot that
+contradicts the demo documents will show as a contradiction. Please do not upload personal data you care about: the
+PayPal side is a sandbox, and the app is a demo. *Limits:* up to 10 uploads per case, 5 MB and 4096 px (16 MP) per
+image, 20,000 characters of pasted text, 5 redactions per upload, 40 uploads per day in total; the AI-read analysis
+counts against the live-run limits below.
+
+**5. Approve and send to real PayPal.** Click **Review what will be sent →** (signed in through your reviewer link:
 the review is composed by the server for you, and the approval names you). The review shows exactly what the server
 will send, composed on the server from its own copy of the documents and the analysis (supported sentences only,
 with the intent id and content hash), next to the claim ↔ proof list. **Continue to confirm**, tick the approval box
@@ -54,7 +76,7 @@ case has a reserve of fresh sandbox disputes: about 15 minutes after a judge's e
 to the next one (the top bar shows its id). If it still shows **Evidence recorded by PayPal**, another judge sent it
 minutes ago: you can see the read-back, come back shortly, or walk the whole flow on the simulated cases.
 
-**5. The agent-purchase case.** Open **PP-R-MMC-10190702**: a buyer disputes a payment an AI agent made through
+**6. The agent-purchase case.** Open **PP-R-MMC-10190702**: a buyer disputes a payment an AI agent made through
 MeterMCP. The mandate, the per-call receipt (one failed call, not charged) and the settlement come from MeterMCP's real
 ledger ("From MeterMCP · session …"); the evidence goes to PayPal as digital delivery referenced by the session id,
 with the receipt PDF.
@@ -64,10 +86,10 @@ with the receipt PDF.
 "unauthorised" booking whose evidence is already recorded (PP-R-QZE-10181290: read-back, draft locked) and a closed
 case resolved in the seller's favour (PP-R-HFA-10176021: outcome, what was sent, no actions).
 
-**6. Optional: re-run the AI.** As a member of the workspace, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
+**7. Optional: re-run the AI.** As a member of the workspace, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
 its stages; editing a sentence sends it to the AI verifier, which re-chooses its citations and judges it again.
 
-**7. Optional: MeterMCP from your own MCP client.** MeterMCP is a metered MCP server at **<METERMCP_URL>/mcp**
+**8. Optional: MeterMCP from your own MCP client.** MeterMCP is a metered MCP server at **<METERMCP_URL>/mcp**
 (Streamable HTTP). MCP clients cannot sign in with a browser, so MeterMCP takes a code: add the HTTP header
 **`x-demo-code: <DEMO_CODE>`** in your client (e.g. MCP Inspector:
 Transport "Streamable HTTP", URL above, header under Authentication/Headers). Free tools (`price_list`,

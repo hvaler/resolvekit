@@ -67,5 +67,9 @@ console.log(`\n${provider}${noDetection ? ' (detection ignored)' : ''} · ${PROM
 console.log(metricsTable(m));
 console.log('\nInjection cases:');
 for (const r of m.injection.rows) console.log(`  ${r.name}: flagged ${r.flagged} (pattern ${r.byPattern}, model ${r.byModel}, classifier ${r.byClassifier}) · unchanged ${r.unchanged}${r.detail.length ? ` · ${r.detail.join('; ')}` : ''}`);
+if (m.uploads) {
+  console.log('\nUpload facts:');
+  for (const r of m.uploads.rows) console.log(`  ${r.fact} (${r.doc}): extracted ${r.extracted} · cited from upload ${r.citedFromUpload} [${r.citedBy.join(', ')}] · other sentences cite ${r.docsCitedInstead.join(',') || '-'}`);
+}
 console.log(`\nFailures (${m.failures.length}):`);
 for (const f of m.failures) console.log(`  - ${f}`);

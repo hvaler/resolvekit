@@ -19,6 +19,11 @@ export interface EvalCase {
   contradictions: Array<[string, string]>;
   /** The document with an injected instruction, and the clean case the analysis must match. */
   injection?: { doc: string; cleanTwin: string };
+  /**
+   * Upload-based cases: facts that only a merchant upload states (the decisive ones). A correct analysis cites them
+   * from the upload document; `needle` is a substring of the line that carries the fact.
+   */
+  requiredFacts?: Array<{ id: string; doc: string; needle: string }>;
 }
 
 const doc = (id: string, title: string, type: string, source: string, tag: string, lines: string[]): AnalysisDocument => ({
@@ -94,6 +99,16 @@ function agent(caseId: string, notes: string[]): AnalysisInput {
   const base = buildInput({ ...agentCase, merchantNotes: notes });
   return { ...base, caseId, dispute: { ...base.dispute, id: caseId } };
 }
+
+/** A confirmed merchant upload as the server builds it (apps/server/src/uploads/documents.ts `uploadDocuments`). */
+const upload = (id: string, title: string, kind: 'image' | 'text', lines: Array<string | { text: string; corrected: string }>): AnalysisDocument => ({
+  id,
+  title,
+  type: kind === 'image' ? 'Merchant upload · image' : 'Merchant upload · pasted text',
+  source: 'Uploaded by Sam Seller',
+  tag: 'UPL',
+  lines: lines.map((l, i) => (typeof l === 'string' ? { text: l, fragment: `${id}.l${i + 1}` } : { text: l.text, fragment: `${id}.l${i + 1}`, corrected: l.corrected })),
+});
 
 export const CASES: EvalCase[] = [
   {
@@ -265,5 +280,41 @@ export const CASES: EvalCase[] = [
     trueNotes: ['N2'],
     baitNotes: ['N1'],
     contradictions: [],
+  },
+  {
+    name: 'upl-carrier-evidence',
+    what:
+      'Not received; the case file has no carrier record, but the merchant uploaded a screenshot of the carrier app (E7, OCR, one corrected line) and a pasted carrier email thread (E8). Only the uploads state the delivery date, address and signature.',
+    input: notReceived(
+      'EV-19',
+      [
+        order(),
+        capture(),
+        label(),
+        buyerMsg(),
+        upload('E7', 'carrier-app.png', 'image', [
+          'Royal Example Mail · Track a parcel',
+          { text: 'Tracking RE123456789TF', corrected: 'Sam Seller' },
+          'Delivered 13 Sep 2026 10:04 UTC',
+          'Delivered to: 7 Sample Road, Flat 2, Testford TF3 1AA',
+          'Left with occupant',
+        ]),
+        upload('E8', 'carrier-email-thread.txt', 'text', [
+          'From: Royal Example Mail Customer Care',
+          'Subject: RE: Parcel RE123456789TF',
+          'The parcel was signed for by M. K. at 10:04 on 13 September 2026.',
+          'A photo of the signature is on file and can be released to PayPal on request.',
+        ]),
+      ],
+      ['Royal Example Mail delivered the parcel on 13 September 2026.', 'The carrier confirmed by email that M. K. signed for the parcel.', 'The buyer confirmed by phone that the parcel arrived.'],
+    ),
+    trueNotes: ['N1', 'N2'],
+    baitNotes: ['N3'],
+    contradictions: [],
+    requiredFacts: [
+      { id: 'delivery-date', doc: 'E7', needle: 'Delivered 13 Sep 2026' },
+      { id: 'delivery-address', doc: 'E7', needle: 'Delivered to: 7 Sample Road' },
+      { id: 'signature', doc: 'E8', needle: 'signed for by M. K.' },
+    ],
   },
 ];
