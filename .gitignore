@@ -18,3 +18,6 @@ apps/metermcp/.runtime-token
 
 # Analyst: cached live analyses and the usage log (golden analyses live in packages/analyst/golden)
 apps/server/data/
+
+# Local tooling state (Ovillo hooks)
+_hilo/

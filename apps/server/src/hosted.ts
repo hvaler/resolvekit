@@ -170,7 +170,12 @@ export function createHostedApp(o: HostedOptions): HostedApp {
         return { ok: false, refusal: { status: 403, body: { error: 'SELLER_WORKSPACE_ONLY', detail: LOCKED_REASON[action], action } } };
       }
       const day = o.counters.today();
-      if (!o.counters.take(action)) {
+      const r = o.counters.reserve(action);
+      if (!r.ok && r.reason === 'storage') {
+        o.log?.(`daily caps · ${action} refused · ${o.counters.storageProblem() ?? 'cannot be saved'}`);
+        return { ok: false, refusal: { status: 503, body: { error: 'CAPS_UNAVAILABLE', detail: 'The demo cannot record this action’s use right now, so it is not done; try again later.', action } } };
+      }
+      if (!r.ok) {
         const s = o.counters.state();
         return {
           ok: false,
@@ -238,6 +243,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     for (const m of models ?? []) if (!m.ok) problems.push(`AI model ${m.name}: ${m.error}`);
     if (r.paypal === 'unconfigured') problems.push(`PayPal is not connected${r.error ? ` (${r.error})` : ''}`);
     if (!webhook) problems.push('the PayPal webhook is off (PAYPAL_WEBHOOK_ID / PAYPAL_WEBHOOK_KEY)');
+    const caps = o.counters.storageProblem();
+    if (caps) problems.push(`${caps} (evidence sends, live AI runs and re-checks are refused)`);
     const cases = Object.keys(r.bindings);
     if (cases.length === 0) problems.push('no case is bound to a real PayPal dispute (BINDINGS_JSON)');
     for (const [caseId, b] of Object.entries(r.bindings)) {
@@ -349,8 +356,11 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const log = o.log ?? (() => {});
   const systemGate: LiveGate = () => {
     const day = o.counters.today();
-    if (!o.counters.take('live-analysis')) {
-      return { ok: false, refusal: { status: 429, body: { error: 'DAILY_CAP', detail: 'the daily cap of live analyses is reached' } } };
+    const r = o.counters.reserve('live-analysis');
+    if (!r.ok) {
+      return r.reason === 'storage'
+        ? { ok: false, refusal: { status: 503, body: { error: 'CAPS_UNAVAILABLE', detail: 'the daily caps cannot be saved' } } }
+        : { ok: false, refusal: { status: 429, body: { error: 'DAILY_CAP', detail: 'the daily cap of live analyses is reached' } } };
     }
     return { ok: true, release: () => o.counters.release('live-analysis', day) };
   };

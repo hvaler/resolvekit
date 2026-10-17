@@ -1,4 +1,7 @@
 import { test } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { DailyCounters } from '@resolvekit/hosting';
 import { standardCase } from '@resolvekit/cases';
@@ -24,14 +27,14 @@ function paypal(dispute: () => Dispute = () => ({ ...standardDispute(), dispute_
   return { calls, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { ops?: string | null; webhook?: boolean; dispute?: () => Dispute; probes?: Array<{ name: string; probe: () => Promise<void> }> } = {}) {
+function setup(o: { ops?: string | null; webhook?: boolean; dispute?: () => Dispute; probes?: Array<{ name: string; probe: () => Promise<void> }>; counters?: DailyCounters } = {}) {
   const pp = paypal(o.dispute);
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
     bindings: { [CASE]: { dispute: BOUND, capture: STD_CAPTURE } },
     log: () => {},
-    counters: new DailyCounters({ file: null, limits: { 'live-analysis': 5 } }),
+    counters: o.counters ?? new DailyCounters({ file: null, limits: { 'live-analysis': 5 } }),
     site: null,
     accounts: testAccounts().accounts,
     identity: null,
@@ -149,4 +152,18 @@ test('asked to probe with no model configured: a problem', async () => {
   const s = (await (await app(status(OPS, '?probe=models'))).json()) as Status;
   assert.deepEqual(s.models, []);
   assert.ok(s.problems.some((p) => /no AI model/i.test(p)), s.problems.join(' | '));
+});
+
+test('daily caps that cannot be persisted are a problem (costly actions are refused meanwhile)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-ops-'));
+  try {
+    const file = join(dir, 'caps.json');
+    writeFileSync(file, '{ not json');
+    const { app } = setup({ counters: new DailyCounters({ file, limits: { 'live-analysis': 5 } }) });
+    const s = (await (await app(status(OPS))).json()) as Status;
+    assert.equal(s.ok, false);
+    assert.ok(s.problems.some((p) => /daily caps file is unreadable/.test(p)), s.problems.join(' | '));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

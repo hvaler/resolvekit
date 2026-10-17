@@ -116,7 +116,11 @@ export function createApp(opts: AppOptions): Handler {
     ? (auth) => () => {
         if (!auth?.scopes.includes('open_budget')) return { ok: false, answer: answer({ error: 'demo_code_required', message: DEMO_REQUIRED }, true) };
         const day = h.budgets.today();
-        if (!h.budgets.take('budget')) {
+        const r = h.budgets.reserve('budget');
+        if (!r.ok && r.reason === 'storage') {
+          return { ok: false, answer: answer({ error: 'caps_unavailable', message: 'The demo cannot record a new budget right now, so none is opened; try again later.' }, true) };
+        }
+        if (!r.ok) {
           const st = h.budgets.state();
           return { ok: false, answer: answer({ error: 'daily_cap', message: `This demo creates at most ${st.caps.budget?.limit ?? 0} budgets per day; the cap resets at ${st.resetsAt}.` }, true) };
         }

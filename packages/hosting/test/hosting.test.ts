@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -243,4 +243,48 @@ test('env guard: hosted mode starts only on PAYPAL_ENV=sandbox; live needs the e
   const values = [...yaml.matchAll(/key: PAYPAL_ENV\s*\n\s*value: (\S+)/g)].map((m) => m[1]);
   assert.deepEqual(values, ['sandbox', 'sandbox']);
   assert.ok(!yaml.includes(LIVE_OPT_IN.name));
+});
+
+test('DailyCounters: a reservation that cannot be saved is undone and refused (fails closed)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-counters-'));
+  try {
+    // The caps file's directory is a file: every write fails.
+    const blocker = join(dir, 'not-a-dir');
+    writeFileSync(blocker, 'x');
+    const c = new DailyCounters({ file: join(blocker, 'caps.json'), limits: { live: 2 } });
+    const r = c.reserve('live');
+    assert.equal(r.ok, false);
+    assert.equal(!r.ok && r.reason, 'storage');
+    assert.equal(c.take('live'), false);
+    assert.equal(c.remaining('live'), 2);
+    assert.match(c.storageProblem() ?? '', /cannot be saved/);
+    // The disk comes back: the next reservation is saved and goes through.
+    rmSync(blocker);
+    assert.deepEqual(c.reserve('live'), { ok: true });
+    assert.equal(c.storageProblem(), null);
+    assert.equal(new DailyCounters({ file: join(blocker, 'caps.json'), limits: { live: 2 } }).remaining('live'), 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('DailyCounters: an unreadable caps file refuses every reservation and is left as it is', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-counters-'));
+  try {
+    const file = join(dir, 'caps.json');
+    writeFileSync(file, '{ not json');
+    const c = new DailyCounters({ file, limits: { live: 2 } });
+    const r = c.reserve('live');
+    assert.equal(!r.ok && r.reason, 'storage');
+    assert.match(c.storageProblem() ?? '', /unreadable/);
+    assert.equal(readFileSync(file, 'utf8'), '{ not json');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('DailyCounters: the cap is reported as such, apart from storage', () => {
+  const c = new DailyCounters({ file: null, limits: { live: 1 } });
+  assert.deepEqual(c.reserve('live'), { ok: true });
+  assert.deepEqual(c.reserve('live'), { ok: false, reason: 'cap' });
 });

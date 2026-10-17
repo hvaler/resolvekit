@@ -223,22 +223,41 @@ export class DailyCounters {
   readonly limits: Readonly<Record<string, number>>;
   private day = '';
   private counts: Record<string, number> = {};
+  /**
+   * Why reservations are refused now (fail closed): the file was there but unreadable at start (kept as it is, so
+   * what was used today is not lost by overwriting it), or the last save failed (each reservation tries again).
+   */
+  private broken: { kind: 'unreadable' | 'unsaved'; detail: string } | null = null;
 
   constructor(o: { file: string | null; limits: Record<string, number>; now?: () => Date }) {
     this.file = o.file;
     this.limits = { ...o.limits };
     this.now = o.now ?? (() => new Date());
     if (this.file) {
+      let text: string | null = null;
       try {
-        const saved = JSON.parse(readFileSync(this.file, 'utf8')) as { day?: unknown; counts?: unknown };
-        if (typeof saved.day === 'string' && saved.counts && typeof saved.counts === 'object') {
-          this.day = saved.day;
-          for (const [k, v] of Object.entries(saved.counts)) if (Number.isSafeInteger(v) && (v as number) >= 0) this.counts[k] = v as number;
+        text = readFileSync(this.file, 'utf8');
+      } catch (e) {
+        // No file yet: start at zero. Any other read error: what was used today is unknown.
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') this.broken = { kind: 'unreadable', detail: `the daily caps file is unreadable (${(e as Error).message})` };
+      }
+      if (text != null) {
+        try {
+          const saved = JSON.parse(text) as { day?: unknown; counts?: unknown };
+          if (typeof saved.day === 'string' && saved.counts && typeof saved.counts === 'object') {
+            this.day = saved.day;
+            for (const [k, v] of Object.entries(saved.counts)) if (Number.isSafeInteger(v) && (v as number) >= 0) this.counts[k] = v as number;
+          }
+        } catch {
+          this.broken = { kind: 'unreadable', detail: 'the daily caps file is unreadable (not JSON): fix or remove it' };
         }
-      } catch {
-        // No file yet (or unreadable): start at zero.
       }
     }
+  }
+
+  /** Why costly actions are refused regardless of the caps (null: the caps file is fine). */
+  storageProblem(): string | null {
+    return this.broken?.detail ?? null;
   }
 
   private roll() {
@@ -260,10 +279,22 @@ export class DailyCounters {
    * memory on every change, so no update is lost (one process owns the file).
    */
   take(name: string): boolean {
-    if (this.remaining(name) <= 0) return false;
+    return this.reserve(name).ok;
+  }
+
+  /**
+   * {@link take}, saying why it was refused: today's cap, or the caps cannot be persisted. A reservation is counted
+   * only once it is on disk: if saving fails it is undone and refused, so a restart can never forget a costly action.
+   */
+  reserve(name: string): { ok: true } | { ok: false; reason: 'cap' | 'storage' } {
+    if (this.broken?.kind === 'unreadable') return { ok: false, reason: 'storage' };
+    if (this.remaining(name) <= 0) return { ok: false, reason: 'cap' };
     this.counts[name] = (this.counts[name] ?? 0) + 1;
-    this.save();
-    return true;
+    if (!this.save()) {
+      this.counts[name]! -= 1;
+      return { ok: false, reason: 'storage' };
+    }
+    return { ok: true };
   }
 
   /** Refund one taken on `day` (the action did not happen). A refund for an earlier day is dropped: it was reset. */
@@ -290,15 +321,21 @@ export class DailyCounters {
     return { day: this.day, resetsAt: next.toISOString(), caps };
   }
 
-  private save() {
-    if (!this.file) return;
+  /** Whether the counts are on disk now. An unreadable file is never overwritten (it may hold today's use). */
+  private save(): boolean {
+    if (!this.file) return true;
+    if (this.broken?.kind === 'unreadable') return false;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
       const tmp = `${this.file}.tmp`;
       writeFileSync(tmp, JSON.stringify({ day: this.day, counts: this.counts }));
       renameSync(tmp, this.file);
-    } catch {
-      // Best effort: the in-memory count still applies until the next restart.
+      this.broken = null;
+      return true;
+    } catch (e) {
+      // A refund that is not saved only leaves the file counting one more: on the safe side.
+      this.broken = { kind: 'unsaved', detail: `the daily caps cannot be saved (${(e as NodeJS.ErrnoException).code ?? (e as Error).message}): costly actions are refused until they can` };
+      return false;
     }
   }
 }
