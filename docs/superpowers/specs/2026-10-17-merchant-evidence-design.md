@@ -1,6 +1,6 @@
 # Merchant evidence: upload, redact, confirm, cite — design
 
-Date: 2026-10-17 · Status: decisions taken; document pending the user's read · Block B, part 1 of the PayPal AI Hackathon work
+Date: 2026-10-17 · Status: approved by the user (with the independent review's changes) · Block B, part 1 of the PayPal AI Hackathon work
 (`C:\nexus\dev\PayPalAI\docs\08-EVALUACION-JURADO-2026-10-17.md`).
 
 ## Why
@@ -87,6 +87,49 @@ analyst cite them with their exact words, as it cites the demo documents today.
 - **Deleting an upload also purges** the stored analyses, pins and progress records whose input contained it (they
   quote its text); the audit trail keeps the event, not the text. A reviewer's uploads stay when their access ends
   (they are the workspace's).
+
+## After the independent review (17/10) — supersedes the text above where they differ
+
+Review: `Recomendacion_Merchant_Evidence_2026-10-17.md` (user's). Accepted by the user:
+
+- **Corrections need an explicit confirmation of what depends on them.** A sentence whose support rests on a
+  merchant-corrected line may be sent, but only after the person confirms it specifically ("depends on your
+  correction of line N of E7: confirm"), one click; that confirmation is part of the approval. (Replaces "can be
+  supported and sent" above.) During review the reference extraction and the corrected text are both kept, with the
+  diff and its author; the reference never keeps text the person covered.
+- **Provenance visible all the way.** Demo documents stay in the case with uploads (this part is the seller's demo),
+  but every citation, the draft and the final review before sending show what each document is: "synthetic demo
+  document" or "uploaded by <person>" (and "corrected by <person>" where it applies). Separating real cases from
+  fixtures entirely is Block B part 2.
+- **Phased, nothing cut.** Phase 1: images (PNG, JPG) and pasted text, the whole path implemented, tested and sent to
+  the sandbox. Phase 2, right after, in the same block: PDFs (text and scanned, multi-page), with their own
+  sanitisation guarantees.
+
+Accepted by the assistant (no user decision changed):
+
+- **One sanitised version is the source of truth.** Rectangles are applied to the image/pages and the sanitised file
+  is generated first; the text the AI reads is **extracted again from that sanitised file** (then corrected), never
+  derived by removing OCR words under boxes. A number the OCR never recognised is still covered in the pixels. PDFs
+  are rebuilt from rasterised pages: no text layer, metadata, annotations or embedded files of the original survive.
+  The files sent are exactly the approved ones, checked by SHA-256.
+- **`boundDisputeId` in the data model**, plus an archived state. The binding is checked at confirmation, when
+  composing the intent and at send: an upload pending before a rotation can never be confirmed as evidence of the new
+  dispute; archived uploads never enter an analysis or a send.
+- **Explicit attachment selection in the final review** (replaces "PayPal receives every confirmed upload"): proposed
+  from the cited uploads, changeable by the person, within PayPal's file limits; the selection and its hashes are
+  covered by the approval.
+- **Pending originals are a bounded exception**: a maximum pending time; originals, page images, thumbnails, OCR text
+  and temporary files are removed on discard, failure, expiry and after a restart (a sweep at start); nothing of an
+  upload's content in logs.
+- **Deletion wins over reuse**: deleting an upload purges stored analyses, pins and progress answers that contain its
+  text; an approved-but-unsent intent using it is invalidated; while a send that uses it is in flight, deletion is
+  refused until the outcome is known; after a send, the audit keeps the event (PayPal keeps its copy), not the text.
+- **Operational limits** include pages, pixel dimensions, processing time per page, concurrent jobs and total
+  storage, set after measuring on Render and checking PayPal's attachment rules in the sandbox.
+- **Confirmed but not analysed**: if no live-analysis quota is left, the upload stays confirmed and the case says the
+  analysis including it is pending; the previous analysis is never shown as if it included the new evidence.
+- **Acceptance tests** of the review's section 5 are part of the plan, and the evals gain upload-based cases
+  (imperfect OCR, corrections, redaction, contradictions), measuring verbatim match and semantic support separately.
 
 ## Assumptions stated by the assistant and accepted by the user
 
