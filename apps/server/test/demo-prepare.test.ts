@@ -14,7 +14,7 @@ import {
   standardOrder,
   type PrepareOptions,
 } from '../scripts/demo-prepare-lib.ts';
-import { parseBindings } from '../src/bindings.ts';
+import { parseBindingPools, parseBindings } from '../src/bindings.ts';
 
 const ok = (argv: string[]) => {
   const o = parseArgs(argv);
@@ -29,7 +29,7 @@ test('demo:prepare args: all steps by default against the hosted MeterMCP; steps
   assert.deepEqual([ok(['--agent']).standard, ok(['--agent']).agent], [false, true]);
   const resume = ok(['--wait-disputes', '--captures', '1AB23456CD789012E,9XY87654ZW321098Q']);
   assert.deepEqual([resume.standard, resume.agent, resume.waitDisputes], [false, false, true]);
-  assert.deepEqual(resume.captures, { standard: '1AB23456CD789012E', agent: '9XY87654ZW321098Q' });
+  assert.deepEqual(resume.captures, { standard: ['1AB23456CD789012E'], agent: '9XY87654ZW321098Q' });
   assert.equal(ok(['--dry-run']).dryRun, true);
   assert.equal(ok(['--agent', '--metermcp', 'http://127.0.0.1:8790/mcp']).meterUrl, 'http://127.0.0.1:8790/mcp');
   assert.equal(ok(['--approval-minutes', '5']).approvalMinutes, 5);
@@ -40,7 +40,7 @@ test('demo:prepare args: all steps by default against the hosted MeterMCP; steps
 
 test('demo:prepare captures: positional (either may be empty or "-") or labelled', () => {
   assert.deepEqual(parseCaptures(',9XY87654ZW321098Q'), { agent: '9XY87654ZW321098Q' });
-  assert.deepEqual(parseCaptures('1AB23456CD789012E,-'), { standard: '1AB23456CD789012E' });
+  assert.deepEqual(parseCaptures('1AB23456CD789012E,-'), { standard: ['1AB23456CD789012E'] });
   assert.deepEqual(parseCaptures('agent=9XY87654ZW321098Q'), { agent: '9XY87654ZW321098Q' });
   assert.ok('error' in parseCaptures('a,b,c'));
   assert.ok('error' in parseCaptures('not a capture'));
@@ -86,4 +86,24 @@ test('demo:prepare BINDINGS_JSON: what is known, and what is missing', () => {
   assert.deepEqual([JSON.parse(one.json), one.missing], [{ [AGENT_CASE_ID]: { dispute: 'PP-R-D0002', capture: 'CAP2BBBBBBBB' } }, [STANDARD_CASE_ID]]);
   // The server reads exactly this format.
   assert.deepEqual(parseBindings(JSON.parse(both.json))[STANDARD_CASE_ID], { dispute: 'PP-R-D0001', capture: 'CAP1AAAAAAAA' });
+});
+
+test('demo:prepare --count N: N standard payments for the reserve (1 by default, at most 20)', () => {
+  assert.equal(ok([]).count, 1);
+  assert.equal(ok(['--standard', '--count', '5']).count, 5);
+  for (const bad of [['--count', '0'], ['--count', '21'], ['--count', 'x'], ['--count'], ['--agent', '--count', '3']]) assert.ok('error' in parseArgs(bad), bad.join(' '));
+});
+
+test('demo:prepare captures: several standard ones joined with +, to wait for a whole reserve', () => {
+  assert.deepEqual(parseCaptures('1AB23456CD789012E+2AB23456CD789012E,9XY87654ZW321098Q'), { standard: ['1AB23456CD789012E', '2AB23456CD789012E'], agent: '9XY87654ZW321098Q' });
+  assert.deepEqual(parseCaptures('standard=1AB23456CD789012E+2AB23456CD789012E'), { standard: ['1AB23456CD789012E', '2AB23456CD789012E'] });
+  assert.ok('error' in parseCaptures('1AB23456CD789012E+1AB23456CD789012E'));
+  assert.ok('error' in parseCaptures(',9XY87654ZW321098Q+8XY87654ZW321098Q'));
+});
+
+test('demo:prepare BINDINGS_JSON: several standard disputes become the case’s list (first active, the rest in reserve)', () => {
+  const pool = bindingsJson({ standard: [{ dispute: 'PP-R-D0001', capture: 'CAP1AAAAAAAA' }, { dispute: 'PP-R-D0003', capture: 'CAP3CCCCCCCC' }] });
+  assert.deepEqual(JSON.parse(pool.json)[STANDARD_CASE_ID], [{ dispute: 'PP-R-D0001', capture: 'CAP1AAAAAAAA' }, { dispute: 'PP-R-D0003', capture: 'CAP3CCCCCCCC' }]);
+  const p = parseBindingPools(JSON.parse(pool.json));
+  assert.deepEqual([p.bindings[STANDARD_CASE_ID]!.dispute, p.reserve[STANDARD_CASE_ID]!.map((b) => b.dispute)], ['PP-R-D0001', ['PP-R-D0003']]);
 });

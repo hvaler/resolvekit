@@ -23,7 +23,7 @@ import { FileAnalysisStore, RateLimiter, modelFromEnv, modelProbesFromEnv } from
 import { AccountStore } from './accounts.ts';
 import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
-import { checkBindings, parseBindings, type Binding } from './bindings.ts';
+import { checkBindings, parseBindingPools, type BindingPools } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
 import { createHostedApp, type HostedApp } from './hosted.ts';
 import { WEBHOOK_KEY } from './webhook.ts';
@@ -53,27 +53,28 @@ const dataDir = process.env.RESOLVEKIT_DATA_DIR ?? fileURLToPath(new URL('../dat
 
 const bindingsFile = process.env.RESOLVEKIT_BINDINGS ?? (hosted ? join(dataDir, 'bindings.json') : fileURLToPath(new URL('../bindings.json', import.meta.url)));
 
-function loadBindings(): Record<string, Binding> {
+function loadBindings(): BindingPools {
   // Hosted: BINDINGS_JSON (a secret env var) wins; otherwise a file. Never from a client.
   if (hosted && process.env.BINDINGS_JSON) {
     try {
-      return parseBindings(JSON.parse(process.env.BINDINGS_JSON));
+      return parseBindingPools(JSON.parse(process.env.BINDINGS_JSON));
     } catch (e) {
       return fail(`BINDINGS_JSON: ${(e as Error).message}`);
     }
   }
   const file = bindingsFile;
   try {
-    return parseBindings(JSON.parse(readFileSync(file, 'utf8')));
+    return parseBindingPools(JSON.parse(readFileSync(file, 'utf8')));
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { bindings: {}, reserve: {} };
     if (hosted) return fail(`bindings file ${file}: ${(e as Error).message}`);
     console.error(`bindings: could not read ${file}: ${(e as Error).message}`);
-    return {};
+    return { bindings: {}, reserve: {} };
   }
 }
 
-const bindings = loadBindings();
+// The active binding of each case and its reserve; both change in place (rotation in app.ts, the watched file below).
+const { bindings, reserve } = loadBindings();
 const port = Number(process.env.PORT ?? (hosted ? 10000 : 8787));
 const host = hosted ? '0.0.0.0' : '127.0.0.1';
 
@@ -166,7 +167,7 @@ if (hosted) {
   });
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
-    paypal, env, bindings, log, meterMcp, analyst, pins, intents, site, counters, accounts, identity, sessionSecret,
+    paypal, env, bindings, reserve, log, meterMcp, analyst, pins, intents, site, counters, accounts, identity, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
@@ -185,14 +186,14 @@ if (hosted) {
   tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('../.runtime-token', import.meta.url));
   writeFileSync(tokenFile, token, { mode: 0o600 });
   const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
-  app = createApp({ paypal, env, bindings, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents });
+  app = createApp({ paypal, env, bindings, reserve, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents });
 }
 
 const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`));
 server.listen(port, host, () => {
   log(`ResolveKit server on http://${host}:${port} · PayPal ${paypal ? env : 'unconfigured'} · ${Object.keys(bindings).length} bound case(s)`);
   log(`Analyst: ${analystConfig ? `${analystConfig.primary.provider}/${analystConfig.primary.model} (providers: ${analystConfig.available.join(', ')})` : 'no model key: stored analyses only'}`);
-  for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}`);
+  for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}${reserve[caseId]?.length ? ` · ${reserve[caseId]!.length} in reserve` : ''}`);
   // Read and verify each bound dispute once in the background (logged); sending verifies again on its own fresh read.
   const cases = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency, transactionId: c.summary.transactionId }]));
   void checkBindings({ paypal, bindings, cases, log });
@@ -205,18 +206,20 @@ server.listen(port, host, () => {
 const watchBindings = hosted && !process.env.BINDINGS_JSON;
 if (watchBindings) {
   watchFile(bindingsFile, { interval: 30_000 }, () => {
-    let next: Record<string, Binding>;
+    let next: BindingPools;
     try {
-      next = parseBindings(JSON.parse(readFileSync(bindingsFile, 'utf8')));
+      next = parseBindingPools(JSON.parse(readFileSync(bindingsFile, 'utf8')));
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') next = {};
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') next = { bindings: {}, reserve: {} };
       else return log(`bindings file changed but is invalid, kept the old bindings: ${(e as Error).message}`);
     }
-    if (JSON.stringify(next) === JSON.stringify(bindings)) return;
+    if (JSON.stringify(next) === JSON.stringify({ bindings, reserve })) return;
     for (const k of Object.keys(bindings)) delete bindings[k];
-    Object.assign(bindings, next);
+    for (const k of Object.keys(reserve)) delete reserve[k];
+    Object.assign(bindings, next.bindings);
+    Object.assign(reserve, next.reserve);
     log(`bindings changed · ${Object.keys(bindings).length} bound case(s)`);
-    for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}`);
+    for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}${reserve[caseId]?.length ? ` · ${reserve[caseId]!.length} in reserve` : ''}`);
     void hostedApp?.bindingsChanged();
   });
 }

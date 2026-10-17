@@ -61,7 +61,7 @@ async function main() {
     meter: { healthz: meterHealthz.status },
   };
   const r = evaluate(observed);
-  for (const l of r.lines) console.log(`  ${l.ok ? 'PASS' : 'FAIL'}  ${l.what}${l.detail ? ` · ${l.detail}` : ''}`);
+  for (const l of r.lines) console.log(`  ${!l.ok ? 'FAIL' : l.warn ? 'WARN' : 'PASS'}  ${l.what}${l.detail ? ` · ${l.detail}` : ''}`);
   console.log(r.ok ? '[demo:check] READY: a judge can use the demo now.' : '[demo:check] NOT READY: fix the FAIL lines above.');
   process.exitCode = r.ok ? 0 : 1;
 }

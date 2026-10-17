@@ -17,7 +17,10 @@ export interface PrepareOptions {
   agent: boolean;
   /** (d) wait for the disputes on these captures (from this run or `--captures`). */
   waitDisputes: boolean;
-  captures: { standard?: string; agent?: string };
+  /** Standard captures (several: a reserve of disputes for the same case) and the agent's. */
+  captures: { standard?: string[]; agent?: string };
+  /** (a) how many standard payments to create: each becomes one dispute of the case's reserve. */
+  count: number;
   dryRun: boolean;
   meterUrl: string;
   appUrl: string;
@@ -35,7 +38,8 @@ Steps (default: all of them, in order)
   --standard                 (a) Orders v2 CAPTURE order for the standard case; approve it; it is captured
   --agent                    (b) the demo agent against MeterMCP (budget approval, 4 calls, one fails, close)
   --wait-disputes            (d)+(e) wait for the disputes on the captures, then print BINDINGS_JSON
-  --captures STD,AGENT       captures to wait for (either may be empty or "-"), e.g. --captures 1AB...,
+  --count N                  (a) N standard payments (1-20): N disputes for the case's reserve
+  --captures STD,AGENT       captures to wait for (either may be empty or "-"; several standard ones joined with +), e.g. --captures 1AB...,
                              or --captures standard=1AB...,agent=9XY...
 
 Options
@@ -55,6 +59,7 @@ export function parseArgs(argv: readonly string[]): PrepareOptions | { error: st
     agent: false,
     waitDisputes: false,
     captures: {},
+    count: 1,
     dryRun: false,
     meterUrl: DEFAULT_METERMCP_URL,
     appUrl: DEFAULT_APP_URL,
@@ -80,6 +85,15 @@ export function parseArgs(argv: readonly string[]): PrepareOptions | { error: st
       case '--dry-run':
         o.dryRun = true;
         break;
+      case '--count': {
+        const v = value(i, a);
+        if (typeof v !== 'string') return v;
+        i++;
+        const n = Number(v);
+        if (!Number.isInteger(n) || n < 1 || n > 20) return { error: '--count must be a whole number from 1 to 20' };
+        o.count = n;
+        break;
+      }
       case '--captures':
       case '--metermcp':
       case '--app':
@@ -115,6 +129,7 @@ export function parseArgs(argv: readonly string[]): PrepareOptions | { error: st
     if (o.captures.standard || o.captures.agent) return { error: '--captures goes with --wait-disputes' };
     o.standard = o.agent = o.waitDisputes = true;
   }
+  if (o.count > 1 && !o.standard) return { error: '--count goes with the standard step (--standard, or all steps)' };
   if (o.waitDisputes && !o.standard && !o.agent && !o.captures.standard && !o.captures.agent) {
     return { error: '--wait-disputes on its own needs --captures STD,AGENT' };
   }
@@ -124,17 +139,21 @@ export function parseArgs(argv: readonly string[]): PrepareOptions | { error: st
 const CAPTURE_ID = /^[A-Z0-9]{8,32}$/;
 
 /** "STD,AGENT" (either empty or "-") or "standard=STD,agent=AGENT". */
-export function parseCaptures(v: string): { standard?: string; agent?: string } | { error: string } {
+export function parseCaptures(v: string): { standard?: string[]; agent?: string } | { error: string } {
   const parts = v.split(',').map((p) => p.trim());
-  if (parts.length > 2) return { error: '--captures takes at most two captures: STD,AGENT' };
-  const out: { standard?: string; agent?: string } = {};
+  if (parts.length > 2) return { error: '--captures takes at most two groups: STD[+STD…],AGENT' };
+  const out: { standard?: string[]; agent?: string } = {};
   for (const [i, p] of parts.entries()) {
     if (!p || p === '-') continue;
     const m = /^(standard|agent)=(.+)$/.exec(p);
     const which = m ? (m[1] as 'standard' | 'agent') : i === 0 ? 'standard' : 'agent';
-    const id = (m ? m[2]! : p).trim();
-    if (!CAPTURE_ID.test(id)) return { error: `not a PayPal capture id: ${id}` };
-    out[which] = id;
+    const ids = (m ? m[2]! : p).split('+').map((x) => x.trim());
+    for (const id of ids) if (!CAPTURE_ID.test(id)) return { error: `not a PayPal capture id: ${id}` };
+    if (new Set(ids).size !== ids.length) return { error: 'a capture is listed twice' };
+    if (which === 'agent') {
+      if (ids.length > 1) return { error: 'the agent case takes one capture' };
+      out.agent = ids[0]!;
+    } else out.standard = ids;
   }
   if (!out.standard && !out.agent) return { error: '--captures names no capture' };
   return out;
@@ -218,10 +237,13 @@ export interface FoundDispute {
  * The BINDINGS_JSON value for Render, with what is known; missing cases are said, not invented. Each case is bound to
  * its dispute AND the capture this script created, so the server can verify the dispute is that payment.
  */
-export function bindingsJson(found: { standard?: FoundDispute; agent?: FoundDispute }): { json: string; missing: string[] } {
-  const b: Record<string, FoundDispute> = {};
+export function bindingsJson(found: { standard?: FoundDispute | FoundDispute[]; agent?: FoundDispute }): { json: string; missing: string[] } {
+  const b: Record<string, FoundDispute | FoundDispute[]> = {};
   const missing: string[] = [];
-  if (found.standard) b[STANDARD_CASE_ID] = { dispute: found.standard.dispute, capture: found.standard.capture };
+  // Several standard disputes: the case's list, first active and the rest in reserve (bindings.ts).
+  const std = Array.isArray(found.standard) ? found.standard.map((d) => ({ dispute: d.dispute, capture: d.capture })) : found.standard ? [{ dispute: found.standard.dispute, capture: found.standard.capture }] : [];
+  if (std.length > 1) b[STANDARD_CASE_ID] = std;
+  else if (std.length === 1) b[STANDARD_CASE_ID] = std[0]!;
   else missing.push(STANDARD_CASE_ID);
   if (found.agent) b[AGENT_CASE_ID] = { dispute: found.agent.dispute, capture: found.agent.capture };
   else missing.push(AGENT_CASE_ID);

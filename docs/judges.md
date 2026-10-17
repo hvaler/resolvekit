@@ -45,9 +45,10 @@ and **Submit evidence to PayPal**: the server records your approval of that exac
 PayPal read that the dispute is still this case's payment and that nothing changed, and only then sends it. Edit a
 sentence afterwards and the approval no longer counts. ResolveKit reads the dispute back from PayPal and only says
 **Recorded by PayPal** when PayPal lists new seller evidence that matches what was sent; it shows what PayPal stored
-next to what was sent, and the audit log recorded by the server. PayPal accepts evidence once per dispute: if
-the case already shows **Evidence recorded by PayPal**, another judge sent it first; you can still see the read-back,
-and the simulated cases let you walk the whole flow.
+next to what was sent, and the audit log recorded by the server. PayPal accepts evidence once per dispute, so the
+case has a reserve of fresh sandbox disputes: about 15 minutes after a judge's evidence is recorded, the case moves
+to the next one (the top bar shows its id). If it still shows **Evidence recorded by PayPal**, another judge sent it
+minutes ago: you can see the read-back, come back shortly, or walk the whole flow on the simulated cases.
 
 **5. The agent-purchase case.** Open **PP-R-MMC-10190702**: a buyer disputes a payment an AI agent made through
 MeterMCP. The mandate, the per-call receipt (one failed call, not charged) and the settlement come from MeterMCP's real

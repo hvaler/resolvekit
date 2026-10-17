@@ -123,14 +123,39 @@ export function toBinding(v: unknown): Binding | null {
  * pointing a case somewhere unexpected. Never read from a client.
  */
 export function parseBindings(raw: unknown): Record<string, Binding> {
+  return parseBindingPools(raw).bindings;
+}
+
+/** The active binding of each case, and the disputes in reserve behind it (first to be used first). */
+export interface BindingPools {
+  bindings: Record<string, Binding>;
+  reserve: Record<string, Binding[]>;
+}
+
+/**
+ * Like {@link parseBindings}, and a case may also map to a list `[{ dispute, capture }, …]`: a reserve of fresh
+ * disputes for the same demo case. PayPal takes a seller's evidence once per dispute, so when the active one is used
+ * the server moves the case to the next (app.ts). The first is active; a dispute may appear only once.
+ */
+export function parseBindingPools(raw: unknown): BindingPools {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('bindings must be a JSON object { "<case id>": { "dispute": "PP-…", "capture": "…" } }');
-  const out: Record<string, Binding> = {};
+  const bindings: Record<string, Binding> = {};
+  const reserve: Record<string, Binding[]> = {};
+  const seen = new Set<string>();
   for (const [k, v] of Object.entries(raw)) {
     if (k.startsWith('_')) continue;
     if (!CASE_ID.test(k)) throw new Error(`bindings: invalid case id ${JSON.stringify(k.slice(0, 80))}`);
-    const b = toBinding(v);
-    if (!b) throw new Error(`bindings: ${k} must map to a PayPal dispute id (PP-…) or { "dispute": "PP-…", "capture": "<capture id>" }`);
-    out[k] = b;
+    const list = Array.isArray(v) ? v : [v];
+    if (list.length === 0) throw new Error(`bindings: ${k} must list at least one dispute`);
+    const pool = list.map((x) => {
+      const b = toBinding(x);
+      if (!b) throw new Error(`bindings: ${k} must map to a PayPal dispute id (PP-…), { "dispute": "PP-…", "capture": "<capture id>" } or a list of them`);
+      if (seen.has(b.dispute)) throw new Error(`bindings: dispute ${b.dispute} is listed twice`);
+      seen.add(b.dispute);
+      return b;
+    });
+    bindings[k] = pool[0]!;
+    reserve[k] = pool.slice(1);
   }
-  return out;
+  return { bindings, reserve };
 }

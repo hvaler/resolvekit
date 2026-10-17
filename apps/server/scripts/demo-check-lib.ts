@@ -8,7 +8,7 @@ export interface OpsBody {
   problems: string[];
   paypal: string;
   webhook: 'on' | 'off' | string;
-  bindings: Record<string, { dispute: string; capture: string | null; status: string; reasons: string[]; checkedAt: string | null }>;
+  bindings: Record<string, { dispute: string; capture: string | null; status: string; reasons: string[]; checkedAt: string | null; used?: boolean; reserve?: number }>;
   warmUp: Array<{ caseId: string; outcome: string; detail: string }> | null;
   models: Array<{ name: string; ok: boolean; error?: string }> | null;
 }
@@ -22,6 +22,8 @@ export interface Observed {
 
 export interface Line {
   ok: boolean;
+  /** Passed, but needs attention soon (e.g. the reserve of fresh disputes is running out). */
+  warn?: boolean;
   what: string;
   detail: string;
 }
@@ -49,7 +51,12 @@ export function evaluate(o: Observed): { ok: boolean; lines: Line[] } {
   // What passed, line by line; what failed, as the server words it (its `problems` are the authority).
   if (b.paypal !== 'unconfigured') add(true, 'PayPal connected', b.paypal);
   if (b.webhook === 'on') add(true, 'PayPal webhook', 'on');
-  for (const [caseId, x] of Object.entries(b.bindings)) if (x.status === 'verified') add(true, `binding ${caseId} → ${x.dispute}`, `verified · capture ${x.capture}`);
+  for (const [caseId, x] of Object.entries(b.bindings)) {
+    if (x.status !== 'verified') continue;
+    const left = x.reserve ?? 0;
+    add(true, `binding ${caseId} → ${x.dispute}`, `verified · capture ${x.capture}${x.used ? ' · used' : ''} · ${left} in reserve`);
+    if (left < 2) lines.push({ ok: true, warn: true, what: `reserve · case ${caseId}`, detail: `only ${left} fresh dispute${left === 1 ? '' : 's'} left in reserve: npm run demo:prepare and add them to BINDINGS_JSON` });
+  }
   for (const m of b.models ?? []) if (m.ok) add(true, `AI model ${m.name}`, 'answered');
   if (b.warmUp === null) add(true, 'warm-up of the bound cases', 'not finished yet (runs after each start)');
   else for (const w of b.warmUp) if (w.outcome === 'done' || w.outcome === 'cached') add(true, `warm-up · case ${w.caseId}`, `${w.outcome} · ${w.detail}`);

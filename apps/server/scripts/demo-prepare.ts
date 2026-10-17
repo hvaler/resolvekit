@@ -134,14 +134,24 @@ async function main() {
       say(`would create: Orders v2 CAPTURE · ${b.items[0]!.quantity} × "${b.items[0]!.name}" · ${b.amount.value} ${b.amount.currency_code} · ${b.items[0]!.category} · shipping ${b.shipping}`);
     }
     if (o.agent) say(`would run the demo agent against ${o.meterUrl} · METERMCP_DEMO_CODE ${process.env.METERMCP_DEMO_CODE ? 'set' : 'NOT set'}`);
-    if (o.waitDisputes) say(`would wait for disputes on: ${[o.captures.standard ?? (o.standard ? '(new standard capture)' : null), o.captures.agent ?? (o.agent ? '(new agent capture)' : null)].filter(Boolean).join(', ')}`);
+    if (o.standard && o.count > 1) say(`would create ${o.count} of them, one after another (each approved by the buyer): ${o.count} disputes for the reserve`);
+    if (o.waitDisputes) say(`would wait for disputes on: ${[o.captures.standard?.join(', ') ?? (o.standard ? `(${o.count} new standard capture${o.count > 1 ? 's' : ''})` : null), o.captures.agent ?? (o.agent ? '(new agent capture)' : null)].filter(Boolean).join(', ')}`);
     say('--dry-run: nothing created.');
     return;
   }
 
-  const captures: { standard?: string; agent?: string } = { ...o.captures };
+  const captures: { standard?: string[]; agent?: string } = { ...o.captures };
   let agentAmount = 'agent';
-  if (o.standard) captures.standard = (await standardStep(paypal, o)) ?? undefined;
+  if (o.standard) {
+    // One after another: each needs the buyer's approval. --count N makes N disputes for the case's reserve.
+    const made: string[] = [];
+    for (let k = 1; k <= o.count; k++) {
+      if (o.count > 1) say(`standard payment ${k} of ${o.count}`);
+      const id = await standardStep(paypal, o);
+      if (id) made.push(id);
+    }
+    captures.standard = made.length ? made : undefined;
+  }
   if (o.agent) {
     const a = await agentStep(o);
     if (a.capture) captures.agent = a.capture;
@@ -151,24 +161,27 @@ async function main() {
   if (o.standard || o.agent) {
     rule();
     say('(c) Now open the disputes as the buyer:');
-    if (o.standard && captures.standard) console.log(`\n${buyerInstructions('standard', captures.standard, '7.00 USD')}\n`);
+    if (o.standard) for (const c of captures.standard ?? []) console.log(`\n${buyerInstructions('standard', c, '7.00 USD')}\n`);
     if (o.agent && captures.agent) console.log(`\n${buyerInstructions('agent', captures.agent, agentAmount)}\n`);
   }
 
   if (!o.waitDisputes) {
-    const list = [captures.standard ?? '-', captures.agent ?? '-'].join(',');
+    const list = [captures.standard?.join('+') || '-', captures.agent ?? '-'].join(',');
     say(`next: npm run demo:prepare -- --wait-disputes --captures ${list}`);
     return;
   }
   rule();
   say('(d) Waiting for the disputes (PayPal lists a new dispute after ~5 min, then opens it). Ctrl+C is safe; resume with --wait-disputes --captures.');
-  const [std, agent] = await Promise.all([
-    captures.standard ? waitForDispute(paypal, 'standard', captures.standard, o) : Promise.resolve(null),
+  const stdCaptures = captures.standard ?? [];
+  const [stdFound, agent] = await Promise.all([
+    Promise.all(stdCaptures.map(async (c) => ({ capture: c, dispute: await waitForDispute(paypal, 'standard', c, o) }))),
     captures.agent ? waitForDispute(paypal, 'agent', captures.agent, o) : Promise.resolve(null),
   ]);
   rule();
+  // In the order they were made: the first ready one is active, the rest wait in reserve.
+  const ready = stdFound.filter((f): f is { capture: string; dispute: string } => !!f.dispute);
   const b = bindingsJson({
-    ...(std && captures.standard ? { standard: { dispute: std, capture: captures.standard } } : {}),
+    ...(ready.length ? { standard: ready.length === 1 ? ready[0]! : ready } : {}),
     ...(agent && captures.agent ? { agent: { dispute: agent, capture: captures.agent } } : {}),
   });
   say('(e) BINDINGS_JSON for Render (resolvekit service → Environment), ready to paste:');

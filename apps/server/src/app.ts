@@ -18,7 +18,7 @@ import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from
 import type { AgentReceiptSource, DisputeSnapshot } from '../../web/src/domain/types.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
-import { hasSellerEvidence } from '../../web/src/domain/recorded.ts';
+import { hasSellerEvidence, sellerEvidence } from '../../web/src/domain/recorded.ts';
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
 import { toBinding, verifyBinding, type Binding, type BindingState } from './bindings.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
@@ -81,6 +81,15 @@ export interface ApiOptions {
    * cannot pass the send-time check, see bindings.ts). Unbound cases are never sent to PayPal. May change in place.
    */
   bindings: Readonly<Record<string, string | Binding>>;
+  /**
+   * Fresh disputes in reserve behind each case's active binding (a list in BINDINGS_JSON, see bindings.ts). PayPal
+   * takes a seller's evidence once per dispute: when the active one is used, the case moves to the next (in place).
+   */
+  reserve?: Record<string, Binding[]> | null;
+  /** How long a dispute whose seller evidence just went in stays active, so whoever sent it sees PayPal's read-back (15 min). */
+  rotateAfterMs?: number;
+  /** A case moved to the next dispute of its reserve (hosted mode analyses it again). */
+  onRebound?: (caseId: string) => void;
   now?: () => Date;
   log?: (line: string) => void;
   /** MeterMCP: the agent case's session receipt, found by the disputed capture. null = not used. */
@@ -216,7 +225,20 @@ export type Api = Handler & {
 export interface OpsReport {
   paypal: PayPalEnv | 'unconfigured';
   error?: string;
-  bindings: Record<string, { dispute: string; capture: string | null; status: BindingState | 'unchecked'; reasons: string[]; checkedAt: string | null }>;
+  bindings: Record<
+    string,
+    {
+      dispute: string;
+      capture: string | null;
+      status: BindingState | 'unchecked';
+      reasons: string[];
+      checkedAt: string | null;
+      /** PayPal already has the seller's evidence on it, or closed it: no judge can send to it any more. */
+      used: boolean;
+      /** Fresh disputes left behind it. */
+      reserve: number;
+    }
+  >;
 }
 
 /** sha256 hex of a string. */
@@ -430,7 +452,36 @@ export function createApi(opts: ApiOptions): Api {
     const snap = await snapshotOf(caseId, dispute);
     reads.set(caseId, { at: now().getTime(), snap });
     const source: PayPalSource = { kind: 'live', snap, failed: null };
-    return { source, input: pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), dispute, snap, disputeId };
+    const state = { source, input: pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), dispute, snap, disputeId };
+    // This request goes on with what it read; the next one reads the next dispute of the reserve, if this one is used.
+    rotateIfUsed(caseId, binding, snap);
+    return state;
+  };
+
+  // ---------------------------------------------------------------------------------------------- reserve
+  const ROTATE_AFTER_MS = opts.rotateAfterMs ?? 15 * 60_000;
+  /** Whether the active dispute of each case was used when last read (the operator's check reports it). */
+  const usedNow = new Map<string, boolean>();
+  /** Since when a dispute is used for the demo: closed (at once), or PayPal's date of the seller's evidence; null: unused. */
+  const usedSince = (snap: DisputeSnapshot): number | null => {
+    if (snap.status === 'RESOLVED') return 0;
+    const ev = sellerEvidence(snap);
+    if (ev.length === 0) return null;
+    const t = Math.max(...ev.map((e) => Date.parse(e.date ?? e.storedAt)));
+    return Number.isFinite(t) ? t : 0;
+  };
+  const rotateIfUsed = (caseId: string, binding: Binding, snap: DisputeSnapshot) => {
+    const since = usedSince(snap);
+    usedNow.set(caseId, since != null);
+    const queue = opts.reserve?.[caseId];
+    if (since == null || !queue?.length || now().getTime() - since < ROTATE_AFTER_MS) return;
+    const next = queue.shift()!;
+    (opts.bindings as Record<string, string | Binding>)[caseId] = next;
+    reads.delete(caseId);
+    bindingStatus.delete(caseId);
+    usedNow.delete(caseId);
+    log(`reserve · case ${caseId}: ${binding.dispute} is used (${snap.status === 'RESOLVED' ? 'resolved' : 'seller evidence recorded'}) → ${next.dispute} · ${queue.length} left in reserve`);
+    opts.onRebound?.(caseId);
   };
 
   /**
@@ -919,8 +970,18 @@ export function createApi(opts: ApiOptions): Api {
           bindingStatus.set(caseId, { status: 'unavailable', reasons: [failureText(e)], checkedAt: now().toISOString(), binding: b });
         }
       }
+      // The read may have moved the case to the next dispute of its reserve: report the one that is active now.
+      const active = bindingOf(caseId) ?? b;
       const st = bindingState(caseId);
-      bindings[caseId] = { dispute: b.dispute, capture: b.capture, status: st?.status ?? 'unchecked', reasons: st?.reasons ?? [], checkedAt: st?.checkedAt ?? null };
+      bindings[caseId] = {
+        dispute: active.dispute,
+        capture: active.capture,
+        status: st?.status ?? 'unchecked',
+        reasons: st?.reasons ?? [],
+        checkedAt: st?.checkedAt ?? null,
+        used: usedNow.get(caseId) ?? false,
+        reserve: opts.reserve?.[caseId]?.length ?? 0,
+      };
     }
     return { ...h, bindings };
   }

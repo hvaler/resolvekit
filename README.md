@@ -383,8 +383,13 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
    (`METERMCP_URL=https://<metermcp host>/mcp METERMCP_DEMO_CODE=<code> npm run demo-agent`), approve with the sandbox
    buyer, open the dispute on its capture as the buyer, and bind it. (Or copy the local `metermcp.sqlite` onto the
    disk.)
-7. PayPal accepts evidence once per dispute. To let the next judge send for real, open a fresh sandbox dispute and
-   update `BINDINGS_JSON` (the service restarts with the new binding).
+7. PayPal accepts evidence once per dispute, so a case can be bound to a **reserve**: a list
+   `{ "<case id>": [{ "dispute": …, "capture": … }, …] }`, first active. When PayPal shows the active dispute closed,
+   or with the seller's evidence for more than 15 minutes (so whoever sent it sees the read-back), the next read moves
+   the case to the next dispute of the list, logs it and analyses the case again; every send still verifies its own
+   binding on a fresh read, and an intent composed for the previous dispute is refused (`BINDING_CHANGED`).
+   `npm run demo:prepare -- --standard --count 5` makes five payments and prints the list. Sandbox disputes give the
+   seller about 20 days: prepare them for the dates they are needed.
 8. Check it: set the same `RESOLVEKIT_OPS_TOKEN` (32+ random URL-safe characters) on the `resolvekit` service and in
    your local `.env`, then `npm run demo:check` after every deploy. Read-only, it prints one PASS/FAIL line per item:
    both services up, the landing page, PayPal connected, the webhook on, each binding verified on a fresh PayPal read,

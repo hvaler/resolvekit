@@ -199,7 +199,15 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   };
 
   // Live runs and re-checks analyse inputs the server builds itself (app.ts), behind the seller workspace and the caps.
-  api = createApi({ ...o, gate });
+  // A case that moved to the next dispute of its reserve has new PayPal data: analyse it again (the others are stored).
+  api = createApi({
+    ...o,
+    gate,
+    onRebound: (caseId) => {
+      o.onRebound?.(caseId);
+      void warmUp();
+    },
+  });
   const webhook =
     o.webhook && o.paypal
       ? createWebhookHandler({ paypal: o.paypal, webhookId: o.webhook.id, key: o.webhook.key, onEvent: (e) => api.paypalNotified(e), ...(o.log ? { log: o.log } : {}), ...(o.webhook.verifyLimit ? { verifyLimit: o.webhook.verifyLimit } : {}) })
@@ -234,6 +242,9 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     if (cases.length === 0) problems.push('no case is bound to a real PayPal dispute (BINDINGS_JSON)');
     for (const [caseId, b] of Object.entries(r.bindings)) {
       if (b.status !== 'verified') problems.push(`binding ${caseId} → ${b.dispute} is ${b.status}${b.reasons.length ? `: ${b.reasons.join('; ')}` : ''}`);
+      else if (b.used && b.reserve === 0) {
+        problems.push(`binding ${caseId} → ${b.dispute} is used (PayPal has the seller’s evidence or closed it) and no dispute is left in reserve: npm run demo:prepare, then add the new ones to BINDINGS_JSON`);
+      }
     }
     for (const w of lastWarmUp ?? []) {
       if (w.outcome === 'failed' || w.outcome === 'skipped') problems.push(`warm-up · case ${w.caseId} · ${w.outcome} · ${w.detail}`);

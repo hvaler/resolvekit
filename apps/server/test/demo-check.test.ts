@@ -7,7 +7,7 @@ const goodOps = {
   problems: [],
   paypal: 'sandbox',
   webhook: 'on',
-  bindings: { 'PP-R-TVH-10190665': { dispute: 'PP-R-BGW-10193053', capture: '59U14501KS700990K', status: 'verified', reasons: [], checkedAt: '2026-10-17T12:00:00Z' } },
+  bindings: { 'PP-R-TVH-10190665': { dispute: 'PP-R-BGW-10193053', capture: '59U14501KS700990K', status: 'verified', reasons: [], checkedAt: '2026-10-17T12:00:00Z', used: false, reserve: 3 } },
   warmUp: [{ caseId: 'PP-R-TVH-10190665', outcome: 'done', detail: 'system run · 26549 ms' }],
   models: [{ name: 'gemini/gemini-3.8-flash', ok: true }, { name: 'groq/openai/gpt-oss-120b', ok: true }],
 };
@@ -58,4 +58,17 @@ test('no warm-up finished yet: said, not a failure (it runs after each start)', 
   const r = evaluate(o);
   assert.equal(r.ok, true);
   assert.ok(r.lines.some((l) => /warm-up/.test(l.what) && /not finished/.test(l.detail)));
+});
+
+test('each binding line says how many fresh disputes are left in reserve', () => {
+  const line = evaluate(good()).lines.find((l) => /binding PP-R-TVH-10190665/.test(l.what))!;
+  assert.match(line.detail, /3 in reserve/);
+});
+
+test('fewer than 2 left in reserve: a warning line, still ready', () => {
+  const o = good();
+  o.ops.body!.bindings['PP-R-TVH-10190665']!.reserve = 1;
+  const r = evaluate(o);
+  assert.equal(r.ok, true);
+  assert.ok(r.lines.some((l) => l.warn && /reserve/.test(l.detail)), r.lines.map((l) => l.detail).join(' | '));
 });
