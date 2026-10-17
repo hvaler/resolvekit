@@ -14,8 +14,10 @@
     "@resolvekit/paypal": "*",
     "@resolvekit/pdf": "*",
     "@simplewebauthn/server": "13.3.3",
+    "@tesseract.js-data/eng": "1.0.0",
     "jpeg-js": "0.4.4",
-    "pngjs": "7.0.0"
+    "pngjs": "7.0.0",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@types/node": "24.13.5",
