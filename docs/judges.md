@@ -35,7 +35,10 @@ the exact words in the document. Sentences without support are struck through an
 says which model made the analysis and when ("cached" = stored; "live" = just run).
 
 **3. The contradiction.** The order and the shipping label say "Apt 4"; the carrier's delivery record says "Apt 4B". ResolveKit
-shows both values side by side, neutrally (no fraud accusation), and the affected sentences need your review.
+shows both values side by side, neutrally (no fraud accusation), marks the contradiction **Needs review** and
+blocks the approval until you decide: **Explain in response** puts the analyst's neutral sentence (both values,
+both sources) in the draft, or **Mark resolved…** records your note in the audit trail. Hover a value to see it in
+its document.
 
 **4. Approve and send to real PayPal.** Click **Review what will be sent →** (signed in through your reviewer link:
 the review is composed by the server for you, and the approval names you). The review shows exactly what the server
