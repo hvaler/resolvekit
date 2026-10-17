@@ -15,7 +15,7 @@ import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type P
 import { workspaceIdFor } from './accounts.ts';
 import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
-import type { AgentReceiptSource, DisputeSnapshot } from '../../web/src/domain/types.ts';
+import type { AgentReceiptSource, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
 import { correctionsOf, type Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
 import { hasSellerEvidence, sellerEvidence } from '../../web/src/domain/recorded.ts';
@@ -27,7 +27,7 @@ import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource }
 import { toSnapshot } from './mapping.ts';
 import { checkAgainstDispute } from './validate.ts';
 import { REFUSED_EARLY, acceptsImageBody, createUploadRoutes } from './uploads/routes.ts';
-import { uploadDocuments } from './uploads/documents.ts';
+import { uploadDocuments, uploadFileName } from './uploads/documents.ts';
 import { UploadStore, type UploadRecord } from './uploads/store.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
@@ -277,7 +277,8 @@ export interface OpsReport {
 }
 
 /** sha256 hex of a string. */
-const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
+const sha256 = (s: string | Uint8Array) => createHash('sha256').update(s).digest('hex');
+const evidenceNumber = (id: string | null) => Number(/^E(\d+)$/.exec(id ?? '')?.[1] ?? 0);
 
 /** The case as the server sees it right now: where PayPal's data comes from, and the analyst's input. */
 interface CaseState {
@@ -288,6 +289,8 @@ interface CaseState {
   snap: DisputeSnapshot | null;
   /** The bound PayPal dispute id, or null when the case runs on the simulator. */
   disputeId: string | null;
+  /** The confirmed uploads in the input (this workspace's, of the case's active dispute): the only ones attachable. */
+  uploads: UploadRecord[];
 }
 
 /** An intent composed from a case state: its content and hash, and what is needed to compose it again. */
@@ -298,6 +301,8 @@ interface ComposedIntent {
   content: IntentContent;
   contentHash: string;
   rechecks: Record<string, Recheck>;
+  /** The exact bytes of `content.files`, in order: what a send gives PayPal (their SHA-256 is in the content). */
+  attachments: EvidenceFile[];
 }
 
 export function createApi(opts: ApiOptions): Api {
@@ -499,7 +504,7 @@ export function createApi(opts: ApiOptions): Api {
     if (!disputeId) {
       const source: PayPalSource = { kind: 'simulated' };
       const recs = await confirmedUploads(caseId, bindingOf(caseId)?.dispute ?? null, req);
-      return { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), false), recs), dispute: null, snap: null, disputeId: null };
+      return { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), false), recs), dispute: null, snap: null, disputeId: null, uploads: recs };
     }
     const binding = bindingOf(caseId)!;
     const mark = (status: BindingState, reasons: string[]) => bindingStatus.set(caseId, { status, reasons, checkedAt: now().toISOString(), binding });
@@ -522,7 +527,7 @@ export function createApi(opts: ApiOptions): Api {
     reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
     const source: PayPalSource = { kind: 'live', snap, failed: null };
     const recs = await confirmedUploads(caseId, disputeId, req);
-    const state = { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), recs), dispute, snap, disputeId };
+    const state = { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), recs), dispute, snap, disputeId, uploads: recs };
     // This request goes on with what it read; the next one reads the next dispute of the reserve, if this one is used.
     rotateIfUsed(caseId, binding, snap);
     return state;
@@ -584,6 +589,10 @@ export function createApi(opts: ApiOptions): Api {
         reasons: [`MeterMCP settlement ${s.status}`],
       });
     }
+    // Only confirmed uploads of this workspace, case and active dispute (those in the input) can be attached.
+    for (const id of req.attachments ?? []) {
+      if (!st.uploads.some((r) => r.id === id)) return json(422, { error: 'UNKNOWN_UPLOAD', detail: `Upload ${id} is not a confirmed upload of this case’s current dispute` });
+    }
     const analyst = opts.analyst;
     if (!analyst) return json(503, { error: 'ANALYST_UNAVAILABLE', detail: 'The analyst is not set up on this server' });
     // Composing again before a send uses the very analysis the intent was composed from (if it is still an analysis of
@@ -614,6 +623,8 @@ export function createApi(opts: ApiOptions): Api {
       const problem = checkAgainstDispute(s, st.dispute);
       if (problem) return json(problem.status, { error: problem.error, detail: problem.detail });
     }
+    const built = await filesFor(caseId, st, s.files, req.attachments ?? []);
+    if (built instanceof Response) return built;
     const content: IntentContent = {
       caseId,
       disputeId: st.disputeId,
@@ -623,12 +634,62 @@ export function createApi(opts: ApiOptions): Api {
       carrier: s.carrier,
       tracking: s.tracking,
       notes: s.notes,
-      files: s.files,
+      files: built.map((b) => b.file),
       sentences: composed.sentences,
       resolutionNotes: composed.resolutionNotes,
       ...(req.confirmedCorrections?.length ? { confirmedCorrections: [...req.confirmedCorrections] } : {}),
     };
-    return { content, contentHash: await contentHash(content), rechecks: used, analysis: a.analysis, analysisHash: sha256(JSON.stringify(a.analysis)) };
+    return {
+      content,
+      contentHash: await contentHash(content),
+      rechecks: used,
+      analysis: a.analysis,
+      analysisHash: sha256(JSON.stringify(a.analysis)),
+      attachments: built.map((b) => b.data),
+    };
+  };
+
+  /**
+   * The files of a composition, with the bytes PayPal would receive and their SHA-256: the case's own PDFs (or the
+   * agent case's real MeterMCP receipt), then the selected confirmed uploads as stored (sanitised), in evidence order.
+   * A stored upload whose bytes no longer match its confirmed SHA-256 is refused (409 UPLOAD_CHANGED).
+   */
+  const filesFor = async (caseId: string, st: CaseState, caseFiles: readonly SubmissionFile[], selected: readonly string[]): Promise<{ file: SubmissionFile; data: EvidenceFile }[] | Response> => {
+    const out: { file: SubmissionFile; data: EvidenceFile }[] = [];
+    const sid = isAgentCase(caseId) && st.snap?.agentReceipt?.kind === 'metermcp' ? st.snap.agentReceipt.session.sessionId : null;
+    if (sid) {
+      if (caseFiles.some((f) => f.name !== receiptFileName(sid))) return json(422, { error: 'UNKNOWN_FILE', detail: `Only the receipt of session ${sid} can be attached` });
+      for (const f of caseFiles) {
+        let data: Uint8Array;
+        try {
+          data = await opts.meterMcp!.receiptPdf(sid);
+        } catch (e) {
+          return json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' });
+        }
+        out.push({ file: { name: f.name, size: f.size, sha256: sha256(data), source: 'receipt' }, data: { name: f.name, type: 'application/pdf', data } });
+      }
+    } else {
+      try {
+        const pdfs = buildAttachments(caseId, caseFiles);
+        caseFiles.forEach((f, n) => {
+          const { sha256: hash, ...data } = pdfs[n]!;
+          out.push({ file: { name: f.name, size: f.size, sha256: hash, source: 'demo' }, data });
+        });
+      } catch (e) {
+        if (e instanceof UnknownFileError) return json(422, { error: 'UNKNOWN_FILE', detail: e.message });
+        throw e;
+      }
+    }
+    const recs = st.uploads.filter((r) => selected.includes(r.id)).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId));
+    for (const r of recs) {
+      const bytes = uploads.sanitised(r.id);
+      if (!bytes || !r.mime || !r.sha256 || sha256(bytes) !== r.sha256) {
+        return json(409, { error: 'UPLOAD_CHANGED', detail: `The stored file of ${r.evidenceId} no longer matches the one confirmed; it is not attached` });
+      }
+      const name = uploadFileName(r);
+      out.push({ file: { name, size: `${Math.max(1, Math.round(bytes.length / 1024))} KB`, sha256: r.sha256, source: 'upload' }, data: { name, type: r.mime, data: bytes } });
+    }
+    return out;
   };
 
   let health: Promise<{ paypal: PayPalEnv | 'unconfigured'; error?: string }> | null = null;
@@ -752,7 +813,7 @@ export function createApi(opts: ApiOptions): Api {
     const composed = await compose(caseId, st, ir);
     if (composed instanceof Response) return composed;
     const intent = intents.create(
-      { ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local', team: who.team ?? null, analysisHash: composed.analysisHash },
+      { ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local', team: who.team ?? null, analysisHash: composed.analysisHash, inputUploads: st.uploads.map((r) => r.id) },
       composed.analysis,
     );
     if ('ok' in intent) return tooManyIntents(intent);
@@ -835,35 +896,36 @@ export function createApi(opts: ApiOptions): Api {
         return refuse(json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent' }), 'PayPal already has seller evidence', true);
       }
       if (sha256(documentsSignature(st.input)) !== intent.documentsHash) {
-        return refuse(json(409, { error: 'DOCUMENTS_CHANGED', detail: 'The case documents changed since you approved this response; review it again' }), 'documents changed', true);
+        // Most often a colleague confirmed an upload since this was composed: name it.
+        const added = intent.inputUploads ? st.uploads.filter((r) => !intent.inputUploads!.includes(r.id)).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId)) : [];
+        const detail = added.length
+          ? `${added[0]!.uploadedBy.name} added evidence ${added[0]!.evidenceId}${added.length > 1 ? ` and ${added.length - 1} more` : ''} since you approved; review again`
+          : 'The case documents changed since you approved this response; review it again';
+        return refuse(json(409, { error: 'DOCUMENTS_CHANGED', detail }), 'documents changed', true);
+      }
+      // An intent approved before every file carried its SHA-256 cannot be checked byte for byte: compose it again.
+      if (intent.files.some((f) => !f.sha256)) {
+        return refuse(json(409, { error: 'INTENT_STALE', detail: 'This response was approved before ResolveKit recorded each file’s SHA-256; review it again' }), 'no file hashes', true);
       }
       const again = await compose(caseId, st, intent.request, intent.rechecks, intents.analysisPin(intent.analysisHash));
       if (again instanceof Response) {
         const b = (await again.clone().json().catch(() => ({}))) as { error?: string };
-        return refuse(again, `composing again failed: ${b.error ?? again.status}`, again.status !== 503);
+        // PayPal's or MeterMCP's being unreachable is not a change of content: the intent may be sent later.
+        return refuse(again, `composing again failed: ${b.error ?? again.status}`, again.status !== 503 && again.status !== 502);
+      }
+      for (const f of intent.files.filter((x) => x.source === 'upload')) {
+        if (again.content.files.find((x) => x.name === f.name)?.sha256 !== f.sha256) {
+          return refuse(json(409, { error: 'UPLOAD_CHANGED', detail: `The stored file ${f.name} is not the one you approved; review it again` }), 'upload changed', true);
+        }
       }
       if (again.contentHash !== intent.contentHash) {
         return refuse(json(409, { error: 'INTENT_STALE', detail: 'What would be sent now differs from what you approved (analysis, sentences, files or tracking changed); review it again' }), 'content changed', true);
       }
 
-      // The files are built here: the case's own PDFs, or the agent case's real MeterMCP receipt.
-      let files: EvidenceFile[];
+      // Exactly the bytes whose SHA-256 the approval covers (the hashes are equal): the case's own PDFs or the agent
+      // case's real MeterMCP receipt, and the selected uploads as stored.
+      const files = again.attachments;
       const sid = isAgentCase(caseId) && st.snap?.agentReceipt?.kind === 'metermcp' ? st.snap.agentReceipt.session.sessionId : null;
-      if (sid) {
-        if (intent.files.some((f) => f.name !== receiptFileName(sid))) return refuse(json(422, { error: 'UNKNOWN_FILE', detail: `Only the receipt of session ${sid} can be attached` }), 'unknown file', true);
-        try {
-          files = intent.files.length ? [{ name: receiptFileName(sid), type: 'application/pdf', data: await opts.meterMcp!.receiptPdf(sid) }] : [];
-        } catch (e) {
-          return refuse(json(502, { error: 'METERMCP_UNAVAILABLE', detail: e instanceof Error ? e.message : 'MeterMCP could not be read' }), 'MeterMCP unavailable', false);
-        }
-      } else {
-        try {
-          files = buildAttachments(caseId, intent.files);
-        } catch (e) {
-          if (e instanceof UnknownFileError) return refuse(json(422, { error: 'UNKNOWN_FILE', detail: e.message }), 'unknown file', true);
-          throw e;
-        }
-      }
 
       // The send_started line must be on disk before PayPal is called: an evidence submission is never missing from
       // the trail.
@@ -977,6 +1039,13 @@ export function createApi(opts: ApiOptions): Api {
     reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'upload') : null,
     caseBinding: (caseId) => bindingOf(caseId)?.dispute ?? null,
     record: (e) => intents.record(e),
+    // Deletion wins over reuse: an unsent intent attaching the upload is void; a send in flight is waited for.
+    attachedTo: {
+      sending: (id) => intents.usingUpload(id).some((i) => i.status === 'sending'),
+      invalidate: (rec, actor) => {
+        for (const i of intents.usingUpload(rec.id)) if (i.status !== 'sending') intents.invalidate(i.id, `evidence ${rec.evidenceId ?? rec.id} it attaches was deleted`, actor);
+      },
+    },
     log,
     now,
     ...(opts.uploadStorageBytes ? { maxStorageBytes: opts.uploadStorageBytes } : {}),

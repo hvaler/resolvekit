@@ -27,6 +27,8 @@ export interface Recheck {
 export interface Correction {
   /** 1-based line number in the upload. */
   line: number;
+  /** Its fragment key (`E7.l3`): what a confirmation names, with the sentence (`S1@E7.l3`). */
+  fragment: string;
   evidenceId: string;
   /** The corrected text. */
   text: string;
@@ -42,11 +44,14 @@ export function correctionsOf(docs: readonly AnalysisDocument[]): Map<string, Co
   const out = new Map<string, Correction>();
   for (const d of docs) {
     d.lines.forEach((l, i) => {
-      if (l.corrected && l.fragment) out.set(l.fragment, { line: i + 1, evidenceId: d.id, text: l.text, by: l.corrected });
+      if (l.corrected && l.fragment) out.set(l.fragment, { line: i + 1, fragment: l.fragment, evidenceId: d.id, text: l.text, by: l.corrected });
     });
   }
   return out;
 }
+
+/** A confirmation that sentence `sentenceId` reads the corrected line `fragment` correctly: `S1@E7.l2`. */
+export const correctionPair = (sentenceId: string, fragment: string) => `${sentenceId}@${fragment}`;
 
 /** The corrected lines a sentence's citations cover, in citation order. */
 function correctionsCited(citations: readonly Citation[], corrections: ReadonlyMap<string, Correction> | undefined): Correction[] {
@@ -81,8 +86,9 @@ export interface DraftContext {
   /** Corrected lines of the case's uploads, by fragment key ({@link correctionsOf}). Absent: none. */
   corrections?: ReadonlyMap<string, Correction>;
   /**
-   * Sentence ids whose reliance on a corrected line the merchant confirmed. A supported sentence citing a corrected
-   * line goes to review until its id is here: the correction may flip what the file says.
+   * The merchant's confirmations that a sentence reads a corrected line correctly, as `sentenceId@fragment` pairs
+   * ({@link correctionPair}). A supported sentence citing corrected lines goes to review until every one of them has
+   * its pair here: the correction may flip what the file says.
    */
   confirmedCorrections?: ReadonlySet<string>;
 }
@@ -134,10 +140,11 @@ export function deriveSentences(base: readonly DraftSentence[], ctx: DraftContex
       }
     }
     const relied = state === 'supported' ? correctionsCited(citations, ctx.corrections) : [];
-    if (relied.length && ctx.confirmedCorrections?.has(s.id)) {
+    const unconfirmed = relied.filter((k) => !ctx.confirmedCorrections?.has(correctionPair(s.id, k.fragment)));
+    if (relied.length && !unconfirmed.length) {
       note = [note, ...relied.map((k) => `Relies on line ${k.line} of ${k.evidenceId} as corrected by ${k.by}`)].filter(Boolean).join(' · ');
-    } else if (relied.length) {
-      const k = relied[0]!;
+    } else if (unconfirmed.length) {
+      const k = unconfirmed[0]!;
       state = 'needs_review';
       reason = `Why: it depends on your correction of line ${k.line} of ${k.evidenceId} ("${k.text}"). Confirm it reads the file correctly.`;
     }

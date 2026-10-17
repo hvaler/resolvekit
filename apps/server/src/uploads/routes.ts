@@ -7,7 +7,8 @@
  *   POST   /api/cases/:id/uploads/:u/redact        { rects } | { removals } → sanitised file, re-read from it
  *   POST   /api/cases/:id/uploads/:u/confirm       { lines, sha256 } → E<n>, the original dropped
  *   POST   /api/cases/:id/uploads/:u/discard       before confirmation: files removed
- *   DELETE /api/cases/:id/uploads/:u               owners and full members: files removed
+ *   DELETE /api/cases/:id/uploads/:u               owners and full members: files removed; refused while a send
+ *                                                   attaching it is in flight, and voids the unsent intents attaching it
  *
  * Nothing of an upload leaves this server here: OCR is local, nothing is sent to PayPal or a model. Audit details and
  * log lines carry ids and file names only, never text or bytes. A pending upload past its expiry is discarded the
@@ -64,6 +65,11 @@ export interface UploadRoutesOptions {
   now?: () => Date;
   /** Total size of stored upload files (default MAX_STORAGE_BYTES). */
   maxStorageBytes?: number;
+  /**
+   * The submission intents attaching an upload: whether one is being sent right now (deleting it waits for the
+   * outcome), and invalidating the unsent ones when it is deleted. Absent: none.
+   */
+  attachedTo?: { sending(uploadId: string): boolean; invalidate(rec: UploadRecord, actor: string): void };
 }
 
 const json = (status: number, body: unknown) =>
@@ -320,8 +326,11 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
 
   const remove = (s: Scope, rec: UploadRecord): Response => {
     if (!canDeleteUpload(s.person)) return refuse(403, 'FORBIDDEN', 'Only owners and full members delete uploads');
+    // Checked and done in one synchronous step: a send cannot start in between (its start is synchronous too).
+    if (o.attachedTo?.sending(rec.id)) return refuse(409, 'SEND_IN_PROGRESS', 'A response attaching this upload is being sent to PayPal right now; delete it once the outcome is known');
     const next = store.update(rec.id, { status: 'deleted' });
     audit(s, 'upload_deleted', next);
+    o.attachedTo?.invalidate(next, s.person.label);
     return json(200, { upload: view(next) });
   };
 

@@ -327,6 +327,13 @@ export type AgentReceiptSource = { kind: 'metermcp'; session: MeteredSession } |
 export interface SubmissionFile {
   name: string;
   size: string;
+  /**
+   * sha256 of the exact bytes sent: set by the server on every file it composes (the approval covers it). Absent on
+   * the simulator's files and on intents stored before file hashes existed (those must be composed again).
+   */
+  sha256?: string;
+  /** A document the server builds from the case (demo PDF), the MeterMCP receipt, or a confirmed merchant upload. */
+  source?: 'demo' | 'receipt' | 'upload';
 }
 
 /** Exactly what goes to PayPal's provide-evidence endpoint. */

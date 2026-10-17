@@ -210,7 +210,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           c={c}
           views={d.views}
           submission={submission}
-          request={{ evidenceType: d.evidenceType!, edits: d.edits, resolutions: d.resolutions, confirmedCorrections: [] }}
+          request={{ evidenceType: d.evidenceType!, edits: d.edits, resolutions: d.resolutions, confirmedCorrections: [], attachments: [] }}
           actionsBefore={actionsBefore.current}
           onClose={() => navigate(`/cases/${id}`)}
         />

@@ -2,6 +2,7 @@
  * The evidence PDFs are built here, on the server, from the synthetic case files the web app shows. The browser
  * only names the files; it never uploads bytes, so what reaches PayPal is exactly the case's own document.
  */
+import { createHash } from 'node:crypto';
 import type { EvidenceFile } from '@resolvekit/paypal';
 import type { Evidence, SubmissionFile } from '../../web/src/domain/types.ts';
 import { CASE_FILES } from '@resolvekit/cases';
@@ -38,8 +39,12 @@ export class UnknownFileError extends Error {
   }
 }
 
-/** Build the PDFs named in the submission from the case's documents. Unknown names are refused, never invented. */
-export function buildAttachments(caseId: string, files: readonly SubmissionFile[]): EvidenceFile[] {
+/**
+ * Build the PDFs named in the submission from the case's documents, each with the SHA-256 of its bytes (the build is
+ * deterministic: the same case gives the same bytes, so the approval can cover them). Unknown names are refused,
+ * never invented.
+ */
+export function buildAttachments(caseId: string, files: readonly SubmissionFile[]): (EvidenceFile & { sha256: string })[] {
   const c = CASE_FILES[caseId];
   return files.map((f) => {
     const att = c?.attachments.find((a) => a.name === f.name);
@@ -51,6 +56,7 @@ export function buildAttachments(caseId: string, files: readonly SubmissionFile[
       '',
       ...evidenceLines(ev),
     ];
-    return { name: f.name, type: 'application/pdf', data: writePdf({ header: SYNTHETIC_HEADER, title: ev.title, lines }) };
+    const data = writePdf({ header: SYNTHETIC_HEADER, title: ev.title, lines });
+    return { name: f.name, type: 'application/pdf', data, sha256: createHash('sha256').update(data).digest('hex') };
   });
 }

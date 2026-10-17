@@ -19,10 +19,16 @@ export interface IntentRequest {
   /** Contradiction id → resolution (explained in a sentence, or resolved with a note). */
   resolutions: Record<string, ContradictionResolution>;
   /**
-   * Sentence ids whose reliance on a line the merchant corrected (in an upload) the merchant confirmed: such a sentence
-   * is sent only with its confirmation. Sorted, unique.
+   * The merchant's confirmations that a sentence reads a line they corrected (in an upload) correctly, as
+   * `sentenceId@fragment` pairs (`S1@E7.l2`): a sentence citing corrected lines is sent only with a pair for each.
+   * Sorted, unique.
    */
   confirmedCorrections: string[];
+  /**
+   * The confirmed uploads to attach (upload ids), chosen in the final review: the server attaches their stored,
+   * sanitised files next to the case's documents, and nothing else. Sorted, unique.
+   */
+  attachments: string[];
 }
 
 /** A sentence that goes into the notes, in order. */
@@ -49,7 +55,7 @@ export interface IntentContent {
   sentences: IntentSentence[];
   /** Contradictions resolved with a note (not sent to PayPal; part of what the merchant approves). */
   resolutionNotes: { contradictionId: string; note: string }[];
-  /** The request's confirmed corrections (sorted sentence ids): part of what the merchant approves. Absent: none. */
+  /** The request's confirmed corrections (sorted `sentenceId@fragment` pairs): part of what the merchant approves. Absent: none. */
   confirmedCorrections?: string[];
 }
 
@@ -96,7 +102,8 @@ export function intentContent(i: IntentContent): IntentContent {
     carrier: i.carrier,
     tracking: i.tracking,
     notes: i.notes,
-    files: i.files.map((f) => ({ name: f.name, size: f.size })),
+    // Each file's bytes, by hash: the same names and sizes with other bytes are another content.
+    files: i.files.map((f) => ({ name: f.name, size: f.size, sha256: f.sha256, source: f.source })),
     sentences: i.sentences.map((s) => ({ id: s.id, text: s.text, edited: s.edited })),
     resolutionNotes: i.resolutionNotes.map((r) => ({ contradictionId: r.contradictionId, note: r.note })),
     // Only when there are some: an intent without confirmations hashes as it did before they existed.
@@ -138,12 +145,16 @@ export interface Composed {
 
 const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f‪-‮⁦-⁩]/;
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const PAIR = /^[\w.-]{1,40}@[\w.-]{1,40}$/;
+const UPLOAD_ID = /^upl-[0-9a-f]{24}$/;
+/** At most this many uploads attached (a case takes at most 10, server/uploads/limits.ts). */
+const MAX_ATTACHMENTS = 10;
 
 /** Parse a request body into an {@link IntentRequest}; shape only. */
 export function parseIntentRequest(body: unknown): IntentRequest | ComposeProblem {
   const bad = (detail: string): ComposeProblem => ({ status: 400, error: 'INVALID_INTENT_REQUEST', detail });
   if (!isRecord(body)) return bad('Body must be a JSON object');
-  const extra = Object.keys(body).filter((k) => !['evidenceType', 'edits', 'resolutions', 'confirmedCorrections'].includes(k));
+  const extra = Object.keys(body).filter((k) => !['evidenceType', 'edits', 'resolutions', 'confirmedCorrections', 'attachments'].includes(k));
   if (extra.length) return bad(`Unexpected field(s) ${extra.join(', ')}: notes, files and tracking are composed on the server`);
   if (typeof body.evidenceType !== 'string' || !/^[A-Z_]{1,60}$/.test(body.evidenceType)) return bad('evidenceType must be a PayPal evidence type');
   const edits: Record<string, string> = {};
@@ -178,13 +189,22 @@ export function parseIntentRequest(body: unknown): IntentRequest | ComposeProble
   const confirmed = new Set<string>();
   if (body.confirmedCorrections !== undefined) {
     const v = body.confirmedCorrections;
-    if (!Array.isArray(v) || v.length > 50) return bad('confirmedCorrections must be a list of at most 50 sentence ids');
-    for (const id of v) {
-      if (typeof id !== 'string' || !/^[\w.-]{1,40}$/.test(id)) return bad('confirmedCorrections: invalid sentence id');
-      confirmed.add(id);
+    if (!Array.isArray(v) || v.length > 50) return bad('confirmedCorrections must be a list of at most 50 "sentenceId@fragment" pairs');
+    for (const p of v) {
+      if (typeof p !== 'string' || !PAIR.test(p)) return bad('confirmedCorrections: each entry must be "sentenceId@fragment" (e.g. S1@E7.l2)');
+      confirmed.add(p);
     }
   }
-  return { evidenceType: body.evidenceType as EvidenceType, edits, resolutions, confirmedCorrections: [...confirmed].sort() };
+  const attachments = new Set<string>();
+  if (body.attachments !== undefined) {
+    const v = body.attachments;
+    if (!Array.isArray(v) || v.length > MAX_ATTACHMENTS) return bad(`attachments must be a list of at most ${MAX_ATTACHMENTS} upload ids`);
+    for (const id of v) {
+      if (typeof id !== 'string' || !UPLOAD_ID.test(id)) return bad('attachments: invalid upload id');
+      attachments.add(id);
+    }
+  }
+  return { evidenceType: body.evidenceType as EvidenceType, edits, resolutions, confirmedCorrections: [...confirmed].sort(), attachments: [...attachments].sort() };
 }
 
 export const isComposeProblem = (x: unknown): x is ComposeProblem => isRecord(x) && typeof x.error === 'string' && typeof x.status === 'number';

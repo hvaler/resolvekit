@@ -183,7 +183,7 @@ test('hosted: once one session’s evidence is in, another session’s approved 
 
 const draft = (owner: string, caseId = CASE, ip = `ip-${owner}`): Omit<StoredIntent, 'id' | 'status' | 'createdAt' | 'expiresAt' | 'approvedBy' | 'approvedAt' | 'sentAt' | 'reason' | 'requestId'> => ({
   caseId, disputeId: REAL, documentsHash: 'd', analysisKey: 'k', evidenceType: 'OTHER', carrier: '', tracking: '', notes: 'n', files: [], sentences: [], resolutionNotes: [],
-  contentHash: 'h', request: { evidenceType: 'OTHER', edits: {}, resolutions: {}, confirmedCorrections: [] }, rechecks: {}, createdBy: owner, createdFrom: ip,
+  contentHash: 'h', request: { evidenceType: 'OTHER', edits: {}, resolutions: {}, confirmedCorrections: [], attachments: [] }, rechecks: {}, createdBy: owner, createdFrom: ip,
 });
 const created = (x: ReturnType<IntentStore['create']>): StoredIntent => {
   if ('ok' in x) throw new Error(x.error);

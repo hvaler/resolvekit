@@ -223,7 +223,7 @@ describe('corrections of an uploaded file', () => {
   ];
 
   it('a correction that flips meaning needs an explicit confirmation', () => {
-    expect(corrections.get('E7.l2')).toEqual({ line: 2, evidenceId: 'E7', text: 'Delivered 8 Oct 2026', by: 'Ana (member)' });
+    expect(corrections.get('E7.l2')).toEqual({ line: 2, fragment: 'E7.l2', evidenceId: 'E7', text: 'Delivered 8 Oct 2026', by: 'Ana (member)' });
     const open = deriveSentences(base, { ...done, corrections });
     expect(byId(open, 'S1').state).toBe('needs_review');
     expect(byId(open, 'S1').reason).toBe('Why: it depends on your correction of line 2 of E7 ("Delivered 8 Oct 2026"). Confirm it reads the file correctly.');
@@ -231,10 +231,23 @@ describe('corrections of an uploaded file', () => {
     expect(byId(open, 'S2').state).toBe('supported');
     expect(byId(open, 'S2').note).toBeNull();
 
-    const confirmed = deriveSentences(base, { ...done, corrections, confirmedCorrections: new Set(['S1']) });
+    // The confirmation is of a sentence on a line: the sentence alone, or another line, does not confirm it.
+    for (const pairs of [['S1'], ['S1@E7.l1'], ['S2@E7.l2']]) expect(byId(deriveSentences(base, { ...done, corrections, confirmedCorrections: new Set(pairs) }), 'S1').state).toBe('needs_review');
+    const confirmed = deriveSentences(base, { ...done, corrections, confirmedCorrections: new Set(['S1@E7.l2']) });
     expect(byId(confirmed, 'S1').state).toBe('supported');
     expect(byId(confirmed, 'S1').reason).toBeNull();
     expect(byId(confirmed, 'S1').note).toBe('Relies on line 2 of E7 as corrected by Ana (member)');
+  });
+
+  it('a sentence citing two corrected lines needs both confirmed', () => {
+    const two = correctionsOf([{ ...e7, lines: [{ ...e7.lines[0]!, corrected: 'Ana (member)' }, e7.lines[1]!] }]);
+    const s: DraftSentence[] = [{ ...base[0]!, citations: [{ evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] }] }];
+    const one = byId(deriveSentences(s, { ...done, corrections: two, confirmedCorrections: new Set(['S1@E7.l1']) }), 'S1');
+    expect(one.state).toBe('needs_review');
+    expect(one.reason).toBe('Why: it depends on your correction of line 2 of E7 ("Delivered 8 Oct 2026"). Confirm it reads the file correctly.');
+    const both = byId(deriveSentences(s, { ...done, corrections: two, confirmedCorrections: new Set(['S1@E7.l1', 'S1@E7.l2']) }), 'S1');
+    expect(both.state).toBe('supported');
+    expect(both.note).toBe('Relies on line 1 of E7 as corrected by Ana (member) · Relies on line 2 of E7 as corrected by Ana (member)');
   });
 
   it('a confirmation does not lift another reason, and a removed sentence stays removed', () => {
@@ -242,7 +255,7 @@ describe('corrections of an uploaded file', () => {
       { ...base[0]!, verdict: 'needs_review', reason: 'Why: the date differs.' },
       { ...base[0]!, id: 'S3', verdict: 'rejected', reason: 'Removed: no.' },
     ];
-    const v = deriveSentences(held, { ...done, corrections, confirmedCorrections: new Set(['S1', 'S3']) });
+    const v = deriveSentences(held, { ...done, corrections, confirmedCorrections: new Set(['S1@E7.l2', 'S3@E7.l2']) });
     expect(byId(v, 'S1').state).toBe('needs_review');
     expect(byId(v, 'S1').reason).toBe('Why: the date differs.');
     expect(byId(v, 'S3').state).toBe('rejected');

@@ -76,6 +76,11 @@ export interface StoredIntent extends SubmissionIntent {
   failedAt?: string | null;
   /** Set when the owner edited or replaced it while it was being sent: if the send does not go through, it is void. */
   voidReason?: string | null;
+  /**
+   * The confirmed uploads in the input it was composed from (ids): a send refused because the documents changed names
+   * the uploads confirmed since. Absent on intents stored before uploads.
+   */
+  inputUploads?: string[];
 }
 
 export type AuditKind =
@@ -637,6 +642,11 @@ export class IntentStore {
     }
   }
 
+  /** The open or in-flight intents that attach this upload (whoever owns them). */
+  usingUpload(uploadId: string): StoredIntent[] {
+    return [...this.intents.values()].filter((i) => i.request.attachments?.includes(uploadId) && this.intents.has(this.fresh(i).id) && (OPEN.includes(i.status) || i.status === 'sending'));
+  }
+
   /** Invalidate every open intent (the operator changed the bindings). */
   invalidateAll(reason: string) {
     for (const i of [...this.intents.values()]) {
@@ -653,6 +663,6 @@ export class IntentStore {
 
 /** The intent as the API shows it: the content and its state, not the server's bookkeeping. */
 export function publicIntent(i: StoredIntent): SubmissionIntent {
-  const { request: _r, rechecks: _c, createdBy: _b, createdFrom: _f, analysisHash: _h, failedAt: _a, voidReason: _v, ...pub } = i;
+  const { request: _r, rechecks: _c, createdBy: _b, createdFrom: _f, analysisHash: _h, failedAt: _a, voidReason: _v, inputUploads: _u, ...pub } = i;
   return pub;
 }

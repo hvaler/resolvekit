@@ -1,5 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { request as httpRequest, createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -7,7 +8,7 @@ import { join } from 'node:path';
 import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { DailyCounters } from '@resolvekit/hosting';
-import { MemoryAnalysisStore, RateLimiter } from '@resolvekit/analyst/node';
+import { MemoryAnalysisStore, RateLimiter, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst/node';
 import { standardCase } from '@resolvekit/cases';
 import { PayPalClient } from '@resolvekit/paypal';
 import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
@@ -21,7 +22,7 @@ import { MAX_FILE_BYTES } from '../src/uploads/limits.ts';
 import { closeOcr, ocrPng } from '../src/uploads/ocr.ts';
 import { canDeleteUpload, canEditUpload } from '../src/uploads/permissions.ts';
 import { UploadStore, type UploadRecord } from '../src/uploads/store.ts';
-import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
+import { MODEL, RESOLVED, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
 
 after(() => closeOcr());
 
@@ -766,4 +767,226 @@ test("the analysis input includes the workspace's confirmed uploads of the activ
   const list = (await call(app, P, { cookie })).body.uploads as unknown as (View & { document: Doc | null })[];
   assert.deepEqual(list.find((u) => u.id === t.body.upload.id)!.document, e7);
   assert.equal(list.find((u) => u.status === 'pending')!.document, null);
+});
+
+// ------------------------------------------------------------------------------------- attachments and the send
+
+/** A hosted app whose analyst serves the golden analysis (plus `extra` sentences) for whatever input it is asked about. */
+function sendSetup() {
+  const sends: FormData[] = [];
+  let hold: Promise<void> | null = null;
+  const fetch = (async (url: string | URL, init: RequestInit = {}) => {
+    const u = new URL(String(url));
+    if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
+    if (u.pathname.endsWith('/provide-evidence')) {
+      sends.push(init.body as FormData);
+      if (hold) await hold;
+      return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    const id = decodeURIComponent(u.pathname.split('/').pop()!);
+    return new Response(JSON.stringify({ ...standardDispute(), dispute_id: id }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof globalThis.fetch;
+  const analyses = new MemoryAnalysisStore();
+  const analyst = new AnalystService({ model: null, primaryModel: MODEL, store: analyses });
+  const people = testAccounts();
+  const store = new UploadStore({ dir: null });
+  const intents = new IntentStore();
+  const app = createHostedApp({
+    paypal: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }),
+    env: 'sandbox',
+    bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
+    analyst,
+    site: null,
+    counters: new DailyCounters({ file: null, limits: { upload: 40, evidence: 10 } }),
+    accounts: people.accounts,
+    identity: null,
+    sessionSecret: TEST_SECRET,
+    origins: [ORIGIN],
+    hosts: [HOST],
+    https: true,
+    intents,
+    uploads: store,
+    limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 } },
+  });
+  /** The analysis of the case as `cookie` sees it now (the golden one, with `extra` sentences). */
+  const analyse = async (cookie: string, extra: CaseAnalysis['sentences'] = []) => {
+    const r = (await call(app, `/api/cases/${CASE}/analysis`, { body: {}, cookie })) as unknown as { body: { input: AnalysisInput } };
+    assert.ok(r.body.input, JSON.stringify(r.body).slice(0, 300));
+    const a = await goldenFor(CASE, r.body.input);
+    analyses.cached.set(a.key, { ...a, sentences: [...a.sentences, ...extra] });
+  };
+  /** Pasted text, redacted (nothing removed) and confirmed with `lines` (default: as read). */
+  const confirmText = async (cookie: string, text: string, name: string, lines?: string[]) => {
+    const t = await pasteText(app, cookie, text, name);
+    const red = await call(app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie });
+    const conf = await call(app, `${P}/${t.body.upload.id}/confirm`, { body: { lines: lines ?? red.body.readLines, sha256: red.body.upload.sha256 }, cookie });
+    assert.equal(conf.status, 200, JSON.stringify(conf.body));
+    return conf.body.upload;
+  };
+  const intent = (cookie: string, over: Record<string, unknown> = {}) =>
+    call(app, `/api/disputes/${CASE}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED, ...over }, cookie }) as unknown as Promise<{ status: number; body: SentIntent & { error?: string; detail?: string; blockers?: string[] } }>;
+  const approved = async (cookie: string, over: Record<string, unknown> = {}) => {
+    const i = await intent(cookie, over);
+    assert.equal(i.status, 201, JSON.stringify(i.body));
+    const a = await call(app, `/api/disputes/${CASE}/intent/${i.body.id}/approve`, { body: { contentHash: i.body.contentHash }, cookie });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    return i.body;
+  };
+  const send = (cookie: string, intentId: string) => call(app, `/api/disputes/${CASE}/evidence`, { body: { intentId }, cookie }) as unknown as Promise<{ status: number; body: { error?: string; detail?: string } }>;
+  return { app, people, store, intents, analyses, sends, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
+}
+type SentIntent = { id: string; contentHash: string; status: string; files: { name: string; size: string; sha256?: string; source?: string }[] };
+const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+const fileBytes = async (f: File) => new Uint8Array(await f.arrayBuffer());
+
+test("only selected, confirmed uploads of the active dispute are attached; an archived or another workspace's id is refused", TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+  const e8 = await s.confirmText(cookie, 'From: buyer\nIt arrived, thanks.', 'Recibo ñ (copia) #2 of the email the buyer sent us on the day it was delivered.txt');
+  const pending = (await pasteText(s.app, cookie, 'not confirmed', 'pending.txt')).body.upload;
+  const mk = (workspaceId: string, boundDisputeId: string, status: 'confirmed' | 'archived') => {
+    const r = s.store.create({ workspaceId, caseId: CASE, boundDisputeId, kind: 'text', name: 'x.txt', uploadedBy: { id: 'x', label: 'x', name: 'x' } }, new TextEncoder().encode('x'));
+    return s.store.update(r.id, { status, evidenceId: 'E9', lines: [{ text: 'x', correctedBy: null, original: null }], sha256: 'c'.repeat(64), mime: 'application/pdf' }).id;
+  };
+  const other = mk('ws-other', REAL, 'confirmed');
+  const archived = mk(s.people.workspace.id, REAL, 'archived');
+  const old = mk(s.people.workspace.id, 'PP-R-OLD-0', 'confirmed');
+  await s.analyse(cookie);
+
+  const i = await s.intent(cookie, { attachments: [e8.id] });
+  assert.equal(i.status, 201, JSON.stringify(i.body));
+  const demo = i.body.files.filter((f) => f.source === 'demo');
+  assert.ok(demo.length > 0 && demo.every((f) => /^[0-9a-f]{64}$/.test(f.sha256 ?? '')), JSON.stringify(i.body.files));
+  // E8 only (E7 is confirmed but not selected), named by its evidence id with a file-name-safe, bounded name.
+  const ups = i.body.files.filter((f) => f.source === 'upload');
+  assert.deepEqual(ups.map((f) => [f.name, f.sha256]), [['E8-Recibo-copia-2-of-the-email-the-buyer-sent-us-on-the-day-it.pdf', s.store.get(e8.id)!.sha256]]);
+  assert.ok(!i.body.files.some((f) => f.name.startsWith(`${e7.evidenceId}-`)));
+
+  for (const id of [pending.id, other, archived, old, 'upl-0123456789abcdef01234567']) {
+    const r = await s.intent(cookie, { attachments: [e7.id, id] });
+    assert.equal(r.status, 422, id);
+    assert.equal(r.body.error, 'UNKNOWN_UPLOAD', id);
+  }
+});
+
+test('the bytes sent are the approved ones', TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const up = await uploadPng(s.app, cookie);
+  const red = await call(s.app, `${P}/${up.body.upload.id}/redact`, { body: { rects: [await trackingRect()] }, cookie });
+  const conf = await call(s.app, `${P}/${up.body.upload.id}/confirm`, { body: { lines: red.body.readLines, sha256: red.body.upload.sha256 }, cookie });
+  assert.equal(conf.status, 200, JSON.stringify(conf.body));
+  await s.analyse(cookie);
+  const i = await s.approved(cookie, { attachments: [up.body.upload.id] });
+  const r = await s.send(cookie, i.id);
+  assert.equal(r.status, 202, JSON.stringify(r.body));
+  assert.equal(s.sends.length, 1);
+  const files = s.sends[0]!.getAll('evidence-file') as File[];
+  // Every file PayPal received is one the intent names, with the approved SHA-256 of its bytes.
+  assert.deepEqual(files.map((f) => f.name), i.files.map((f) => f.name));
+  for (const [n, f] of files.entries()) assert.equal(sha(await fileBytes(f)), i.files[n]!.sha256, f.name);
+  const png = files.find((f) => f.name === 'E7-tracking.png')!;
+  assert.equal(png.type, 'image/png');
+  assert.equal(sha(await fileBytes(png)), red.body.upload.sha256);
+  assert.equal(i.files.find((f) => f.name === 'E7-tracking.png')!.sha256, red.body.upload.sha256);
+  assert.deepEqual(await fileBytes(png), s.store.sanitised(up.body.upload.id));
+});
+
+test('a stored upload whose bytes no longer match the approval is not sent (UPLOAD_CHANGED); an intent stored without file hashes must be composed again', TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+  await s.analyse(cookie);
+  const i = await s.approved(cookie, { attachments: [e7.id] });
+  s.store.update(e7.id, {}, { sanitised: new TextEncoder().encode('%PDF-1.4 other bytes') });
+  const r = await s.send(cookie, i.id);
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.equal(r.body.error, 'UPLOAD_CHANGED');
+  assert.match(r.body.detail!, /E7/);
+  assert.equal(s.sends.length, 0);
+
+  // An intent from before file hashes (its files have none): refused as stale, never sent without the check.
+  const s2 = sendSetup();
+  const c2 = s2.people.fullMember('Bea');
+  await s2.analyse(c2);
+  const j = await s2.approved(c2);
+  for (const f of s2.intents.peek(j.id)!.files) delete f.sha256;
+  const r2 = await s2.send(c2, j.id);
+  assert.equal(r2.status, 409, JSON.stringify(r2.body));
+  assert.equal(r2.body.error, 'INTENT_STALE');
+  assert.equal(s2.sends.length, 0);
+});
+
+test("A confirms E7 while B has an approved intent: B's send is refused naming E7 and A", TIMEOUT, async () => {
+  const s = sendSetup();
+  const ana = s.people.fullMember('Ana Lopez');
+  const bea = s.people.fullMember('Bea Ruiz');
+  await s.analyse(bea);
+  const i = await s.approved(bea);
+  await s.confirmText(ana, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+  const r = await s.send(bea, i.id);
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.equal(r.body.error, 'DOCUMENTS_CHANGED');
+  assert.equal(r.body.detail, 'Ana Lopez added evidence E7 since you approved; review again');
+  assert.equal(s.sends.length, 0);
+
+  // Several: the first is named, and how many more.
+  await s.analyse(bea);
+  const j = await s.approved(bea);
+  await s.confirmText(ana, 'one', 'one.txt');
+  await s.confirmText(bea, 'two', 'two.txt');
+  const r2 = await s.send(bea, j.id);
+  assert.equal(r2.body.detail, 'Ana Lopez added evidence E8 and 1 more since you approved; review again');
+  assert.equal(s.sends.length, 0);
+});
+
+test('deleting an upload used by a send in flight is refused (SEND_IN_PROGRESS); deleting one used by an approved, unsent intent invalidates that intent', TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+  const e8 = await s.confirmText(cookie, 'From: buyer\nIt arrived.', 'email.txt');
+  await s.analyse(cookie);
+
+  // Approved, not sent: deleting E8 voids the response that attaches it.
+  const i = await s.approved(cookie, { attachments: [e8.id] });
+  assert.equal((await call(s.app, `${P}/${e8.id}`, { method: 'DELETE', cookie })).status, 200);
+  assert.equal(s.intents.peek(i.id)!.status, 'invalidated');
+  assert.match(s.intents.peek(i.id)!.reason!, /E8.*deleted/);
+  assert.equal((await s.send(cookie, i.id)).status, 409);
+  assert.equal(s.sends.length, 0);
+
+  // In flight: deleting E7 waits for the outcome.
+  await s.analyse(cookie);
+  const j = await s.approved(cookie, { attachments: [e7.id] });
+  let release!: () => void;
+  s.holdSends(new Promise<void>((r) => (release = r)));
+  const sending = s.send(cookie, j.id);
+  while (s.sends.length === 0) await new Promise((r) => setTimeout(r, 5));
+  const del = await call(s.app, `${P}/${e7.id}`, { method: 'DELETE', cookie });
+  assert.equal(del.status, 409);
+  assert.equal(del.body.error, 'SEND_IN_PROGRESS');
+  assert.equal(s.store.get(e7.id)!.status, 'confirmed');
+  release();
+  assert.equal((await sending).status, 202);
+  // Once the outcome is known it can be deleted (PayPal keeps its copy; the sent intent stays sent).
+  assert.equal((await call(s.app, `${P}/${e7.id}`, { method: 'DELETE', cookie })).status, 200);
+  assert.equal(s.intents.peek(j.id)!.status, 'sent');
+});
+
+test('a sentence citing a corrected line of a confirmed upload is composed only with its sentence@line confirmation', TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  await s.confirmText(cookie, 'UPS tracking\nNot delivered 8 Oct 2026', 'tracking.txt', ['UPS tracking', 'Delivered 8 Oct 2026']);
+  const S7 = { id: 'S7', text: 'UPS records the delivery on 8 Oct 2026.', noteId: null, citations: [{ doc: 'E7', quote: 'Delivered 8 Oct 2026', valid: true }], verdict: 'supported', reason: null, decidedBy: 'model', rewrite: null } as unknown as CaseAnalysis['sentences'][number];
+  await s.analyse(cookie, [S7]);
+  for (const confirmedCorrections of [[], ['S7@E7.l1'], ['S1@E7.l2']]) {
+    const r = await s.intent(cookie, { confirmedCorrections });
+    assert.equal(r.status, 422, JSON.stringify(confirmedCorrections));
+    assert.equal(r.body.error, 'DRAFT_BLOCKED');
+    assert.ok(r.body.blockers!.includes('sentence 7 needs review'), JSON.stringify(r.body.blockers));
+  }
+  const ok = await s.intent(cookie, { confirmedCorrections: ['S7@E7.l2'] });
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  assert.ok((ok.body as unknown as { sentences: { id: string }[] }).sentences.some((x) => x.id === 'S7'));
 });
