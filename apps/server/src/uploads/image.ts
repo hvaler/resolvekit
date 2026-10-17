@@ -6,6 +6,7 @@
  * chunks, none of the original bytes.
  */
 import { createHash } from 'node:crypto';
+import { inflateSync } from 'node:zlib';
 import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { MAX_PIXELS, MAX_SIDE } from './limits.ts';
@@ -17,8 +18,8 @@ export type UploadErrorCode = 'UNSUPPORTED_TYPE' | 'TOO_LARGE' | 'UNREADABLE' | 
 export class UploadError extends Error {
   readonly code: UploadErrorCode;
   readonly status: number;
-  constructor(code: UploadErrorCode, message: string) {
-    super(message);
+  constructor(code: UploadErrorCode, message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = 'UploadError';
     this.code = code;
     this.status = code === 'TOO_LARGE' ? 413 : code === 'OCR_TIMEOUT' ? 504 : code === 'OCR_FAILED' ? 422 : 415;
@@ -30,12 +31,48 @@ const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const isPng = (b: Uint8Array) => b.length >= 8 && PNG_MAGIC.every((v, i) => b[i] === v);
 const isJpeg = (b: Uint8Array) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
 
-/** Width and height from the PNG IHDR chunk. */
+/**
+ * Walk every PNG chunk (length and type framing) and return what the decoder will see: IHDR must be the first chunk
+ * and the only one, interlacing is refused (its inflate size is not bounded by the header), and the IDAT data is
+ * inflated here under the size the header allows, so a bomb is refused before pngjs touches it.
+ */
 function pngSize(b: Uint8Array): [number, number] {
-  if (b.length < 24 || String.fromCharCode(b[12]!, b[13]!, b[14]!, b[15]!) !== 'IHDR') throw new UploadError('UNREADABLE', 'Not a readable PNG');
+  const bad = () => new UploadError('UNREADABLE', 'Not a readable PNG');
   const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  return [v.getUint32(16), v.getUint32(20)];
+  let w = 0, h = 0, expected = 0;
+  const idat: Uint8Array[] = [];
+  let o = 8, first = true, ended = false;
+  while (o + 12 <= b.length) {
+    const len = v.getUint32(o);
+    const type = String.fromCharCode(b[o + 4]!, b[o + 5]!, b[o + 6]!, b[o + 7]!);
+    if (len > b.length - o - 12) throw bad();
+    if (first !== (type === 'IHDR')) throw bad();
+    if (first) {
+      if (len !== 13) throw bad();
+      w = v.getUint32(o + 8);
+      h = v.getUint32(o + 12);
+      const depth = b[o + 16]!, colour = b[o + 17]!, interlace = b[o + 20]!;
+      if (interlace !== 0) throw new UploadError('UNSUPPORTED_TYPE', 'Interlaced PNG images are not accepted');
+      if (w < 1 || h < 1) throw new UploadError('UNREADABLE', 'The image has no pixels');
+      if (w > MAX_SIDE || h > MAX_SIDE || w * h > MAX_PIXELS) throw tooLarge();
+      const channels = ({ 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 } as Record<number, number>)[colour];
+      if (!channels) throw bad();
+      expected = h * (1 + Math.ceil((w * channels * depth) / 8));
+      first = false;
+    } else if (type === 'IDAT') idat.push(b.subarray(o + 8, o + 8 + len));
+    o += 12 + len;
+    if (type === 'IEND') { ended = true; break; }
+  }
+  if (first || !ended || idat.length === 0) throw bad();
+  try {
+    if (inflateSync(Buffer.concat(idat), { maxOutputLength: expected }).length !== expected) throw bad();
+  } catch (e) {
+    throw new UploadError('UNREADABLE', 'The PNG image data does not match its header', { cause: e });
+  }
+  return [w, h];
 }
+
+const tooLarge = () => new UploadError('TOO_LARGE', `The image is larger than ${MAX_SIDE} px or ${MAX_PIXELS / 1024 / 1024} MP`);
 
 /** Width and height from the first JPEG start-of-frame segment. */
 function jpegSize(b: Uint8Array): [number, number] {
@@ -65,9 +102,11 @@ export function decodeImage(bytes: Uint8Array): { kind: 'png' | 'jpeg'; width: n
   try {
     if (kind === 'png') {
       const p = PNG.sync.read(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+      if (p.width !== w || p.height !== h) throw new Error('size differs from the validated header');
       return { kind, width: p.width, height: p.height, rgba: new Uint8Array(p.data) };
     }
     const j = jpeg.decode(bytes, { useTArray: true, maxResolutionInMP: 16, maxMemoryUsageInMB: 256 });
+    if (j.width !== w || j.height !== h) throw new Error('size differs from the validated header');
     return { kind, width: j.width, height: j.height, rgba: new Uint8Array(j.data) };
   } catch {
     throw new UploadError('UNREADABLE', 'The image could not be decoded');

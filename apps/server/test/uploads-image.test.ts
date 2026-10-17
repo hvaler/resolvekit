@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { crc32 } from 'node:zlib';
+import { crc32, deflateSync } from 'node:zlib';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
 import { decodeImage, sanitiseImage, UploadError } from '../src/uploads/image.ts';
@@ -134,4 +134,55 @@ test('rects outside the image are clipped, negative or zero sizes ignored', () =
 test('the hash is the SHA-256 of the returned PNG bytes', () => {
   const out = sanitiseImage(png(10, 10), [{ x: 0, y: 0, w: 3, h: 3 }]);
   assert.equal(out.sha256, createHash('sha256').update(out.png).digest('hex'));
+});
+
+function chunk(type: string, data: Uint8Array): Buffer {
+  const out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0);
+  out.write(type, 4, 'latin1');
+  out.set(data, 8);
+  out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+  return out;
+}
+function ihdr(w: number, h: number, interlace = 0): Buffer {
+  const d = Buffer.alloc(13);
+  d.writeUInt32BE(w, 0);
+  d.writeUInt32BE(h, 4);
+  d.set([8, 6, 0, 0, interlace], 8);
+  return chunk('IHDR', d);
+}
+const SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const iend = () => chunk('IEND', new Uint8Array(0));
+
+test('refuses a PNG with two IHDR chunks', () => {
+  const good = Buffer.from(png(4, 4));
+  const idatAndEnd = good.subarray(33);
+  const twice = Buffer.concat([SIG, ihdr(4, 4), ihdr(4000, 4000), idatAndEnd]);
+  assert.equal(code(() => decodeImage(twice)), 'UNREADABLE');
+  const late = Buffer.concat([good.subarray(0, 33), ihdr(4, 4), idatAndEnd]);
+  assert.equal(code(() => decodeImage(late)), 'UNREADABLE');
+});
+
+test('refuses an interlaced PNG before decoding', () => {
+  const good = Buffer.from(png(4, 4));
+  const inter = Buffer.concat([SIG, ihdr(4, 4, 1), good.subarray(33)]);
+  assert.equal(code(() => decodeImage(inter)), 'UNSUPPORTED_TYPE');
+});
+
+test('a PNG whose IDAT inflates beyond its declared size is refused', () => {
+  const bomb = deflateSync(Buffer.alloc(50 * 1024 * 1024));
+  const b = Buffer.concat([SIG, ihdr(4, 4), chunk('IDAT', bomb), iend()]);
+  assert.ok(b.length < 200_000);
+  assert.equal(code(() => decodeImage(b)), 'UNREADABLE');
+  const short = Buffer.concat([SIG, ihdr(4, 4), chunk('IDAT', deflateSync(Buffer.alloc(10))), iend()]);
+  assert.equal(code(() => decodeImage(short)), 'UNREADABLE');
+});
+
+test('decoded size must equal the validated header size', () => {
+  // A decoy 1x1 start-of-frame ahead of the real one: the decoder would use the later, larger frame.
+  const j = Buffer.from(jpg(64, 64));
+  const sof = j.indexOf(Buffer.from([0xff, 0xc0]));
+  const decoy = Buffer.from([0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00]);
+  const b = Buffer.concat([j.subarray(0, sof), decoy, j.subarray(sof)]);
+  assert.equal(code(() => decodeImage(b)), 'UNREADABLE');
 });
