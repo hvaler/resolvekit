@@ -503,3 +503,15 @@ test('cross-tenant: after a restart (no keys remembered), the live analysis is s
   assert.equal((await restarted.app(req(`${analysisPath}/progress?key=${live.key}`))).status, 404);
   assert.equal((await restarted.app(req(`${analysisPath}/progress?key=${live.key}`, { cookie: restarted.people.member() }))).status, 200);
 });
+
+test('who is acting: the session gives role and reviewer flag; no session gives nobody', async () => {
+  const s = await setup();
+  const t = s.people;
+  const owner = s.app.personOf(req('/api/x', { cookie: t.ownerCookie }));
+  assert.deepEqual(owner && [owner.role, owner.reviewer, owner.workspaceId, owner.id], ['owner', false, t.workspace.id, t.owner.id]);
+  const reviewer = s.app.personOf(req('/api/x', { cookie: t.member('Rae') }));
+  assert.deepEqual(reviewer && [reviewer.name, reviewer.role, reviewer.reviewer], ['Rae', 'member', true]);
+  const full = s.app.personOf(req('/api/x', { cookie: t.fullMember('Fin') }));
+  assert.deepEqual(full && [full.name, full.role, full.reviewer], ['Fin', 'member', false]);
+  assert.equal(s.app.personOf(req('/api/x')), null);
+});

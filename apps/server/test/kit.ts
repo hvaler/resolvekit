@@ -75,6 +75,8 @@ export function testAccounts(now: () => Date = () => new Date()) {
   if ('refused' in owner) throw new Error(owner.refused);
   const inv = accounts.createInvite({ workspaceId: owner.workspace.id, createdBy: owner.person.id, label: 'Team', reviewer: true, maxUses: 300, ttlMs: 30 * 24 * 3_600_000, accessUntil: null });
   if ('refused' in inv) throw new Error(inv.refused);
+  const fullInv = accounts.createInvite({ workspaceId: owner.workspace.id, createdBy: owner.person.id, label: 'Full members', reviewer: false, maxUses: 300, ttlMs: 30 * 24 * 3_600_000, accessUntil: null });
+  if ('refused' in fullInv) throw new Error(fullInv.refused);
   let n = 0;
   return {
     accounts,
@@ -83,6 +85,12 @@ export function testAccounts(now: () => Date = () => new Date()) {
     workspace: owner.workspace,
     member: (name = `Member ${++n}`) => {
       const j = accounts.join(inv.token, { name, via: 'browser' });
+      if ('refused' in j) throw new Error(j.refused);
+      return cookieOf(j.person);
+    },
+    /** A member who is not a reviewer (joins an invite created with `reviewer: false`). */
+    fullMember: (name = `Full member ${++n}`) => {
+      const j = accounts.join(fullInv.token, { name, via: 'browser' });
       if ('refused' in j) throw new Error(j.refused);
       return cookieOf(j.person);
     },

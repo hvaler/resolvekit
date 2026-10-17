@@ -24,7 +24,7 @@ import type { PayPalClient } from '@resolvekit/paypal';
 import type { AccountStore } from './accounts.ts';
 import type { LiveGate } from './analysis.ts';
 import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
-import { createApi, json, withLog, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
+import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
 
 /** What the warm-up did for one bound case. */
@@ -40,6 +40,8 @@ export type HostedApp = Handler & {
   warmUp: () => Promise<WarmUpOutcome[]>;
   /** The bindings object was changed in place: forget the old reads and warm up again. */
   bindingsChanged: () => Promise<WarmUpOutcome[]>;
+  /** The person acting on a request (null when signed out). */
+  personOf: (req: Request) => ActingPerson | null;
 };
 
 export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
@@ -162,6 +164,12 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const session = (req: Request) => auth.session(req);
 
   const gate: CostGate = {
+    person(req: Request): ActingPerson | null {
+      const s = session(req);
+      if (!s.ok) return null;
+      const p = s.person;
+      return { id: p.id, name: p.name, label: actorLabel(p), workspaceId: s.workspace.id, role: p.role, reviewer: p.reviewer };
+    },
     // Synchronous from the check to the count: concurrent requests cannot overshoot a cap.
     reserve(req: Request, action: CostlyAction): Reservation {
       const s = session(req);
@@ -405,6 +413,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   };
   return Object.assign(handler, {
     warmUp,
+    personOf: (req: Request) => api.personOf(req),
     bindingsChanged: () => {
       api.forgetReads();
       return warmUp();

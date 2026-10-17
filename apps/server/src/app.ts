@@ -48,12 +48,24 @@ export type Actor =
     }
   | { ok: false; refusal: Refusal };
 
+/** Who is acting on a request: the signed-in person (hosted) or the local operator. */
+export interface ActingPerson {
+  id: string;
+  name: string;
+  label: string;
+  workspaceId: string;
+  role: 'owner' | 'member';
+  reviewer: boolean;
+}
+
 /**
  * Asked right before a costly action, with the request that asks for it. `reserve` refuses (demo code missing,
  * daily cap reached) or reserves one unit atomically (check and count in one synchronous step, so concurrent requests
  * cannot overshoot a cap); the caller releases it when the action did not happen. Local mode has no gate.
  */
 export interface CostGate {
+  /** Hosted: the signed-in person acting (role and reviewer flag included); null when nobody is signed in. */
+  person?(req: Request): ActingPerson | null;
   reserve(req: Request, action: CostlyAction): Reservation;
   /**
    * Who approves or sends: the hosted demo session (its unlock cookie, never the code itself). `unlocked`: real
@@ -120,6 +132,8 @@ export interface AppOptions extends ApiOptions {
 
 export const TOKEN_HEADER = 'x-resolvekit-token';
 export const LOCAL_OPERATOR = 'local operator';
+/** Local mode has no accounts: the operator at this machine acts as an owner. */
+const LOCAL_PERSON: ActingPerson = { id: 'local', name: LOCAL_OPERATOR, label: LOCAL_OPERATOR, workspaceId: 'local', role: 'owner', reviewer: false };
 
 /** Control characters (line breaks excepted where allowed) and bidi overrides: never in text a client sends us. */
 export const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/;
@@ -219,6 +233,8 @@ export type Api = Handler & {
   intents: IntentStore;
   /** For the operator's check (hosted /api/ops/status): PayPal's state and each binding verified on a fresh read now. */
   opsReport: () => Promise<OpsReport>;
+  /** The person acting on a request (see {@link ActingPerson}); null when signed out. */
+  personOf: (req: Request) => ActingPerson | null;
 };
 
 /** What the operator's check sees: PayPal connected, and each bound case's binding as a fresh read verified it. */
@@ -297,6 +313,8 @@ export function createApi(opts: ApiOptions): Api {
 
   /** Who is acting (hosted: the signed-in person; local: the operator at this machine). */
   const actorOf = (req: Request, unlocked: boolean): Actor => (opts.gate ? opts.gate.actor(req, unlocked) : { ok: true, actor: LOCAL_OPERATOR });
+  /** The person acting (hosted: from the session, null when signed out; local: the operator, an owner). */
+  const personOf = (req: Request): ActingPerson | null => (opts.gate ? (opts.gate.person?.(req) ?? null) : LOCAL_PERSON);
   /** Whether this request sees the real PayPal disputes (hosted: the seller's workspace only; local: always). */
   const viewerLive = async (req?: Request): Promise<boolean> => !req || !opts.gate?.live || (await opts.gate.live(req));
 
@@ -976,6 +994,7 @@ export function createApi(opts: ApiOptions): Api {
     paypalNotified,
     intents,
     opsReport,
+    personOf,
   });
 
   /** Each binding read from PayPal now (the same read and check as before a send), whoever asks. */
