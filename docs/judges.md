@@ -38,7 +38,8 @@ says which model made the analysis and when ("cached" = stored; "live" = just ru
 shows both values side by side, neutrally (no fraud accusation), marks the contradiction **Needs review** and
 blocks the approval until you decide: **Explain in response** puts the analyst's neutral sentence (both values,
 both sources) in the draft, or **Mark resolved…** records your note in the audit trail. Hover a value to see it in
-its document.
+its document. The verifier may also mark a sentence **Needs review** (it says why): **Rephrase to what the evidence
+shows** rewrites it and checks it again, live. The bar above the send button lists what is still open.
 
 **4. Approve and send to real PayPal.** Click **Review what will be sent →** (signed in through your reviewer link:
 the review is composed by the server for you, and the approval names you). The review shows exactly what the server

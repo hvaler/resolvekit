@@ -16,7 +16,7 @@ import { EvidenceCard } from '../components/EvidenceCard';
 import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
-import { lockedReason } from '../domain/demoClient';
+import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
 import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
@@ -78,7 +78,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   }, [docs, an, later.length]);
   const status = snap?.status ?? demo.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
-  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, analysis });
+  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, actor: actorName(demoLock), analysis });
 
   // Keep the approve flow open once started, even after the case becomes "submitted".
   const flowOpen = useRef(false);

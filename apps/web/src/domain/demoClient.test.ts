@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DemoClient, SIGN_IN_FIRST, initials, lockedReason, roleLabel, type DemoState } from './demoClient';
+import { DemoClient, SIGN_IN_FIRST, actorName, initials, lockedReason, roleLabel, type DemoState } from './demoClient';
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 /** Answers by path: /api/demo and /api/auth/me. */
@@ -41,5 +41,16 @@ describe('DemoClient', () => {
   it('initials and role labels', () => {
     expect([initials('Dana Ruiz'), initials('Northwind Goods Ltd'), initials('Kim'), initials('  ')]).toEqual(['DR', 'NL', 'K', '?']);
     expect([roleLabel({ role: 'owner', reviewer: false }), roleLabel({ role: 'member', reviewer: true }), roleLabel({ role: 'member', reviewer: false })]).toEqual(['Owner', 'Reviewer', 'Member']);
+  });
+});
+
+describe('who is acting, as the page names them', () => {
+  it('initials skip punctuation: a name with brackets or digits still gives letters', () => {
+    expect([initials('Judge 2 (rehearsal)'), initials('(Ana) Ruiz'), initials('2 Kim')]).toEqual(['JR', 'AR', 'K']);
+  });
+
+  it('the signed-in person, else the local merchant', () => {
+    expect(actorName(null)).toBe('Alex Moreno');
+    expect(actorName({ person: { name: 'Judge 2 (rehearsal)' } } as unknown as DemoState)).toBe('Judge 2 (rehearsal)');
   });
 });

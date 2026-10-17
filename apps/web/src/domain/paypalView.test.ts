@@ -10,6 +10,7 @@ import {
   caseAllowedActions,
   caseHeaderView,
   caseRequestedEvidence,
+  approvalTarget,
   payPalSource,
   withPayPal,
   type PayPalSource,
@@ -281,5 +282,17 @@ describe('the demo clock', () => {
     const v = header(live(waiting()));
     expect(v.dueClock).toBeNull();
     expect(renderToString(createElement(CaseHeader, { view: v }))).not.toContain('demo clock');
+  });
+});
+
+describe('what an approval names', () => {
+  it('a bound case: the real PayPal dispute, with the demo case it stands for', () => {
+    const snap = { ...waiting(), origin: { kind: 'paypal', env: 'sandbox', disputeId: 'PP-R-BGW-10193053' } } as DisputeSnapshot;
+    expect(approvalTarget('PP-R-TVH-10190665', snap)).toBe('PayPal dispute PP-R-BGW-10193053 (demo case PP-R-TVH-10190665)');
+  });
+
+  it('a simulated case: the simulated dispute, never called a PayPal one', () => {
+    expect(approvalTarget('PP-R-TVH-10190665', { ...waiting(), origin: { kind: 'simulator' } } as DisputeSnapshot)).toBe('simulated dispute PP-R-TVH-10190665');
+    expect(approvalTarget('PP-R-TVH-10190665', undefined)).toBe('simulated dispute PP-R-TVH-10190665');
   });
 });

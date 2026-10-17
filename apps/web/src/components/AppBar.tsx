@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useServices } from '../app/services';
 import { useTheme } from '../theme/ThemeProvider';
+import { LOCAL_MERCHANT, initials } from '../domain/demoClient';
 import { AccountMenu } from './AccountMenu';
 import { SyncIndicator } from './SyncIndicator';
 import { cx } from './ui';
@@ -118,7 +119,7 @@ export function ModeBadge({ caseId }: { caseId?: string }) {
 }
 
 /** The merchant in local mode (no sign-in): the operator at this machine. Hosted mode names the signed-in person. */
-export const MERCHANT = { name: 'Alex Moreno', initials: 'AM' } as const;
+export const MERCHANT = { name: LOCAL_MERCHANT, initials: initials(LOCAL_MERCHANT) } as const;
 
 export function AppBar({
   caseId,

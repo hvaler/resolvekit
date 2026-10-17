@@ -43,6 +43,8 @@ export interface CaseDraftOptions {
   /** Evidence has been recorded by PayPal for this dispute. */
   submitted: boolean;
   onAudit: (who: string, what: string) => void;
+  /** Who is acting in this browser (actorName): named on what they resolve here. */
+  actor: string;
   /** The real analysis behind `c` (see useAnalysis). */
   analysis: AnalysisHandle;
 }
@@ -70,6 +72,7 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
   const options = useMemo(() => evidenceTypeOptions(c.summary.reason, c.requestedEvidenceType, c.evidenceTypes), [c]);
   const [evidenceType, setEvidenceType] = useState<EvidenceType | null>(() => defaultEvidenceType(options));
   const onAudit = opts.onAudit;
+  const actor = opts.actor;
   const recheckSeq = useRef(0);
 
   const analysisComplete = ready && run >= c.analysis.steps.length;
@@ -158,10 +161,10 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
   const resolve = useCallback(
     (contradictionId: string, note: string) => {
       const k = c.contradictions.find((x) => x.id === contradictionId);
-      setResolutions((r) => ({ ...r, [contradictionId]: { status: 'resolved', note, by: 'Alex Moreno' } }));
-      onAudit('Alex Moreno', `Resolved ${k ? k.blockerName.replace(/^the /, '') : 'contradiction'} with a note: "${note}"`);
+      setResolutions((r) => ({ ...r, [contradictionId]: { status: 'resolved', note, by: actor } }));
+      onAudit(actor, `Resolved ${k ? k.blockerName.replace(/^the /, '') : 'contradiction'} with a note: "${note}"`);
     },
-    [c, onAudit],
+    [c, onAudit, actor],
   );
 
   const replay = useCallback(() => {

@@ -92,10 +92,22 @@ export function lockedReason(demo: DemoState | null, action: DemoAction): string
   return demo.reasons[action] ?? 'Only the seller’s workspace can do this.';
 }
 
-/** "Dana Ruiz" → "DR". */
+/** "Dana Ruiz" → "DR"; "Judge 2 (rehearsal)" → "JR": the first letter of the first and last words that have one. */
 export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts[parts.length - 1]![0] ?? '') : '')).toUpperCase() || '?';
+  const letters = name
+    .trim()
+    .split(/\s+/)
+    .map((w) => /\p{L}/u.exec(w)?.[0])
+    .filter((x): x is string => !!x);
+  return ((letters[0] ?? '') + (letters.length > 1 ? letters[letters.length - 1]! : '')).toUpperCase() || '?';
+}
+
+/** The merchant in local mode (no sign-in): the operator at this machine. */
+export const LOCAL_MERCHANT = 'Alex Moreno';
+
+/** Who is acting in this browser, as the page names them: the signed-in person, else the local merchant. */
+export function actorName(demo: Pick<DemoState, 'person'> | null | undefined): string {
+  return demo?.person?.name ?? LOCAL_MERCHANT;
 }
 
 /** The person's role as shown: "Owner", "Member", "Reviewer". */

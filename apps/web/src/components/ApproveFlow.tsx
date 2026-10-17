@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useServices } from '../app/services';
 import { allowedActionsAfter } from '../domain/allowedActions';
 import { compareSentRecorded } from '../domain/compare';
-import { lockedReason, roleLabel } from '../domain/demoClient';
+import { actorName, lockedReason, roleLabel } from '../domain/demoClient';
+import { approvalTarget } from '../domain/paypalView';
 import { formatCount, notesCountLabel } from '../domain/draft';
 import { EVIDENCE_TYPE_LABEL } from '../domain/evidenceTypes';
 import { intentSubmission, type IntentRequest, type SubmissionIntent } from '../domain/intent';
@@ -14,7 +15,6 @@ import { STATUS_DISPLAY, statusExplanation } from '../domain/status';
 import { totalSize } from '../domain/submission';
 import { utcClock, utcStamp } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView } from '../domain/types';
-import { MERCHANT } from './AppBar';
 import { SignInPrompt } from './AccountMenu';
 import { Button, EvidenceTag, Spinner, cx } from './ui';
 
@@ -196,7 +196,7 @@ export function ApproveFlow(props: ApproveFlowProps) {
 
 /** The flow over a composed intent: review → confirm (approve on the server) → send → read back. */
 function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onClose }: ApproveFlowProps & { intent: SubmissionIntent; source: IntentSource }) {
-  const { gatewayFor, modeOf, applySnapshot, addAudit, audit, demo } = useServices();
+  const { gatewayFor, modeOf, applySnapshot, addAudit, audit, demo, snapshots } = useServices();
   const id = c.summary.id;
   // Decided once when the flow opens: a submission never switches between the simulator and real PayPal mid-way.
   const [{ gateway, mode }] = useState(() => ({ gateway: gatewayFor(id), mode: modeOf(id) }));
@@ -213,7 +213,7 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
   const locked = mode.kind === 'paypal' ? lockedReason(demo, 'evidence') : null;
   // Who approves: the signed-in person (hosted), or the local merchant.
   const approver = demo?.person && demo.workspace ? { name: demo.person.name, role: roleLabel(demo.person), workspace: demo.workspace.name } : null;
-  const approverName = approver?.name ?? MERCHANT.name;
+  const approverName = actorName(demo);
   const canSubmit = checked && !locked && !approving;
   const [phase, setPhase] = useState<SendPhase | null>(null);
   const [reached, setReached] = useState<SendPhase[]>([]);
@@ -520,8 +520,8 @@ function ApproveIntent({ c, views, intent: composed, source, actionsBefore, onCl
                     className="m-0 mt-0.5 h-[18px] w-[18px] accent-[var(--acc)]"
                   />
                   <span className="text-body-lg leading-normal">
-                    I&apos;m <strong>{approverName}</strong>{approver ? ` (${approver.role}, ${approver.workspace})` : ''} and I approve submitting this evidence to PayPal for dispute{' '}
-                    <span className="font-mono text-body">{id}</span>.
+                    I&apos;m <strong>{approverName}</strong>{approver ? ` (${approver.role}, ${approver.workspace})` : ''} and I approve submitting this evidence for the{' '}
+                    <span className="font-mono text-body">{approvalTarget(id, snapshots[id])}</span>.
                   </span>
                 </label>
                 {locked && (

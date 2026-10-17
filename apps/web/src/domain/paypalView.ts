@@ -175,6 +175,14 @@ function withoutPayPal(why: string, notice: HeaderView['notice']): HeaderView {
   };
 }
 
+/**
+ * What an approval is for, as the person reads it before ticking the box: the real PayPal dispute when the case is
+ * bound (with the demo case it stands for), otherwise the simulated one.
+ */
+export function approvalTarget(caseId: string, snap: DisputeSnapshot | undefined): string {
+  return snap?.origin?.kind === 'paypal' ? `PayPal dispute ${snap.origin.disputeId} (demo case ${caseId})` : `simulated dispute ${caseId}`;
+}
+
 export function caseHeaderView({ summary, source, simulatedStatus, statusDetail, now, simulatedSnap }: HeaderInput): HeaderView {
   switch (source.kind) {
     case 'simulated':
