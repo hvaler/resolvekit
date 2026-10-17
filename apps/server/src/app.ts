@@ -374,6 +374,9 @@ export function createApi(opts: ApiOptions): Api {
     noteSeller(caseId, d);
     const snap = await snapshotOf(caseId, d);
     reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
+    // A judge who only opens the case moves it on too: this answer is the used dispute's, the next view the fresh one's.
+    const b = bindingOf(caseId);
+    if (b && b.dispute === disputeId) rotateIfUsed(caseId, b, snap);
     return snap;
   };
 

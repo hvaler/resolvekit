@@ -68,6 +68,7 @@ function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW,
     const d = disputes[id];
     return d ? new Response(JSON.stringify(d), { status: 200 }) : new Response('{"name":"RESOURCE_NOT_FOUND"}', { status: 404 });
   }) as typeof globalThis.fetch;
+  const people = testAccounts(now);
   const app = createHostedApp({
     paypal: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }),
     env: 'sandbox',
@@ -76,7 +77,7 @@ function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW,
     log: (l) => lines.push(l),
     counters: new DailyCounters({ file: null, limits: { 'live-analysis': 5 } }),
     site: null,
-    accounts: testAccounts(now).accounts,
+    accounts: people.accounts,
     identity: null,
     sessionSecret: TEST_SECRET,
     origins: [ORIGIN],
@@ -86,7 +87,7 @@ function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW,
     opsToken: OPS,
     now,
   });
-  return { app, reads, lines };
+  return { app, reads, lines, people };
 }
 
 type Status = { ok: boolean; problems: string[]; bindings: Record<string, { dispute: string; status: string; used: boolean; reserve: number }> };
@@ -176,4 +177,14 @@ test('an evidence date in the future counts as now (it cannot hold the case long
   t = new Date(NOW.getTime() + 16 * MIN);
   await status(app);
   assert.equal((await status(app)).bindings[CASE]!.dispute, B.dispute);
+});
+
+test('a judge who only opens the case moves it on too (no operator check needed)', async () => {
+  const old = new Date(NOW.getTime() - 60 * MIN).toISOString();
+  const { app, people } = setup({ [CASE]: [A, B] }, { [A.dispute]: poolDispute(A, { evidenceAt: old }), [B.dispute]: poolDispute(B) });
+  const judge = people.member('Judge 2');
+  const view = () => app(new Request(`${ORIGIN}/api/disputes/${CASE}`, { headers: { host: HOST, 'x-forwarded-for': '203.0.113.7', cookie: judge } }));
+  assert.equal((await view()).status, 200);
+  const next = (await (await view()).json()) as { origin?: { disputeId?: string } };
+  assert.equal(next.origin?.disputeId, B.dispute);
 });
