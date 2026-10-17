@@ -13,7 +13,7 @@ import { MAX_PIXELS, MAX_SIDE } from './limits.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
-export type UploadErrorCode = 'UNSUPPORTED_TYPE' | 'TOO_LARGE' | 'UNREADABLE' | 'OCR_TIMEOUT' | 'OCR_FAILED' | 'BAD_REDACTION' | 'TOO_LONG';
+export type UploadErrorCode = 'UNSUPPORTED_TYPE' | 'TOO_LARGE' | 'UNREADABLE' | 'OCR_TIMEOUT' | 'OCR_FAILED' | 'BAD_REDACTION' | 'TOO_LONG' | 'STORAGE' | 'NOT_FOUND';
 
 export class UploadError extends Error {
   readonly code: UploadErrorCode;
@@ -22,7 +22,7 @@ export class UploadError extends Error {
     super(message, options);
     this.name = 'UploadError';
     this.code = code;
-    this.status = code === 'TOO_LARGE' || code === 'TOO_LONG' ? 413 : code === 'OCR_TIMEOUT' ? 504 : code === 'OCR_FAILED' || code === 'BAD_REDACTION' ? 422 : 415;
+    this.status = code === 'TOO_LARGE' || code === 'TOO_LONG' ? 413 : code === 'OCR_TIMEOUT' ? 504 : code === 'STORAGE' ? 503 : code === 'NOT_FOUND' ? 404 : code === 'OCR_FAILED' || code === 'BAD_REDACTION' ? 422 : 415;
   }
 }
 
