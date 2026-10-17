@@ -707,3 +707,63 @@ test('unknown cases (inherited names too) are 404, and an archived upload cannot
   assert.equal((await call(app, `${P}/${t.body.upload.id}/discard`, { body: {}, cookie })).status, 404);
   assert.equal((await call(app, `${P}/${t.body.upload.id}`, { method: 'DELETE', cookie })).status, 200);
 });
+
+test("the analysis input includes the workspace's confirmed uploads of the active dispute only", TIMEOUT, async () => {
+  const { app, people, store } = setup();
+  const cookie = people.fullMember('Ana Lopez');
+  // Confirmed, with line 2 corrected by the person: "Not delivered" was a misreading.
+  const t = await pasteText(app, cookie, 'UPS tracking\nNot delivered 8 Oct 2026', 'tracking.txt');
+  const red = await call(app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie });
+  const conf = await call(app, `${P}/${t.body.upload.id}/confirm`, { body: { lines: ['UPS tracking', 'Delivered 8 Oct 2026'], sha256: red.body.upload.sha256 }, cookie });
+  assert.equal(conf.status, 200, JSON.stringify(conf.body));
+  const label = conf.body.upload.lines[1]!.correctedBy!;
+  // Pending: not confirmed yet.
+  await pasteText(app, cookie, 'PENDINGWORDS only', 'pending.txt');
+  // Another workspace's confirmed upload of the same case and dispute, and an archived one of a previous dispute.
+  const mk = (workspaceId: string, boundDisputeId: string, text: string, status: 'confirmed' | 'archived') => {
+    const r = store.create({ workspaceId, caseId: CASE, boundDisputeId, kind: 'text', name: `${text}.txt`, uploadedBy: { id: 'x', label: 'x', name: 'x' } }, new TextEncoder().encode(text));
+    store.update(r.id, { status, evidenceId: 'E9', lines: [{ text, correctedBy: null, original: null }], confirmedAt: new Date().toISOString() });
+  };
+  mk('ws-other', REAL, 'OTHERWORKSPACE', 'confirmed');
+  mk(people.workspace.id, 'PP-R-OLD-0', 'ARCHIVEDWORDS', 'archived');
+  mk(people.workspace.id, 'PP-R-OLD-0', 'OLDDISPUTE', 'confirmed');
+
+  type Doc = { id: string; title: string; type: string; source: string; tag: string; lines: { text: string; fragment?: string; corrected?: string }[] };
+  const analyse = (c?: string) => call(app, `/api/cases/${CASE}/analysis`, { body: {}, ...(c ? { cookie: c } : {}) }) as unknown as Promise<{ status: number; body: { key: string; input: { documents: Doc[] } } & Answer }>;
+  const r = await analyse(cookie);
+  assert.ok(r.body.input, JSON.stringify(r.body).slice(0, 300));
+  const docs = r.body.input.documents;
+  const e7 = docs.find((d) => d.id === 'E7');
+  assert.deepEqual(e7, {
+    id: 'E7',
+    title: 'tracking.txt',
+    type: 'Merchant upload · pasted text',
+    source: 'Uploaded by Ana Lopez',
+    tag: 'UPL',
+    lines: [
+      { text: 'UPS tracking', fragment: 'E7.l1' },
+      { text: 'Delivered 8 Oct 2026', fragment: 'E7.l2', corrected: label },
+    ],
+  });
+  const all = JSON.stringify(docs);
+  for (const w of ['PENDINGWORDS', 'OTHERWORKSPACE', 'ARCHIVEDWORDS', 'OLDDISPUTE', 'Not delivered']) assert.ok(!all.includes(w), w);
+  // The analysis key is remembered on the upload (deleting it purges by these keys).
+  assert.match(r.body.key, /^[0-9a-f]{64}$/);
+  assert.deepEqual(store.get(t.body.upload.id)!.analysisKeys, [r.body.key]);
+
+  // The same case for someone outside the workspace (and signed out): no uploads, and a different input.
+  for (const c of [people.outsider(), undefined]) {
+    const o = await analyse(c);
+    assert.ok(o.body.input, JSON.stringify(o.body).slice(0, 300));
+    assert.ok(!o.body.input.documents.some((d) => d.tag === 'UPL'));
+    assert.notEqual(o.body.key, r.body.key);
+  }
+  // The seller's workspace again: its uploads are still there (the pin never carries one workspace's uploads).
+  assert.equal((await analyse(cookie)).body.key, r.body.key);
+  assert.deepEqual(store.get(t.body.upload.id)!.analysisKeys, [r.body.key]);
+
+  // The uploads list gives each confirmed upload its analyst document (what the web app renders), pending ones none.
+  const list = (await call(app, P, { cookie })).body.uploads as unknown as (View & { document: Doc | null })[];
+  assert.deepEqual(list.find((u) => u.id === t.body.upload.id)!.document, e7);
+  assert.equal(list.find((u) => u.status === 'pending')!.document, null);
+});

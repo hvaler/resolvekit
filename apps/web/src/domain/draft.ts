@@ -1,4 +1,4 @@
-import { contestedBy } from '@resolvekit/analyst';
+import { contestedBy, type AnalysisDocument } from '@resolvekit/analyst';
 import type {
   ActionCode,
   Citation,
@@ -23,6 +23,44 @@ export interface Recheck {
   citations?: Citation[];
 }
 
+/** A line of an uploaded file that the merchant corrected by hand (its text is their reading of the file). */
+export interface Correction {
+  /** 1-based line number in the upload. */
+  line: number;
+  evidenceId: string;
+  /** The corrected text. */
+  text: string;
+  /** Who corrected it. */
+  by: string;
+}
+
+/**
+ * The corrected lines of these analyst documents, by fragment key (`E7.l3`). The server builds it from the input it
+ * analysed, the web app from the uploads' documents: both from the same upload records, so they agree.
+ */
+export function correctionsOf(docs: readonly AnalysisDocument[]): Map<string, Correction> {
+  const out = new Map<string, Correction>();
+  for (const d of docs) {
+    d.lines.forEach((l, i) => {
+      if (l.corrected && l.fragment) out.set(l.fragment, { line: i + 1, evidenceId: d.id, text: l.text, by: l.corrected });
+    });
+  }
+  return out;
+}
+
+/** The corrected lines a sentence's citations cover, in citation order. */
+function correctionsCited(citations: readonly Citation[], corrections: ReadonlyMap<string, Correction> | undefined): Correction[] {
+  if (!corrections?.size) return [];
+  const out: Correction[] = [];
+  for (const c of citations) {
+    for (const f of c.fragments) {
+      const k = corrections.get(f);
+      if (k && !out.includes(k)) out.push(k);
+    }
+  }
+  return out;
+}
+
 export interface DraftContext {
   /** Merchant edits by sentence id (already trimmed, non-empty). */
   edits: Readonly<Record<string, string>>;
@@ -40,6 +78,13 @@ export interface DraftContext {
    */
   contradictions?: readonly Contradiction[];
   resolutions?: Readonly<Record<string, ContradictionResolution>>;
+  /** Corrected lines of the case's uploads, by fragment key ({@link correctionsOf}). Absent: none. */
+  corrections?: ReadonlyMap<string, Correction>;
+  /**
+   * Sentence ids whose reliance on a corrected line the merchant confirmed. A supported sentence citing a corrected
+   * line goes to review until its id is here: the correction may flip what the file says.
+   */
+  confirmedCorrections?: ReadonlySet<string>;
 }
 
 /** The contradiction a contested review reason names, if the merchant resolved it with a note. */
@@ -87,6 +132,14 @@ export function deriveSentences(base: readonly DraftSentence[], ctx: DraftContex
         reason = null;
         note = `Released: ${settled.k.blockerName.replace(/^the /, '')} resolved by ${settled.by} ("${settled.note}")`;
       }
+    }
+    const relied = state === 'supported' ? correctionsCited(citations, ctx.corrections) : [];
+    if (relied.length && ctx.confirmedCorrections?.has(s.id)) {
+      note = [note, ...relied.map((k) => `Relies on line ${k.line} of ${k.evidenceId} as corrected by ${k.by}`)].filter(Boolean).join(' · ');
+    } else if (relied.length) {
+      const k = relied[0]!;
+      state = 'needs_review';
+      reason = `Why: it depends on your correction of line ${k.line} of ${k.evidenceId} ("${k.text}"). Confirm it reads the file correctly.`;
     }
 
     return { id: s.id, num: i + 1, text, state, citations, reason, note, edited: edit !== undefined, ...(s.origin === 'merchant_note' ? { fromNote: true } : {}) };

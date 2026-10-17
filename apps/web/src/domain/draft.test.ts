@@ -7,6 +7,7 @@ import {
   checklistState,
   checklistSummary,
   citationUse,
+  correctionsOf,
   deriveSentences,
   draftBlockers,
   draftCounts,
@@ -199,5 +200,51 @@ describe('a sentence held back only by a contradiction the merchant resolved', (
     const ok = { ...held, verdict: 'supported' as const, reason: undefined };
     const v = byId(deriveSentences([ok], { ...done, edits: { S9: 'UPS delivered it to Apt 4B.' }, rechecks, contradictions: K, resolutions: resolved }), 'S9');
     expect(v.state).toBe('supported');
+  });
+});
+
+describe('corrections of an uploaded file', () => {
+  // The merchant corrected line 2 of E7: the text recognition read "Not delivered 8 Oct 2026".
+  const e7 = {
+    id: 'E7',
+    title: 'tracking.png',
+    type: 'Merchant upload · image',
+    source: 'Uploaded by Ana',
+    tag: 'UPL',
+    lines: [
+      { text: 'UPS tracking', fragment: 'E7.l1' },
+      { text: 'Delivered 8 Oct 2026', fragment: 'E7.l2', corrected: 'Ana (member)' },
+    ],
+  };
+  const corrections = correctionsOf([e7]);
+  const base: DraftSentence[] = [
+    { id: 'S1', text: 'UPS delivered the parcel on 8 Oct 2026.', verdict: 'supported', citations: [{ evidenceId: 'E7', fragments: ['E7.l2'], quotes: ['Delivered 8 Oct 2026'] }] },
+    { id: 'S2', text: 'UPS tracked it.', verdict: 'supported', citations: [{ evidenceId: 'E7', fragments: ['E7.l1'] }] },
+  ];
+
+  it('a correction that flips meaning needs an explicit confirmation', () => {
+    expect(corrections.get('E7.l2')).toEqual({ line: 2, evidenceId: 'E7', text: 'Delivered 8 Oct 2026', by: 'Ana (member)' });
+    const open = deriveSentences(base, { ...done, corrections });
+    expect(byId(open, 'S1').state).toBe('needs_review');
+    expect(byId(open, 'S1').reason).toBe('Why: it depends on your correction of line 2 of E7 ("Delivered 8 Oct 2026"). Confirm it reads the file correctly.');
+    // A sentence citing only uncorrected lines is not affected.
+    expect(byId(open, 'S2').state).toBe('supported');
+    expect(byId(open, 'S2').note).toBeNull();
+
+    const confirmed = deriveSentences(base, { ...done, corrections, confirmedCorrections: new Set(['S1']) });
+    expect(byId(confirmed, 'S1').state).toBe('supported');
+    expect(byId(confirmed, 'S1').reason).toBeNull();
+    expect(byId(confirmed, 'S1').note).toBe('Relies on line 2 of E7 as corrected by Ana (member)');
+  });
+
+  it('a confirmation does not lift another reason, and a removed sentence stays removed', () => {
+    const held: DraftSentence[] = [
+      { ...base[0]!, verdict: 'needs_review', reason: 'Why: the date differs.' },
+      { ...base[0]!, id: 'S3', verdict: 'rejected', reason: 'Removed: no.' },
+    ];
+    const v = deriveSentences(held, { ...done, corrections, confirmedCorrections: new Set(['S1', 'S3']) });
+    expect(byId(v, 'S1').state).toBe('needs_review');
+    expect(byId(v, 'S1').reason).toBe('Why: the date differs.');
+    expect(byId(v, 'S3').state).toBe('rejected');
   });
 });

@@ -19,6 +19,7 @@
 import type { ActingPerson, Reservation } from '../app.ts';
 import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
+import { uploadDocuments } from './documents.ts';
 import { UploadError, sanitiseImage, type Rect } from './image.ts';
 import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE } from './limits.ts';
 import { ocrPng } from './ocr.ts';
@@ -82,10 +83,13 @@ const STRAY = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/g;
 /** In a confirmed line, also no line break (a tab stays, as in pasted text). */
 const LINE_STRAY = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
 
-/** The record as the web app sees it (no workspace id, no analysis keys, no counters). */
+/**
+ * The record as the web app sees it (no workspace id, no analysis keys, no counters), with the analyst's document of a
+ * confirmed upload (exactly what the analysis reads: lines, fragment keys, corrections), null before confirmation.
+ */
 function view(r: UploadRecord) {
   const { workspaceId: _w, analysisKeys: _a, redactions: _r, ...v } = r;
-  return v;
+  return { ...v, document: uploadDocuments([r])[0] ?? null };
 }
 
 /** A file name to show: the last path segment, without control characters, at most 120 characters. */

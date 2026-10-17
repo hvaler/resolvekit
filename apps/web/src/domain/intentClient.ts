@@ -132,6 +132,7 @@ export class LocalIntentClient implements IntentSource {
       files: s.files.map((f) => ({ ...f })),
       sentences: local.views.filter((v) => v.state === 'supported').map((v) => ({ id: v.id, text: v.text.trim(), edited: v.edited })),
       resolutionNotes: Object.entries(req.resolutions).flatMap(([contradictionId, r]) => (r.status === 'resolved' ? [{ contradictionId, note: r.note }] : [])),
+      ...(req.confirmedCorrections?.length ? { confirmedCorrections: [...req.confirmedCorrections] } : {}),
     };
     const id = `int-${hex()}`;
     const now = new Date();

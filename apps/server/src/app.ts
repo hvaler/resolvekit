@@ -16,7 +16,7 @@ import { workspaceIdFor } from './accounts.ts';
 import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
 import type { AgentReceiptSource, DisputeSnapshot } from '../../web/src/domain/types.ts';
-import type { Recheck } from '../../web/src/domain/draft.ts';
+import { correctionsOf, type Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
 import { hasSellerEvidence, sellerEvidence } from '../../web/src/domain/recorded.ts';
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
@@ -27,7 +27,8 @@ import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource }
 import { toSnapshot } from './mapping.ts';
 import { checkAgainstDispute } from './validate.ts';
 import { REFUSED_EARLY, acceptsImageBody, createUploadRoutes } from './uploads/routes.ts';
-import { UploadStore } from './uploads/store.ts';
+import { uploadDocuments } from './uploads/documents.ts';
+import { UploadStore, type UploadRecord } from './uploads/store.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
 export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload';
@@ -433,7 +434,27 @@ export function createApi(opts: ApiOptions): Api {
     simulatedKeys.add(await opts.analyst.key(input));
     if (simulatedKeys.size > 5000) simulatedKeys.delete(simulatedKeys.values().next().value!);
   };
-  const serverInput = async (caseId: string, req?: Request): Promise<AnalysisInput | Response> => {
+  const uploads = opts.uploads ?? new UploadStore({ dir: null, now });
+  /**
+   * The confirmed uploads the requesting person's workspace made for this case and dispute: none without a request
+   * (warm-up, the operator's checks) or without a signed-in person of the seller's workspace. Pending, archived and
+   * other workspaces' uploads never join an input.
+   */
+  const confirmedUploads = async (caseId: string, disputeId: string | null, req?: Request): Promise<UploadRecord[]> => {
+    const person = req ? personOf(req) : null;
+    if (!person || !(await viewerLive(req))) return [];
+    return uploads.list({ workspaceId: person.workspaceId, caseId, boundDisputeId: disputeId, statuses: ['confirmed'] });
+  };
+  /**
+   * The input with the uploads' documents after the case's own. The pin (InputPins, keyed by case only) is resolved
+   * on the input without them, so it never holds one workspace's uploads (nor their text) for another's request.
+   */
+  const withUploads = (input: AnalysisInput, recs: UploadRecord[]): AnalysisInput => {
+    const docs = uploadDocuments(recs);
+    return docs.length ? { ...input, documents: [...input.documents, ...docs] } : input;
+  };
+  /** The analyst's input and the ids of the uploads in it. */
+  const serverInputWith = async (caseId: string, req?: Request): Promise<{ input: AnalysisInput; uploadIds: string[] } | Response> => {
     const demo = CASE_FILES[caseId]!;
     const disputeId = bindingOf(caseId)?.dispute;
     let source: PayPalSource = { kind: 'simulated' };
@@ -447,9 +468,15 @@ export function createApi(opts: ApiOptions): Api {
       }
     }
     const submitted = source.kind === 'live' && hasSellerEvidence(source.snap);
-    const input = pins.resolve(caseId, caseInput(demo, source), submitted);
-    if (source.kind === 'simulated') await markSimulated(input);
-    return input;
+    const recs = await confirmedUploads(caseId, disputeId ?? null, req);
+    const input = withUploads(pins.resolve(caseId, caseInput(demo, source), submitted), recs);
+    // An input with uploads is the seller workspace's: /progress never answers it to anyone else.
+    if (source.kind === 'simulated' && recs.length === 0) await markSimulated(input);
+    return { input, uploadIds: recs.map((r) => r.id) };
+  };
+  const serverInput = async (caseId: string, req?: Request): Promise<AnalysisInput | Response> => {
+    const r = await serverInputWith(caseId, req);
+    return r instanceof Response ? r : r.input;
   };
 
   /** Whether a case goes to real PayPal: bound, and PayPal connected (the web app decides the same way, from /health). */
@@ -469,7 +496,8 @@ export function createApi(opts: ApiOptions): Api {
     const disputeId = await boundDispute(caseId, req);
     if (!disputeId) {
       const source: PayPalSource = { kind: 'simulated' };
-      return { source, input: pins.resolve(caseId, caseInput(demo, source), false), dispute: null, snap: null, disputeId: null };
+      const recs = await confirmedUploads(caseId, bindingOf(caseId)?.dispute ?? null, req);
+      return { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), false), recs), dispute: null, snap: null, disputeId: null };
     }
     const binding = bindingOf(caseId)!;
     const mark = (status: BindingState, reasons: string[]) => bindingStatus.set(caseId, { status, reasons, checkedAt: now().toISOString(), binding });
@@ -491,7 +519,8 @@ export function createApi(opts: ApiOptions): Api {
     const snap = await snapshotOf(caseId, dispute);
     reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
     const source: PayPalSource = { kind: 'live', snap, failed: null };
-    const state = { source, input: pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), dispute, snap, disputeId };
+    const recs = await confirmedUploads(caseId, disputeId, req);
+    const state = { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), recs), dispute, snap, disputeId };
     // This request goes on with what it read; the next one reads the next dispute of the reserve, if this one is used.
     rotateIfUsed(caseId, binding, snap);
     return state;
@@ -571,6 +600,8 @@ export function createApi(opts: ApiOptions): Api {
       },
       allowedActions: caseAllowedActions(st.source, undefined, demo.allowedActions),
       submitted: !!st.snap && hasSellerEvidence(st.snap),
+      // From the uploads in the input this server built: the same corrections the web app shows.
+      corrections: correctionsOf(st.input.documents),
     });
     if (isComposeProblem(composed)) return json(composed.status, { error: composed.error, detail: composed.detail, ...(composed.blockers ? { blockers: composed.blockers } : {}) });
     const s = composed.submission;
@@ -590,6 +621,7 @@ export function createApi(opts: ApiOptions): Api {
       files: s.files,
       sentences: composed.sentences,
       resolutionNotes: composed.resolutionNotes,
+      ...(req.confirmedCorrections?.length ? { confirmedCorrections: [...req.confirmedCorrections] } : {}),
     };
     return { content, contentHash: await contentHash(content), rechecks: used, analysis: a.analysis, analysisHash: sha256(JSON.stringify(a.analysis)) };
   };
@@ -654,8 +686,9 @@ export function createApi(opts: ApiOptions): Api {
       const editor = actorOf(req, false);
       if (editor.ok) intents.invalidateCase(caseId, 'a sentence was edited after this intent was composed', editor.actor);
     }
-    const input = await serverInput(caseId, req);
-    if (input instanceof Response) return input;
+    const built = await serverInputWith(caseId, req);
+    if (built instanceof Response) return built;
+    const { input, uploadIds } = built;
     if (sub === '/verify') {
       const r = await analyst.verify(input, text, liveGate(req, 'recheck'));
       if (r.status === 200) {
@@ -669,6 +702,9 @@ export function createApi(opts: ApiOptions): Api {
       return json(r.status, r.body);
     }
     const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1', liveGate(req, 'live-analysis'));
+    // The uploads remember the analyses that read them (deleting one purges those).
+    const key = (r.body as { key?: unknown }).key;
+    if (uploadIds.length && typeof key === 'string') uploads.noteAnalysisKey(uploadIds, key);
     // The input goes back with the answer: the web app maps the analysis onto exactly these documents.
     return json(r.status, { ...(r.body as object), input });
   };
@@ -930,7 +966,7 @@ export function createApi(opts: ApiOptions): Api {
 
   /** Merchant evidence uploads: the seller's workspace (local: the operator), the case's active dispute. */
   const uploadRoutes = createUploadRoutes({
-    store: opts.uploads ?? new UploadStore({ dir: null, now }),
+    store: uploads,
     person: personOf,
     isLive: (req) => viewerLive(req),
     reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'upload') : null,

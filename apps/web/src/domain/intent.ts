@@ -7,7 +7,7 @@
  * (Without a server, e.g. in tests, the web app composes the same thing locally for the simulator.)
  */
 import { canonicalJson, sha256Hex } from '@resolvekit/analyst';
-import { deriveSentences, draftBlockers, notesText, type Recheck } from './draft.ts';
+import { deriveSentences, draftBlockers, notesText, type Correction, type Recheck } from './draft.ts';
 import { evidenceTypeOptions } from './evidenceTypes.ts';
 import type { ActionCode, CaseFile, ContradictionResolution, EvidenceSubmission, EvidenceType, SentenceView, SubmissionFile } from './types';
 
@@ -18,6 +18,11 @@ export interface IntentRequest {
   edits: Record<string, string>;
   /** Contradiction id → resolution (explained in a sentence, or resolved with a note). */
   resolutions: Record<string, ContradictionResolution>;
+  /**
+   * Sentence ids whose reliance on a line the merchant corrected (in an upload) the merchant confirmed: such a sentence
+   * is sent only with its confirmation. Sorted, unique.
+   */
+  confirmedCorrections: string[];
 }
 
 /** A sentence that goes into the notes, in order. */
@@ -44,6 +49,8 @@ export interface IntentContent {
   sentences: IntentSentence[];
   /** Contradictions resolved with a note (not sent to PayPal; part of what the merchant approves). */
   resolutionNotes: { contradictionId: string; note: string }[];
+  /** The request's confirmed corrections (sorted sentence ids): part of what the merchant approves. Absent: none. */
+  confirmedCorrections?: string[];
 }
 
 export type IntentStatus =
@@ -92,6 +99,8 @@ export function intentContent(i: IntentContent): IntentContent {
     files: i.files.map((f) => ({ name: f.name, size: f.size })),
     sentences: i.sentences.map((s) => ({ id: s.id, text: s.text, edited: s.edited })),
     resolutionNotes: i.resolutionNotes.map((r) => ({ contradictionId: r.contradictionId, note: r.note })),
+    // Only when there are some: an intent without confirmations hashes as it did before they existed.
+    ...(i.confirmedCorrections?.length ? { confirmedCorrections: [...i.confirmedCorrections] } : {}),
   };
 }
 
@@ -134,7 +143,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 export function parseIntentRequest(body: unknown): IntentRequest | ComposeProblem {
   const bad = (detail: string): ComposeProblem => ({ status: 400, error: 'INVALID_INTENT_REQUEST', detail });
   if (!isRecord(body)) return bad('Body must be a JSON object');
-  const extra = Object.keys(body).filter((k) => !['evidenceType', 'edits', 'resolutions'].includes(k));
+  const extra = Object.keys(body).filter((k) => !['evidenceType', 'edits', 'resolutions', 'confirmedCorrections'].includes(k));
   if (extra.length) return bad(`Unexpected field(s) ${extra.join(', ')}: notes, files and tracking are composed on the server`);
   if (typeof body.evidenceType !== 'string' || !/^[A-Z_]{1,60}$/.test(body.evidenceType)) return bad('evidenceType must be a PayPal evidence type');
   const edits: Record<string, string> = {};
@@ -166,7 +175,16 @@ export function parseIntentRequest(body: unknown): IntentRequest | ComposeProble
       } else return bad('resolutions: status must be open, explained or resolved');
     }
   }
-  return { evidenceType: body.evidenceType as EvidenceType, edits, resolutions };
+  const confirmed = new Set<string>();
+  if (body.confirmedCorrections !== undefined) {
+    const v = body.confirmedCorrections;
+    if (!Array.isArray(v) || v.length > 50) return bad('confirmedCorrections must be a list of at most 50 sentence ids');
+    for (const id of v) {
+      if (typeof id !== 'string' || !/^[\w.-]{1,40}$/.test(id)) return bad('confirmedCorrections: invalid sentence id');
+      confirmed.add(id);
+    }
+  }
+  return { evidenceType: body.evidenceType as EvidenceType, edits, resolutions, confirmedCorrections: [...confirmed].sort() };
 }
 
 export const isComposeProblem = (x: unknown): x is ComposeProblem => isRecord(x) && typeof x.error === 'string' && typeof x.status === 'number';
@@ -181,6 +199,8 @@ export interface ComposeInput {
   allowedActions: readonly ActionCode[];
   /** PayPal already shows the seller's evidence. */
   submitted: boolean;
+  /** Corrected lines of the case's uploads, by fragment key (correctionsOf). Absent: none. */
+  corrections?: ReadonlyMap<string, Correction>;
 }
 
 /**
@@ -214,7 +234,7 @@ export function composeSubmission(x: ComposeInput): Composed | ComposeProblem {
   }
   // The same sentence rules as the draft, with the resolutions as validated here (a contested sentence is released
   // only by a contradiction resolved with a note).
-  const views = deriveSentences(c.sentences, { edits, rechecks, checking: null, analysisStep: c.analysis.steps.length, rejectionStep: c.analysis.rejectionStep, contradictions: c.contradictions, resolutions });
+  const views = deriveSentences(c.sentences, { edits, rechecks, checking: null, analysisStep: c.analysis.steps.length, rejectionStep: c.analysis.rejectionStep, contradictions: c.contradictions, resolutions, corrections: x.corrections, confirmedCorrections: new Set(req.confirmedCorrections ?? []) });
 
   const options = evidenceTypeOptions(c.summary.reason, c.requestedEvidenceType, c.evidenceTypes);
   const selected = options.find((o) => o.type === req.evidenceType);

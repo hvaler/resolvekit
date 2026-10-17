@@ -16,6 +16,20 @@ Rules you always follow:
 3. Be neutral. A discrepancy is a discrepancy, never an accusation of fraud.
 4. Answer with JSON only, matching the schema.`;
 
+/** Rendered on its own line after a line the merchant corrected: outside the document text, so never quotable. */
+export const CORRECTED_MARK = '   ↳ corrected by the merchant';
+
+const CORRECTED_RULE = `
+5. A line followed by "${CORRECTED_MARK.trim()}" is the merchant's reading of the file: the merchant uploaded the file and corrected that line by hand where the text recognition misread it. Quote the line itself, never the marker, and treat it as the merchant's reading of the file, not as a third party's record.`;
+
+/**
+ * The system prompt for these documents. Documents without a corrected line get exactly {@link SYSTEM} (so their
+ * prompts, and the analyses stored under PROMPT_VERSION, are unchanged); with one, the rule saying what it means.
+ */
+export function systemFor(docs: readonly AnalysisDocument[]): string {
+  return docs.some((d) => d.lines.some((l) => l.corrected)) ? SYSTEM + CORRECTED_RULE : SYSTEM;
+}
+
 const str = { type: 'string' } as const;
 const strOrNull = { type: ['string', 'null'] } as const;
 const obj = (properties: Record<string, unknown>): JsonSchema => ({ type: 'object', additionalProperties: false, required: Object.keys(properties), properties });
@@ -27,13 +41,14 @@ function nonce(): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
-/** Documents wrapped in delimiters a document cannot forge (random per call). */
+/** Documents wrapped in delimiters a document cannot forge (random per call); a corrected line is followed by the marker. */
 export function renderDocuments(docs: readonly AnalysisDocument[]): { text: string; tag: string } {
   const tag = `DOC-${nonce()}`;
   const text = docs
     .map((d) => {
       const head = `<<<${tag} id="${d.id}" type="${d.type}" source="${d.source}" title="${d.title}">>>`;
-      return `${head}\n${d.lines.map((l) => l.text).join('\n')}\n<<<END ${tag}>>>`;
+      const body = d.lines.map((l) => (l.corrected ? `${l.text}\n${CORRECTED_MARK}` : l.text)).join('\n');
+      return `${head}\n${body}\n<<<END ${tag}>>>`;
     })
     .join('\n\n');
   return { text, tag };

@@ -16,13 +16,13 @@ import {
   PROMPT_VERSION,
   RECHECK_SCHEMA,
   SCREEN_SCHEMA,
-  SYSTEM,
   VERIFY_SCHEMA,
   analyzePrompt,
   explainPrompt,
   extractPrompt,
   recheckPrompt,
   screenPrompt,
+  systemFor,
   verifyPrompt,
 } from './prompts.ts';
 import { contestedReason, decideAction, requirementsFor } from './rules.ts';
@@ -216,7 +216,7 @@ export async function analyzeCase(input: AnalysisInput, o: RunOptions): Promise<
   const calls: CallUsage[] = [];
   const now = o.now ?? (() => new Date());
   const call = async (stage: string, user: string, schema: Record<string, unknown>, maxOutputTokens: number) => {
-    const r = await o.model.generate({ stage, system: SYSTEM, user, schema, maxOutputTokens });
+    const r = await o.model.generate({ stage, system: systemFor(input.documents), user, schema, maxOutputTokens });
     calls.push(r.usage);
     o.onUsage?.(r.usage);
     return rec(r.json);
@@ -380,7 +380,7 @@ export async function recheckSentence(
   const sentence = normalize(text);
   // The edited sentence is client text: scanned like the documents. An instruction-like sentence is never "supported".
   const instruction = looksLikeInstruction(sentence);
-  const r = await o.model.generate({ stage: 'recheck', system: SYSTEM, user: recheckPrompt(sentence, analysis.facts, flagged), schema: RECHECK_SCHEMA, maxOutputTokens: 3_000 });
+  const r = await o.model.generate({ stage: 'recheck', system: systemFor(input.documents), user: recheckPrompt(sentence, analysis.facts, flagged), schema: RECHECK_SCHEMA, maxOutputTokens: 3_000 });
   o.onUsage?.(r.usage);
   const j = rec(r.json);
   // Facts are re-verified against the documents: a cached analysis could be stale.

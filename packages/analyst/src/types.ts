@@ -11,6 +11,11 @@ export interface DocLine {
   text: string;
   /** Web fragment key this line belongs to (e.g. "E3.deliv"); absent for lines the web app cannot highlight. */
   fragment?: string;
+  /**
+   * Who corrected this line by hand (a merchant upload whose text recognition misread it): the text is the merchant's
+   * reading of the file. Absent for lines as read or as recorded.
+   */
+  corrected?: string;
 }
 
 export interface AnalysisDocument {

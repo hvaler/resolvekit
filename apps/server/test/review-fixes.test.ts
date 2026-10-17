@@ -155,7 +155,7 @@ test('review 2: one person rotating addresses cannot fill the store, evict a jud
 
 const draft = (owner: string, ip = `ip-${owner}`): Omit<StoredIntent, 'id' | 'status' | 'createdAt' | 'expiresAt' | 'approvedBy' | 'approvedAt' | 'sentAt' | 'reason' | 'requestId'> => ({
   caseId: CASE, disputeId: REAL, documentsHash: 'd', analysisKey: 'k', evidenceType: 'OTHER', carrier: '', tracking: '', notes: 'n', files: [], sentences: [], resolutionNotes: [],
-  contentHash: 'h', request: { evidenceType: 'OTHER', edits: {}, resolutions: {} }, rechecks: {}, createdBy: owner, createdFrom: ip,
+  contentHash: 'h', request: { evidenceType: 'OTHER', edits: {}, resolutions: {}, confirmedCorrections: [] }, rechecks: {}, createdBy: owner, createdFrom: ip,
 });
 
 test('review 2: replaced intents leave the store at once; at the global cap the retry time is when one really frees up', () => {
