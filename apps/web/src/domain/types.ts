@@ -136,6 +136,11 @@ export interface SentenceView {
   edited: boolean;
   /** One of the merchant's own notes (verified like any sentence). */
   fromNote?: boolean;
+  /**
+   * Held back only until the merchant confirms it reads these corrected upload lines correctly (fragment keys, in
+   * citation order). Absent: not waiting on a correction.
+   */
+  awaitsCorrections?: string[];
 }
 
 export interface ContradictionSide {

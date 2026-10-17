@@ -15,7 +15,7 @@ import { STATUS_DISPLAY, statusExplanation } from '../domain/status';
 import { totalSize } from '../domain/submission';
 import { utcClock, utcStamp } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView, SubmissionFile } from '../domain/types';
-import { attachmentChoices, type AttachmentChoice, type UploadRecordView } from '../domain/uploads';
+import { attachmentChoices, citedCorrections, provenanceOf, type AttachmentChoice, type UploadRecordView } from '../domain/uploads';
 import { SignInPrompt } from './AccountMenu';
 import { Button, EvidenceTag, Spinner, cx } from './ui';
 
@@ -290,7 +290,11 @@ function ApproveIntent({
     const num = views.find((v) => v.id === sid)?.num;
     return k && num ? [{ pair, num, k }] : [];
   });
-  const correctedIn = (fragments: readonly string[]) => fragments.flatMap((f) => (corrections.has(f) ? [corrections.get(f)!] : []));
+  // What each cited document is, and who corrected a cited line: shown on every proof.
+  const proofSource = (ct: { evidenceId: string; fragments: string[] }) => {
+    const e = c.evidence.find((x) => x.id === ct.evidenceId);
+    return e ? { prov: provenanceOf(e), corrected: citedCorrections(e, ct) } : null;
+  };
   const digital = !!c.fulfillment.digital;
 
   const run = async (retry: boolean) => {
@@ -432,7 +436,12 @@ function ApproveIntent({
                             <EvidenceTag id={ct.evidenceId} size="sm" />
                             <span className="font-mono text-mono-frag">
                               {quoteFor(c.evidence, ct)}
-                              {correctedIn(ct.fragments).map((k) => (
+                              {proofSource(ct) && (
+                                <span data-testid="proof-provenance" className="ml-1.5 font-sans text-[11px] text-ink-3">
+                                  · {proofSource(ct)!.prov.text}
+                                </span>
+                              )}
+                              {proofSource(ct)?.corrected.map((k) => (
                                 <span key={k.fragment} className="ml-1.5 font-sans text-[11px] text-warn">
                                   · line {k.line} corrected by {k.by}
                                 </span>

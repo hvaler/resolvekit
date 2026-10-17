@@ -26,7 +26,7 @@ import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
-import { approvalRequest, confirmedUploads, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
+import { approvalRequest, canEditUpload, confirmedUploads, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
 import { caseFiles, processingDispute } from '../fixtures';
 
 /** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
@@ -248,7 +248,22 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                 {uploadError}
               </p>
             )}
-            <PendingUploads uploads={pendingUps} onReview={(u) => setReview({ upload: u, readLines: u.readLines })} onDiscard={discardUpload} />
+            {up.error && (
+              <div role="alert" data-testid="uploads-error" className="flex flex-wrap items-center gap-2 rounded-lg border border-bad-line bg-bad-soft px-3 py-2 text-[12.5px]">
+                <span className="min-w-0 flex-1">
+                  {up.known
+                    ? `The uploads of this case could not be read again (${up.error}); the list below is the last one read.`
+                    : `The uploads of this case could not be read (${up.error}). The analysis waits until they are: it would otherwise leave out confirmed evidence.`}
+                </span>
+                <MiniButton onClick={() => void up.reload()}>Retry</MiniButton>
+              </div>
+            )}
+            <PendingUploads
+              uploads={pendingUps}
+              canEdit={(u) => canEditUpload(demoLock?.person, u)}
+              onReview={(u) => setReview({ upload: u, readLines: u.readLines })}
+              onDiscard={discardUpload}
+            />
             {c.notice && (
               <p
                 role="note"

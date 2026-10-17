@@ -7,6 +7,11 @@ import { fragmentTexts } from './quotes';
 import type { CaseFile, SentenceView } from './types';
 import {
   approvalRequest,
+  canEditUpload,
+  citedCorrections,
+  provenanceOf,
+  uploadsListReducer,
+  type UploadsListState,
   attachmentChoices,
   confirmedUploads,
   correctionsToConfirm,
@@ -149,11 +154,13 @@ describe('merchant uploads in the case', () => {
 
   it('a confirmation names one sentence and one corrected line; editing the sentence drops it', () => {
     const corrections = uploadCorrections([confirmed()]);
-    const view: SentenceView = { id: 'S1', num: 1, text: 'x', state: 'needs_review', citations: [{ evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] }], reason: 'Why: it depends on your correction of line 2 of E7 ("Delivered 8 Oct 2026"). Confirm it reads the file correctly.', note: null, edited: false };
+    const view: SentenceView = { id: 'S1', num: 1, text: 'x', state: 'needs_review', citations: [{ evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] }], reason: 'any wording', note: null, edited: false, awaitsCorrections: ['E7.l2'] };
+    // From the structured field, not the reason's words.
     expect(correctionsToConfirm(view, corrections, new Set()).map((k) => k.fragment)).toEqual(['E7.l2']);
     expect(correctionsToConfirm(view, corrections, new Set(['S1@E7.l2']))).toEqual([]);
-    // Held back for another reason (the analyst's): nothing to confirm here.
-    expect(correctionsToConfirm({ ...view, reason: 'Why: the address differs' }, corrections, new Set())).toEqual([]);
+    // Held back for another reason (the analyst's): nothing to confirm here, even if the words look alike.
+    const { awaitsCorrections: _a, ...other } = view;
+    expect(correctionsToConfirm({ ...other, reason: 'Why: it depends on your correction (looks the same)' }, corrections, new Set())).toEqual([]);
     expect(dropPairsOf(['S1@E7.l2', 'S10@E7.l2', 'S2@E7.l1'], 'S1')).toEqual(['S10@E7.l2', 'S2@E7.l1']);
   });
 
@@ -195,5 +202,52 @@ describe('merchant uploads in the case', () => {
     expect(mergeRemoval([{ start: 0, end: 4 }, { start: 10, end: 12 }], { start: 3, end: 10 })).toEqual([{ start: 0, end: 12 }]);
     expect(mergeRemoval([{ start: 10, end: 12 }], { start: 2, end: 4 })).toEqual([{ start: 2, end: 4 }, { start: 10, end: 12 }]);
     expect(mergeRemoval([], { start: 4, end: 4 })).toEqual([]);
+  });
+
+  it('every document says what it is: an upload and who uploaded it, PayPal or MeterMCP data, or a synthetic demo document', () => {
+    expect(provenanceOf(uploadEvidence(confirmed()))).toEqual({ kind: 'upload', text: 'Uploaded by local operator' });
+    const demo = standardCase.evidence[0]!;
+    expect(provenanceOf(demo)).toEqual({ kind: 'demo', text: 'Synthetic demo document' });
+    // An existing demo label is kept (the agent case's "Demo data").
+    expect(provenanceOf({ ...demo, sourceLabel: { kind: 'demo', text: 'Demo data' } })).toEqual({ kind: 'demo', text: 'Demo data' });
+    expect(provenanceOf({ ...demo, sourceLabel: { kind: 'metermcp', text: 'From MeterMCP · session mm-1…' } })).toEqual({ kind: 'metermcp', text: 'From MeterMCP · session mm-1…' });
+    // The capture read from PayPal is real; the simulated case's capture is demo data.
+    const capture = { ...demo, paypalRecord: 'capture' as const };
+    expect(provenanceOf({ ...capture, meta: { type: 'Disputed transaction', tag: 'PP', source: 'PayPal sandbox · dispute PP-D-1', received: 'read 2026-10-17T19:00:00Z', hash: '' } })).toEqual({ kind: 'paypal', text: 'From PayPal sandbox · dispute PP-D-1' });
+    expect(provenanceOf(capture).kind).toBe('demo');
+    expect(provenanceOf({ ...capture, meta: { type: 'Disputed transaction', tag: 'PP', source: 'PayPal', received: '—', hash: '' } })).toEqual({ kind: 'paypal', text: 'PayPal · not read yet' });
+  });
+
+  it('a citation says which of its lines were corrected, and by whom', () => {
+    const e = uploadEvidence(confirmed());
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] })).toEqual([{ line: 2, fragment: 'E7.l2', by: 'local operator' }]);
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.l1'] })).toEqual([]);
+    expect(citedCorrections(standardCase.evidence[0]!, { evidenceId: 'E1', fragments: [] })).toEqual([]);
+  });
+
+  it('review and discard are for the people who can edit the upload, as the server decides', () => {
+    const u = pending({ uploadedBy: { id: 'p_ana', label: 'Ana (member)', name: 'Ana' } });
+    expect(canEditUpload(null, u)).toBe(true); // local mode: the operator
+    expect(canEditUpload({ id: 'p_bo', role: 'owner', reviewer: true }, u)).toBe(true);
+    expect(canEditUpload({ id: 'p_bo', role: 'member', reviewer: false }, u)).toBe(true);
+    expect(canEditUpload({ id: 'p_bo', role: 'member', reviewer: true }, u)).toBe(false);
+    expect(canEditUpload({ id: 'p_ana', role: 'member', reviewer: true }, u)).toBe(true);
+  });
+
+  it('the uploads list is known only once it came back; a failure says so and keeps what was known', () => {
+    const start: UploadsListState = { uploads: [], known: false, refused: null, error: null };
+    const failed = uploadsListReducer(start, { type: 'failed', error: 'The ResolveKit server could not be reached' });
+    expect(failed).toEqual({ uploads: [], known: false, refused: null, error: 'The ResolveKit server could not be reached' });
+    const loaded = uploadsListReducer(failed, { type: 'loaded', uploads: [confirmed()] });
+    expect(loaded).toEqual({ uploads: [confirmed()], known: true, refused: null, error: null });
+    // A later failure keeps the list it had (and says so); it is still known.
+    expect(uploadsListReducer(loaded, { type: 'failed', error: 'x' })).toEqual({ ...loaded, error: 'x' });
+    // Not this person's to see: known, empty, with the server's reason.
+    expect(uploadsListReducer(loaded, { type: 'refused', reason: 'Sign in' })).toEqual({ uploads: [], known: true, refused: 'Sign in', error: null });
+    // One upload after an action.
+    const p = pending();
+    const put = uploadsListReducer(loaded, { type: 'put', id: p.id, upload: p });
+    expect(put.uploads.map((x) => x.id)).toEqual([confirmed().id, p.id]);
+    expect(uploadsListReducer(put, { type: 'put', id: p.id, upload: null }).uploads.map((x) => x.id)).toEqual([confirmed().id]);
   });
 });

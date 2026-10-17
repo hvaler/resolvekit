@@ -239,6 +239,16 @@ describe('corrections of an uploaded file', () => {
     expect(byId(confirmed, 'S1').note).toBe('Relies on line 2 of E7 as corrected by Ana (member)');
   });
 
+  it('a held-back sentence names the corrected lines it waits on, whatever its reason says', () => {
+    const two = correctionsOf([{ ...e7, lines: [{ ...e7.lines[0]!, corrected: 'Ana (member)' }, e7.lines[1]!] }]);
+    const s: DraftSentence[] = [{ ...base[0]!, citations: [{ evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] }] }];
+    expect(byId(deriveSentences(s, { ...done, corrections: two }), 'S1').awaitsCorrections).toEqual(['E7.l1', 'E7.l2']);
+    expect(byId(deriveSentences(s, { ...done, corrections: two, confirmedCorrections: new Set(['S1@E7.l1']) }), 'S1').awaitsCorrections).toEqual(['E7.l2']);
+    // Confirmed, or held back for the analyst's own reason: nothing awaited.
+    expect(byId(deriveSentences(s, { ...done, corrections: two, confirmedCorrections: new Set(['S1@E7.l1', 'S1@E7.l2']) }), 'S1').awaitsCorrections).toBeUndefined();
+    expect(byId(deriveSentences([{ ...s[0]!, verdict: 'needs_review', reason: 'Why: the date differs.' }], { ...done, corrections: two }), 'S1').awaitsCorrections).toBeUndefined();
+  });
+
   it('a sentence citing two corrected lines needs both confirmed', () => {
     const two = correctionsOf([{ ...e7, lines: [{ ...e7.lines[0]!, corrected: 'Ana (member)' }, e7.lines[1]!] }]);
     const s: DraftSentence[] = [{ ...base[0]!, citations: [{ evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] }] }];

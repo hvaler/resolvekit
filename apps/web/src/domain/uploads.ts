@@ -8,7 +8,7 @@ import type { AnalysisDocument, AnalysisInput } from '@resolvekit/analyst';
 import { correctionPair, correctionsOf, type Correction } from './draft';
 import type { IntentRequest } from './intent';
 import { utcStamp } from './time';
-import type { ContradictionResolution, Evidence, EvidenceType, SentenceView } from './types';
+import type { Citation, ContradictionResolution, Evidence, EvidenceType, SentenceView } from './types';
 
 /** An area to cover, in whole pixels of the uploaded image. */
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -135,19 +135,13 @@ export function notAnalysed(uploads: readonly UploadRecordView[], analysed: Anal
   return confirmedUploads(uploads).map((u) => u.evidenceId!).filter((id) => !read.has(id));
 }
 
-const DEPENDS = 'Why: it depends on your correction';
-
-/** The corrected lines this sentence is held back on until the merchant confirms them (in citation order). */
+/** The corrected lines this sentence is held back on until the merchant confirms them (deriveSentences says which). */
 export function correctionsToConfirm(view: SentenceView, corrections: ReadonlyMap<string, Correction>, confirmed: ReadonlySet<string>): Correction[] {
-  if (view.state !== 'needs_review' || !view.reason?.startsWith(DEPENDS)) return [];
-  const out: Correction[] = [];
-  for (const c of view.citations) {
-    for (const f of c.fragments) {
-      const k = corrections.get(f);
-      if (k && !out.includes(k) && !confirmed.has(correctionPair(view.id, f))) out.push(k);
-    }
-  }
-  return out;
+  if (view.state !== 'needs_review' || !view.awaitsCorrections) return [];
+  return view.awaitsCorrections.flatMap((f) => {
+    const k = corrections.get(f);
+    return k && !confirmed.has(correctionPair(view.id, f)) ? [k] : [];
+  });
 }
 
 /** The pairs without those of `sentenceId` (its text changed: what it relies on must be confirmed again). */
@@ -180,6 +174,78 @@ export function approvalRequest(o: {
     confirmedCorrections: effectivePairs(o.views, o.corrections, o.confirmed),
     attachments: [...new Set(o.attachments)].sort(),
   };
+}
+
+/** What a document is, as every card, citation and review shows it. */
+export interface Provenance {
+  kind: 'upload' | 'demo' | 'paypal' | 'metermcp';
+  text: string;
+}
+
+/**
+ * Where a document comes from: a merchant upload (and who uploaded it), the real MeterMCP session, PayPal's record of
+ * the disputed payment as read from PayPal, or a synthetic demo document (the demo case's own, or PayPal's record on a
+ * simulated case). One decision for the whole app.
+ */
+export function provenanceOf(e: Evidence): Provenance {
+  const l = e.sourceLabel;
+  if (l?.kind === 'upload' || l?.kind === 'metermcp') return { kind: l.kind, text: l.text };
+  if (e.paypalRecord === 'capture' && e.meta?.source.startsWith('PayPal')) {
+    // Bound case: from the PayPal read, or (not read yet) a placeholder that says so; never demo data.
+    if (e.meta.received.startsWith('read ')) return { kind: 'paypal', text: `From ${e.meta.source}` };
+    if (e.meta.received === '—') return { kind: 'paypal', text: 'PayPal · not read yet' };
+  }
+  return { kind: 'demo', text: l?.kind === 'demo' ? l.text : 'Synthetic demo document' };
+}
+
+/** The lines of `e` this citation covers that the merchant corrected by hand (line number, fragment, who). */
+export function citedCorrections(e: Evidence, c: Citation): { line: number; fragment: string; by: string }[] {
+  if (e.body.kind !== 'lines' || !c.fragments.length) return [];
+  return e.body.lines.flatMap((l, i) => (l.corrected && l.fragment && c.fragments.includes(l.fragment) ? [{ line: i + 1, fragment: l.fragment, by: l.corrected }] : []));
+}
+
+/** Who may review (redact, correct, confirm) or discard an upload: owners and members any; a reviewer their own (server's rule). Local mode (no person): the operator. */
+export function canEditUpload(p: { id: string; role: 'owner' | 'member'; reviewer: boolean } | null | undefined, u: Pick<UploadRecordView, 'uploadedBy'>): boolean {
+  return !p || p.role === 'owner' || !p.reviewer || p.id === u.uploadedBy.id;
+}
+
+/** The case's uploads list as the page holds it. */
+export interface UploadsListState {
+  uploads: UploadRecordView[];
+  /** A list came back (or the person may not see one): the analysis input can be built. */
+  known: boolean;
+  /** Why this person cannot add evidence here (the server's 401/403 words). */
+  refused: string | null;
+  /** The last list request failed (the page shows it with a Retry). */
+  error: string | null;
+}
+
+export type UploadsListEvent =
+  | { type: 'loaded'; uploads: UploadRecordView[] }
+  | { type: 'refused'; reason: string }
+  | { type: 'failed'; error: string }
+  | { type: 'put'; id: string; upload: UploadRecordView | null };
+
+const SHOWN: UploadStatus[] = ['pending', 'reviewing', 'confirmed'];
+
+/**
+ * A failed list never stands for "no uploads": until one has come back the list is not known (nothing is analysed
+ * as if there were none); after that, a failure keeps the last list and says so.
+ */
+export function uploadsListReducer(s: UploadsListState, e: UploadsListEvent): UploadsListState {
+  switch (e.type) {
+    case 'loaded':
+      return { uploads: e.uploads, known: true, refused: null, error: null };
+    case 'refused':
+      return { uploads: [], known: true, refused: e.reason, error: null };
+    case 'failed':
+      return { ...s, error: e.error };
+    case 'put': {
+      const rest = s.uploads.filter((x) => x.id !== e.id);
+      const uploads = e.upload && SHOWN.includes(e.upload.status) ? [...rest, e.upload].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : rest;
+      return { ...s, uploads };
+    }
+  }
 }
 
 /** One confirmed upload offered as an attachment in the final review. */

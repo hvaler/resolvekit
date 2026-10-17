@@ -139,6 +139,7 @@ export function deriveSentences(base: readonly DraftSentence[], ctx: DraftContex
         note = `Released: ${settled.k.blockerName.replace(/^the /, '')} resolved by ${settled.by} ("${settled.note}")`;
       }
     }
+    let awaits: string[] = [];
     const relied = state === 'supported' ? correctionsCited(citations, ctx.corrections) : [];
     const unconfirmed = relied.filter((k) => !ctx.confirmedCorrections?.has(correctionPair(s.id, k.fragment)));
     if (relied.length && !unconfirmed.length) {
@@ -146,10 +147,11 @@ export function deriveSentences(base: readonly DraftSentence[], ctx: DraftContex
     } else if (unconfirmed.length) {
       const k = unconfirmed[0]!;
       state = 'needs_review';
+      awaits = unconfirmed.map((x) => x.fragment);
       reason = `Why: it depends on your correction of line ${k.line} of ${k.evidenceId} ("${k.text}"). Confirm it reads the file correctly.`;
     }
 
-    return { id: s.id, num: i + 1, text, state, citations, reason, note, edited: edit !== undefined, ...(s.origin === 'merchant_note' ? { fromNote: true } : {}) };
+    return { id: s.id, num: i + 1, text, state, citations, reason, note, edited: edit !== undefined, ...(s.origin === 'merchant_note' ? { fromNote: true } : {}), ...(awaits.length ? { awaitsCorrections: awaits } : {}) };
   });
 }
 

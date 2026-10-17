@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { useHighlight, useHoverHighlight } from '../app/highlight';
 import type { Citation, Evidence, SentenceState, SentenceView } from '../domain/types';
+import { citedCorrections, provenanceOf } from '../domain/uploads';
 import { cx } from './ui';
 
 export const SENTENCE_TONE: Record<SentenceState, { label: string; short: string; icon: string; fg: string; soft: string; /** Left-rule shadow token class. */ rule: string }> = {
@@ -23,11 +24,17 @@ export function CitationChip({ sentenceId, citation, evidence }: { sentenceId: s
   const { hl } = useHighlight();
   const hover = useHoverHighlight();
   const active = !!hl && hl.sid === sentenceId && hl.ev === citation.evidenceId;
-  const title = evidence.find((x) => x.id === citation.evidenceId)?.title ?? citation.evidenceId;
+  const e = evidence.find((x) => x.id === citation.evidenceId);
+  const title = e?.title ?? citation.evidenceId;
+  // What the document is, and who corrected a cited line: on every citation.
+  const prov = e ? provenanceOf(e) : null;
+  const corrected = e ? citedCorrections(e, citation) : [];
+  const said = [prov?.text, ...corrected.map((k) => `line ${k.line} corrected by ${k.by}`)].filter(Boolean).join(' · ');
   return (
     <button
       type="button"
-      aria-label={`Source ${citation.evidenceId}, ${title}. Focus to highlight the cited text.`}
+      title={said || undefined}
+      aria-label={`Source ${citation.evidenceId}, ${title}${said ? ` (${said})` : ''}. Focus to highlight the cited text.`}
       aria-pressed={active}
       {...hover({ ev: citation.evidenceId, frags: citation.fragments, sid: sentenceId })}
       className="inline-flex items-center gap-[5px] rounded-full px-2 py-[3px] font-mono text-caption font-medium leading-[1.2] transition-all duration-instant"
@@ -39,6 +46,11 @@ export function CitationChip({ sentenceId, citation, evidence }: { sentenceId: s
     >
       <span aria-hidden="true" className="h-[5px] w-[5px] rounded-full bg-current" />
       {citationLabel(citation, evidence)}
+      {said && (
+        <span data-testid="citation-provenance" className="font-sans font-normal opacity-80">
+          · {said}
+        </span>
+      )}
     </button>
   );
 }

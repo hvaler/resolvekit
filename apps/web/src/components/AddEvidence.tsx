@@ -75,7 +75,18 @@ export function AddEvidencePanel({ client, onAdded, onClose }: { client: Uploads
 }
 
 /** Uploads not confirmed yet: listed, never used, until reviewed. */
-export function PendingUploads({ uploads, onReview, onDiscard }: { uploads: UploadRecordView[]; onReview: (u: UploadRecordView) => void; onDiscard: (u: UploadRecordView) => void }) {
+export function PendingUploads({
+  uploads,
+  canEdit,
+  onReview,
+  onDiscard,
+}: {
+  uploads: UploadRecordView[];
+  /** Whether this person may review and discard it (domain/uploads `canEditUpload`, the server's rule). */
+  canEdit: (u: UploadRecordView) => boolean;
+  onReview: (u: UploadRecordView) => void;
+  onDiscard: (u: UploadRecordView) => void;
+}) {
   if (!uploads.length) return null;
   return (
     <ul aria-label="Uploads to review" className="m-0 flex list-none flex-col gap-2 p-0">
@@ -84,8 +95,14 @@ export function PendingUploads({ uploads, onReview, onDiscard }: { uploads: Uplo
           <span className="rounded-sm bg-surface px-1.5 py-1 font-mono text-[11px] font-semibold leading-none text-warn">New · pending</span>
           <span className="min-w-[10rem] flex-1 text-[13.5px] font-semibold">{u.name}</span>
           <span className="text-[12px] text-warn">Not used yet: review it first</span>
-          <MiniButton onClick={() => onReview(u)}>Review</MiniButton>
-          <MiniButton onClick={() => onDiscard(u)}>Discard</MiniButton>
+          {canEdit(u) ? (
+            <>
+              <MiniButton onClick={() => onReview(u)}>Review</MiniButton>
+              <MiniButton onClick={() => onDiscard(u)}>Discard</MiniButton>
+            </>
+          ) : (
+            <span className="text-[12px] text-ink-3">Uploaded by {u.uploadedBy.name}: only they, an owner or a member can review it</span>
+          )}
         </li>
       ))}
     </ul>

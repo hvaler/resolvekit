@@ -1,10 +1,19 @@
 import type { ReactNode } from 'react';
 import { isFragmentLit, useHighlight, useHoverHighlight, type Highlight } from '../app/highlight';
 import type { Evidence, EvidenceLine, KeyValueRow } from '../domain/types';
+import { provenanceOf, type Provenance } from '../domain/uploads';
 import { ReceiptGrid } from './ReceiptGrid';
 import { EvidenceTag, cx } from './ui';
 
 export const evidenceDomId = (id: string) => `evidence-${id}`;
+
+/** The provenance badge's colours: real data (MeterMCP, PayPal), a merchant upload, or a synthetic demo document. */
+export const PROVENANCE_CLASS: Record<Provenance['kind'], string> = {
+  metermcp: 'border border-ok-line bg-ok-soft text-ok',
+  paypal: 'border border-ok-line bg-ok-soft text-ok',
+  upload: 'border border-acc-line bg-acc-soft text-acc',
+  demo: 'border border-dashed border-info-line bg-info-soft text-info',
+};
 
 function usedText(n: number, caption?: string): string {
   const used = n ? `used in ${n} claim${n > 1 ? 's' : ''}` : 'not used in any claim';
@@ -76,6 +85,7 @@ export function EvidenceCard({
   const hover = useHoverHighlight();
   const on = hl?.ev === e.id;
   const b = e.body;
+  const prov = provenanceOf(e);
 
   return (
     <article
@@ -99,22 +109,13 @@ export function EvidenceCard({
             {contradictionLabel}
           </span>
         )}
-        {e.sourceLabel && (
-          <span
-            data-testid="source-label"
-            title={e.sourceLabel.title ?? e.sourceLabel.text}
-            className={cx(
-              'max-w-full truncate whitespace-nowrap rounded-sm px-[7px] py-0.5 text-[11.5px] font-medium',
-              e.sourceLabel.kind === 'metermcp'
-                ? 'border border-ok-line bg-ok-soft text-ok'
-                : e.sourceLabel.kind === 'upload'
-                  ? 'border border-acc-line bg-acc-soft text-acc'
-                  : 'border border-dashed border-info-line bg-info-soft text-info',
-            )}
-          >
-            {e.sourceLabel.text}
-          </span>
-        )}
+        <span
+          data-testid="source-label"
+          title={e.sourceLabel?.title ?? prov.text}
+          className={cx('max-w-full truncate whitespace-nowrap rounded-sm px-[7px] py-0.5 text-[11.5px] font-medium', PROVENANCE_CLASS[prov.kind])}
+        >
+          {prov.text}
+        </span>
         <span className={cx('text-[12px]', used ? 'text-ink-2' : 'text-ink-3')}>
           {usedText(used, e.caption)}
         </span>
