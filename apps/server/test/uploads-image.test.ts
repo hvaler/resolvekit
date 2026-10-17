@@ -186,3 +186,36 @@ test('decoded size must equal the validated header size', () => {
   const b = Buffer.concat([j.subarray(0, sof), decoy, j.subarray(sof)]);
   assert.equal(code(() => decodeImage(b)), 'UNREADABLE');
 });
+
+function ihdrRaw(w: number, h: number, depth: number, colour: number): Buffer {
+  const d = Buffer.alloc(13);
+  d.writeUInt32BE(w, 0);
+  d.writeUInt32BE(h, 4);
+  d.set([depth, colour, 0, 0, 0], 8);
+  return chunk('IHDR', d);
+}
+
+test('refuses a PNG whose bit depth is not allowed for its colour type', () => {
+  const idat = chunk('IDAT', deflateSync(Buffer.alloc(100)));
+  for (const [depth, colour] of [[4, 2], [255, 6], [16, 3], [2, 4], [8, 1], [0, 0]] as const) {
+    const b = Buffer.concat([SIG, ihdrRaw(4, 4, depth, colour), idat, iend()]);
+    assert.equal(code(() => decodeImage(b)), 'UNREADABLE', `${depth}/${colour}`);
+  }
+});
+
+test('the inflate budget never exceeds the absolute cap', () => {
+  // Largest legal header (4096 x 4096, 16-bit RGBA): the budget is its exact size, so a small stream is refused.
+  const b = Buffer.concat([SIG, ihdrRaw(4096, 4096, 16, 6), chunk('IDAT', deflateSync(Buffer.alloc(100))), iend()]);
+  assert.equal(code(() => decodeImage(b)), 'UNREADABLE');
+  // One more pixel row is over the side limit before any budget is computed.
+  assert.equal(code(() => decodeImage(Buffer.concat([SIG, ihdrRaw(4096, 4097, 16, 6), iend()]))), 'TOO_LARGE');
+});
+
+test('an UNREADABLE from a corrupt PNG carries its cause', () => {
+  const b = Buffer.concat([SIG, ihdr(4, 4), chunk('IDAT', Buffer.from('not zlib')), iend()]);
+  try { decodeImage(b); assert.fail('no error'); } catch (e) {
+    assert.ok(e instanceof UploadError);
+    assert.equal(e.code, 'UNREADABLE');
+    assert.ok(e.cause);
+  }
+});

@@ -26,6 +26,9 @@ export class UploadError extends Error {
   }
 }
 
+/** Bit depths the PNG spec allows per colour type. */
+const PNG_DEPTHS: Record<number, number[]> = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
+
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 const isPng = (b: Uint8Array) => b.length >= 8 && PNG_MAGIC.every((v, i) => b[i] === v);
@@ -56,8 +59,9 @@ function pngSize(b: Uint8Array): [number, number] {
       if (w < 1 || h < 1) throw new UploadError('UNREADABLE', 'The image has no pixels');
       if (w > MAX_SIDE || h > MAX_SIDE || w * h > MAX_PIXELS) throw tooLarge();
       const channels = ({ 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 } as Record<number, number>)[colour];
-      if (!channels) throw bad();
+      if (!channels || !PNG_DEPTHS[colour]!.includes(depth)) throw bad();
       expected = h * (1 + Math.ceil((w * channels * depth) / 8));
+      if (expected > MAX_PIXELS * 8 + MAX_SIDE) throw tooLarge();
       first = false;
     } else if (type === 'IDAT') idat.push(b.subarray(o + 8, o + 8 + len));
     o += 12 + len;
@@ -108,8 +112,9 @@ export function decodeImage(bytes: Uint8Array): { kind: 'png' | 'jpeg'; width: n
     const j = jpeg.decode(bytes, { useTArray: true, maxResolutionInMP: 16, maxMemoryUsageInMB: 256 });
     if (j.width !== w || j.height !== h) throw new Error('size differs from the validated header');
     return { kind, width: j.width, height: j.height, rgba: new Uint8Array(j.data) };
-  } catch {
-    throw new UploadError('UNREADABLE', 'The image could not be decoded');
+  } catch (e) {
+    if (e instanceof UploadError) throw e;
+    throw new UploadError('UNREADABLE', 'The image could not be decoded', { cause: e });
   }
 }
 
