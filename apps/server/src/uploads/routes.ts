@@ -23,7 +23,7 @@
  *                                                   intents using it and purges the analyses that read it
  *
  * Nothing of an upload leaves this server here: OCR is local, nothing is sent to PayPal or a model. Audit details and
- * log lines carry ids and file names only, never text or bytes. A pending upload past its expiry is discarded the
+ * log lines carry ids (and an error code) only, never file names, text or bytes. A pending upload past its expiry is discarded the
  * first time a route meets it.
  *
  * A refusal given before any decoding or OCR carries the {@link REFUSED_EARLY} header: hosted mode gives the address
