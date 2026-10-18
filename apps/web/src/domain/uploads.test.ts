@@ -1,7 +1,7 @@
 import { buildInput } from '@resolvekit/analyst';
 import { standardCase } from '@resolvekit/cases';
 import { describe, expect, it } from 'vitest';
-import { correctionsOf, deriveSentences, linesToConfirmOf, transcriptionsOf, type DraftContext } from './draft';
+import { correctionsOf, deriveSentences, linesToConfirmOf, transcriptionsOf, type Correction, type DraftContext } from './draft';
 import { composeSubmission, isComposeProblem, parseIntentRequest } from './intent';
 import { fragmentTexts } from './quotes';
 import type { CaseFile, SentenceView } from './types';
@@ -12,6 +12,10 @@ import {
   listRetryDelay,
   uploadsForInput,
   citedCorrections,
+  citationProvenance,
+  confirmButtonLabel,
+  confirmationText,
+  pagesLabel,
   provenanceOf,
   uploadsListReducer,
   type UploadsListState,
@@ -379,19 +383,49 @@ describe('PDF uploads: page fragments and transcribed lines', () => {
   it('a citation of a PDF says its page of the original document and who transcribed or corrected its lines, verbatim', () => {
     const e = uploadEvidence(confirmedPdf());
     expect(e.body.kind === 'lines' && e.body.lines[3]).toEqual({ text: 'Signed by J. D.', fragment: 'E7.p8.l2', transcribed: ANA });
+    // The page goes once on the citation (its provenance), never on each line.
     expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.p8.l1', 'E7.p8.l2'] })).toEqual([
-      { line: 2, page: 8, fragment: 'E7.p8.l2', by: ANA, kind: 'transcribed', label: 'Page 8 of the original document · Transcribed manually by Ana Lopez (member)' },
+      { line: 2, page: 8, fragment: 'E7.p8.l2', by: ANA, kind: 'transcribed', label: 'Transcribed manually by Ana Lopez (member)' },
     ]);
     expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.p2.l2'] })).toEqual([
-      { line: 2, page: 2, fragment: 'E7.p2.l2', by: ANA, kind: 'corrected', label: 'Page 2 of the original document · line 2 corrected by Ana Lopez (member)' },
+      { line: 2, page: 2, fragment: 'E7.p2.l2', by: ANA, kind: 'corrected', label: 'line 2 corrected by Ana Lopez (member)' },
     ]);
+    // A citation over two pages: a corrected line says which page its line number is in.
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.p2.l2', 'E7.p8.l2'] }).map((k) => k.label)).toEqual(['line 2 of page 2 corrected by Ana Lopez (member)', 'Transcribed manually by Ana Lopez (member)']);
     expect(provenanceOf(e)).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez' });
     expect(provenanceOf(e, { evidenceId: 'E7', fragments: ['E7.p8.l1', 'E7.p8.l2'] })).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez · Page 8 of the original document' });
-    expect(provenanceOf(e, { evidenceId: 'E7', fragments: ['E7.p2.l2', 'E7.p8.l1'] })).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez · Page 2 of the original document · Page 8 of the original document' });
+    expect(provenanceOf(e, { evidenceId: 'E7', fragments: ['E7.p2.l2', 'E7.p8.l1'] })).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez · Pages 2 and 8 of the original document' });
     // Not a page-scoped citation: as before.
     expect(provenanceOf(uploadEvidence(confirmed()), { evidenceId: 'E7', fragments: ['E7.l2'] })).toEqual({ kind: 'upload', text: 'Uploaded by local operator' });
     expect(pageLabel(8)).toBe('Page 8 of the original document');
     expect(transcribedLabel(ANA)).toBe('Transcribed manually by Ana Lopez (member)');
+  });
+
+  it('names several pages once: "Pages 2 and 8", "Pages 2, 5 and 8"', () => {
+    expect(pagesLabel([8])).toBe('Page 8 of the original document');
+    expect(pagesLabel([2, 8])).toBe('Pages 2 and 8 of the original document');
+    expect(pagesLabel([2, 5, 8])).toBe('Pages 2, 5 and 8 of the original document');
+  });
+
+  it('what a citation says, compact: provenance and pages once, each corrected or transcribed label once', () => {
+    const e = uploadEvidence(confirmedPdf());
+    expect(citationProvenance(e, { evidenceId: 'E7', fragments: ['E7.p2.l1', 'E7.p2.l2', 'E7.p8.l1', 'E7.p8.l2'] })).toBe(
+      'Uploaded by Ana Lopez · Pages 2 and 8 of the original document · line 2 of page 2 corrected by Ana Lopez (member) · Transcribed manually by Ana Lopez (member)',
+    );
+    const two = { ...e, body: { kind: 'lines' as const, lines: [{ text: 'a', fragment: 'E7.p8.l1', transcribed: ANA }, { text: 'b', fragment: 'E7.p8.l2', transcribed: ANA }] } };
+    expect(citationProvenance(two, { evidenceId: 'E7', fragments: ['E7.p8.l1', 'E7.p8.l2'] })).toBe('Uploaded by Ana Lopez · Page 8 of the original document · Transcribed manually by Ana Lopez (member)');
+    expect(citationProvenance(uploadEvidence(confirmed()), { evidenceId: 'E7', fragments: ['E7.l1'] })).toBe('Uploaded by local operator');
+  });
+
+  it('the approval tells a transcribed line from a corrected one', () => {
+    const [corr, tr] = [...linesToConfirmOf([confirmedPdf().document!]).values()] as [Correction, Correction];
+    expect(confirmationText(2, corr)).toEqual({ relies: 'Sentence 2 relies on line 2 of page 2 of E7 as corrected by Ana Lopez (member)', confirmed: 'You confirmed it reads the file correctly' });
+    expect(confirmationText(1, tr)).toEqual({ relies: 'Sentence 1 relies on line 2 of page 8 of E7, transcribed manually by Ana Lopez (member)', confirmed: 'You confirmed it is what the file shows' });
+    expect(confirmButtonLabel(corr)).toBe('Confirm it reads line 2 of page 2 of E7 correctly');
+    expect(confirmButtonLabel(tr)).toBe('Confirm line 2 of page 8 of E7 is what the file shows (transcribed manually by Ana Lopez (member))');
+    const image = { kind: 'corrected' as const, line: 3, fragment: 'E7.l3', evidenceId: 'E7', text: 'x', by: 'Bo' };
+    expect(confirmationText(4, image).relies).toBe('Sentence 4 relies on line 3 of E7 as corrected by Bo');
+    expect(confirmButtonLabel(image)).toBe('Confirm it reads line 3 of E7 correctly');
   });
 
   it('a PDF attachment says who corrected and who transcribed its lines; a restricted view is never read', () => {

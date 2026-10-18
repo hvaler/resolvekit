@@ -38,7 +38,6 @@ export function UploadReview({ upload, readLines, pastedText, client, onChange, 
   const reviewing = rec.status === 'reviewing';
   // Covers changed since the server last read the file: read it again before confirming.
   const stale = !reviewing || !same(rects, rec.rects ?? []) || !same(removals, rec.removals ?? []);
-  const corrected = lines.map((l, i) => reviewing && l !== read[i]);
   const canConfirm = reviewing && !stale && !busy && !!rec.sha256 && lines.every((l) => !/[\r\n]/.test(l));
 
   useEffect(() => {
@@ -108,8 +107,10 @@ export function UploadReview({ upload, readLines, pastedText, client, onChange, 
           <div className="flex flex-col gap-3 overflow-auto border-r border-line px-[26px] pb-6 pt-5 max-md:overflow-visible max-md:border-r-0 max-md:px-4">
             {rec.kind === 'image' ? (
               <ImageCover
-                rec={rec}
-                client={client}
+                src={(v) => (v === 'original' ? client.imageUrl(rec.id, 'original') : client.imageUrl(rec.id, 'sanitised', rec.sha256 ?? ''))}
+                alt={rec.name}
+                noun="image"
+                reviewed={reviewing}
                 rects={rects}
                 setRects={setRects}
                 view={reviewing ? view : 'original'}
@@ -133,31 +134,7 @@ export function UploadReview({ upload, readLines, pastedText, client, onChange, 
               </p>
             </div>
             {reviewing ? (
-              <ol aria-label="Lines read" className="m-0 flex list-none flex-col gap-1.5 p-0">
-                {lines.map((l, i) => (
-                  <li key={i} className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 flex-none text-right font-mono text-[11px] text-ink-3">{i + 1}</span>
-                      <input
-                        aria-label={`Line ${i + 1}`}
-                        value={l}
-                        disabled={!!busy}
-                        onChange={(e) => setLines((all) => all.map((x, j) => (j === i ? e.target.value.replace(/[\r\n]/g, ' ') : x)))}
-                        className={cx('min-w-0 flex-1 rounded-md border bg-surface px-2 py-1 font-mono text-mono-frag', corrected[i] ? 'border-warn-line' : 'border-line-2')}
-                      />
-                    </div>
-                    {corrected[i] && (
-                      <span className="pl-8 text-[11.5px] text-warn">
-                        corrected by you · read as <span className="font-mono">{read[i] || '(empty)'}</span>{' '}
-                        <button type="button" onClick={() => setLines((all) => all.map((x, j) => (j === i ? read[i]! : x)))} className="border-0 bg-transparent p-0 text-[11.5px] text-ink-2 underline">
-                          Undo
-                        </button>
-                      </span>
-                    )}
-                  </li>
-                ))}
-                {lines.length === 0 && <li className="text-[12.5px] text-ink-3">No text was read from the covered file.</li>}
-              </ol>
+              <LineEditor lines={lines} read={read} setLines={setLines} disabled={!!busy} empty="No text was read from the covered file." />
             ) : (
               <div className="flex flex-col rounded-lg border border-line bg-surface py-[5px]">
                 {read.length ? (
@@ -207,29 +184,43 @@ export function UploadReview({ upload, readLines, pastedText, client, onChange, 
   );
 }
 
-/** The image with the areas to cover: drag to draw a rectangle; × removes one. */
-function ImageCover({
-  rec,
-  client,
+/**
+ * The image (an uploaded image, or a page of a PDF) with the areas to cover: drag to draw a rectangle; × removes one.
+ * With `onTextArea` (a PDF page's «add text» mode) a drawn area goes there instead, and `textAreas` are outlined.
+ */
+export function ImageCover({
+  src: srcOf,
+  alt,
+  noun,
+  reviewed,
   rects,
   setRects,
   view,
   setView,
   disabled,
+  onTextArea,
+  textAreas = [],
 }: {
-  rec: UploadRecordView;
-  client: UploadsClient;
+  /** The URL of the uncovered original or of the covered file. */
+  src: (v: 'original' | 'sanitised') => string;
+  alt: string;
+  /** What is shown: `image`, `page`. */
+  noun: string;
+  /** The server has a covered file to show. */
+  reviewed: boolean;
   rects: Rect[];
   setRects: (f: (r: Rect[]) => Rect[]) => void;
   view: 'original' | 'sanitised';
   setView: (v: 'original' | 'sanitised') => void;
   disabled: boolean;
+  onTextArea?: ((r: Rect) => void) | undefined;
+  textAreas?: readonly Rect[];
 }) {
   const img = useRef<HTMLImageElement>(null);
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
   const [failed, setFailed] = useState(false);
   const [drag, setDrag] = useState<{ a: { x: number; y: number }; b: { x: number; y: number } } | null>(null);
-  const src = view === 'original' ? client.imageUrl(rec.id, 'original') : client.imageUrl(rec.id, 'sanitised', rec.sha256 ?? '');
+  const src = srcOf(view);
   useEffect(() => setFailed(false), [src]);
 
   const at = (e: ReactPointerEvent) => {
@@ -245,8 +236,10 @@ function ImageCover({
   return (
     <>
       <div className="flex items-baseline justify-between gap-3 max-md:flex-col">
-        <h3 className="m-0 text-[14px] font-semibold">{view === 'original' ? 'Drag over what must not be shared' : 'The covered file: what is stored and sent'}</h3>
-        {rec.status === 'reviewing' && (
+        <h3 className="m-0 text-[14px] font-semibold">
+          {view !== 'original' ? 'The covered file: what is stored and sent' : onTextArea ? 'Drag over a line the reading missed, then type it' : 'Drag over what must not be shared'}
+        </h3>
+        {reviewed && (
           <div role="group" aria-label="Show" className="flex gap-1.5">
             <button type="button" aria-pressed={view === 'original'} onClick={() => setView('original')} className={cx('rounded-md border px-2 py-0.5 text-[12px]', view === 'original' ? 'border-acc bg-acc-soft text-acc' : 'border-line-2 bg-surface text-ink-2')}>
               Your covers
@@ -259,14 +252,14 @@ function ImageCover({
       </div>
       {failed ? (
         <p role="note" className="m-0 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
-          {view === 'original' ? 'The original image is shown only to people who can edit this upload, until it is confirmed.' : 'The covered file could not be loaded.'}
+          {view === 'original' ? `The original ${noun} is shown only to people who can edit this upload, until it is confirmed.` : 'The covered file could not be loaded.'}
         </p>
       ) : (
         <div className="relative self-start" style={{ touchAction: drawing ? 'none' : undefined }}>
           <img
             ref={img}
             src={src}
-            alt={`${rec.name}${view === 'sanitised' ? ' (covered)' : ''}`}
+            alt={`${alt}${view === 'sanitised' ? ' (covered)' : ''}`}
             draggable={false}
             onLoad={(e) => setNatural({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
             onError={() => setFailed(true)}
@@ -287,25 +280,32 @@ function ImageCover({
                 if (!drag || !natural) return;
                 const r = toImageRect(drag.a, at(e), shown(), natural);
                 setDrag(null);
-                if (r) setRects((all) => [...all, r]);
+                if (r) (onTextArea ? onTextArea(r) : setRects((all) => [...all, r]));
               }}
               onPointerCancel={() => setDrag(null)}
             >
               {rects.map((r, i) => (
                 <div key={`${r.x}-${r.y}-${i}`} className="absolute bg-black" style={pct(r)}>
-                  <button
-                    type="button"
-                    aria-label={`Remove covered area ${i + 1}`}
-                    disabled={disabled}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => setRects((all) => all.filter((_, j) => j !== i))}
-                    className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full border border-line-2 bg-surface text-[12px] leading-none text-ink-2"
-                  >
-                    ×
-                  </button>
+                  {!onTextArea && (
+                    <button
+                      type="button"
+                      aria-label={`Remove covered area ${i + 1}`}
+                      disabled={disabled}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => setRects((all) => all.filter((_, j) => j !== i))}
+                      className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full border border-line-2 bg-surface text-[12px] leading-none text-ink-2"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               ))}
-              {draft && <div className="absolute border-2 border-dashed border-acc bg-black/60" style={pct(draft)} />}
+              {textAreas.map((r, i) => (
+                <div key={`t-${r.x}-${r.y}-${i}`} data-testid="text-area" className="pointer-events-none absolute border-2 border-acc" style={pct(r)}>
+                  <span className="absolute -left-2 -top-2 grid h-4 min-w-4 place-items-center rounded-full bg-acc px-1 font-mono text-[10px] leading-none text-acc-ink">{i + 1}</span>
+                </div>
+              ))}
+              {draft && <div className={cx('absolute border-2 border-dashed border-acc', onTextArea ? 'bg-transparent' : 'bg-black/60')} style={pct(draft)} />}
             </div>
           )}
         </div>
@@ -315,6 +315,40 @@ function ImageCover({
         the analyst or PayPal.
       </p>
     </>
+  );
+}
+
+/** The lines read, each editable: a corrected line is marked, with what was read and an Undo. */
+export function LineEditor({ lines, read, setLines, disabled, empty, label = 'Lines read' }: { lines: string[]; read: readonly string[]; setLines: (f: (l: string[]) => string[]) => void; disabled: boolean; empty: string; label?: string }) {
+  return (
+    <ol aria-label={label} className="m-0 flex list-none flex-col gap-1.5 p-0">
+      {lines.map((l, i) => {
+        const corrected = l !== read[i];
+        return (
+          <li key={i} className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <span className="w-6 flex-none text-right font-mono text-[11px] text-ink-3">{i + 1}</span>
+              <input
+                aria-label={`Line ${i + 1}`}
+                value={l}
+                disabled={disabled}
+                onChange={(e) => setLines((all) => all.map((x, j) => (j === i ? e.target.value.replace(/[\r\n]/g, ' ') : x)))}
+                className={cx('min-w-0 flex-1 rounded-md border bg-surface px-2 py-1 font-mono text-mono-frag', corrected ? 'border-warn-line' : 'border-line-2')}
+              />
+            </div>
+            {corrected && (
+              <span className="pl-8 text-[11.5px] text-warn">
+                corrected by you · read as <span className="font-mono">{read[i] || '(empty)'}</span>{' '}
+                <button type="button" onClick={() => setLines((all) => all.map((x, j) => (j === i ? read[i]! : x)))} className="border-0 bg-transparent p-0 text-[11.5px] text-ink-2 underline">
+                  Undo
+                </button>
+              </span>
+            )}
+          </li>
+        );
+      })}
+      {lines.length === 0 && <li className="text-[12.5px] text-ink-3">{empty}</li>}
+    </ol>
   );
 }
 

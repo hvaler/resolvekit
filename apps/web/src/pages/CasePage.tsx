@@ -21,7 +21,7 @@ import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
 import { UploadReview } from '../components/UploadReview';
-import { PdfReviewPlaceholder } from '../components/PdfProgress';
+import { PdfReview } from '../components/PdfReview';
 import { STUCK_COPY, thumbsReady } from '../domain/pdfReview';
 import { PdfSelect } from '../components/PdfSelect';
 import { MiniButton } from '../components/ui';
@@ -114,7 +114,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const [review, setReview] = useState<{ upload: UploadRecordView; readLines: string[] } | null>(null);
   /** Pasted texts of this page's uploads (removals are offsets into them); never stored. */
   const pasted = useRef(new Map<string, string>());
-  /** The PDF whose pages are being chosen, and the one whose review is open (a placeholder until the page review exists). */
+  /** The PDF whose pages are being chosen, and the one whose review is open. */
   const [choosing, setChoosing] = useState<string | null>(null);
   const [pdfReview, setPdfReview] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -305,7 +305,16 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             {pendingUps
               .filter((u) => u.id === pdfReview && !u.restricted && u.pdf?.job.state === 'reviewing')
               .map((u) => (
-                <PdfReviewPlaceholder key={u.id} name={u.name} onClose={() => setPdfReview(null)} />
+                <PdfReview
+                  key={u.id}
+                  upload={u}
+                  client={uploadsClient!}
+                  onChange={(n) => {
+                    up.put(u.id, n);
+                    if (!n || n.status === 'confirmed') setPdfReview(null);
+                  }}
+                  onClose={() => setPdfReview(null)}
+                />
               ))}
             {c.notice && (
               <p

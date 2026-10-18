@@ -1,5 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { PDF_MAX_SELECTED, SELECTION_WARNING, STUCK_COPY, STUCK_MS, canPick, initialPoll, jobLabel, jobSettled, pickedLabel, pollDelay, pollStep, runningJobs, selectionCopy, thumbsReady, togglePick, wakeDelay } from './pdfReview';
+import {
+  BARCODE_WARNING,
+  FROM_COVER,
+  HINT_LABEL,
+  NO_TEXT_COPY,
+  PDF_MAX_SELECTED,
+  SELECTION_WARNING,
+  STUCK_COPY,
+  STUCK_MS,
+  afterCover,
+  canPick,
+  confirmPayload,
+  includedPages,
+  initialPoll,
+  jobLabel,
+  jobSettled,
+  pageDraftOf,
+  pageState,
+  pdfBlocker,
+  pickedLabel,
+  pollDelay,
+  pollStep,
+  runningJobs,
+  selectionCopy,
+  thumbsReady,
+  togglePick,
+  transcriptionArea,
+  wakeDelay,
+} from './pdfReview';
+import { pageLabel, type PdfPageView } from './uploads';
 
 describe('choosing the pages of a long PDF', () => {
   it('says how many pages the document has and how many can be chosen (verbatim)', () => {
@@ -133,5 +162,76 @@ describe('waking the timer for a job that starts after the first load', () => {
   it('never makes a second timer: one pending (or a request in flight) wins, however many puts', () => {
     expect(wakeDelay(true, { u1: 'rendering:0/3' })).toBeNull();
     expect(wakeDelay(true, { u1: 'rendering:0/3', u2: 'reading:1/2' })).toBeNull();
+  });
+});
+
+describe('reviewing the pages of a PDF', () => {
+  const SHA = (c: string) => c.repeat(64);
+  const view = (over: Partial<PdfPageView> = {}): PdfPageView => ({ original: 2, rects: [], readLines: ['INVOICE 2026-114', 'Total 89.00 USD'], lines: [], added: [], sha256: SHA('a'), ...over });
+  const cover = { x: 10, y: 10, w: 100, h: 40 };
+
+  it('says the copy of a page verbatim', () => {
+    expect(BARCODE_WARNING).toBe("Covering the text next to a barcode or QR code doesn't hide what the code contains. Cover the code too if it carries data you don't want to share.");
+    expect(NO_TEXT_COPY).toBe("No text was read on this page. Transcribe what matters, or the analyst can't use it.");
+    expect(HINT_LABEL).toBe('Text found in the PDF (a hint for your review; never stored or sent)');
+    expect(FROM_COVER).toBe('A transcribed line cannot come from a covered area.');
+    expect(pageLabel(8)).toBe('Page 8 of the original document');
+  });
+
+  it('refuses a transcription area that overlaps a cover, accepts one beside or inside the uncovered page', () => {
+    expect(transcriptionArea({ x: 50, y: 30, w: 80, h: 20 }, [cover])).toEqual({ error: 'A transcribed line cannot come from a covered area.' });
+    expect(transcriptionArea({ x: 0, y: 0, w: 300, h: 300 }, [cover])).toEqual({ error: FROM_COVER });
+    expect(transcriptionArea({ x: 20, y: 20, w: 10, h: 10 }, [cover])).toEqual({ error: FROM_COVER });
+    // Touching an edge is not overlapping (the server's rule), and an empty cover covers nothing.
+    expect(transcriptionArea({ x: 110, y: 10, w: 50, h: 20 }, [cover])).toEqual({ area: { x: 110, y: 10, w: 50, h: 20 } });
+    expect(transcriptionArea({ x: 10, y: 60, w: 50, h: 20 }, [cover, { x: 0, y: 0, w: 0, h: 0 }])).toEqual({ area: { x: 10, y: 60, w: 50, h: 20 } });
+    expect(transcriptionArea({ x: 10, y: 60, w: 50, h: 20 }, [])).toEqual({ area: { x: 10, y: 60, w: 50, h: 20 } });
+  });
+
+  it('starts a page from what the server read, and keeps the transcriptions when the page is covered again', () => {
+    const d = pageDraftOf(view({ rects: [cover] }));
+    expect(d).toEqual({ rects: [cover], lines: ['INVOICE 2026-114', 'Total 89.00 USD'], added: [] });
+    const withText = { ...d, lines: ['INVOICE 2026-114', 'Total 98.00 USD'], added: [{ area: { x: 200, y: 200, w: 50, h: 10 }, text: 'Signed' }] };
+    expect(afterCover(withText, view({ rects: [cover], readLines: ['INVOICE 2026-114'], sha256: 'b'.repeat(64) }))).toEqual({ rects: [cover], lines: ['INVOICE 2026-114'], added: withText.added });
+  });
+
+  it('a page is covered once the server read it with the covers as drawn now', () => {
+    expect(pageState(view({ sha256: null }), pageDraftOf(view({ sha256: null })))).toBe('uncovered');
+    expect(pageState(view(), pageDraftOf(view()))).toBe('covered');
+    expect(pageState(view(), { ...pageDraftOf(view()), rects: [cover] })).toBe('stale');
+  });
+
+  it('confirms only when every page is covered as drawn and every transcription is typed and outside the covers', () => {
+    const p1 = { view: view(), draft: pageDraftOf(view()) };
+    const p2v = view({ original: 8, rects: [cover], readLines: [], sha256: SHA('b') });
+    const p2 = { view: p2v, draft: pageDraftOf(p2v) };
+    expect(pdfBlocker([p1, p2])).toBeNull();
+    expect(pdfBlocker([p1, { view: view({ original: 8, sha256: null }), draft: pageDraftOf(view({ sha256: null })) }])).toBe('Cover page 8 of the original document first, even if nothing needs covering.');
+    expect(pdfBlocker([{ ...p1, draft: { ...p1.draft, rects: [cover] } }, p2])).toBe('You changed what is covered on page 2 of the original document: cover it again before confirming.');
+    expect(pdfBlocker([p1, { ...p2, draft: { ...p2.draft, added: [{ area: { x: 300, y: 300, w: 20, h: 20 }, text: '  ' }] } }])).toBe('Type the text of each transcribed line on page 8 of the original document, or remove it.');
+    expect(pdfBlocker([p1, { ...p2, draft: { ...p2.draft, added: [{ area: { x: 20, y: 20, w: 20, h: 20 }, text: 'x' }] } }])).toBe(FROM_COVER);
+    expect(confirmPayload([p1, { ...p2, draft: { ...p2.draft, added: [{ area: { x: 20, y: 20, w: 20, h: 20 }, text: 'x' }] } }])).toBeNull();
+  });
+
+  it('sends one entry per page, in order, with its reviewed lines, transcriptions and sha256', () => {
+    const p1 = { view: view(), draft: { ...pageDraftOf(view()), lines: ['INVOICE 2026-114', 'Total 98.00 USD'] } };
+    const p2v = view({ original: 8, rects: [cover], readLines: [], sha256: SHA('b') });
+    const p2 = { view: p2v, draft: { ...pageDraftOf(p2v), added: [{ area: { x: 200, y: 200, w: 50, h: 10 }, text: ' Signed by J. D. ' }] } };
+    expect(confirmPayload([p1, p2])).toEqual([
+      { lines: ['INVOICE 2026-114', 'Total 98.00 USD'], added: [], sha256: SHA('a') },
+      { lines: [], added: [{ area: { x: 200, y: 200, w: 50, h: 10 }, text: 'Signed by J. D.' }], sha256: SHA('b') },
+    ]);
+  });
+
+  it('lists the pages included before confirming, with what was corrected and transcribed', () => {
+    const p1 = { view: view(), draft: { ...pageDraftOf(view()), lines: ['INVOICE 2026-114', 'Total 98.00 USD'] } };
+    const p2v = view({ original: 8, rects: [cover], readLines: [], sha256: SHA('b') });
+    const p2 = { view: p2v, draft: { ...pageDraftOf(p2v), added: [{ area: { x: 200, y: 200, w: 50, h: 10 }, text: 'Signed' }] } };
+    const p3v = view({ original: 9, readLines: [], sha256: SHA('c') });
+    expect(includedPages([p1, p2, { view: p3v, draft: pageDraftOf(p3v) }])).toEqual([
+      'Page 2 of the original document · 2 lines read, 1 corrected',
+      'Page 8 of the original document · 1 area covered · 1 line transcribed',
+      'Page 9 of the original document · no text',
+    ]);
   });
 });

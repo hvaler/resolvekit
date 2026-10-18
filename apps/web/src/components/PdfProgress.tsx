@@ -12,17 +12,3 @@ export function PdfProgress({ job }: { job: PdfJob }) {
     </span>
   );
 }
-
-/** What the Review action of a PDF opens until the review of its pages exists. */
-export function PdfReviewPlaceholder({ name, onClose }: { name: string; onClose: () => void }) {
-  return (
-    <section aria-label={`Review ${name}`} className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-acc-line bg-surface px-4 py-3 text-[12.5px]">
-      <span className="min-w-0 flex-1">
-        <strong>{name}</strong> has been read. Reviewing its pages is not available in this version yet; it stays pending and is not used.
-      </span>
-      <button type="button" onClick={onClose} className="border-0 bg-transparent p-0 text-[12px] text-ink-2 underline">
-        Close
-      </button>
-    </section>
-  );
-}

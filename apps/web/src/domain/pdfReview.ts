@@ -1,8 +1,9 @@
 /**
- * Pure helpers of the PDF upload in the web app: choosing the pages of a long document, and following the job that
- * renders and reads them (apps/server/src/uploads, `pdf.job`). Copy as the spec words it.
+ * Pure helpers of the PDF upload in the web app: choosing the pages of a long document, following the job that
+ * renders and reads them (apps/server/src/uploads, `pdf.job`), and reviewing each page (cover, correct, transcribe)
+ * before confirming. Copy as the spec words it.
  */
-import { listRetryDelay, pageLabel, type PdfJob, type UploadRecordView } from './uploads';
+import { listRetryDelay, pageLabel, type PdfJob, type PdfPageView, type Rect, type UploadRecordView } from './uploads';
 
 /** The most pages of a document that can be added as evidence (the server's `PDF_MAX_SELECTED`). */
 export const PDF_MAX_SELECTED = 5;
@@ -90,3 +91,80 @@ export function pollStep(s: PollState, e: PollEvent): { state: PollState; delay:
  * itself, so there is never a second timer. The error backoff is not touched.
  */
 export const wakeDelay = (timerBusy: boolean, jobs: Readonly<Record<string, string>>): number | null => (timerBusy || !Object.keys(jobs).length ? null : pollDelay(0));
+
+export const BARCODE_WARNING = "Covering the text next to a barcode or QR code doesn't hide what the code contains. Cover the code too if it carries data you don't want to share.";
+export const NO_TEXT_COPY = "No text was read on this page. Transcribe what matters, or the analyst can't use it.";
+export const HINT_LABEL = 'Text found in the PDF (a hint for your review; never stored or sent)';
+/** The server's refusal of a transcription under a cover (422 BAD_TRANSCRIPTION), said before it is sent. */
+export const FROM_COVER = 'A transcribed line cannot come from a covered area.';
+
+/** Whether two areas share a positive area: edges that only touch, or an empty cover, do not (the server's rule). */
+const overlaps = (a: Rect, b: Rect) => b.w > 0 && b.h > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** An area marked for a transcribed line: refused when it overlaps a cover (what is under a cover is never typed in). */
+export function transcriptionArea(rect: Rect, covers: readonly Rect[]): { area: Rect } | { error: string } {
+  return covers.some((c) => overlaps(rect, c)) ? { error: FROM_COVER } : { area: rect };
+}
+
+/** One page as the merchant is reviewing it in the browser: covers as drawn now, lines as corrected, lines typed in. */
+export interface PageDraft {
+  rects: Rect[];
+  lines: string[];
+  added: { area: Rect; text: string }[];
+}
+
+/** A page with the server's view of it and the merchant's draft. */
+export interface ReviewedPage {
+  view: PdfPageView;
+  draft: PageDraft;
+}
+
+/** A page's draft as the server has it: its covers, the lines it read (uncorrected), nothing typed in yet. */
+export const pageDraftOf = (p: PdfPageView): PageDraft => ({ rects: p.rects.map((r) => ({ ...r })), lines: [...p.readLines], added: p.added.map(({ area, text }) => ({ area: { ...area }, text })) });
+
+/**
+ * After the server covered the page again and read it (`page`, its new view): the covers are the server's, the lines
+ * start over (they are new), the typed ones stay (one now under a cover blocks the confirmation, {@link pdfBlocker}).
+ */
+export const afterCover = (d: PageDraft, page: PdfPageView): PageDraft => ({ ...pageDraftOf(page), added: d.added });
+
+const sameRects = (a: readonly Rect[], b: readonly Rect[]) => JSON.stringify(a) === JSON.stringify(b);
+
+/** `uncovered`: never through the cover step; `stale`: covers drawn since; `covered`: read with the covers as drawn. */
+export function pageState(view: PdfPageView, draft: PageDraft): 'uncovered' | 'stale' | 'covered' {
+  if (!view.sha256) return 'uncovered';
+  return sameRects(draft.rects, view.rects) ? 'covered' : 'stale';
+}
+
+/** Why the PDF cannot be confirmed yet (the first reason, page by page), or null. */
+export function pdfBlocker(pages: readonly ReviewedPage[]): string | null {
+  for (const { view, draft } of pages) {
+    const page = `page ${view.original} of the original document`;
+    const state = pageState(view, draft);
+    if (state === 'uncovered') return `Cover ${page} first, even if nothing needs covering.`;
+    if (state === 'stale') return `You changed what is covered on ${page}: cover it again before confirming.`;
+    if (draft.added.some((a) => !a.text.trim())) return `Type the text of each transcribed line on ${page}, or remove it.`;
+    if (draft.added.some((a) => 'error' in transcriptionArea(a.area, view.rects))) return FROM_COVER;
+  }
+  return null;
+}
+
+/** The confirmation: one entry per selected page, in order, against the covered page it was reviewed on; null while blocked. */
+export function confirmPayload(pages: readonly ReviewedPage[]): { lines: string[]; added: { area: Rect; text: string }[]; sha256: string }[] | null {
+  if (pdfBlocker(pages)) return null;
+  return pages.map(({ view, draft }) => ({ lines: [...draft.lines], added: draft.added.map((a) => ({ area: { ...a.area }, text: a.text.trim() })), sha256: view.sha256! }));
+}
+
+const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+
+/** The pages that go into the evidence, as listed before confirming: `Page 2 of the original document · 2 lines read, 1 corrected`. */
+export function includedPages(pages: readonly ReviewedPage[]): string[] {
+  return pages.map(({ view, draft }) => {
+    const corrected = draft.lines.filter((l, i) => l !== view.readLines[i]).length;
+    const text = [
+      draft.lines.length ? `${count(draft.lines.length, 'line')} read${corrected ? `, ${corrected} corrected` : ''}` : '',
+      draft.added.length ? `${count(draft.added.length, 'line')} transcribed` : '',
+    ].filter(Boolean);
+    return [pageLabel(view.original), ...(draft.rects.length ? [`${count(draft.rects.length, 'area')} covered`] : []), ...(text.length ? text : ['no text'])].join(' · ');
+  });
+}

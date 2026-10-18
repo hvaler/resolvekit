@@ -5,7 +5,7 @@
  * attachment the merchant chooses in the final review. Nothing here reads or keeps an upload's content beyond what the server returns.
  */
 import type { AnalysisDocument, AnalysisInput } from '@resolvekit/analyst';
-import { correctionPair, linesToConfirmOf, pageOf, type Correction } from './draft';
+import { correctionPair, lineRef, linesToConfirmOf, pageOf, type Correction } from './draft';
 import type { IntentRequest } from './intent';
 import { utcStamp } from './time';
 import type { Citation, ContradictionResolution, Evidence, EvidenceType, SentenceView } from './types';
@@ -250,6 +250,12 @@ export interface Provenance {
 /** Where a PDF upload's cited line is: `Page 8 of the original document` (the page number in the uploaded PDF). */
 export const pageLabel = (page: number) => `Page ${page} of the original document`;
 
+/** Several pages named once: `Pages 2 and 8 of the original document`, `Pages 2, 5 and 8 of …`; one is {@link pageLabel}. */
+export function pagesLabel(pages: readonly number[]): string {
+  if (pages.length === 1) return pageLabel(pages[0]!);
+  return `Pages ${pages.slice(0, -1).join(', ')} and ${pages[pages.length - 1]} of the original document`;
+}
+
 /** Who typed a line of a PDF upload by hand: `Transcribed manually by Ana (member)`. */
 export const transcribedLabel = (person: string) => `Transcribed manually by ${person}`;
 
@@ -263,7 +269,10 @@ const citedPages = (c: Citation): number[] => [...new Set(c.fragments.map((f) =>
  */
 export function provenanceOf(e: Evidence, c?: Citation): Provenance {
   const l = e.sourceLabel;
-  if (l?.kind === 'upload') return { kind: 'upload', text: [l.text, ...(c ? citedPages(c).map(pageLabel) : [])].join(' · ') };
+  if (l?.kind === 'upload') {
+    const pages = c ? citedPages(c) : [];
+    return { kind: 'upload', text: pages.length ? `${l.text} · ${pagesLabel(pages)}` : l.text };
+  }
   if (l?.kind === 'metermcp') return { kind: l.kind, text: l.text };
   if (e.paypalRecord === 'capture' && e.meta?.source.startsWith('PayPal')) {
     // Bound case: from the PayPal read, or (not read yet) a placeholder that says so; never demo data.
@@ -282,23 +291,46 @@ export interface CitedCorrection {
   fragment: string;
   by: string;
   kind: Correction['kind'];
-  /** `line 2 corrected by Ana`; on a PDF `Page 8 of the original document · line 2 corrected by Ana`, or `… · Transcribed manually by Ana`. */
+  /**
+   * `line 2 corrected by Ana`, or `Transcribed manually by Ana`. The page is said once by the citation's provenance,
+   * not here; only a corrected line of a citation over several pages says which page its number is in.
+   */
   label: string;
 }
 
 /** The lines of `e` this citation covers that the merchant corrected or transcribed by hand. */
 export function citedCorrections(e: Evidence, c: Citation): CitedCorrection[] {
   if (e.body.kind !== 'lines' || !c.fragments.length) return [];
+  const several = citedPages(c).length > 1;
   return e.body.lines.flatMap((l, i) => {
     const kind = l.corrected ? 'corrected' : l.transcribed ? 'transcribed' : null;
     const by = l.corrected ?? l.transcribed;
     if (!kind || !by || !l.fragment || !c.fragments.includes(l.fragment)) return [];
     const p = pageOf(l.fragment);
     const line = p ? p.line : i + 1;
-    const what = kind === 'transcribed' ? transcribedLabel(by) : `line ${line} corrected by ${by}`;
-    return [{ line, ...(p ? { page: p.page } : {}), fragment: l.fragment, by, kind, label: p ? `${pageLabel(p.page)} · ${what}` : what }];
+    const label = kind === 'transcribed' ? transcribedLabel(by) : `line ${line}${p && several ? ` of page ${p.page}` : ''} corrected by ${by}`;
+    return [{ line, ...(p ? { page: p.page } : {}), fragment: l.fragment, by, kind, label }];
   });
 }
+
+/**
+ * What a citation says about its source, compact: the provenance with the pages it cites (once), then each distinct
+ * corrected or transcribed label (`Uploaded by Ana · Pages 2 and 8 of the original document · Transcribed manually by Ana`).
+ */
+export function citationProvenance(e: Evidence, c: Citation): string {
+  return [...new Set([provenanceOf(e, c).text, ...citedCorrections(e, c).map((k) => k.label)])].join(' · ');
+}
+
+/** The approval's line on a sentence that rests on a corrected or a transcribed line, and what the merchant confirmed. */
+export function confirmationText(num: number, k: Correction): { relies: string; confirmed: string } {
+  return k.kind === 'transcribed'
+    ? { relies: `Sentence ${num} relies on ${lineRef(k)}, transcribed manually by ${k.by}`, confirmed: 'You confirmed it is what the file shows' }
+    : { relies: `Sentence ${num} relies on ${lineRef(k)} as corrected by ${k.by}`, confirmed: 'You confirmed it reads the file correctly' };
+}
+
+/** The one-click confirmation on a sentence held back on a corrected or transcribed line. */
+export const confirmButtonLabel = (k: Correction): string =>
+  k.kind === 'transcribed' ? `Confirm ${lineRef(k)} is what the file shows (transcribed manually by ${k.by})` : `Confirm it reads ${lineRef(k)} correctly`;
 
 /** Who may review (redact, correct, confirm) or discard an upload: owners and members any; a reviewer their own (server's rule). Local mode (no person): the operator. */
 export function canEditUpload(p: { id: string; role: 'owner' | 'member'; reviewer: boolean } | null | undefined, u: Pick<UploadRecordView, 'uploadedBy'>): boolean {

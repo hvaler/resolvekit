@@ -256,7 +256,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
                     }
                   : {})}
                 readOnly={submitted}
-                {...(k ? { confirmCorrection: { line: k.line, evidenceId: k.evidenceId, onConfirm: () => d.confirmCorrection(v.id, k) } } : {})}
+                {...(k ? { confirmCorrection: { correction: k, onConfirm: () => d.confirmCorrection(v.id, k) } } : {})}
               />
             );
           })}
