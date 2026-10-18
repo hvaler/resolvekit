@@ -43,9 +43,6 @@ export function pollDelay(attempt: number): number {
 /** A long document's thumbnails are all made: the job is `selecting` with no `page` (it carries one while they are made). */
 export const thumbsReady = (job: PdfJob): boolean => job.state === 'selecting' && job.page === undefined;
 
-/** The pages of the document whose thumbnail exists for sure, so can be picked: all once they are all made, none before. */
-export const pickablePages = (job: PdfJob, pageCount: number): number[] => (thumbsReady(job) ? Array.from({ length: pageCount }, (_, i) => i + 1) : []);
-
 /** A job that has not moved for this long is given up on (a page render is cut at 20 s, five pages and their reading take minutes). */
 export const STUCK_MS = 5 * 60_000;
 export const STUCK_COPY = 'Reading is taking longer than expected. Reload the page to check again.';
@@ -86,3 +83,10 @@ export function pollStep(s: PollState, e: PollEvent): { state: PollState; delay:
   if (e.now - since >= STUCK_MS) return { state, delay: null, stuck: true };
   return { state, delay: pollDelay(polls), stuck: false };
 }
+
+/**
+ * A running job appeared (a PDF just added or selected, put in the list without a reload) and the timer is not
+ * armed: when to ask first. `timerBusy`: a timer is pending or a request is in flight, which arms the next poll
+ * itself, so there is never a second timer. The error backoff is not touched.
+ */
+export const wakeDelay = (timerBusy: boolean, jobs: Readonly<Record<string, string>>): number | null => (timerBusy || !Object.keys(jobs).length ? null : pollDelay(0));

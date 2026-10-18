@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PDF_MAX_SELECTED, SELECTION_WARNING, STUCK_COPY, STUCK_MS, canPick, initialPoll, jobLabel, jobSettled, pickablePages, pickedLabel, pollDelay, pollStep, runningJobs, selectionCopy, thumbsReady, togglePick } from './pdfReview';
+import { PDF_MAX_SELECTED, SELECTION_WARNING, STUCK_COPY, STUCK_MS, canPick, initialPoll, jobLabel, jobSettled, pickedLabel, pollDelay, pollStep, runningJobs, selectionCopy, thumbsReady, togglePick, wakeDelay } from './pdfReview';
 
 describe('choosing the pages of a long PDF', () => {
   it('says how many pages the document has and how many can be chosen (verbatim)', () => {
@@ -55,8 +55,6 @@ describe('long PDFs wait for their thumbnails', () => {
     expect(thumbsReady({ state: 'selecting', page: 7, of: 12 })).toBe(false);
     expect(thumbsReady({ state: 'selecting' })).toBe(true);
     expect(thumbsReady({ state: 'reading', page: 1, of: 2 })).toBe(false);
-    expect(pickablePages({ state: 'selecting', page: 7, of: 12 }, 12)).toEqual([]);
-    expect(pickablePages({ state: 'selecting' }, 4)).toEqual([1, 2, 3, 4]);
   });
 
   it('labels the wait, and a settled selection as waiting for the person', () => {
@@ -123,5 +121,17 @@ describe('polling a running job (one timer, with backoff)', () => {
   it('runningJobs lists only the uploads whose job is still moving', () => {
     const up = (id: string, job: { state: 'reading' | 'reviewing' | 'selecting'; page?: number; of?: number }) => ({ id, pdf: { pageCount: 3, selected: null, job } }) as never;
     expect(runningJobs([up('a', { state: 'reading', page: 2, of: 3 }), up('b', { state: 'reviewing' }), up('c', { state: 'selecting' }), { id: 'd' } as never])).toEqual({ a: 'reading:2/3' });
+  });
+});
+
+describe('waking the timer for a job that starts after the first load', () => {
+  it('a put of a running PDF arms a poll when none is pending, a finished one does not', () => {
+    expect(wakeDelay(false, { u1: 'rendering:0/3' })).toBe(1000);
+    expect(wakeDelay(false, {})).toBeNull();
+  });
+
+  it('never makes a second timer: one pending (or a request in flight) wins, however many puts', () => {
+    expect(wakeDelay(true, { u1: 'rendering:0/3' })).toBeNull();
+    expect(wakeDelay(true, { u1: 'rendering:0/3', u2: 'reading:1/2' })).toBeNull();
   });
 });
