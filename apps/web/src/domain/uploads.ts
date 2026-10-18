@@ -20,33 +20,63 @@ export type UploadStatus = 'pending' | 'reviewing' | 'confirmed';
 /** An upload as the server shows it to the seller's workspace (no workspace id, no analysis keys). */
 export interface UploadRecordView {
   id: string;
-  caseId: string;
-  boundDisputeId: string | null;
-  /** E7…, set at confirmation. */
-  evidenceId: string | null;
   kind: 'image' | 'text' | 'pdf';
   name: string;
   uploadedBy: { id: string; label: string; name: string };
   status: UploadStatus;
-  rects: Rect[];
-  removals: TextRemoval[];
-  /** Read again from the sanitised file (after a redaction). */
-  readLines: string[];
-  lines: { text: string; correctedBy: string | null; original: string | null }[];
-  /** Of the stored sanitised file. */
-  sha256: string | null;
-  size: number | null;
-  mime: 'image/png' | 'application/pdf' | null;
   createdAt: string;
   expiresAt: string;
-  confirmedAt: string | null;
-  /** The analyst's document of a confirmed upload (lines, fragment keys, corrections); null before confirmation. */
-  document: AnalysisDocument | null;
   /**
    * A pending upload someone else is reviewing, shown to a person who cannot edit it: metadata only (who added what
-   * kind of file when, where its job is); it carries none of the fields above that hold what it shows or reads.
+   * kind of file when, where its job is). Every field below that holds what the upload shows or reads is then absent.
    */
   restricted?: true;
+  caseId?: string;
+  boundDisputeId?: string | null;
+  /** E7…, set at confirmation. */
+  evidenceId?: string | null;
+  rects?: Rect[];
+  removals?: TextRemoval[];
+  /** Read again from the sanitised file (after a redaction). */
+  readLines?: string[];
+  lines?: { text: string; correctedBy: string | null; original: string | null }[];
+  /** Of the stored sanitised file. */
+  sha256?: string | null;
+  size?: number | null;
+  mime?: 'image/png' | 'application/pdf' | null;
+  confirmedAt?: string | null;
+  /** The analyst's document of a confirmed upload (lines, fragment keys, corrections); null before confirmation. */
+  document?: AnalysisDocument | null;
+  /** A PDF: its pages and its job. A restricted view has only `pageCount`, `selected` and `job`. */
+  pdf?: PdfView;
+}
+
+/** One selected page of a PDF upload, as the server shows it (no text layer, no counters). */
+export interface PdfPageView {
+  /** The page number in the uploaded PDF. */
+  original: number;
+  rects: Rect[];
+  readLines: string[];
+  lines: { text: string; correctedBy: string | null; original: string | null }[];
+  added: { area: Rect; text: string }[];
+  /** Of the covered page image; null until the page went through the cover step. */
+  sha256: string | null;
+}
+
+/** Where the reading of a PDF is. `selecting`: waiting for the pages to choose (a document of more than 5 pages). */
+export interface PdfJob {
+  state: 'selecting' | 'rendering' | 'reading' | 'reviewing' | 'failed';
+  page?: number | undefined;
+  of?: number | undefined;
+  error?: string | undefined;
+}
+
+export interface PdfView {
+  pageCount: number;
+  /** The original page numbers chosen, once chosen. */
+  selected: number[] | null;
+  pages?: PdfPageView[];
+  job: PdfJob;
 }
 
 /** A refusal by the uploads routes, with the server's code and words. */
@@ -94,6 +124,20 @@ export function createUploadsClient(caseId: string, o: { base?: string; fetch?: 
     },
     /** A PNG or JPEG, sent as is; the server reads its text locally (OCR). */
     uploadImage: (file: File) => call<ReadAnswer>('', { method: 'POST', headers: { 'content-type': file.type || 'image/png', 'x-upload-name': encodeURIComponent(file.name) }, body: file }),
+    /** A PDF, sent as is; the server counts its pages and, up to 5, reads them at once (a job to follow), else waits for a selection. */
+    uploadPdf: (file: File) => call<{ upload: UploadRecordView }>('', { method: 'POST', headers: { 'content-type': 'application/pdf', 'x-upload-name': encodeURIComponent(file.name) }, body: file }),
+    /** The pages (numbers in the original PDF) of a long one to read, once; its job starts. */
+    select: async (id: string, pages: number[]) => (await post<{ upload: UploadRecordView }>(`${one(id)}/select`, { pages })).upload,
+    /** Cover areas of page `k` of the selection (in pixels of its render); the server reads that page again. */
+    redactPage: (id: string, k: number, rects: Rect[]) => post<ReadAnswer>(`${one(id)}/redact`, { page: k, rects }),
+    /** One entry per selected page, in order: its reviewed lines, transcribed lines and the hash of the covered page. */
+    confirmPdf: async (id: string, pages: { lines: string[]; added: { area: Rect; text: string }[]; sha256: string }[]) => (await post<{ upload: UploadRecordView }>(`${one(id)}/confirm`, { pages })).upload,
+    /** The text layer of page `k`, a hint for the review (only while it is reviewed; never stored or sent anywhere). */
+    hint: async (id: string, k: number) => (await call<{ lines: string[] }>(`${one(id)}/page/${k}/hint`, { method: 'GET' }, 60_000)).lines,
+    /** Page `k` of the selection: the uncovered render (while reviewed) or the covered one. */
+    pageUrl: (id: string, k: number, v: 'sanitised' | 'original', version = '') => `${base}${one(id)}/page/${k}?v=${v}${version ? `&k=${version.slice(0, 16)}` : ''}`,
+    /** Thumbnail of page `n` of the original document, while the pages are chosen. */
+    thumbUrl: (id: string, n: number) => `${base}${one(id)}/thumb/${n}`,
     uploadText: (text: string, name: string) => post<ReadAnswer>('', { text, name }),
     /** Cover areas (image) or remove spans (pasted text): the server makes the sanitised file and reads it again. */
     redact: (id: string, r: { rects: Rect[] } | { removals: TextRemoval[] }) => post<ReadAnswer>(`${one(id)}/redact`, r),
@@ -108,11 +152,14 @@ export function createUploadsClient(caseId: string, o: { base?: string; fetch?: 
 
 export type UploadsClient = ReturnType<typeof createUploadsClient>;
 
-const evidenceNumber = (id: string | null) => Number(/^E(\d+)$/.exec(id ?? '')?.[1] ?? 0);
+/** `pending · contract.pdf · uploaded by Eva`: how an upload this person cannot edit is shown (it has nothing else to show). */
+export const pendingLine = (u: Pick<UploadRecordView, 'name' | 'uploadedBy'>) => `pending · ${u.name} · uploaded by ${u.uploadedBy.name}`;
+
+const evidenceNumber = (id: string | null | undefined) => Number(/^E(\d+)$/.exec(id ?? '')?.[1] ?? 0);
 
 /** The confirmed uploads (those with a document), in evidence order. */
 export function confirmedUploads(uploads: readonly UploadRecordView[]): UploadRecordView[] {
-  return uploads.filter((u) => u.status === 'confirmed' && u.document && evidenceNumber(u.evidenceId) > 0).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId));
+  return uploads.filter((u) => !u.restricted && u.status === 'confirmed' && u.document && evidenceNumber(u.evidenceId) > 0).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId));
 }
 
 /** The evidence heading's count: the cards shown, so confirmed uploads count like the case's own documents. */
@@ -258,6 +305,9 @@ export function canEditUpload(p: { id: string; role: 'owner' | 'member'; reviewe
   return !p || p.role === 'owner' || !p.reviewer || p.id === u.uploadedBy.id;
 }
 
+/** Whether this person can open a review of the upload: the server's edit rule, and never on a restricted view (nothing to open). */
+export const canReviewUpload = (p: Parameters<typeof canEditUpload>[0], u: UploadRecordView): boolean => !u.restricted && canEditUpload(p, u);
+
 /** The case's uploads list as the page holds it. */
 export interface UploadsListState {
   uploads: UploadRecordView[];
@@ -345,7 +395,7 @@ export function attachmentChoices(uploads: readonly UploadRecordView[], views: r
     const who = (k: 'corrected' | 'transcribed') => [...new Set(u.document!.lines.map((l) => l[k]).filter((x): x is string => !!x))];
     const corrected = [who('corrected'), who('transcribed')].flatMap((by, i) => (by.length ? [`lines ${i ? 'transcribed manually' : 'corrected'} by ${by.join(', ')}`] : []));
     const isCited = cited.has(u.evidenceId!);
-    return { id: u.id, evidenceId: u.evidenceId!, name: u.name, provenance: `Uploaded by ${u.uploadedBy.name}`, corrected: corrected.length ? corrected.join(' · ') : null, cited: isCited, selected: isCited, sha256: u.sha256 };
+    return { id: u.id, evidenceId: u.evidenceId!, name: u.name, provenance: `Uploaded by ${u.uploadedBy.name}`, corrected: corrected.length ? corrected.join(' · ') : null, cited: isCited, selected: isCited, sha256: u.sha256 ?? null };
   });
 }
 

@@ -10,9 +10,9 @@ type Headers = Readonly<Record<string, string | string[] | undefined>>;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-/** The one route that takes a raw image body (relative to /api): an evidence upload, as the server's UPLOAD_PATH. */
+/** The one route that takes a raw image or PDF body (relative to /api): an evidence upload, as the server's UPLOAD_PATH. */
 const UPLOAD = /^\/cases\/[A-Za-z0-9-]{1,64}\/uploads(?:\?.*)?$/;
-const IMAGE = /^image\/(?:png|jpeg)\s*(;|$)/i;
+const FILE = /^(?:image\/(?:png|jpeg)|application\/pdf)\s*(;|$)/i;
 
 /** `path`: the request path below /api (Connect's `req.url` in the middleware mounted there). */
 export function apiProxyDecision(method: string, headers: Headers, path = ''): ProxyDecision {
@@ -33,8 +33,8 @@ export function apiProxyDecision(method: string, headers: Headers, path = ''): P
 
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) {
     const type = one(headers['content-type']) ?? '';
-    const image = method.toUpperCase() === 'POST' && UPLOAD.test(path) && IMAGE.test(type);
-    if (!image && !/^application\/json\s*(;|$)/i.test(type)) return { allow: false, status: 415, reason: 'UNSUPPORTED_MEDIA_TYPE' };
+    const file = method.toUpperCase() === 'POST' && UPLOAD.test(path) && FILE.test(type);
+    if (!file && !/^application\/json\s*(;|$)/i.test(type)) return { allow: false, status: 415, reason: 'UNSUPPORTED_MEDIA_TYPE' };
   }
   return { allow: true };
 }

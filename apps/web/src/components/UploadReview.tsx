@@ -27,8 +27,8 @@ export function UploadReview({ upload, readLines, pastedText, client, onChange, 
   const [rec, setRec] = useState(upload);
   const [read, setRead] = useState<string[]>(readLines);
   const [lines, setLines] = useState<string[]>(readLines);
-  const [rects, setRects] = useState<Rect[]>(upload.rects);
-  const [removals, setRemovals] = useState<TextRemoval[]>(upload.removals);
+  const [rects, setRects] = useState<Rect[]>(upload.rects ?? []);
+  const [removals, setRemovals] = useState<TextRemoval[]>(upload.removals ?? []);
   const [busy, setBusy] = useState<null | 'redact' | 'confirm' | 'discard'>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'original' | 'sanitised'>('original');
@@ -37,7 +37,7 @@ export function UploadReview({ upload, readLines, pastedText, client, onChange, 
 
   const reviewing = rec.status === 'reviewing';
   // Covers changed since the server last read the file: read it again before confirming.
-  const stale = !reviewing || !same(rects, rec.rects) || !same(removals, rec.removals);
+  const stale = !reviewing || !same(rects, rec.rects ?? []) || !same(removals, rec.removals ?? []);
   const corrected = lines.map((l, i) => reviewing && l !== read[i]);
   const canConfirm = reviewing && !stale && !busy && !!rec.sha256 && lines.every((l) => !/[\r\n]/.test(l));
 

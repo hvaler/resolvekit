@@ -23,6 +23,8 @@ import {
   mergeRemoval,
   notAnalysed,
   pageLabel,
+  pendingLine,
+  canReviewUpload,
   toImageRect,
   transcribedLabel,
   uploadCorrections,
@@ -407,5 +409,100 @@ describe('evidenceCount', () => {
     expect(evidenceCount(standardCase.evidence)).toBe(`${standardCase.evidence.length} documents`);
     expect(evidenceCount(shown)).toBe(`${standardCase.evidence.length + 1} documents`);
     expect(evidenceCount(shown.slice(0, 1))).toBe('1 document');
+  });
+});
+
+/** The requests of the PDF methods, as the server's routes expect them (apps/server/src/uploads/routes.ts). */
+describe('the uploads client, PDFs', () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const answer = (body: unknown) =>
+    (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return Response.json(body);
+    }) as unknown as typeof fetch;
+  const client = (body: unknown = {}) => createUploadsClient('PP-1', { fetch: answer(body) });
+  const ID = 'upl-0123456789abcdef01234567';
+
+  it('uploadPdf sends the file as is with its type and its encoded name, and returns the upload', async () => {
+    calls.length = 0;
+    const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'factura ñ.pdf', { type: 'application/pdf' });
+    const r = await client({ upload: { id: ID } }).uploadPdf(file);
+    expect(r).toEqual({ upload: { id: ID } });
+    expect(calls[0]!.url).toBe('/api/cases/PP-1/uploads');
+    expect(calls[0]!.init).toMatchObject({ method: 'POST', body: file });
+    expect(calls[0]!.init.headers).toEqual({ 'content-type': 'application/pdf', 'x-upload-name': encodeURIComponent('factura ñ.pdf') });
+  });
+
+  it('select sends the chosen pages as JSON and returns the upload', async () => {
+    calls.length = 0;
+    const u = await client({ upload: { id: ID, status: 'pending' } }).select(ID, [2, 5, 8]);
+    expect(u).toEqual({ id: ID, status: 'pending' });
+    expect(calls[0]!.url).toBe(`/api/cases/PP-1/uploads/${ID}/select`);
+    expect(calls[0]!.init).toMatchObject({ method: 'POST', body: JSON.stringify({ pages: [2, 5, 8] }) });
+  });
+
+  it('redactPage and confirmPdf send the shapes of the routes', async () => {
+    calls.length = 0;
+    const c = client({ upload: { id: ID }, readLines: ['a'] });
+    expect(await c.redactPage(ID, 2, [{ x: 1, y: 2, w: 30, h: 4 }])).toEqual({ upload: { id: ID }, readLines: ['a'] });
+    expect(calls[0]!.url).toBe(`/api/cases/PP-1/uploads/${ID}/redact`);
+    expect(calls[0]!.init.body).toBe(JSON.stringify({ page: 2, rects: [{ x: 1, y: 2, w: 30, h: 4 }] }));
+    const pages = [{ lines: ['x'], added: [{ area: { x: 1, y: 1, w: 5, h: 5 }, text: 'y' }], sha256: 'b'.repeat(64) }];
+    await c.confirmPdf(ID, pages);
+    expect(calls[1]!.url).toBe(`/api/cases/PP-1/uploads/${ID}/confirm`);
+    expect(calls[1]!.init.body).toBe(JSON.stringify({ pages }));
+  });
+
+  it('hint returns the text found in the page, and the image urls carry their version', async () => {
+    calls.length = 0;
+    const c = client({ lines: ['hidden', 'visible'] });
+    expect(await c.hint(ID, 3)).toEqual(['hidden', 'visible']);
+    expect(calls[0]!.url).toBe(`/api/cases/PP-1/uploads/${ID}/page/3/hint`);
+    expect(calls[0]!.init.method).toBe('GET');
+    expect(c.pageUrl(ID, 3, 'sanitised', 'abcdef0123456789abcd')).toBe(`/api/cases/PP-1/uploads/${ID}/page/3?v=sanitised&k=abcdef0123456789`);
+    expect(c.pageUrl(ID, 1, 'original', '')).toBe(`/api/cases/PP-1/uploads/${ID}/page/1?v=original`);
+    expect(c.thumbUrl(ID, 12)).toBe(`/api/cases/PP-1/uploads/${ID}/thumb/12`);
+  });
+
+  it('a refused PDF carries the server code and words', async () => {
+    const refused = (async () => Response.json({ error: 'UNREADABLE', detail: 'This file could not be read as a PDF.' }, { status: 422 })) as unknown as typeof fetch;
+    await expect(createUploadsClient('PP-1', { fetch: refused }).uploadPdf(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).rejects.toMatchObject({ status: 422, code: 'UNREADABLE', message: 'This file could not be read as a PDF.' });
+  });
+});
+
+describe('a pending upload this person cannot edit (restricted)', () => {
+  const restricted = (over: Partial<UploadRecordView> = {}): UploadRecordView => ({
+    id: 'upl-fedcba9876543210fedcba98',
+    kind: 'pdf',
+    name: 'contract.pdf',
+    uploadedBy: { id: 'p2', label: 'Eva (reviewer)', name: 'Eva' },
+    status: 'pending',
+    createdAt: '2026-10-18T10:00:00.000Z',
+    expiresAt: '2026-10-18T11:00:00.000Z',
+    restricted: true,
+    pdf: { pageCount: 3, selected: [1, 2, 3], job: { state: 'reading', page: 1, of: 3 } },
+    ...over,
+  });
+
+  it('is shown as «pending · name · uploaded by person», with no content and no review action', () => {
+    expect(pendingLine(restricted())).toBe('pending · contract.pdf · uploaded by Eva');
+    expect(canReviewUpload({ id: 'p1', role: 'member', reviewer: true }, restricted())).toBe(false);
+    // Even for someone the role rules would let edit it: a restricted view has nothing to open.
+    expect(canReviewUpload(null, restricted())).toBe(false);
+    expect(canReviewUpload({ id: 'p1', role: 'owner', reviewer: false }, pending())).toBe(true);
+  });
+
+  it('takes no part in the analysis, the evidence, the attachments or the corrections', () => {
+    const list = [restricted(), confirmed()];
+    expect(confirmedUploads(list).map((u) => u.id)).toEqual([confirmed().id]);
+    expect(withUploadDocuments({ documents: [] } as never, [restricted()])).toEqual({ documents: [] });
+    expect(notAnalysed([restricted()], null)).toEqual([]);
+    expect(attachmentChoices([restricted()], [])).toEqual([]);
+    expect(uploadCorrections([restricted()]).size).toBe(0);
+  });
+
+  it('is kept by the list like any other pending upload', () => {
+    const s = uploadsListReducer({ uploads: [], known: true, refused: null, error: null }, { type: 'loaded', uploads: [restricted()] });
+    expect(s.uploads).toHaveLength(1);
   });
 });
