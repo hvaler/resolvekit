@@ -116,9 +116,10 @@ export interface DraftContext {
   /** Corrected and transcribed lines of the case's uploads, by fragment key ({@link linesToConfirmOf}). Absent: none. */
   corrections?: ReadonlyMap<string, Correction>;
   /**
-   * The merchant's confirmations that a sentence reads a corrected line correctly, as `sentenceId@fragment` pairs
-   * ({@link correctionPair}). A supported sentence citing corrected lines goes to review until every one of them has
-   * its pair here: the correction may flip what the file says.
+   * The merchant's confirmations that a sentence reads a corrected or transcribed line correctly, as
+   * `sentenceId@fragment` pairs ({@link correctionPair}). A supported sentence citing such lines goes to review until
+   * every one of them has its pair here: a correction may flip what the file says, and a transcription is the
+   * merchant's typing, not text read from the file.
    */
   confirmedCorrections?: ReadonlySet<string>;
 }

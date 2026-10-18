@@ -5,6 +5,7 @@
 import type { JsonSchema } from './model.ts';
 import type { Requirement } from './rules.ts';
 import type { AnalysisDocument, DisputeContext, Fact, MerchantNote } from './types.ts';
+import { pageOfLine } from './verify.ts';
 
 export const PROMPT_VERSION = 'rk-analyst-2026-10-09.7';
 
@@ -28,14 +29,21 @@ ${n}. A line followed by "${CORRECTED_MARK.trim()}" is the merchant's reading of
 const transcribedRule = (n: number) => `
 ${n}. A line followed by "${TRANSCRIBED_MARK.trim()}" was typed by the merchant, not read from the document: the merchant uploaded the file and transcribed by hand a line the text recognition did not read. Quote the line itself, never the marker, and treat it as the merchant's statement of what the file shows, not as a third party's record.`;
 
+/** Rendered on its own line where a page of a PDF upload starts: outside the document text, so never quotable. */
+export const pageMark = (page: number) => `   — page ${page} of the original document —`;
+
+const pageRule = (n: number) => `
+${n}. In an uploaded PDF, a line "— page N of the original document —" marks where page N starts; it is not document text. Only some pages of the original are shown, so pages that follow each other here may not be adjacent: a quote never spans two pages.`;
+
 /**
- * The system prompt for these documents. Documents without a corrected or transcribed line get exactly {@link SYSTEM}
- * (so their prompts, and the analyses stored under PROMPT_VERSION, are unchanged); with one, the rule saying what it
- * means, numbered after the others (a corrected line alone gives phase 1's prompt unchanged).
+ * The system prompt for these documents. Documents without a corrected or transcribed line and without PDF pages get
+ * exactly {@link SYSTEM} (so their prompts, and the analyses stored under PROMPT_VERSION, are unchanged); otherwise
+ * the rules saying what the marks mean, numbered after the others (a corrected line alone gives phase 1's prompt).
  */
 export function systemFor(docs: readonly AnalysisDocument[]): string {
   const has = (k: 'corrected' | 'transcribed') => docs.some((d) => d.lines.some((l) => l[k]));
-  const rules = [has('corrected') && correctedRule, has('transcribed') && transcribedRule].filter((r) => !!r);
+  const pages = docs.some((d) => d.lines.some((l) => pageOfLine(l) !== null));
+  const rules = [has('corrected') && correctedRule, has('transcribed') && transcribedRule, pages && pageRule].filter((r) => !!r);
   return SYSTEM + rules.map((r, i) => r(5 + i)).join('');
 }
 
@@ -53,13 +61,20 @@ function nonce(): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
-/** Documents wrapped in delimiters a document cannot forge (random per call); a corrected or transcribed line is followed by its marker. */
+/**
+ * Documents wrapped in delimiters a document cannot forge (random per call); a corrected or transcribed line is
+ * followed by its marker, and each page of a PDF upload starts with {@link pageMark}.
+ */
 export function renderDocuments(docs: readonly AnalysisDocument[]): { text: string; tag: string } {
   const tag = `DOC-${nonce()}`;
   const text = docs
     .map((d) => {
       const head = `<<<${tag} id="${d.id}" type="${d.type}" source="${d.source}" title="${d.title}">>>`;
-      const body = d.lines.map(renderLine).join('\n');
+      const body = d.lines.map((l, i) => {
+        // A PDF upload's page starts with its mark, on its own line: outside the document text, so never quotable.
+        const page = pageOfLine(l);
+        return page !== null && (i === 0 || pageOfLine(d.lines[i - 1]!) !== page) ? `${pageMark(page)}\n${renderLine(l)}` : renderLine(l);
+      }).join('\n');
       return `${head}\n${body}\n<<<END ${tag}>>>`;
     })
     .join('\n\n');

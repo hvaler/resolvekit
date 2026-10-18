@@ -69,13 +69,21 @@ test("PayPal's file name for a PDF upload is E<n>-upload.pdf", () => {
 
 const SANITISED = new TextEncoder().encode('%PDF-1.4\n% the PDF rebuilt from the covered page images\n%%EOF\n');
 
-/** A confirmed PDF upload E7 of the seller's workspace, as Task 5's confirm leaves it. */
-function confirmedPdf(store: UploadStore, workspaceId: string, signed?: string) {
-  const r = store.create({ workspaceId, caseId: CASE, boundDisputeId: REAL, kind: 'pdf', name: 'invoice.pdf', uploadedBy: { id: 'p1', label: 'Ana Lopez (member)', name: 'Ana Lopez' } }, new TextEncoder().encode('%PDF original'));
+const ORIGINAL = new TextEncoder().encode('%PDF-1.7 the original with its text layer ORIGINALWORDS');
+const PAGE = (k: number) => new TextEncoder().encode(`\x89PNG covered page ${k}`);
+const ORIG_PAGE = (k: number) => new TextEncoder().encode(`\x89PNG uncovered render ${k}`);
+
+/**
+ * A confirmed PDF upload E7 of the seller's workspace, as Task 5's confirm leaves it; with `keepFiles`, the original
+ * and the per-page renders are still stored beside it (they must never be what is sent).
+ */
+function confirmedPdf(store: UploadStore, workspaceId: string, o: { signed?: string; keepFiles?: boolean } = {}) {
+  const r = store.create({ workspaceId, caseId: CASE, boundDisputeId: REAL, kind: 'pdf', name: 'invoice.pdf', uploadedBy: { id: 'p1', label: 'Ana Lopez (member)', name: 'Ana Lopez' } }, ORIGINAL);
+  if (o.keepFiles) store.update(r.id, { status: 'reviewing' }, { pages: { 1: PAGE(1), 2: PAGE(2), 3: PAGE(3) }, origPages: { 1: ORIG_PAGE(1), 2: ORIG_PAGE(2), 3: ORIG_PAGE(3) } });
   return store.update(
     r.id,
-    { status: 'confirmed', evidenceId: 'E7', sha256: sha(SANITISED), size: SANITISED.length, mime: 'application/pdf', confirmedAt: new Date().toISOString(), pdf: { pageCount: 12, selected: [2, 5, 8], pages: pages(signed), job: { state: 'reviewing' } } },
-    { sanitised: SANITISED, original: null },
+    { status: 'confirmed', evidenceId: 'E7', sha256: sha(SANITISED), size: SANITISED.length, mime: 'application/pdf', confirmedAt: new Date().toISOString(), pdf: { pageCount: 12, selected: [2, 5, 8], pages: pages(o.signed), job: { state: 'reviewing' } } },
+    { sanitised: SANITISED, ...(o.keepFiles ? {} : { original: null }) },
   );
 }
 
@@ -97,26 +105,34 @@ test('a sentence citing a transcribed line is composed only with its sentence@li
   assert.ok((ok.body as unknown as { sentences: { id: string }[] }).sentences.some((x) => x.id === 'S7'));
 
   // The same sentence and confirmation over another transcription of that line is another content.
-  s.store.update(e7.id, { pdf: { ...s.store.get(e7.id)!.pdf!, pages: pages('Signed by J. Doe') } });
-  await s.analyse(cookie, [S7('Signed by J. Doe')]);
+  s.store.update(e7.id, { pdf: { ...s.store.get(e7.id)!.pdf!, pages: pages('Signed by J. Doe') } });  await s.analyse(cookie, [S7('Signed by J. Doe')]);
   const again = await s.intent(cookie, { confirmedCorrections: ['S7@E7.p8.l2'] });
   assert.equal(again.status, 201, JSON.stringify(again.body));
   assert.notEqual(again.body.contentHash, ok.body.contentHash);
 });
 
-test('the send attaches exactly the stored sanitised.pdf, as E7-upload.pdf', TIMEOUT, async () => {
+test('the send attaches exactly the stored sanitised.pdf, as E7-upload.pdf: never the original nor a page render', TIMEOUT, async () => {
   const s = sendSetup();
   const cookie = s.people.fullMember('Ana Lopez');
-  const e7 = confirmedPdf(s.store, s.people.workspace.id);
+  const e7 = confirmedPdf(s.store, s.people.workspace.id, { keepFiles: true });
+  // The original and the covered page renders are still on the server (the uncovered renders went at confirm).
+  assert.deepEqual(s.store.original(e7.id), ORIGINAL);
+  assert.deepEqual(s.store.pageImage(e7.id, 2), PAGE(2));
   await s.analyse(cookie);
   const i = await s.approved(cookie, { attachments: [e7.id] });
   assert.deepEqual(i.files.filter((f) => f.source === 'upload').map((f) => [f.name, f.sha256]), [['E7-upload.pdf', sha(SANITISED)]]);
   const r = await s.send(cookie, i.id);
   assert.equal(r.status, 202, JSON.stringify(r.body));
   const files = s.sends[0]!.getAll('evidence-file') as File[];
-  const pdf = files.find((f) => f.name === 'E7-upload.pdf')!;
-  assert.equal(pdf.type, 'application/pdf');
-  assert.deepEqual(await fileBytes(pdf), SANITISED);
-  assert.deepEqual(await fileBytes(pdf), s.store.sanitised(e7.id));
-  assert.ok(!files.some((f) => f.name.includes('invoice')));
+  // Every file PayPal received is one the intent names; besides the case's own documents, only E7-upload.pdf.
+  assert.deepEqual(files.map((f) => f.name), i.files.map((f) => f.name));
+  const demo = new Set(i.files.filter((f) => f.source === 'demo').map((f) => f.name));
+  const ups = files.filter((f) => !demo.has(f.name));
+  assert.deepEqual(ups.map((f) => [f.name, f.type]), [['E7-upload.pdf', 'application/pdf']]);
+  assert.equal(sha(await fileBytes(ups[0]!)), sha(SANITISED));
+  assert.deepEqual(await fileBytes(ups[0]!), s.store.sanitised(e7.id));
+  // No file sent carries the original or any page render.
+  const stored = [ORIGINAL, ...[1, 2, 3].flatMap((k) => [PAGE(k), ORIG_PAGE(k)])].map(sha);
+  for (const f of files) assert.ok(!stored.includes(sha(await fileBytes(f))), f.name);
+  assert.ok(!files.some((f) => f.name.includes('invoice') || /page-|\.png$/.test(f.name)));
 });
