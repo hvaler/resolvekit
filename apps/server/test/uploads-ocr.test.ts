@@ -99,6 +99,24 @@ test('a big image reaches the recognizer downscaled; a small one as it is', asyn
   } finally { await closeOcr(); ocrTestHooks.reset(); }
 });
 
+test('line boxes of a downscaled reading are in the original image pixels', async () => {
+  await closeOcr();
+  ocrTestHooks.set({
+    create: async () => ({
+      recognize: async (img: Buffer) => {
+        const [w, h] = dims(img);
+        const line = { text: 'x', confidence: 90, bbox: { x0: 0, y0: 0, x1: w!, y1: h! } };
+        return { data: { blocks: [{ paragraphs: [{ lines: [line] }] }] } };
+      },
+      terminate: async () => {},
+    }) as never,
+  });
+  try {
+    const [line] = await ocrPng(solidPng(2800, 1700));
+    assert.deepEqual(line!.box, { x: 0, y: 0, w: 2800, h: 1700 });
+  } finally { await closeOcr(); ocrTestHooks.reset(); }
+});
+
 test('the worker stops after the idle time, is recreated for the next job, and never stops mid-job', async () => {
   const seen = { sizes: [] as number[][], created: 0, terminated: 0 };
   await closeOcr();

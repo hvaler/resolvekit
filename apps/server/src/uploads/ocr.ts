@@ -94,13 +94,17 @@ export function downscaleRgba(rgba: Uint8Array, width: number, height: number, m
   return { rgba: out, width: w, height: h };
 }
 
-/** What OCR reads: the PNG itself when within OCR_MAX_PIXELS, else a downscaled copy (the stored file is unchanged). */
-function ocrInput(png: Uint8Array): Uint8Array {
+/**
+ * What OCR reads: the PNG itself when within OCR_MAX_PIXELS, else a downscaled copy (the stored file is unchanged),
+ * with the factors that map its coordinates back to the original image.
+ */
+function ocrInput(png: Uint8Array): { png: Uint8Array; sx: number; sy: number } {
   const v = new DataView(png.buffer, png.byteOffset, png.byteLength);
-  if (png.length < 24 || v.getUint32(16) * v.getUint32(20) <= OCR_MAX_PIXELS) return png;
+  if (png.length < 24 || v.getUint32(16) * v.getUint32(20) <= OCR_MAX_PIXELS) return { png, sx: 1, sy: 1 };
   const d = decodeImage(png);
   const s = downscaleRgba(d.rgba, d.width, d.height, OCR_MAX_PIXELS); // d is released when this returns
-  return new Uint8Array(PNG.sync.write({ width: s.width, height: s.height, data: Buffer.from(s.rgba.buffer, s.rgba.byteOffset, s.rgba.byteLength) } as PNG));
+  const out = new Uint8Array(PNG.sync.write({ width: s.width, height: s.height, data: Buffer.from(s.rgba.buffer, s.rgba.byteOffset, s.rgba.byteLength) } as PNG));
+  return { png: out, sx: d.width / s.width, sy: d.height / s.height };
 }
 
 async function run(png: Uint8Array, timeoutMs: number, signal?: AbortSignal): Promise<OcrLine[]> {
@@ -113,13 +117,15 @@ async function run(png: Uint8Array, timeoutMs: number, signal?: AbortSignal): Pr
     signal?.addEventListener('abort', onAbort, { once: true });
   });
   const work = (async () => {
-    const input = ocrInput(png);
+    const { png: input, sx, sy } = ocrInput(png);
     const w = await getWorker();
     const { data } = await w.recognize(Buffer.from(input), {}, { blocks: true });
     return (data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines)).flatMap((l) => {
       const text = l.text.trim();
       if (!text) return [];
-      const { x0, y0, x1, y1 } = l.bbox;
+      // Boxes in the original image's pixels, whatever size OCR read.
+      const x0 = Math.round(l.bbox.x0 * sx), y0 = Math.round(l.bbox.y0 * sy);
+      const x1 = Math.round(l.bbox.x1 * sx), y1 = Math.round(l.bbox.y1 * sy);
       return [{ text, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, confidence: l.confidence }];
     });
   })();
