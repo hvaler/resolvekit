@@ -9,11 +9,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@resolvekit/hosting": "*",
     "@resolvekit/paypal": "*",
-    "zod": "3.25.76",
     "@resolvekit/pdf": "*",
-    "@resolvekit/hosting": "*"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/node": "24.13.5"
