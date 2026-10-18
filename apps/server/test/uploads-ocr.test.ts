@@ -44,7 +44,7 @@ test('never fetches from the network', TIMEOUT, async () => {
 // ---- memory: bounded OCR input and idle worker ----
 import { PNG } from 'pngjs';
 import { downscaleRgba, ocrTestHooks } from '../src/uploads/ocr.ts';
-import { OCR_MAX_PIXELS, OCR_IDLE_MS } from '../src/uploads/limits.ts';
+import { OCR_MAX_PIXELS, OCR_IDLE_MS, OCR_TIMEOUT_MS, OCR_START_TIMEOUT_MS } from '../src/uploads/limits.ts';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const solidPng = (w: number, h: number) => new Uint8Array(PNG.sync.write({ width: w, height: h, data: Buffer.alloc(w * h * 4, 255) } as PNG));
@@ -130,5 +130,64 @@ test('the worker stops after the idle time, is recreated for the next job, and n
     assert.equal(seen.created, 2);
     await wait(150);
     assert.equal(seen.terminated, 2);
+  } finally { await closeOcr(); ocrTestHooks.reset(); }
+});
+
+test('limits: 45 s to read, 30 s to start the worker', () => {
+  assert.equal(OCR_TIMEOUT_MS, 45_000);
+  assert.equal(OCR_START_TIMEOUT_MS, 30_000);
+});
+
+const slowStart = (seen: { created: number; terminated: number }, startMs: number, recognizeMs = 0) => async () => {
+  seen.created++;
+  await wait(startMs);
+  return {
+    recognize: async () => { if (recognizeMs) await wait(recognizeMs); return { data: { blocks: [] } }; },
+    terminate: async () => { seen.terminated++; },
+  } as never;
+};
+
+test('a slow worker start does not eat the recognition budget', async () => {
+  const seen = { created: 0, terminated: 0 };
+  await closeOcr();
+  ocrTestHooks.set({ create: slowStart(seen, 150), startTimeoutMs: 1_000 });
+  try {
+    assert.deepEqual(await ocrPng(solidPng(10, 10), { timeoutMs: 60 }), []); // start 150 ms > timeoutMs 60 ms
+    assert.equal(seen.terminated, 0);
+  } finally { await closeOcr(); ocrTestHooks.reset(); }
+});
+
+test('a start longer than the start budget is OCR_TIMEOUT and the half-created worker is terminated when it resolves', async () => {
+  const seen = { created: 0, terminated: 0 };
+  await closeOcr();
+  ocrTestHooks.set({ create: slowStart(seen, 120), startTimeoutMs: 40 });
+  try {
+    await assert.rejects(ocrPng(solidPng(10, 10), { timeoutMs: 5_000 }), { code: 'OCR_TIMEOUT' });
+    await wait(200);
+    assert.equal(seen.terminated, 1);
+    ocrTestHooks.set({ create: slowStart(seen, 0), startTimeoutMs: 1_000 }); // recovers: the next job starts a new worker
+    assert.deepEqual(await ocrPng(solidPng(10, 10)), []);
+    assert.equal(seen.created, 2);
+  } finally { await closeOcr(); ocrTestHooks.reset(); }
+});
+
+test('a recognition longer than timeoutMs is OCR_TIMEOUT and the worker is terminated', async () => {
+  const seen = { created: 0, terminated: 0 };
+  await closeOcr();
+  ocrTestHooks.set({ create: slowStart(seen, 0, 300), startTimeoutMs: 1_000 });
+  try {
+    await assert.rejects(ocrPng(solidPng(10, 10), { timeoutMs: 40 }), { code: 'OCR_TIMEOUT' });
+    assert.equal(seen.terminated, 1);
+  } finally { await closeOcr(); ocrTestHooks.reset(); }
+});
+
+test('an abort during the worker start is honoured', async () => {
+  const seen = { created: 0, terminated: 0 };
+  await closeOcr();
+  ocrTestHooks.set({ create: slowStart(seen, 200), startTimeoutMs: 1_000 });
+  try {
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 30);
+    await assert.rejects(ocrPng(solidPng(10, 10), { signal: ac.signal }), { code: 'OCR_FAILED' });
   } finally { await closeOcr(); ocrTestHooks.reset(); }
 });

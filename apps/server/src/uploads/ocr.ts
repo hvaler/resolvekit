@@ -4,14 +4,14 @@
  * Nothing is fetched at runtime: the language data comes from the `@tesseract.js-data/eng` package on disk and
  * tesseract.js loads its core and worker from `node_modules` in Node. One worker, created lazily, one job at a
  * time, stopped after OCR_IDLE_MS without work (its WASM heap never shrinks) and recreated on demand. OCR reads at most
- * OCR_MAX_PIXELS: a larger image is downscaled for OCR only. A job that times out (or is aborted) terminates the worker, so a stuck recognition cannot hold up the
+ * OCR_MAX_PIXELS: a larger image is downscaled for OCR only. The worker start has its own budget (OCR_START_TIMEOUT_MS); the reading's (OCR_TIMEOUT_MS) starts once the worker is ready. A job that times out (or is aborted) terminates the worker, so a stuck recognition cannot hold up the
  * next one; the worker is recreated on demand.
  */
 import { createRequire } from 'node:module';
 import { PNG } from 'pngjs';
 import { createWorker, type Worker } from 'tesseract.js';
 import { decodeImage, UploadError, type Rect } from './image.ts';
-import { OCR_IDLE_MS, OCR_MAX_PIXELS, OCR_TIMEOUT_MS } from './limits.ts';
+import { OCR_IDLE_MS, OCR_MAX_PIXELS, OCR_START_TIMEOUT_MS, OCR_TIMEOUT_MS } from './limits.ts';
 
 export interface OcrLine { text: string; box: Rect; confidence: number }
 
@@ -22,15 +22,18 @@ const defaultCreate = (): Promise<Worker> => createWorker('eng', 1, { langPath: 
 
 let create = defaultCreate;
 let idleMs = OCR_IDLE_MS;
+let startMs = OCR_START_TIMEOUT_MS;
 let worker: Promise<Worker> | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 let pending = 0;
 let idleTimer: NodeJS.Timeout | undefined;
 
-/** Tests only: a fake worker factory and a short idle time. */
+/** Tests only: a fake worker factory and short idle / start times. */
 export const ocrTestHooks = {
-  set(h: { create?: () => Promise<Worker>; idleMs?: number }) { create = h.create ?? defaultCreate; idleMs = h.idleMs ?? OCR_IDLE_MS; },
-  reset() { create = defaultCreate; idleMs = OCR_IDLE_MS; },
+  set(h: { create?: () => Promise<Worker>; idleMs?: number; startTimeoutMs?: number }) {
+    create = h.create ?? defaultCreate; idleMs = h.idleMs ?? OCR_IDLE_MS; startMs = h.startTimeoutMs ?? OCR_START_TIMEOUT_MS;
+  },
+  reset() { create = defaultCreate; idleMs = OCR_IDLE_MS; startMs = OCR_START_TIMEOUT_MS; },
 };
 
 function getWorker(): Promise<Worker> {
@@ -107,19 +110,39 @@ function ocrInput(png: Uint8Array): { png: Uint8Array; sx: number; sy: number } 
   return { png: out, sx: d.width / s.width, sy: d.height / s.height };
 }
 
-async function run(png: Uint8Array, timeoutMs: number, signal?: AbortSignal): Promise<OcrLine[]> {
-  if (signal?.aborted) throw new UploadError('OCR_FAILED', 'OCR aborted');
+/** `p`, unless `ms` pass (OCR_TIMEOUT) or the signal aborts (OCR_FAILED) first. */
+function within<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   let onAbort: (() => void) | undefined;
   const stop = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new UploadError('OCR_TIMEOUT', 'OCR took too long')), timeoutMs);
+    timer = setTimeout(() => reject(new UploadError('OCR_TIMEOUT', 'OCR took too long')), ms);
     onAbort = () => reject(new UploadError('OCR_FAILED', 'OCR aborted'));
     signal?.addEventListener('abort', onAbort, { once: true });
   });
-  const work = (async () => {
+  p.catch(() => {}); // a late failure after the race is lost must not be unhandled
+  return Promise.race([p, stop]).finally(() => {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener('abort', onAbort);
+  });
+}
+
+/**
+ * Two budgets: the worker start (OCR_START_TIMEOUT_MS, cold on a slow instance) and then the reading itself
+ * (`timeoutMs`), which only starts once the worker is ready and the OCR input is prepared.
+ */
+async function run(png: Uint8Array, timeoutMs: number, signal?: AbortSignal): Promise<OcrLine[]> {
+  if (signal?.aborted) throw new UploadError('OCR_FAILED', 'OCR aborted');
+  try {
     const { png: input, sx, sy } = ocrInput(png);
-    const w = await getWorker();
-    const { data } = await w.recognize(Buffer.from(input), {}, { blocks: true });
+    let w: Worker;
+    try {
+      w = await within(getWorker(), startMs, signal);
+    } catch (e) {
+      void dropWorker(); // not awaited: a start that never resolves must not hold the job; terminated once it does
+      throw e;
+    }
+    if (signal?.aborted) throw new UploadError('OCR_FAILED', 'OCR aborted');
+    const { data } = await within(w.recognize(Buffer.from(input), {}, { blocks: true }), timeoutMs, signal);
     return (data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines)).flatMap((l) => {
       const text = l.text.trim();
       if (!text) return [];
@@ -128,17 +151,10 @@ async function run(png: Uint8Array, timeoutMs: number, signal?: AbortSignal): Pr
       const x1 = Math.round(l.bbox.x1 * sx), y1 = Math.round(l.bbox.y1 * sy);
       return [{ text, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, confidence: l.confidence }];
     });
-  })();
-  work.catch(() => {}); // a late failure after the race is lost must not be unhandled
-  try {
-    return await Promise.race([work, stop]);
   } catch (e) {
     await dropWorker();
     if (e instanceof UploadError) throw e;
     throw new UploadError('OCR_FAILED', 'OCR failed');
-  } finally {
-    clearTimeout(timer);
-    if (onAbort) signal?.removeEventListener('abort', onAbort);
   }
 }
 
