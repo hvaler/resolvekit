@@ -102,7 +102,7 @@ const rpcError = (status: number, message: string) =>
 export interface McpLimits {
   /** Live MCP sessions in all. */
   maxSessions: number;
-  /** Live MCP sessions per client IP. */
+  /** Live MCP sessions per key (the client IP; the agent run on /agent/mcp). */
   maxPerIp: number;
   /** A session with no request for this long is closed (its transport freed, its payment session closed). */
   idleMs: number;

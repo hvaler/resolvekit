@@ -130,3 +130,43 @@ test('hosted MeterMCP: concurrent budgets never exceed the daily cap; a budget P
   assert.equal(budgets.state().caps.budget!.used, 2);
   for (const c of [first, ...clients]) await c.close();
 });
+
+const RUN = `run-${'0123456789abcdef'.repeat(2)}`;
+const AGENT_INIT = { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'x', version: '1' } } }) };
+
+test('hosted MeterMCP: /agent/mcp is private (404 on the public host or behind the proxy), needs the admin token (401) and a run id (400)', async () => {
+  const { app } = setup();
+  const url = `http://${INTERNAL}/agent/mcp`;
+  const call = (headers: Record<string, string>) => app(new Request(url, { ...AGENT_INIT, headers: { ...AGENT_INIT.headers, ...headers } }));
+  assert.equal((await call({ host: HOST, [TOKEN_HEADER]: TOKEN, 'x-agent-run': RUN })).status, 404);
+  assert.equal((await call({ host: HOST, 'x-forwarded-for': '203.0.113.9', [TOKEN_HEADER]: TOKEN, 'x-agent-run': RUN })).status, 404);
+  assert.equal((await call({ host: INTERNAL, 'x-forwarded-for': '10.0.0.9', [TOKEN_HEADER]: TOKEN, 'x-agent-run': RUN })).status, 404);
+  assert.equal((await call({ host: INTERNAL, 'x-agent-run': RUN })).status, 401);
+  assert.equal((await call({ host: INTERNAL, [TOKEN_HEADER]: 'b'.repeat(64), 'x-agent-run': RUN })).status, 401);
+  assert.equal((await call({ host: INTERNAL, [TOKEN_HEADER]: TOKEN })).status, 400);
+  assert.equal((await call({ host: INTERNAL, [TOKEN_HEADER]: TOKEN, 'x-agent-run': 'run-nope' })).status, 400);
+  // The public /mcp is still not served on the private host.
+  const pub = await app(new Request(`http://${INTERNAL}/mcp`, { ...AGENT_INIT, headers: { ...AGENT_INIT.headers, host: INTERNAL } }));
+  assert.equal(pub.status, 403);
+  assert.deepEqual(await pub.json(), { error: 'FORBIDDEN_HOST' });
+});
+
+test('hosted MeterMCP: /agent/mcp with the token and a run id lets open_budget through without a demo code, and counts toward the daily cap', async () => {
+  const { pp, app, budgets } = setup();
+  const privateFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const r = new Request(input, init);
+    const h = new Headers(r.headers);
+    h.set('host', INTERNAL);
+    h.set(TOKEN_HEADER, TOKEN);
+    h.set('x-agent-run', RUN);
+    return app(new Request(r, { headers: h }));
+  }) as typeof globalThis.fetch;
+  const client = new Client({ name: 'resolvekit-agent', version: '1.0.0' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`http://${INTERNAL}/agent/mcp`), { fetch: privateFetch }));
+  const b = body(await client.callTool({ name: 'open_budget', arguments: { cap: '1.00' } }));
+  assert.notEqual(b.error, 'demo_code_required');
+  assert.match(b.approval_url, /^https:\/\//);
+  assert.equal(pp.count(/POST \/v2\/checkout\/orders$/), 1);
+  assert.equal(budgets.state().caps.budget!.used, 1);
+  await client.close();
+});
