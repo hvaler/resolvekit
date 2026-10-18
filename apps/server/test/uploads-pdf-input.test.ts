@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { PNG } from 'pngjs';
 import { inspectPdf, openPdfSession, pageTextHint, pdfChildTestHooks, readRss, renderPage } from '../src/uploads/pdf-input.ts';
 import { MAX_SIDE, PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_PAGE_PIXELS, PDF_MAX_SELECTED, PDF_PAGE_TIMEOUT_MS, PDF_RENDER_DPI, PDF_THUMB_DPI, MAX_REDACTS_PER_PAGE } from '../src/uploads/limits.ts';
+import { closeOcr, ocrPng, ocrTestHooks } from '../src/uploads/ocr.ts';
 import { A3_LANDSCAPE, HIDDEN, HUGE, bombPdf, corruptPdf, encryptedPdf, hiddenPdf, pagesPdf, resourcesPdf, textPdf, zeroPagePdf } from './fixtures/make-pdfs.ts';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -118,6 +119,28 @@ test('a render over the timeout is refused, and the next job still runs', TIMEOU
   const next = renderPage(pagesPdf(3), 3, 36);
   await assert.rejects(slow, { code: 'UNREADABLE', message: TOO_SLOW });
   assert.ok((await next).width > 0);
+});
+
+test('the OCR worker is closed before a PDF reader starts: the two are never resident together', TIMEOUT, async () => {
+  const seen = { created: 0, terminated: 0 };
+  await closeOcr();
+  ocrTestHooks.set({
+    create: async () => {
+      seen.created++;
+      return { recognize: async () => ({ data: { blocks: [] } }), terminate: async () => { seen.terminated++; } } as never;
+    },
+    idleMs: 60_000,
+  });
+  try {
+    await ocrPng(new Uint8Array(PNG.sync.write({ width: 4, height: 4, data: Buffer.alloc(64, 255) } as PNG)));
+    assert.deepEqual(seen, { created: 1, terminated: 0 }); // kept for OCR_IDLE_MS after its job
+    const s = await openPdfSession(pagesPdf(1));
+    assert.deepEqual(seen, { created: 1, terminated: 1 });
+    await s.close();
+  } finally {
+    await closeOcr();
+    ocrTestHooks.reset();
+  }
 });
 
 test('a child that hangs is killed at the deadline; one that crashes is unreadable; the next PDF works', TIMEOUT, async () => {

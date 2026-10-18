@@ -7,13 +7,16 @@
  * the child with SIGKILL when one operation outlasts its deadline and, on Linux (the hosted instance), when its
  * resident memory passes PDF_CHILD_MAX_RSS_BYTES, read from /proc/<pid>/statm every 100 ms. On other platforms
  * (Windows, macOS: development only) only the deadline applies. A session holds the server-wide image slot until its
- * child has exited; a crashed or killed child never throws in the parent, and the next session starts a fresh one.
+ * child has exited; a crashed or killed child never throws in the parent, and the next session starts a fresh one. The
+ * OCR worker is closed before a child starts (both hold a large heap, and the hosted instance has room for one of them
+ * only); it restarts on the next OCR.
  */
 import { fork, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { UploadError, oneImageAtATime } from './image.ts';
 import { PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGE_PIXELS, PDF_PAGE_TIMEOUT_MS } from './limits.ts';
+import { closeOcr } from './ocr.ts';
 import type { ChildError, ChildReply, ChildRequest, ChildStrip } from './pdf-child.ts';
 
 /** The refusal of a PDF over PDF_MAX_BYTES or PDF_MAX_PAGES (also given by the upload route on the declared size). */
@@ -173,6 +176,8 @@ export function openPdfSession(bytes: Uint8Array, o: { timeoutMs?: number } = {}
   const timeoutMs = o.timeoutMs ?? PDF_PAGE_TIMEOUT_MS;
   return new Promise((resolveSession, rejectSession) => {
     oneImageAtATime(async () => {
+      // Inside the slot no OCR runs (it takes the slot too): the worker is stopped, never resident beside the child.
+      await closeOcr();
       let reader: Reader;
       try {
         reader = new Reader();
