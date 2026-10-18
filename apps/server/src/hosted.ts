@@ -172,11 +172,14 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     }
     if (read.complete) memory.confirm(read.cases.flatMap((c) => (c.merchant ? [{ caseId: c.caseId, dispute: c.dispute, merchant: c.merchant }] : [])));
     sellers = effective;
-    return { effective, complete: read.complete };
+    return { effective, complete: read.complete, none: read.cases.length === 0 };
   };
   const connectionOf = async (payerId: string): Promise<Connection> => {
-    const { effective, complete } = await refreshSellers();
+    const { effective, complete, none } = await refreshSellers();
     if (effective.has(payerId)) return 'evaluation';
+    // No case bound at all: the last confirmed seller keeps the evaluation label (an empty inbox, not the waiting
+    // screen). A label only: `sellers` stays empty and every case route stays bound-only.
+    if (none && memory.lastSellers().includes(payerId)) return 'evaluation';
     return effective.size === 0 && !complete ? 'checking' : 'not_connected';
   };
   const auth = createAuth({

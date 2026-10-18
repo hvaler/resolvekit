@@ -213,3 +213,51 @@ test('a complete read ignores remembered sellers that are no longer bound', asyn
     assert.deepEqual([w.connection, w.connected], ['not_connected', false]);
   }
 });
+
+// Final review I1: with no case bound at all, the last confirmed seller's workspace stays evaluation (empty inbox).
+test('no case bound at all: the last confirmed seller is evaluation with bound []; another account is not_connected', async () => {
+  const s = await setup();
+  const seller = await paypalSignIn(s, SELLER_ID);
+  assert.equal((await me(s, seller)).connection, 'evaluation');
+  delete s.bindings[CASE];
+  await s.app.bindingsChanged();
+  const w = await me(s, seller);
+  assert.deepEqual([w.connection, w.connected], ['evaluation', true]);
+  const health = (await (await s.app(req('/api/health', { cookie: seller }))).json()) as { bound: string[] };
+  assert.deepEqual(health.bound, []);
+  // A label, never access: the formerly bound case is unknown to the seller now.
+  assert.equal((await s.app(req(`/api/disputes/${CASE}`, { cookie: seller }))).status, 404);
+  // Another account, on a fresh app that shares the memory (one sign-in per app: the agreement token is single-use).
+  const memory = new SellerMemory({ file: null });
+  memory.confirm([{ caseId: CASE, dispute: 'PP-R-REAL-1', merchant: SELLER_ID }]);
+  const t = await setup({ memory });
+  delete t.bindings[CASE];
+  await t.app.bindingsChanged();
+  const other = await me(t, await paypalSignIn(t, 'SOMEONEELSE01'));
+  assert.deepEqual([other.connection, other.connected], ['not_connected', false]);
+});
+
+test('no case bound and no seller ever confirmed → not_connected (nothing to check)', async () => {
+  const s = await setup();
+  delete s.bindings[CASE];
+  await s.app.bindingsChanged();
+  const w = await me(s, await paypalSignIn(s, SELLER_ID));
+  assert.deepEqual([w.connection, w.connected], ['not_connected', false]);
+});
+
+test('the last confirmed sellers are kept apart from the per-binding entries and persisted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-sellers-'));
+  try {
+    const file = join(dir, 'sellers.json');
+    assert.deepEqual([...new SellerMemory({ file }).lastSellers()], []);
+    new SellerMemory({ file }).confirm([{ caseId: 'C1', dispute: 'D1', merchant: 'M1' }, { caseId: 'C2', dispute: 'D2', merchant: 'M1' }]);
+    assert.deepEqual([...new SellerMemory({ file }).lastSellers()], ['M1']);
+    // A file from before this change (entries only) still knows its sellers.
+    writeFileSync(file, JSON.stringify({ entries: [{ caseId: 'C1', dispute: 'D1', merchant: 'M9' }] }));
+    assert.deepEqual([...new SellerMemory({ file }).lastSellers()], ['M9']);
+    writeFileSync(file, JSON.stringify({ entries: [], last: [1] }));
+    assert.throws(() => new SellerMemory({ file }));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
