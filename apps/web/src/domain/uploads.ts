@@ -243,7 +243,7 @@ export function approvalRequest(o: {
 
 /** What a document is, as every card, citation and review shows it. */
 export interface Provenance {
-  kind: 'upload' | 'demo' | 'paypal' | 'metermcp';
+  kind: 'upload' | 'demo' | 'paypal' | 'metermcp' | 'resolvekit';
   text: string;
 }
 
@@ -273,7 +273,7 @@ export function provenanceOf(e: Evidence, c?: Citation): Provenance {
     const pages = c ? citedPages(c) : [];
     return { kind: 'upload', text: pages.length ? `${l.text} · ${pagesLabel(pages)}` : l.text };
   }
-  if (l?.kind === 'metermcp') return { kind: l.kind, text: l.text };
+  if (l?.kind === 'metermcp' || l?.kind === 'resolvekit') return { kind: l.kind, text: l.text };
   if (e.paypalRecord === 'capture' && e.meta?.source.startsWith('PayPal')) {
     // Bound case: from the PayPal read, or (not read yet) a placeholder that says so; never demo data.
     if (e.meta.received.startsWith('read ')) return { kind: 'paypal', text: `From ${e.meta.source}` };

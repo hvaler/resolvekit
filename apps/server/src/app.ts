@@ -417,7 +417,9 @@ export function createApi(opts: ApiOptions): Api {
 
   /**
    * The MeterMCP session behind the dispute's disputed capture. `none` (with the reason) when there is no capture,
-   * no MeterMCP, or no session for it; throws MeterMcpError when MeterMCP cannot be asked.
+   * no MeterMCP, or no session for it; throws MeterMcpError when MeterMCP cannot be asked. With the ResolveKit run that
+   * opened the session, its summary (goal, steps' reasons and summaries, outcome; never the person, the approval link
+   * or the order) goes with it.
    */
   const agentReceipt = async (d: Dispute): Promise<AgentReceiptSource> => {
     const capture = d.disputed_transactions?.[0]?.seller_transaction_id;
@@ -425,7 +427,11 @@ export function createApi(opts: ApiOptions): Api {
     if (!opts.meterMcp) return { kind: 'none', reason: 'MeterMCP is not configured on this server' };
     const sessionId = await opts.meterMcp.findByCapture(capture);
     if (!sessionId) return { kind: 'none', reason: `MeterMCP has no session for capture ${capture}` };
-    return { kind: 'metermcp', session: toMeteredSession(await opts.meterMcp.receipt(sessionId)) };
+    const session = toMeteredSession(await opts.meterMcp.receipt(sessionId));
+    const r = opts.agent?.store.bySession(sessionId);
+    if (!r) return { kind: 'metermcp', session };
+    const steps = r.steps.map((x) => ({ n: x.n, tool: x.tool, state: x.state, reason: x.reason, summary: x.summary }));
+    return { kind: 'metermcp', session, run: { runId: r.id, goal: r.goal, outcome: r.state, stopReason: r.stopReason, steps } };
   };
   /** For the analyst: asked right before it would call the model (nothing stored for these documents, or a refresh). */
   const liveGate = (req: Request, action: CostlyAction): LiveGate | undefined => {

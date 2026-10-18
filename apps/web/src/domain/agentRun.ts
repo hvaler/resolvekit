@@ -7,7 +7,7 @@
  * Honesty rules: a run that stopped or was interrupted is never called done; a settlement says only what MeterMCP's
  * receipt said (`unverified`: nothing is implied); an injected failure is marked injected, never an outage.
  */
-import { utcStamp } from './time';
+import { utcStamp } from './time.ts';
 
 export type Outcome = 'done' | 'cannot_do' | 'out_of_budget' | 'stopped' | 'model_unavailable' | 'not_approved' | 'interrupted';
 export type RunState = 'running' | 'awaiting_approval' | Outcome;

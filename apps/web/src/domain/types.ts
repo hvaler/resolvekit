@@ -94,7 +94,7 @@ export interface Evidence {
    */
   paypalRecord?: 'capture';
   /** Where a document comes from: the real MeterMCP session, the demo case, or a merchant upload. Shown on the card. */
-  sourceLabel?: { kind: 'metermcp' | 'demo' | 'upload'; text: string; /** Full text for the tooltip when `text` is shortened. */ title?: string };
+  sourceLabel?: { kind: 'metermcp' | 'resolvekit' | 'demo' | 'upload'; text: string; /** Full text for the tooltip when `text` is shortened. */ title?: string };
   body: EvidenceBody;
 }
 
@@ -206,7 +206,8 @@ export interface DisputeSummary {
   reason: DisputeReason;
   /** Merchant-facing line: "Buyer says the item was not received". */
   reasonText: string;
-  buyerItemType: BuyerItemType;
+  /** A live agent case shows PayPal's code verbatim when it is not a known type, or that PayPal reports none. */
+  buyerItemType: BuyerItemType | (string & {});
   stage: string | null;
   status: DisputeStatus;
   statusReadAgo: string;
@@ -327,7 +328,22 @@ export interface MeteredSession {
 }
 
 /** The agent case's session as found in MeterMCP by the disputed capture, or why there is none. */
-export type AgentReceiptSource = { kind: 'metermcp'; session: MeteredSession } | { kind: 'none'; reason: string };
+/**
+ * The ResolveKit run record behind a MeterMCP session, as the agent case's document E5 shows it: the goal, each step's
+ * reason and summary (data the model and MeterMCP wrote, read as content), and how the run ended. Only what the case
+ * needs: no person, no approval link, no order id.
+ */
+export interface AgentRunSummary {
+  runId: string;
+  goal: string;
+  /** The run's state: running, awaiting_approval or how it ended (done, stopped, interrupted…). */
+  outcome: string;
+  stopReason: string | null;
+  steps: Array<{ n: number; tool: string | null; /** pending: in progress; uncertain: result unknown (restart mid-call). */ state: 'pending' | 'done' | 'uncertain'; reason: string; summary: string }>;
+}
+
+/** `run`: the ResolveKit run that opened this session, when this server has its record. */
+export type AgentReceiptSource = { kind: 'metermcp'; session: MeteredSession; run?: AgentRunSummary } | { kind: 'none'; reason: string };
 
 // ---------------------------------------------------------------------------------------------
 // Sending

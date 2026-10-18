@@ -31,7 +31,7 @@ const MERCHANT_ID = /^[A-Z0-9]{8,20}$/;
 export interface PrepareOptions {
   /** (a) create, approve and capture the standard order. */
   standard: boolean;
-  /** (b) run the demo agent against MeterMCP. */
+  /** (b) run the model-driven agent (packages/agent) against MeterMCP. */
   agent: boolean;
   /** (d) wait for the disputes on these captures (from this run or `--captures`). */
   waitDisputes: boolean;

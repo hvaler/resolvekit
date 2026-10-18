@@ -36,12 +36,14 @@ export function evidenceDocLines(e: Evidence): DocLine[] {
 const TAG_BY_KIND: Record<string, string> = { mandate: 'PP', settlement: 'PP', receipt: 'MCP' };
 
 export function evidenceDocument(e: Evidence): AnalysisDocument {
+  // The agent case's run record (E5) is ResolveKit's own record of the buying agent's run, not MeterMCP's.
+  const run = e.sourceLabel?.kind === 'resolvekit';
   return {
     id: e.id,
     title: e.title,
     type: e.meta?.type ?? (e.body.kind === 'lines' ? 'Document' : e.body.kind),
-    source: e.meta?.source ?? (e.body.kind === 'mandate' || e.body.kind === 'settlement' ? 'PayPal' : 'MeterMCP'),
-    tag: e.meta?.tag ?? TAG_BY_KIND[e.body.kind] ?? 'MCP',
+    source: e.meta?.source ?? (run ? 'ResolveKit' : e.body.kind === 'mandate' || e.body.kind === 'settlement' ? 'PayPal' : 'MeterMCP'),
+    tag: e.meta?.tag ?? (run ? 'RK' : (TAG_BY_KIND[e.body.kind] ?? 'MCP')),
     lines: evidenceDocLines(e),
   };
 }

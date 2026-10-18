@@ -11,6 +11,9 @@ import { fakePayPal, waitingDispute } from './fixtures.ts';
 import { analystFor } from './kit.ts';
 import { toSnapshot } from '../src/mapping.ts';
 import type { AgentReceiptSource } from '../../web/src/domain/types.ts';
+import type { Step } from '@resolvekit/agent';
+import { RunStore } from '../src/agent/runs.ts';
+import type { AgentService } from '../src/agent/service.ts';
 
 const CASE = 'PP-R-MMC-10190702';
 const REAL = 'PP-R-REAL-1';
@@ -113,6 +116,39 @@ test('GET of the bound agent case adds the MeterMCP session found by the dispute
   assert.equal(s.agentReceipt.kind, 'metermcp');
   assert.equal(s.agentReceipt.session.sessionId, SID);
   assert.equal(s.agentReceipt.session.totals.charged, '1.37');
+  assert.equal('run' in s.agentReceipt, false, 'no run record for this session: no run summary');
+});
+
+test('GET of the bound agent case attaches the run record of that session as a summary: no person, approval link or order', async () => {
+  const { meter } = fakeMeter();
+  const store = new RunStore({ dir: null });
+  const steps: Step[] = [
+    { n: 1, at: '2026-10-08T19:11:00.000Z', state: 'done', kind: 'call', tool: 'deep_report', arguments: { company: 'ACME' }, reason: 'The report answers the goal', summary: 'Deep report on ACME', metering: { status: 'OK', price: '0.40', charged: true, remaining: '0.60', injected: null } },
+    { n: 2, at: '2026-10-08T19:12:00.000Z', state: 'uncertain', kind: 'call', tool: 'bulk_export', arguments: {}, reason: 'Export it', summary: 'Result unknown', metering: null },
+  ];
+  const rec = store.create({
+    by: { personId: 'p-ana', label: 'Ana', workspaceId: 'ws-1' },
+    finishedAt: null, goal: 'Report on ACME', cap: '1.00', failFirst: [], state: 'interrupted', stopReason: null, answer: null, steps,
+    approvalUrl: 'https://www.sandbox.paypal.com/checkoutnow?token=ORDERSECRET', provider: 'gemini', model: 'm', usage: { modelCalls: 2, inputTokens: 10, outputTokens: 5, reported: true },
+    sessionId: SID, orderId: 'ORDERSECRET', captureId: CAPTURE, settlement: 'captured', receiptSha256: null, captured: '0.40', released: '0.60', kept: false,
+  });
+  store.create({ ...store.get(rec.id)!, sessionId: 'mm-sess-other', goal: 'another run' });
+  const pp = fakePayPal([{ status: 200, body: waitingDispute() }]);
+  const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
+  const app = createApp({ paypal, env: 'sandbox', bindings: { [CASE]: REAL }, port: 8787, token: TOKEN, allowedOrigins: DEFAULT_ORIGINS, meterMcp: meter, agent: { store } as unknown as AgentService });
+  const s = await (await app(get(`/api/disputes/${CASE}`))).json();
+  assert.deepEqual(s.agentReceipt.run, {
+    runId: rec.id,
+    goal: 'Report on ACME',
+    outcome: 'interrupted',
+    stopReason: null,
+    steps: [
+      { n: 1, tool: 'deep_report', state: 'done', reason: 'The report answers the goal', summary: 'Deep report on ACME' },
+      { n: 2, tool: 'bulk_export', state: 'uncertain', reason: 'Export it', summary: 'Result unknown' },
+    ],
+  });
+  const text = JSON.stringify(s);
+  for (const v of ['p-ana', 'ORDERSECRET', 'checkoutnow', 'Ana']) assert.ok(!text.includes(v), v);
 });
 
 test('GET of the agent case without a session (or with MeterMCP down) says why, and still returns PayPal’s dispute', async () => {

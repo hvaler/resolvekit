@@ -130,8 +130,6 @@ services:
         value: "0.50"
       - key: METERMCP_RETURN_ORIGINS # where PayPal may return the buyer after approving a run's budget: resolvekit's public origin(s), e.g. https://resolvekit.onrender.com
         sync: false
-      - key: METERMCP_FAIL_FIRST # demo test switch: the first deep_report call of each session fails (never charged; the receipt says so)
-        value: deep_report
       - key: DAILY_BUDGETS
         value: 20
       - key: TRUSTED_PROXY_HOPS # same two hops as resolvekit (Cloudflare, then Render)
