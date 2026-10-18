@@ -154,7 +154,23 @@ test('the page-by-page check sees a header missing from a later page of a multi-
   const lines = Array.from({ length: 130 }, (_, i) => `line ${i}`);
   assert.equal(headerPerPage('with header', writePdf({ header: SYNTHETIC_HEADER, title: 't', lines })), 3);
   assert.throws(() => headerPerPage('no header', writePdf({ title: 't', lines })), /header on page 1 of 3/);
+  // The header is cut from page 2's content stream only: pages 1 and 3 still carry it, and page 2 is the one named.
+  const later = withoutHeaderOnPage(writePdf({ header: SYNTHETIC_HEADER, title: 't', lines }), 2);
+  assert.throws(() => headerPerPage('page 2 without header', later), /header on page 2 of 3/);
 });
+
+/** The PDF with the synthetic header blanked out (same length) in the content stream of page `n` only. */
+function withoutHeaderOnPage(bytes: Uint8Array, n: number): Uint8Array {
+  const text = new TextDecoder('latin1').decode(bytes);
+  const objs = [...text.matchAll(/(\d+) 0 obj\n([\s\S]*?)\nendobj/g)];
+  const pages = objs.filter((m) => /\/Type \/Page(?![s\w])/.test(m[2]!));
+  const contents = /\/Contents (\d+) 0 R/.exec(pages[n - 1]![2]!)![1];
+  const target = objs.find((m) => m[1] === contents)!;
+  const blanked = target[0].replace(`(${SYNTHETIC_HEADER})`, `(${'X'.repeat(SYNTHETIC_HEADER.length)})`);
+  assert.notEqual(blanked, target[0], `page ${n} carried the header`);
+  const out = text.slice(0, target.index) + blanked + text.slice(target.index! + target[0].length);
+  return Uint8Array.from(out, (c) => c.charCodeAt(0));
+}
 
 test('every PDF composed for a bound standard case says SYNTHETIC TEST DOCUMENT on every page', async () => {
   const input: AnalysisInput = caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
