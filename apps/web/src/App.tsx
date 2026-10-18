@@ -4,6 +4,7 @@ import { setRecording, useRecording } from './app/recording';
 import { ServicesProvider, useServices } from './app/services';
 import { environmentOf, knownBound, workspaceRoute } from './domain/environment';
 import type { SimulatedOutcome } from './domain/gateway';
+import { AgentPage } from './pages/AgentPage';
 import { JoinPage, MembersPage, SignInPage } from './pages/AuthPages';
 import { CasePage } from './pages/CasePage';
 import { LandingPage } from './pages/LandingPage';
@@ -139,6 +140,8 @@ export function App() {
         <Route path="/signin" element={<SignInPage />} />
         <Route path="/join" element={<JoinPage />} />
         <Route path="/workspace" element={<MembersPage />} />
+        {/* The buying agent: signed-in people (local mode: the operator); signed out, the page sends to sign-in. */}
+        <Route path="/agent" element={<AgentPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {/* Recording mode (demo video) hides the Dev control; everything else on screen is unchanged. */}
