@@ -162,7 +162,7 @@ async function main() {
       if (o.agentCount > 1) say(`agent session ${k} of ${o.agentCount}`);
       const a = await agentStep(o);
       if (!a.capture) {
-        say(`agent session ${k} did not end in a capture: stopping the agent sessions here (${made.length} made). Run the rest later with --agent --agent-count ${o.agentCount - made.length}.`);
+        say(`agent session ${k} did not end in a capture: stopping the agent sessions here (${made.length} made). Run the rest later with --agent --agent-count ${o.agentCount - made.length}; to bind them all in one list, wait for every capture together: --wait-disputes --captures ,${[...made, '<new>'].join('+')}.`);
         break;
       }
       made.push(a.capture);
@@ -197,6 +197,9 @@ async function main() {
   say('(e) BINDINGS_JSON for Render (resolvekit service → Environment), ready to paste:');
   console.log(`\n${b.json}\n`);
   if (b.missing.length) say(`not bound (no ready dispute): ${b.missing.join(', ')}; keep their current binding if they have one.`);
+  // A capture whose dispute never got ready is left out of its case's list: say so, and how to add it later.
+  const late = [...stdFound.filter((f) => !f.dispute).map((f) => `standard ${f.capture}`), ...agentFound.filter((f) => !f.dispute).map((f) => `agent ${f.capture}`)];
+  if (late.length) say(`left out (no ready dispute yet): ${late.join(', ')}. When ready, run --wait-disputes --captures with every capture of the case joined with + to print the whole list again.`);
   say('After saving it, Render restarts the service; the warm-up then analyses each bound case once (see the service log).');
 }
 

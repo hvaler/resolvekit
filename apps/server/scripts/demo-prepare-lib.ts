@@ -162,6 +162,7 @@ export function parseCaptures(v: string): { standard?: string[]; agent?: string[
       if (seen.has(id)) return { error: 'a capture is listed twice' };
       seen.add(id);
     }
+    if (out[which]) return { error: `--captures names the ${which} case twice: join its captures with +` };
     out[which] = ids;
   }
   if (!out.standard && !out.agent) return { error: '--captures names no capture' };

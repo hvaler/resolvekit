@@ -472,8 +472,9 @@ METERMCP_DEMO_CODE=<code> npm run demo:prepare   # PowerShell: $env:METERMCP_DEM
 4. It polls PayPal until each dispute appears (~5 min) and reaches `WAITING_FOR_SELLER_RESPONSE`, then prints the
    `BINDINGS_JSON` for Render.
 
-Steps run separately and resume: `--standard`, `--agent`, `--wait-disputes --captures <standard>,<agent>` (either may
-be empty), `--approval-minutes`, `--dispute-minutes`.
+Steps run separately and resume: `--standard [--count N]`, `--agent [--agent-count N]`,
+`--wait-disputes --captures <standard>,<agent>` (either may be empty; several captures of a case joined with `+`),
+`--approval-minutes`, `--dispute-minutes`.
 
 **Hosted mode** (`apps/server/src/hosted.ts`, `apps/metermcp/src/app.ts`, `packages/hosting`)
 

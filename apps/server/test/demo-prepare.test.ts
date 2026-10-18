@@ -121,6 +121,7 @@ test('demo:prepare captures: several agent ones joined with +, and no capture li
   assert.deepEqual(parseCaptures('agent=9XY87654ZW321098Q+8XY87654ZW321098Q'), { agent: ['9XY87654ZW321098Q', '8XY87654ZW321098Q'] });
   assert.ok('error' in parseCaptures(',9XY87654ZW321098Q+9XY87654ZW321098Q'));
   assert.ok('error' in parseCaptures('1AB23456CD789012E,1AB23456CD789012E'));
+  assert.match((parseCaptures('standard=1AB23456CD789012E,standard=2AB23456CD789012E') as { error: string }).error, /twice: join its captures with +/);
 });
 
 test('demo:prepare BINDINGS_JSON: several agent disputes become the agent case’s list (first active, the rest in reserve)', () => {
