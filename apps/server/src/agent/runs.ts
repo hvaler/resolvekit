@@ -46,6 +46,8 @@ export type NewRun = Omit<RunRecord, 'id' | 'createdAt' | 'updatedAt'>;
 export const RUN_ID = /^run-[0-9a-f]{32}$/;
 /** Unkept records older than this are deleted by `sweep()`. */
 export const RUN_RETENTION_MS = 30 * 86_400_000;
+/** Settlements the reconcile sweep may still change; a record holding one (with a session) is never swept. */
+export const UNSETTLED: ReadonlySet<Settlement> = new Set(['open', 'capture_pending', 'failed', 'unverified']);
 
 export class RunStoreError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -148,12 +150,16 @@ export class RunStore {
     return written;
   }
 
-  /** Delete unkept records created more than 30 days ago (never a run still going); the ids deleted. */
+  /**
+   * Delete unkept records created more than 30 days ago; the ids deleted. Never a run still going, one whose
+   * settlement is not final (the state reconcile works from) or one whose latest state is not written yet.
+   */
   sweep(): string[] {
     const before = new Date(this.now().getTime() - RUN_RETENTION_MS).toISOString();
     const gone: string[] = [];
     for (const r of this.records.values()) {
       if (r.kept || r.createdAt >= before || r.state === 'running' || r.state === 'awaiting_approval') continue;
+      if ((r.sessionId && UNSETTLED.has(r.settlement)) || this.pending.has(r.id)) continue;
       if (this.dir) {
         try {
           unlinkSync(join(this.dir, `${r.id}.json`));
@@ -162,7 +168,6 @@ export class RunStore {
         }
       }
       this.records.delete(r.id);
-      this.pending.delete(r.id);
       gone.push(r.id);
     }
     return gone;

@@ -13,7 +13,7 @@
  */
 import { connectMeter, runAgent, type AgentModel, type MeterConnection, type RunEvent, type RunInput, type RunLimits, type RunResult, type Settlement, type Step } from '@resolvekit/agent';
 import type { MeterMcpClient } from '../metermcp.ts';
-import { type RunRecord, type RunStore } from './runs.ts';
+import { UNSETTLED, type RunRecord, type RunStore } from './runs.ts';
 
 /** Runs going at once on the server, and per person. */
 export const MAX_RUNNING = 3;
@@ -26,10 +26,8 @@ export const RECOVERED_SUMMARY = 'Result unknown: the server restarted during th
 /** The MeterMCP admin routes the service needs (MeterMcpClient). */
 export type MeterAdmin = Pick<MeterMcpClient, 'close' | 'reconcile' | 'receipt'>;
 
-export type StartError = 'RUN_IN_PROGRESS' | 'BUSY' | 'MODEL_UNAVAILABLE' | 'STORAGE';
+export type StartError = 'RUN_IN_PROGRESS' | 'BUSY' | 'MODEL_UNAVAILABLE' | 'STORAGE' | 'STOPPING';
 
-/** Settlements a later sweep may still change: closed again (idempotent) or re-read. */
-const UNSETTLED: ReadonlySet<Settlement> = new Set(['open', 'capture_pending', 'failed', 'unverified']);
 const RECEIPT_SETTLEMENTS: ReadonlySet<string> = new Set(['open', 'captured', 'capture_pending', 'capture_declined', 'voided', 'failed', 'not_approved']);
 const UNFINISHED = new Set(['running', 'awaiting_approval']);
 
@@ -53,6 +51,7 @@ export class AgentService {
   private readonly active = new Map<string, Active>();
   /** Admin settlements in flight, per run: a second caller waits for the first instead of closing again. */
   private readonly settling = new Map<string, Promise<void>>();
+  private stopping = false;
 
   /** `connect`: how a run reaches MeterMCP (tests inject a fake); defaults to connectMeter. */
   constructor(o: {
@@ -86,9 +85,11 @@ export class AgentService {
 
   /**
    * Starts in the background; refuses with 'RUN_IN_PROGRESS' (that person has one going), 'BUSY' (three going),
-   * 'MODEL_UNAVAILABLE' (no model keys) or 'STORAGE' (the record could not be written, so nothing started).
+   * 'MODEL_UNAVAILABLE' (no model keys), 'STORAGE' (the record could not be written, so nothing started) or
+   * 'STOPPING' (the server is shutting down).
    */
   start(by: RunRecord['by'], input: RunInput): { ok: true; run: RunRecord } | { ok: false; error: StartError } {
+    if (this.stopping) return { ok: false, error: 'STOPPING' };
     if (!this.models) return { ok: false, error: 'MODEL_UNAVAILABLE' };
     const mine = [...this.active.values()].filter((a) => a.personId === by.personId).length;
     if (mine >= MAX_RUNNING_PER_PERSON) return { ok: false, error: 'RUN_IN_PROGRESS' };
@@ -128,8 +129,14 @@ export class AgentService {
     return { ok: true, run };
   }
 
-  /** On boot: every running/awaiting_approval record → interrupted; sessions closed via admin close; receipts re-read. */
+  /**
+   * On boot: every running/awaiting_approval record → interrupted (written first, for all of them); then their
+   * sessions are closed via admin close and the receipts re-read, concurrently, so a MeterMCP that is down costs one
+   * timeout, not one per run. main.ts does not await this before listening: the records are already interrupted
+   * when the first write lands, and a settlement still in flight shows as unverified.
+   */
   async recover(): Promise<void> {
+    const settle: string[] = [];
     for (const r of this.store.all()) {
       if (!UNFINISHED.has(r.state) || this.active.has(r.id)) continue;
       const steps = r.steps.map((s): Step => (s.state === 'pending' ? { ...s, state: 'uncertain', summary: RECOVERED_SUMMARY } : s));
@@ -139,8 +146,9 @@ export class AgentService {
       const settlement: Settlement = r.sessionId || unknownBudget ? 'unverified' : r.settlement;
       this.write(r.id, { state: 'interrupted', steps, approvalUrl: null, finishedAt: this.now().toISOString(), settlement });
       this.log(`agent run ${r.id}: interrupted by a restart (was ${r.state}${uncertain ? `, ${uncertain} call(s) with unknown result` : ''})${unknownBudget ? ' · a budget may exist without a known session: settlement unverified' : ''}`);
-      if (r.sessionId) await this.settleThroughAdmin(r.id);
+      if (r.sessionId) settle.push(r.id);
     }
+    await Promise.allSettled(settle.map((id) => this.settleThroughAdmin(id)));
   }
 
   /** Every 5 min: unsaved records are written; records whose settlement is open/capture_pending/failed/unverified are closed or reconciled and their receipt re-read. */
@@ -155,6 +163,7 @@ export class AgentService {
   /** Shutdown: aborts running loops (they end interrupted and settle). */
   async stop(): Promise<void> {
     const going = [...this.active.values()];
+    this.stopping = true;
     for (const a of going) a.controller.abort();
     await Promise.allSettled([...going.map((a) => a.done), ...this.settling.values()]);
   }
@@ -163,10 +172,17 @@ export class AgentService {
 
   private async execute(id: string, input: RunInput, models: { primary: AgentModel; fallback: AgentModel | null }, signal: AbortSignal): Promise<void> {
     const headers = this.meterHeaders(id);
-    let meter: MeterConnection | null = null;
-    let result: RunResult;
+    let meter: MeterConnection;
     try {
       meter = await this.connect({ url: this.meterUrl, headers });
+    } catch (e) {
+      // Nothing was called: no MeterMCP, no budget.
+      this.log(`agent run ${id}: stopped, MeterMCP unreachable (${redact(e instanceof Error ? e.message : String(e), Object.values(headers))})`);
+      this.write(id, { state: 'stopped', stopReason: 'meter_unavailable', finishedAt: this.now().toISOString(), approvalUrl: null });
+      return;
+    }
+    let result: RunResult;
+    try {
       result = await runAgent({
         input: { ...input, returnTo: this.returnTo(id) },
         meter,
@@ -177,15 +193,21 @@ export class AgentService {
         onEvent: (e) => this.onEvent(id, e),
       });
     } catch (e) {
-      // MeterMCP could not be reached, or the engine failed outside its loop: no answer to record.
+      // The engine failed outside its loop: no result. A call it announced has an unknown answer, as after a restart.
       const rec = this.store.get(id)!;
-      const message = redact(e instanceof Error ? e.message : String(e), Object.values(headers));
-      this.log(`agent run ${id}: failed (${message})`);
-      this.write(id, { state: 'stopped', stopReason: null, finishedAt: this.now().toISOString(), approvalUrl: null, settlement: rec.sessionId ? 'unverified' : rec.settlement });
+      this.log(`agent run ${id}: stopped, internal error (${redact(e instanceof Error ? e.message : String(e), Object.values(headers))})`);
+      this.write(id, {
+        state: 'stopped',
+        stopReason: 'internal_error',
+        steps: rec.steps.map((s): Step => (s.state === 'pending' ? { ...s, state: 'uncertain', summary: RECOVERED_SUMMARY } : s)),
+        finishedAt: this.now().toISOString(),
+        approvalUrl: null,
+        settlement: rec.sessionId || rec.steps.some((s) => s.state === 'pending' && s.kind === 'call') ? 'unverified' : rec.settlement,
+      });
       if (rec.sessionId) await this.settleThroughAdmin(id);
       return;
     } finally {
-      await meter?.close().catch(() => {});
+      await meter.close().catch(() => {});
     }
     const rec = this.write(id, {
       state: result.outcome,

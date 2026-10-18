@@ -57,7 +57,7 @@ interface FakeSession {
   captureId: string | null;
 }
 
-function fakeMeterMcp(o: { autoApprove?: boolean; duringCall?: (tool: string) => void | Promise<void> } = {}) {
+function fakeMeterMcp(o: { autoApprove?: boolean; duringCall?: (tool: string) => void | Promise<void>; answerFor?: (tool: string) => MeterAnswer | undefined } = {}) {
   const sessions = new Map<string, FakeSession>();
   const paid: string[] = [];
   const mcp: Array<{ run: string; name: string }> = [];
@@ -84,7 +84,8 @@ function fakeMeterMcp(o: { autoApprove?: boolean; duringCall?: (tool: string) =>
     receipt_sha256: `${s.id.slice(-1)}`.repeat(64),
   });
 
-  const admin: MeterAdmin & { closes: string[]; reconciles: string[]; receipts: number; receiptFails: boolean; closeGate: Promise<void> | null } = {
+  const admin: MeterAdmin & { closes: string[]; reconciles: string[]; receipts: number; receiptFails: boolean; closeGate: Promise<void> | null; receiptPatch: ((r: any) => any) | null } = {
+    receiptPatch: null,
     closes: [],
     reconciles: [],
     receipts: 0,
@@ -109,7 +110,7 @@ function fakeMeterMcp(o: { autoApprove?: boolean; duringCall?: (tool: string) =>
       admin.receipts += 1;
       const s = sessions.get(id);
       if (admin.receiptFails || !s) throw new Error('MeterMCP unreachable');
-      return receiptOf(s) as any;
+      return (admin.receiptPatch ? admin.receiptPatch(receiptOf(s)) : receiptOf(s)) as any;
     },
   };
 
@@ -145,6 +146,8 @@ function fakeMeterMcp(o: { autoApprove?: boolean; duringCall?: (tool: string) =>
         const price = PRICES[name];
         if (!price) return err({ error: 'unknown_tool' });
         if (!s || s.status !== 'active') return err({ error: 'payment_required' });
+        const forced = o.answerFor?.(name);
+        if (forced) return forced;
         paid.push(name);
         await o.duringCall?.(name);
         s.usedCents += cents(price);
@@ -393,7 +396,7 @@ test('recover leaves settlement unverified when the receipt cannot be read, and 
   await svc.stop();
 });
 
-test('reconcile never closes a session twice: the admin close is called once per record while it is in flight', async (t) => {
+test('overlapping sweeps never close a session twice: the admin close is called once per record while one is in flight (sequential sweeps may close again, idempotently)', async (t) => {
   const dir = tmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const mm = fakeMeterMcp();
@@ -588,7 +591,7 @@ test('no record, log line or error contains the admin token or the API keys', as
   const l = leaky.start({ ...BY, personId: 'p-bea' }, INPUT);
   assert.ok(l.ok);
   const lr = await finished(store, l.run.id);
-  assert.equal(lr.state, 'stopped');
+  assert.deepEqual([lr.state, lr.stopReason, lr.settlement], ['stopped', 'meter_unavailable', 'none']);
 
   // A crashed record with a session whose receipt cannot be read: recovery and the sweep log the admin failures.
   crashed(dir, { id: `run-${'0f'.repeat(16)}`, sessionId: 'mm-sess-0999', steps: [step(1, { state: 'pending' })] });
@@ -631,4 +634,127 @@ test('MeterMcpClient close and reconcile POST JSON to the admin routes; a busy c
   );
   status = 404;
   await assert.rejects(c.close('mm-sess-1'), /MeterMCP answered 404/);
+});
+
+test('sweep never deletes a record whose settlement is not final, nor one whose latest state is not written yet', (t) => {
+  const dir = tmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let now = T0;
+  let failing = false;
+  const store = new RunStore({
+    dir,
+    now: () => new Date(now),
+    write: (file, data) => {
+      if (failing) throw new Error('EIO');
+      writeFileSync(file, data);
+    },
+  });
+  const base = { finishedAt: null, goal: 'g', cap: '1.00', failFirst: [], state: 'interrupted' as const, stopReason: null, answer: null, steps: [], approvalUrl: null, provider: null, model: null, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, reported: false }, orderId: null, captureId: null, receiptSha256: null, kept: false, by: BY };
+  const unsettled = ['open', 'capture_pending', 'failed', 'unverified'] as const;
+  const held = unsettled.map((settlement, i) => store.create({ ...base, sessionId: `mm-sess-000${i}`, settlement }));
+  const settled = store.create({ ...base, sessionId: 'mm-sess-0009', settlement: 'captured' });
+  const unsaved = store.create({ ...base, sessionId: null, settlement: 'none' });
+  failing = true;
+  assert.throws(() => store.update(unsaved.id, { answer: 'latest' }));
+  assert.deepEqual(store.unsaved(), [unsaved.id]);
+  now = T0 + 31 * 86_400_000;
+  assert.deepEqual(store.sweep(), [settled.id]);
+  for (const r of held) assert.ok(store.get(r.id), `${r.settlement} was swept`);
+  assert.equal(store.get(unsaved.id)!.answer, 'latest');
+  // Once written, it is an ordinary old record.
+  failing = false;
+  assert.deepEqual(store.retryUnsaved(), [unsaved.id]);
+  assert.deepEqual(store.sweep(), [unsaved.id]);
+});
+
+test('a run that cannot reach MeterMCP stops with meter_unavailable; one whose engine throws after announcing a call stops with internal_error and the call is uncertain', async () => {
+  const store = new RunStore({ dir: null });
+  const down = fakeMeterMcp();
+  const a = new AgentService({
+    store,
+    models: { primary: scripted([finish()]), fallback: null },
+    meterUrl: 'x',
+    meterHeaders: () => ({}),
+    meterAdmin: down.admin,
+    limits: DEFAULT_LIMITS,
+    returnTo: () => undefined,
+    log: () => {},
+    connect: async () => {
+      throw new Error('ECONNREFUSED');
+    },
+  });
+  const ra = a.start(BY, INPUT);
+  assert.ok(ra.ok);
+  const sa = await finished(store, ra.run.id);
+  assert.deepEqual([sa.state, sa.stopReason, sa.settlement, sa.steps.length], ['stopped', 'meter_unavailable', 'none', 0]);
+  await a.stop();
+
+  // An answer the engine cannot read throws out of its loop while the paid call is announced (pending).
+  const broken = {
+    isError: false,
+    get body(): Record<string, any> {
+      throw new Error('unreadable answer');
+    },
+  } as MeterAnswer;
+  const mm = fakeMeterMcp({ autoApprove: true, answerFor: (tool) => (tool === 'quote_lookup' ? broken : undefined) });
+  const { svc } = service({ store, mm, models: { primary: scripted([turn(act('quote_lookup', { symbol: 'ACME' })), finish()]), fallback: null } });
+  const rb = svc.start({ ...BY, personId: 'p-bea' }, INPUT);
+  assert.ok(rb.ok);
+  await finished(store, rb.run.id);
+  await svc.stop();
+  const sb = store.get(rb.run.id)!;
+  assert.deepEqual([sb.state, sb.stopReason], ['stopped', 'internal_error']);
+  assert.deepEqual(sb.steps.map((s) => [s.tool, s.state, s.summary]), [['quote_lookup', 'uncertain', RECOVERED_SUMMARY]]);
+  // Settled from the receipt read through the admin route (nothing was charged: voided).
+  assert.equal(sb.settlement, 'voided');
+  assert.ok(mm.admin.receipts >= 1);
+});
+
+test('after stop() start refuses with STOPPING', async () => {
+  const mm = fakeMeterMcp();
+  const { svc } = service({ store: new RunStore({ dir: null }), mm });
+  await svc.stop();
+  assert.deepEqual(svc.start(BY, INPUT), { ok: false, error: 'STOPPING' });
+  assert.deepEqual(mm.connects, []);
+});
+
+test('recover marks every run interrupted first and settles them concurrently', async (t) => {
+  const dir = tmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const mm = fakeMeterMcp();
+  const ids = [`run-${'a1'.repeat(16)}`, `run-${'b2'.repeat(16)}`];
+  const sessions = ids.map((id) => mm.seed(id, 'active', 5));
+  ids.forEach((id, i) => crashed(dir, { id, sessionId: sessions[i]!.id }));
+  const store = new RunStore({ dir });
+  const { svc } = service({ store, mm });
+  const gate = deferred();
+  mm.admin.closeGate = gate.promise;
+  const recovering = svc.recover();
+  await until(() => mm.admin.closes.length === 2, 'both closes in flight');
+  for (const id of ids) assert.deepEqual([store.get(id)!.state, store.get(id)!.settlement], ['interrupted', 'unverified']);
+  gate.resolve();
+  await recovering;
+  for (const id of ids) assert.equal(store.get(id)!.settlement, 'captured');
+  await svc.stop();
+});
+
+test('a receipt of another session, or with an unknown settlement status, leaves the run unverified', async (t) => {
+  const dir = tmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const mm = fakeMeterMcp();
+  const run = `run-${'c3'.repeat(16)}`;
+  const s = mm.seed(run, 'active', 5);
+  crashed(dir, { id: run, sessionId: s.id });
+  const store = new RunStore({ dir });
+  const { svc } = service({ store, mm });
+  mm.admin.receiptPatch = (r) => ({ ...r, session: { ...r.session, id: 'mm-sess-other' } });
+  await svc.recover();
+  assert.deepEqual([store.get(run)!.settlement, store.get(run)!.captureId, store.get(run)!.receiptSha256], ['unverified', null, null]);
+  mm.admin.receiptPatch = (r) => ({ ...r, settlement: { ...r.settlement, status: 'refunded' } });
+  await svc.reconcile();
+  assert.deepEqual([store.get(run)!.settlement, store.get(run)!.captureId], ['unverified', null]);
+  mm.admin.receiptPatch = null;
+  await svc.reconcile();
+  assert.equal(store.get(run)!.settlement, 'captured');
+  await svc.stop();
 });

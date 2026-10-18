@@ -62,7 +62,10 @@ export interface RunInput {
 }
 
 export type Outcome = 'done' | 'cannot_do' | 'out_of_budget' | 'stopped' | 'model_unavailable' | 'not_approved' | 'interrupted';
-export type StopReason = 'max_actions' | 'max_time' | 'max_model_calls' | 'model_budget' | 'invalid_action' | 'approval_timeout' | 'persistence' | 'budget_unavailable';
+export type StopReason = 'max_actions' | 'max_time' | 'max_model_calls' | 'model_budget' | 'invalid_action' | 'approval_timeout' | 'persistence' | 'budget_unavailable'
+  /** Set by the server, not the loop: MeterMCP unreachable at connect; runAgent threw outside its loop (Ruling A9). */
+  | 'meter_unavailable'
+  | 'internal_error';
 export type Settlement = 'none' | 'unverified' | 'open' | 'captured' | 'capture_pending' | 'capture_declined' | 'voided' | 'failed' | 'not_approved';
 
 export interface Step {
