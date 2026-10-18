@@ -5,13 +5,14 @@
  *
  *   selecting  thumbnails of every page (PDF_THUMB_DPI), `page`/`of` while they are made, none once all are there
  *   rendering  the selected pages, all in ONE pdf.js session (it holds the server-wide image slot), then closed
- *   reading    OCR of each stored page image, one page at a time, never while a render runs
- *   reviewing  done: every selected page has its image (`page-<k>.png`), its uncovered render (`page-<k>.orig.png`),
- *              its sha256 and its read lines
- *   failed     with a fixed message (never content); the person discards it and uploads again
+ *   reading    OCR of each stored render, one page at a time, never while a render runs
+ *   reviewing  done: every selected page has its uncovered render (`page-<k>.orig.png`) and its read lines. No page
+ *              is stored as sanitised (`page-<k>.png`, with its sha256) before the cover step makes it
+ *   failed     with a fixed message (never content), and everything of the upload freed (`store.failPdf`): the
+ *              original, renders, thumbnails and text; the person discards it and uploads again
  *
  * One upload at a time server-wide, in the order started. A rendered page is encoded as a PNG and passed through
- * `sanitiseImage`, the code path of every covered image, so a page image is always a fresh, opaque PNG. An upload
+ * `sanitiseImage`, the code path of every covered image, so a stored render is always a fresh, opaque PNG. An upload
  * discarded, deleted or archived while the job runs is left alone from its next step on. Log lines carry the upload
  * id and an error code only.
  */
@@ -52,10 +53,9 @@ class Stop extends Error {
 }
 
 /** A fresh PNG of a render, through the same sanitising path as an uploaded image (no covers yet). */
-function pagePng(p: RenderedPage): { png: Uint8Array; sha256: string } {
+function pagePng(p: RenderedPage): { png: Uint8Array } {
   const raw = new Uint8Array(PNG.sync.write({ width: p.width, height: p.height, data: Buffer.from(p.rgba.buffer, p.rgba.byteOffset, p.rgba.byteLength) } as PNG));
-  const s = sanitiseImage(raw, []);
-  return { png: s.png, sha256: s.sha256 };
+  return { png: sanitiseImage(raw, []).png };
 }
 
 export function createPdfJob(o: PdfJobOptions): PdfJob {
@@ -111,9 +111,8 @@ export function createPdfJob(o: PdfJobOptions): PdfJob {
         const page = pagePng(await session.render(selected[k - 1]!, PDF_RENDER_DPI));
         const cur = current(id);
         if (!cur) return;
-        room(page.png.length * 2);
-        const next = cur.pdf.pages.map((p, i) => (i === k - 1 ? { ...p, sha256: page.sha256 } : p));
-        store.update(id, { pdf: { ...cur.pdf, pages: next } }, { pages: { [k]: page.png }, origPages: { [k]: page.png } });
+        room(page.png.length);
+        store.update(id, {}, { origPages: { [k]: page.png } });
       }
     } finally {
       await session.close();
@@ -122,7 +121,7 @@ export function createPdfJob(o: PdfJobOptions): PdfJob {
       const before = current(id);
       if (!before) return;
       setJob(before, { state: 'reading', page: k, of });
-      const png = store.pageImage(id, k);
+      const png = store.origPage(id, k);
       if (!png) throw new Stop('GONE', GONE);
       // The image slot as phase 1's OCR takes it: no decode of another upload runs beside this reading.
       const readLines = (await oneImageAtATime(() => ocr(png))).map((l) => l.text);
@@ -145,10 +144,9 @@ export function createPdfJob(o: PdfJobOptions): PdfJob {
       const code = known ? e.code : 'ERROR';
       const error = known ? e.message : FAILED;
       log(`uploads · pdf job · ${id} · failed · ${code}`);
-      const cur = current(id);
-      if (!cur) return;
+      if (!current(id)) return;
       try {
-        setJob(cur, { state: 'failed', error });
+        store.failPdf(id, error);
       } catch {
         log(`uploads · pdf job · ${id} · its failure could not be recorded`);
       }

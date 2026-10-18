@@ -79,7 +79,7 @@ export const req = (path: string, i: Init = {}) => {
   return new Request(ORIGIN + path, { method, headers, ...(body !== undefined ? { body: body as BodyInit } : {}) });
 };
 export const P = `/api/cases/${CASE}/uploads`;
-export type View = { id: string; status: string; evidenceId: string | null; kind: string; name: string; sha256: string | null; lines: { text: string; correctedBy: string | null; original: string | null }[]; uploadedBy: { label: string } };
+export type View = { id: string; status: string; evidenceId: string | null; kind: string; name: string; sha256: string | null; readLines?: string[]; lines: { text: string; correctedBy: string | null; original: string | null }[]; uploadedBy: { label: string } };
 export type Answer = { upload: View; readLines: string[]; error?: string; uploads?: View[] };
 export type App = ReturnType<typeof setup>['app'];
 export const call = async (app: App, path: string, i: Init = {}) => {

@@ -31,7 +31,7 @@ import { uploadDocuments, uploadTitle } from './documents.ts';
 import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
 import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED } from './limits.ts';
 import { ocrPng } from './ocr.ts';
-import { TOO_BIG, inspectPdf } from './pdf-input.ts';
+import { CANNOT_START, TOO_BIG, inspectPdf } from './pdf-input.ts';
 import type { PdfJob } from './pdf-job.ts';
 import { canDeleteUpload, canEditUpload } from './permissions.ts';
 import type { PdfPage, UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
@@ -135,12 +135,27 @@ const LINE_STRAY = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
 /**
  * The record as the web app sees it (no workspace id, no analysis keys, no counters), with the analyst's document of a
  * confirmed upload (exactly what the analysis reads: lines, fragment keys, corrections), null before confirmation.
+ * Until it is confirmed, someone who cannot edit it sees only that it exists (`restricted`): who added what kind of
+ * file when, and where its job is; nothing it shows or reads.
  */
-function view(r: UploadRecord) {
+function view(r: UploadRecord, viewer: ActingPerson) {
+  if (EDITABLE.includes(r.status) && !canEditUpload(viewer, r)) {
+    const { id, kind, name, uploadedBy, status, createdAt, expiresAt, pdf } = r;
+    const pdfView = pdf ? { pdf: { pageCount: pdf.pageCount, selected: pdf.selected, job: pdf.job } } : {};
+    return { id, kind, name, uploadedBy, status, createdAt, expiresAt, ...pdfView, restricted: true as const };
+  }
   const { workspaceId: _w, analysisKeys: _a, redactions: _r, pdf, ...v } = r;
   // A PDF's pages without their counters; the text layer is never part of the record.
   const pdfView = pdf ? { pdf: { pageCount: pdf.pageCount, selected: pdf.selected, pages: pdf.pages.map(({ redactions: _n, ...p }) => p), job: pdf.job } } : {};
   return { ...v, ...pdfView, document: uploadDocuments([r])[0] ?? null };
+}
+
+/** A refusal from a cap or a limit, with its Retry-After header when it says when to retry. */
+function capRefusal(r: { status: number; body: unknown }): Response {
+  const res = json(r.status, r.body);
+  const after = isObject(r.body) ? r.body.retryAfterSec : undefined;
+  if (typeof after === 'number' && Number.isSafeInteger(after) && after > 0) res.headers.set('retry-after', String(after));
+  return res;
 }
 
 /** A stored image (PNG; an image's original may be a JPEG), never cached, never sniffed. */
@@ -213,13 +228,13 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
   const { store } = o;
 
   const audit = (s: Scope, kind: AuditEvent['kind'], r: UploadRecord) =>
-    o.record({ caseId: s.caseId, kind, actor: s.person.label, team: s.person.workspaceId, disputeId: s.disputeId, detail: [r.id, r.evidenceId, r.name].filter(Boolean).join(' · ') });
+    o.record({ caseId: s.caseId, kind, actor: s.person.label, team: s.person.workspaceId, disputeId: s.disputeId, detail: [r.id, r.evidenceId].filter(Boolean).join(' · ') });
 
   /** A pending or reviewing upload past its expiry is discarded now (files and text purged); null then. */
   const unlessExpired = (r: UploadRecord): UploadRecord | null => {
     if (!EDITABLE.includes(r.status) || r.expiresAt > now().toISOString()) return r;
     store.update(r.id, { status: 'discarded' });
-    o.record({ caseId: r.caseId, kind: 'upload_discarded', actor: 'ResolveKit (expired)', team: r.workspaceId, disputeId: r.boundDisputeId, detail: `${r.id} · ${r.name} · expired` });
+    o.record({ caseId: r.caseId, kind: 'upload_discarded', actor: 'ResolveKit (expired)', team: r.workspaceId, disputeId: r.boundDisputeId, detail: `${r.id} · expired` });
     return null;
   };
   /** The uploads shown in the case for this workspace and dispute (expired ones discarded on the way). */
@@ -261,6 +276,11 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     try {
       pageCount = (await inspectPdf(original)).pages;
     } catch (e) {
+      // The reader could not start: nothing was read, try again later.
+      if (e instanceof UploadError && e.message === CANNOT_START) {
+        if (reserved?.ok) reserved.release();
+        return refuse(503, 'PDF_READER_UNAVAILABLE', e.message);
+      }
       // Encrypted or not a readable PDF: the file is the problem, not the request's type.
       if (e instanceof UploadError && e.code === 'UNREADABLE') return refuse(422, e.code, e.message);
       throw e;
@@ -271,7 +291,11 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     const whole = pageCount <= PDF_MAX_SELECTED;
     // Every page read counts once: the upload itself is the first (as an image's is its reading), the others here.
     const metered = whole && pageCount > 1 ? (o.meterPages?.(req, pageCount - 1) ?? null) : null;
-    if (metered && !metered.ok) return json(metered.refusal.status, metered.refusal.body);
+    if (metered && !metered.ok) {
+      // No page was read and nothing is stored: the day's unit goes back (the parsing is the address's to pay).
+      if (reserved?.ok) reserved.release();
+      return capRefusal(metered.refusal);
+    }
     const selected = whole ? Array.from({ length: pageCount }, (_, i) => i + 1) : null;
     const pdf = {
       pageCount,
@@ -295,7 +319,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     }
     audit(s, 'upload_added', rec);
     o.pdfJob.start(rec.id);
-    return json(201, { upload: view(rec) });
+    return json(201, { upload: view(rec, s.person) });
   };
 
   /** POST /uploads: an image or a PDF (raw body) or pasted text (JSON). Limits and the day's unit are checked before any work. */
@@ -359,7 +383,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       throw e;
     }
     audit(s, 'upload_added', rec);
-    return json(201, { upload: view(rec), readLines });
+    return json(201, { upload: view(rec, s.person), readLines });
   };
 
   /** POST /redact: the sanitised file, then its text read again from that file (never derived from the original's). */
@@ -410,7 +434,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (!cur || !EDITABLE.includes(cur.status) || archived(s, cur)) return refuse(409, 'UPLOAD_CHANGED', 'This upload changed while it was being read; open it again');
     const next = store.update(rec.id, patch, { sanitised: file });
     audit(s, 'upload_redacted', next);
-    return json(200, { upload: view(next), readLines: next.readLines });
+    return json(200, { upload: view(next, s.person), readLines: next.readLines });
   };
 
   /** POST /confirm: the reviewed lines against the sanitised file they were reviewed on. */
@@ -443,7 +467,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     });
     const next = store.update(cur.id, { status: 'confirmed', evidenceId: `E${highest + 1}`, lines: final, confirmedAt: now().toISOString() }, { original: null });
     audit(s, 'upload_confirmed', next);
-    return json(200, { upload: view(next) });
+    return json(200, { upload: view(next, s.person) });
   };
 
   const discard = (s: Scope, rec: UploadRecord): Response => {
@@ -452,7 +476,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (!EDITABLE.includes(rec.status)) return refuse(409, 'WRONG_STATUS', rec.status === 'confirmed' ? 'A confirmed upload is deleted, not discarded' : `This upload is ${rec.status}`);
     const next = store.update(rec.id, { status: 'discarded' });
     audit(s, 'upload_discarded', next);
-    return json(200, { upload: view(next) });
+    return json(200, { upload: view(next, s.person) });
   };
 
   const remove = (s: Scope, rec: UploadRecord): Response => {
@@ -468,7 +492,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     const next = store.update(rec.id, { status: 'deleted', analysisKeys: [] });
     audit(s, 'upload_deleted', next);
     o.attachedTo?.invalidate(next, s.person.label);
-    return json(200, { upload: view(next) });
+    return json(200, { upload: view(next, s.person) });
   };
 
   const image = (url: URL, s: Scope, rec: UploadRecord): Response => {
@@ -478,7 +502,6 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     let bytes: Uint8Array | null;
     if (v === 'original') {
       if (!EDITABLE.includes(rec.status)) return refuse(404, 'NOT_FOUND', 'The original is kept only until the upload is confirmed');
-      if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'The original is shown only to people who can edit this upload');
       bytes = store.original(rec.id);
     } else {
       bytes = store.sanitised(rec.id);
@@ -493,6 +516,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'A reviewer chooses the pages of their own uploads only');
     if (archived(s, rec)) return archivedRefusal();
     const chosen = 'The pages of this PDF are chosen already; discard it and upload it again to choose others';
+    if (rec.pdf.job.state === 'failed') return refuse(409, 'JOB_FAILED', rec.pdf.job.error ?? 'Reading this PDF failed. Discard it and upload it again.');
     if (!EDITABLE.includes(rec.status) || rec.pdf.selected || rec.pdf.job.state !== 'selecting') return refuse(409, 'WRONG_STATUS', chosen);
     const parsed = await readJson(req);
     if (!parsed.ok) return refuse(400, 'INVALID_JSON');
@@ -507,9 +531,10 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     // Read again after the body (nothing awaits from here on, so nothing changes in between).
     const cur = store.get(rec.id);
     if (!cur?.pdf || !EDITABLE.includes(cur.status) || archived(s, cur)) return refuse(409, 'UPLOAD_CHANGED', 'This upload changed meanwhile; open it again');
+    if (cur.pdf.job.state === 'failed') return refuse(409, 'JOB_FAILED', cur.pdf.job.error ?? 'Reading this PDF failed. Discard it and upload it again.');
     if (cur.pdf.selected || cur.pdf.job.state !== 'selecting') return refuse(409, 'WRONG_STATUS', chosen);
     const metered = o.meterPages?.(req, pages.length) ?? null;
-    if (metered && !metered.ok) return json(metered.refusal.status, metered.refusal.body);
+    if (metered && !metered.ok) return capRefusal(metered.refusal);
     const selected = [...pages].sort((a, b) => a - b);
     const thumbs = Object.fromEntries(Array.from({ length: cur.pdf.pageCount }, (_, i) => [i + 1, null]));
     let next: UploadRecord;
@@ -521,10 +546,13 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     }
     audit(s, 'upload_selected', next);
     o.pdfJob.start(next.id);
-    return json(200, { upload: view(next) });
+    return json(200, { upload: view(next, s.person) });
   };
 
-  /** GET /page/:k: page k of the selection, sanitised, or (people who can edit it, until confirmed) its uncovered render. */
+  /**
+   * GET /page/:k: page k of the selection, sanitised (once it went through the cover step), or until confirmed its
+   * uncovered render (the job stores only that one). Whom it is shown to is decided in `handle`.
+   */
   const page = (url: URL, s: Scope, rec: UploadRecord, k: number | null): Response => {
     if (k === null) return refuse(400, 'BAD_PAGE', `A page number from 1 to ${PDF_MAX_PAGES}`);
     const v = url.searchParams.get('v') ?? 'sanitised';
@@ -534,19 +562,17 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     let bytes: Uint8Array | null;
     if (v === 'original') {
       if (!EDITABLE.includes(rec.status)) return refuse(404, 'NOT_FOUND', 'The uncovered page is kept only until the upload is confirmed');
-      if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'The uncovered page is shown only to people who can edit this upload');
       bytes = store.origPage(rec.id, k);
     } else {
       bytes = store.pageImage(rec.id, k);
     }
-    return bytes ? imageResponse(bytes) : refuse(404, 'NOT_FOUND', 'Not rendered yet');
+    return bytes ? imageResponse(bytes) : refuse(404, 'NOT_FOUND', v === 'original' ? 'Not rendered yet' : 'Not covered yet');
   };
 
-  /** GET /thumb/:n: the thumbnail of page n, uncovered, so for people who can edit the upload, while it is selecting. */
+  /** GET /thumb/:n: the thumbnail of page n (uncovered, like an original), while it is selecting. */
   const thumb = (s: Scope, rec: UploadRecord, n: number | null): Response => {
     if (n === null) return refuse(400, 'BAD_PAGE', `A page number from 1 to ${PDF_MAX_PAGES}`);
     if (rec.kind !== 'pdf' || !rec.pdf || archived(s, rec)) return refuse(404, 'NOT_FOUND', 'No such PDF in this case');
-    if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'Thumbnails are shown only to people who can edit this upload');
     if (n > rec.pdf.pageCount || rec.pdf.selected || rec.pdf.job.state !== 'selecting') return refuse(404, 'NOT_FOUND', 'Thumbnails are kept only until the pages are chosen');
     const bytes = store.thumb(rec.id, n);
     return bytes ? imageResponse(bytes) : refuse(404, 'NOT_FOUND', 'Not made yet');
@@ -557,13 +583,15 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     const sub = m[3] ?? m[4];
     if (!uploadId) {
       if (req.method === 'POST') return add(req, s);
-      return json(200, { uploads: shown(s).map(view) });
+      return json(200, { uploads: shown(s).map((r) => view(r, s.person)) });
     }
     const got = store.get(uploadId);
     // Another workspace's upload, one that is gone or expired, does not exist for this request.
     const rec = got && got.workspaceId === s.person.workspaceId && got.caseId === s.caseId && !DEAD.includes(got.status) ? unlessExpired(got) : null;
     if (!rec) return refuse(404, 'NOT_FOUND', 'No such upload in this case');
     if (!sub) return remove(s, rec);
+    // Until confirmed, its files are only for people who can edit it; for anyone else they do not exist.
+    if ((sub === 'image' || sub === 'page' || sub === 'thumb') && EDITABLE.includes(rec.status) && !canEditUpload(s.person, rec)) return refuse(404, 'NOT_FOUND', 'No such file in this case');
     if (sub === 'image') return image(url, s, rec);
     if (sub === 'page') return page(url, s, rec, pageNumber(m[5]!));
     if (sub === 'thumb') return thumb(s, rec, pageNumber(m[5]!));

@@ -327,17 +327,27 @@ test("a reviewer cannot redact or confirm someone else's upload; owner and full 
   const up = await uploadPng(app, a);
   const id = up.body.upload.id;
   assert.equal((await call(app, `${P}/${id}/redact`, { body: { rects: [] }, cookie: b })).status, 403);
-  assert.equal((await call(app, `${P}/${id}/image?v=original`, { cookie: b })).status, 403);
+  // Until it is confirmed, someone who cannot edit it sees that it exists, not what it shows or reads.
+  assert.equal((await call(app, `${P}/${id}/image?v=original`, { cookie: b })).status, 404);
   assert.equal((await call(app, `${P}/${id}/discard`, { body: {}, cookie: b })).status, 403);
-  // Everyone in the workspace sees it, and its sanitised file once there is one.
   assert.equal((await call(app, P, { cookie: b })).body.uploads!.length, 1);
   const red = await call(app, `${P}/${id}/redact`, { body: { rects: [] }, cookie: owner });
   assert.equal(red.status, 200);
-  assert.equal((await call(app, `${P}/${id}/image?v=sanitised`, { cookie: b })).res.status, 200);
+  assert.ok(red.body.readLines.length > 0);
+  for (const v of ['sanitised', 'original']) assert.equal((await call(app, `${P}/${id}/image?v=${v}`, { cookie: b })).res.status, 404, v);
+  const listed = (await call(app, P, { cookie: b })).body.uploads![0] as unknown as Record<string, unknown>;
+  assert.deepEqual(Object.keys(listed).sort(), ['createdAt', 'expiresAt', 'id', 'kind', 'name', 'restricted', 'status', 'uploadedBy']);
+  assert.equal(listed.status, 'reviewing');
+  // The uploader and full members see it all.
+  assert.deepEqual((await call(app, P, { cookie: a })).body.uploads![0]!.readLines, red.body.readLines);
+  assert.equal((await call(app, `${P}/${id}/image?v=sanitised`, { cookie: full })).res.status, 200);
   assert.equal((await call(app, `${P}/${id}/confirm`, { body: { lines: red.body.readLines, sha256: red.body.upload.sha256 }, cookie: b })).status, 403);
   const conf = await call(app, `${P}/${id}/confirm`, { body: { lines: red.body.readLines, sha256: red.body.upload.sha256 }, cookie: full });
   assert.equal(conf.status, 200);
   assert.equal(conf.body.upload.evidenceId, 'E7');
+  // Confirmed: the workspace sees the confirmed document and its file.
+  assert.equal((await call(app, `${P}/${id}/image?v=sanitised`, { cookie: b })).res.status, 200);
+  assert.equal((await call(app, P, { cookie: b })).body.uploads![0]!.lines.length, red.body.readLines.length);
   // Reviewers never delete, not even their own.
   assert.equal((await call(app, `${P}/${id}`, { method: 'DELETE', cookie: a })).status, 403);
   assert.equal((await call(app, `${P}/${id}`, { method: 'DELETE', cookie: full })).status, 200);
@@ -453,7 +463,9 @@ test("every step is in the case's audit trail with the person's label, and neith
   const label = img.body.upload.uploadedBy.label;
   assert.ok(events.every((e) => e.actor === label), JSON.stringify(events));
   assert.ok(events.every((e) => e.detail?.includes(img.body.upload.id) || e.detail?.includes(txt.body.upload.id)), JSON.stringify(events));
-  assert.ok(events.some((e) => e.kind === 'upload_confirmed' && e.detail!.includes('E7') && e.detail!.includes('tracking.png')));
+  assert.ok(events.some((e) => e.kind === 'upload_confirmed' && e.detail!.includes('E7')));
+  // No file name: it can hold what the person did not cover.
+  assert.ok(events.every((e) => !e.detail!.includes('tracking.png') && !e.detail!.includes('bank.txt')), JSON.stringify(events));
   // Another workspace's trail has none of it.
   assert.ok(intents.events(CASE, { team: 'someone-else' }).every((e) => !e.kind.startsWith('upload_')));
 

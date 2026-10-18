@@ -21,7 +21,7 @@ export const TOO_BIG = 'This PDF is larger than 10 MB or has more than 30 pages.
 const ENCRYPTED = 'This PDF is password-protected or encrypted. Upload a version without protection.';
 const UNREADABLE = 'This file could not be read as a PDF.';
 const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';
-const CANNOT_START = 'The PDF reader could not start. Try again later.';
+export const CANNOT_START = 'The PDF reader could not start. Try again later.';
 const TOO_HUNGRY = 'This PDF needs more memory than the demo allows. Prepare a smaller extract and upload it again.';
 
 const CHILD = fileURLToPath(new URL('./pdf-child.ts', import.meta.url));

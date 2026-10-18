@@ -1,11 +1,15 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { mkdtempSync } from 'node:fs';
 import { request as httpRequest, createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { toNodeListener } from '../src/node.ts';
+import { UploadError } from '../src/uploads/image.ts';
 import { PDF_MAX_BYTES, PDF_RENDER_DPI, PDF_THUMB_DPI } from '../src/uploads/limits.ts';
 import { closeOcr } from '../src/uploads/ocr.ts';
+import { pdfChildTestHooks } from '../src/uploads/pdf-input.ts';
 import { createPdfJob } from '../src/uploads/pdf-job.ts';
 import { UploadStore } from '../src/uploads/store.ts';
 import { corruptPdf, encryptedPdf, pagesPdf } from './fixtures/make-pdfs.ts';
@@ -44,10 +48,9 @@ async function waitFor(app: App, cookie: string, id: string, done: (j: Job) => b
 const settled = (j: Job) => j.state === 'reviewing' || j.state === 'failed';
 const thumbsReady = (j: Job) => j.state === 'selecting' && j.page === undefined;
 const get = (app: App, cookie: string, path: string) => app(req(`${P}/${path}`, { cookie }));
-const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
 test('a 3-page PDF: all pages selected, rendered and read in the background; pages served, the original only to editors', TIMEOUT, async () => {
-  const { app, people, lines } = setup();
+  const { app, people, lines, intents, store } = setup();
   const cookie = people.fullMember();
   const r = await uploadPdf(app, cookie, pagesPdf(3), 'statement-9988776655.pdf');
   assert.equal(r.status, 201, JSON.stringify(r.body));
@@ -62,27 +65,40 @@ test('a 3-page PDF: all pages selected, rendered and read in the background; pag
   assert.equal(done.pdf.job.state, 'reviewing', JSON.stringify(done.pdf.job));
   assert.deepEqual(done.pdf.pages.map((p) => p.original), [1, 2, 3]);
   done.pdf.pages.forEach((p, i) => {
-    assert.match(p.sha256 ?? '', /^[0-9a-f]{64}$/);
+    // Read from the uncovered render; nothing is a sanitised page before the cover step.
+    assert.equal(p.sha256, null);
     assert.ok(p.readLines.some((l) => l.includes(`Fixture line ${i + 1}`)), JSON.stringify(p.readLines));
     // The view: no counters, no text layer.
     assert.deepEqual(Object.keys(p).sort(), ['added', 'lines', 'original', 'readLines', 'rects', 'sha256']);
   });
   assert.deepEqual(Object.keys(done.pdf).sort(), ['job', 'pageCount', 'pages', 'selected']);
 
-  // The sanitised page image is the one hashed; at the render resolution (A4 at 170 dpi), a fresh opaque PNG.
-  const page = await get(app, cookie, `${u.id}/page/2?v=sanitised`);
-  assert.equal(page.status, 200);
-  assert.equal(page.headers.get('content-type'), 'image/png');
-  const bytes = new Uint8Array(await page.arrayBuffer());
-  assert.equal(sha(bytes), done.pdf.pages[1]!.sha256);
-  const png = PNG.sync.read(Buffer.from(bytes));
-  assert.equal(png.width, Math.floor((595 * PDF_RENDER_DPI) / 72));
+  // Before the cover step only the uncovered render exists: at the render resolution (A4 at 170 dpi), a fresh PNG.
+  assert.equal((await get(app, cookie, `${u.id}/page/2?v=sanitised`)).status, 404);
+  assert.equal((await get(app, cookie, `${u.id}/page/2`)).status, 404);
   const orig = await get(app, cookie, `${u.id}/page/2?v=original`);
   assert.equal(orig.status, 200);
   assert.equal(orig.headers.get('content-type'), 'image/png');
   assert.equal(orig.headers.get('cache-control'), 'private, no-store');
-  // Another person of the workspace who is a reviewer cannot see the uncovered render of someone else's upload.
-  assert.equal((await get(app, people.member(), `${u.id}/page/2?v=original`)).status, 403);
+  const png = PNG.sync.read(Buffer.from(await orig.arrayBuffer()));
+  assert.equal(png.width, Math.floor((595 * PDF_RENDER_DPI) / 72));
+  assert.equal(store.pageImage(u.id, 2), null);
+
+  // Another person of the workspace who cannot edit it (a reviewer) sees the metadata only, and no page at all.
+  const other = people.member();
+  const seen = ((await call(app, P, { cookie: other })).body.uploads as unknown as Record<string, unknown>[]).find((x) => x.id === u.id)!;
+  assert.deepEqual(Object.keys(seen).sort(), ['createdAt', 'expiresAt', 'id', 'kind', 'name', 'pdf', 'restricted', 'status', 'uploadedBy']);
+  assert.deepEqual(seen.pdf, { pageCount: 3, selected: [1, 2, 3], job: { state: 'reviewing' } });
+  assert.ok(!JSON.stringify(seen).includes('Fixture line'));
+  for (const v of ['original', 'sanitised']) assert.equal((await get(app, other, `${u.id}/page/2?v=${v}`)).status, 404, v);
+  // Once confirmed (Task 5 covers and confirms; done here through the store), the workspace sees the document.
+  store.update(u.id, { status: 'confirmed', evidenceId: 'E7' }, { pages: { 2: new Uint8Array(await (await get(app, cookie, `${u.id}/page/2?v=original`)).arrayBuffer()) }, original: null });
+  assert.equal((await get(app, other, `${u.id}/page/2?v=sanitised`)).status, 200);
+  const after = ((await call(app, P, { cookie: other })).body.uploads as unknown as PdfView[]).find((x) => x.id === u.id)!;
+  assert.ok(after.pdf.pages[1]!.readLines.some((l) => l.includes('Fixture line 2')));
+  // No file name in the audit trail (it carries an account number here).
+  const audit = JSON.stringify(intents.events(CASE));
+  assert.ok(audit.includes(u.id) && !audit.includes('9988776655') && !audit.includes('statement'), audit);
 
   // Page numbers: malformed or out of the limits is 400, a page outside the selection 404; never a 500.
   for (const k of ['0', '31', '-1', '1.5', 'abc', '01', '99999999999999999999']) {
@@ -132,7 +148,7 @@ test('a 12-page PDF waits for a selection with thumbnails; selecting [8, 2] read
   const done = await waitFor(app, cookie, id, settled);
   assert.equal(done.pdf.job.state, 'reviewing', JSON.stringify(done.pdf.job));
   assert.ok(done.pdf.pages[1]!.readLines.some((l) => l.includes('Fixture line 8')), JSON.stringify(done.pdf.pages[1]!.readLines));
-  assert.equal((await get(app, cookie, `${id}/page/2`)).status, 200);
+  assert.equal((await get(app, cookie, `${id}/page/2?v=original`)).status, 200);
   assert.equal((await get(app, cookie, `${id}/page/3`)).status, 404);
 });
 
@@ -289,7 +305,8 @@ test('the uncovered render is refused once the upload is confirmed; the page ima
   const r = await uploadPdf(app, cookie, pagesPdf(1));
   await waitFor(app, cookie, r.body.upload.id, settled);
   assert.equal((await get(app, cookie, `${r.body.upload.id}/page/1?v=original`)).status, 200);
-  store.update(r.body.upload.id, { status: 'confirmed', evidenceId: 'E7' }, { original: null });
+  const render = new Uint8Array(await (await get(app, cookie, `${r.body.upload.id}/page/1?v=original`)).arrayBuffer());
+  store.update(r.body.upload.id, { status: 'confirmed', evidenceId: 'E7' }, { pages: { 1: render }, original: null });
   assert.equal((await get(app, cookie, `${r.body.upload.id}/page/1?v=original`)).status, 404);
   assert.equal((await get(app, cookie, `${r.body.upload.id}/page/1?v=sanitised`)).status, 200);
 });
@@ -306,7 +323,8 @@ test('the job works on one upload at a time: the second waits until the first is
       const working = store.list({ workspaceId: 'ws1', caseId: CASE, boundDisputeId: null }).filter((r) => r.pdf && r.pdf.job.page && (r.pdf.job.state === 'rendering' || r.pdf.job.state === 'reading'));
       busy.push(working.length);
       // Every page of the upload is rendered (and its session closed) before the first reading.
-      assert.ok(working[0]!.pdf!.pages.every((p) => p.sha256), 'a reading before every render was done');
+      assert.ok([1, 2].every((k) => store.origPage(working[0]!.id, k)), 'a reading before every render was done');
+      assert.ok([1, 2].every((k) => !store.pageImage(working[0]!.id, k)), 'a page stored as sanitised before the cover step');
       order.push(working.map((w) => w.name).join());
       await sleep(30);
       return [{ text: 'read', box: { x: 0, y: 0, w: 1, h: 1 }, confidence: 90 }];
@@ -326,5 +344,114 @@ test('the job works on one upload at a time: the second waits until the first is
     const r = store.get(id)!;
     assert.equal(r.pdf!.job.state, 'reviewing');
     assert.deepEqual(r.pdf!.pages.map((p) => p.readLines), [['read'], ['read']]);
+  }
+});
+
+const BY = { id: 'p1', label: 'Ana', name: 'Ana' };
+/** A pdf upload in the store as the route leaves it: `selected` pages (null: still choosing) and its job state. */
+function pdfRecord(store: UploadStore, n: number, selected: number[] | null, job: { state: 'selecting' | 'rendering' | 'reading'; page?: number; of?: number }, name = 'doc') {
+  const rec = store.create({ workspaceId: 'ws1', caseId: CASE, boundDisputeId: null, kind: 'pdf', name, uploadedBy: BY }, pagesPdf(n));
+  const pages = (selected ?? []).map((original) => ({ original, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0 }));
+  store.update(rec.id, { pdf: { pageCount: n, selected, pages, job } });
+  return rec.id;
+}
+
+test('a failed job keeps its message and frees everything: original, renders, thumbnails, text; the next upload still runs', TIMEOUT, async () => {
+  const store = new UploadStore({ dir: null });
+  let calls = 0;
+  const job = createPdfJob({
+    store,
+    log: () => {},
+    ocr: async () => {
+      // The first upload's second page fails to read; its first page was read already.
+      if (++calls === 2) throw new UploadError('OCR_TIMEOUT', 'OCR took too long');
+      return [{ text: 'read', box: { x: 0, y: 0, w: 1, h: 1 }, confidence: 90 }];
+    },
+  });
+  const failing = pdfRecord(store, 2, [1, 2], { state: 'rendering', page: 0, of: 2 }, 'failing');
+  const next = pdfRecord(store, 2, [1, 2], { state: 'rendering', page: 0, of: 2 }, 'next');
+  job.start(failing);
+  job.start(next);
+  await job.idle();
+  const r = store.get(failing)!;
+  assert.deepEqual(r.pdf!.job, { state: 'failed', error: 'OCR took too long' });
+  assert.equal(r.status, 'pending');
+  assert.equal(store.original(failing), null);
+  for (const k of [1, 2]) {
+    assert.equal(store.origPage(failing, k), null);
+    assert.equal(store.pageImage(failing, k), null);
+  }
+  assert.ok(r.pdf!.pages.every((p) => p.readLines.length === 0 && p.lines.length === 0 && p.added.length === 0 && p.sha256 === null), JSON.stringify(r.pdf!.pages));
+  assert.equal(store.usedBytes(), [1, 2].reduce((n, k) => n + store.origPage(next, k)!.length, store.original(next)!.length));
+  assert.equal(store.get(next)!.pdf!.job.state, 'reviewing');
+});
+
+test('a reader that dies while rendering fails the job: the uncovered renders are gone, and choosing again says why', TIMEOUT, async () => {
+  const { app, people, store } = setup();
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, pagesPdf(7));
+  const id = r.body.upload.id;
+  await waitFor(app, cookie, id, thumbsReady);
+  pdfChildTestHooks.onOpen = 'crash';
+  try {
+    assert.equal((await select(app, cookie, id, [1, 2])).status, 200);
+    const done = await waitFor(app, cookie, id, settled);
+    assert.equal(done.pdf.job.state, 'failed');
+    assert.equal(done.pdf.job.error, UNREADABLE);
+  } finally {
+    pdfChildTestHooks.onOpen = undefined;
+  }
+  for (const v of ['original', 'sanitised']) assert.equal((await get(app, cookie, `${id}/page/1?v=${v}`)).status, 404, v);
+  assert.equal(store.original(id), null);
+
+  // A job that failed before the pages were chosen: choosing answers its failure, not "already chosen".
+  const other = await uploadPdf(app, cookie, pagesPdf(7));
+  const oid = other.body.upload.id;
+  await waitFor(app, cookie, oid, thumbsReady);
+  const cur = store.get(oid)!;
+  store.update(oid, { pdf: { ...cur.pdf!, job: { state: 'failed', error: 'The demo has no room for more uploads right now. Discard it and try again later.' } } });
+  const s = await select(app, cookie, oid, [1]);
+  assert.equal(s.status, 409);
+  assert.equal(s.body.error, 'JOB_FAILED');
+  assert.equal(s.body.detail, 'The demo has no room for more uploads right now. Discard it and try again later.');
+  assert.equal((await get(app, cookie, `${oid}/thumb/1`)).status, 404);
+});
+
+test('after a restart, a PDF whose thumbnails were still being made is failed with the restart message and freed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-pdf-restart-'));
+  const before = new UploadStore({ dir });
+  const making = pdfRecord(before, 12, null, { state: 'selecting', page: 3, of: 12 });
+  before.update(making, {}, { thumbs: { 1: new Uint8Array([1]), 2: new Uint8Array([2]), 3: new Uint8Array([3]) } });
+  const ready = pdfRecord(before, 12, null, { state: 'selecting' });
+  before.update(ready, {}, { thumbs: { 1: new Uint8Array([1]) } });
+  const after = new UploadStore({ dir });
+  const r = after.get(making)!;
+  assert.deepEqual(r.pdf!.job, { state: 'failed', error: 'The server restarted while reading this PDF. Discard it and upload it again.' });
+  assert.equal(after.original(making), null);
+  assert.equal(after.thumb(making, 1), null);
+  // Thumbnails all made: still choosing, nothing lost.
+  assert.deepEqual(after.get(ready)!.pdf!.job, { state: 'selecting' });
+  assert.ok(after.thumb(ready, 1));
+  assert.ok(after.original(ready));
+});
+
+test("a page metering refusal gives the day's unit back and says when to retry; a reader that cannot start is 503", TIMEOUT, async () => {
+  const { app, people } = setup({ caps: { upload: 1 }, limits: { uploadsPerIp: { limit: 3, windowMs: 600_000 } } });
+  const cookie = people.fullMember();
+  const four = await uploadPdf(app, cookie, pagesPdf(4));
+  assert.equal(four.status, 429);
+  assert.equal(four.body.error, 'RATE_LIMITED');
+  assert.match(four.res.headers.get('retry-after') ?? '', /^[0-9]+$/);
+  // Nothing was read or stored, so the day's only unit is still there.
+  assert.equal((await call(app, P, { body: { text: 'a note' }, cookie })).status, 201);
+
+  const s2 = setup();
+  pdfChildTestHooks.spawnThrows = true;
+  try {
+    const r = await uploadPdf(s2.app, s2.people.fullMember(), pagesPdf(1));
+    assert.equal(r.status, 503);
+    assert.equal(r.body.detail, 'The PDF reader could not start. Try again later.');
+  } finally {
+    pdfChildTestHooks.spawnThrows = false;
   }
 });

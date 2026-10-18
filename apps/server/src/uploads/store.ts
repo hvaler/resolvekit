@@ -87,6 +87,12 @@ const purged = (r: UploadRecord): UploadRecord => ({
   ...(r.pdf ? { pdf: { ...r.pdf, pages: r.pdf.pages.map((p) => ({ ...p, rects: [], readLines: [], lines: [], added: [] })) } } : {}),
 });
 
+/** A pdf upload whose job failed: its message, and none of its text or areas. */
+const failedPdf = (r: UploadRecord & { pdf: PdfState }, error: string): UploadRecord => ({
+  ...r, rects: [], removals: [], readLines: [], lines: [], sha256: null, size: null, mime: null,
+  pdf: { ...r.pdf, pages: r.pdf.pages.map((p) => ({ ...p, rects: [], readLines: [], lines: [], added: [], sha256: null })), job: { state: 'failed', error } },
+});
+
 /** Does the record still hold any text or area of the merchant's content? */
 const hasText = (r: UploadRecord): boolean =>
   r.lines.length + r.readLines.length + r.removals.length + r.rects.length > 0
@@ -314,6 +320,25 @@ export class UploadStore {
     return { expired, orphans };
   }
 
+  /**
+   * The job of a pdf upload failed: the record stays with `message` (a fixed text, never content) so the person sees
+   * why and discards it, and everything of its content goes, as on any failure: the original, every page, uncovered
+   * render and thumbnail, and all text. The files go even if the record cannot be written (then it throws STORAGE).
+   */
+  failPdf(id: string, message: string): UploadRecord {
+    const cur = this.live(id);
+    if (!cur?.pdf) throw new UploadError('NOT_FOUND', 'Upload not found');
+    const next = failedPdf(cur as UploadRecord & { pdf: PdfState }, message);
+    this.records.set(id, next);
+    this.dropFiles(next, false);
+    try {
+      this.writeRecord(next);
+    } catch (e) {
+      throw e instanceof UploadError ? e : storage('fail', e);
+    }
+    return structuredClone(next);
+  }
+
   usedBytes(): number {
     let n = 0;
     for (const r of this.records.values()) {
@@ -423,11 +448,16 @@ export class UploadStore {
     }
   }
 
-  /** A pdf job that was rendering or reading died with the process: it is failed, not stuck. */
+  /**
+   * A pdf job that died with the process (rendering, reading, or thumbnails still being made) is failed, not stuck,
+   * and freed like any failed job.
+   */
   private afterRestart(r: UploadRecord): UploadRecord {
     const job = r.pdf?.job;
-    if (!r.pdf || !job || (job.state !== 'rendering' && job.state !== 'reading')) return r;
-    const next: UploadRecord = { ...r, pdf: { ...r.pdf, job: { state: 'failed', error: RESTARTED } } };
+    const unfinished = job && (job.state === 'rendering' || job.state === 'reading' || (job.state === 'selecting' && job.page !== undefined));
+    if (!r.pdf || !unfinished || !LIVE.includes(r.status)) return r;
+    const next = failedPdf(r as UploadRecord & { pdf: PdfState }, RESTARTED);
+    this.dropFiles(next, false);
     try { this.writeRecord(next); } catch { /* the in-memory state is failed; the next start retries */ }
     return next;
   }
