@@ -466,18 +466,6 @@ export function createApi(opts: ApiOptions): Api {
    * connected at all, in which case the web app runs the case on the simulator and so does this.
    */
   const pins = opts.pins ?? new InputPins();
-  /**
-   * Analysis keys of inputs built WITHOUT a real PayPal read (the simulator): the only analyses /progress answers to a
-   * request that does not see the real dispute. Fail closed: a key this server has not built for the simulator since
-   * it started (a live input's, or any key after a restart) is not answered to them; the web app asks for the analysis
-   * (which records the key) before it polls.
-   */
-  const simulatedKeys = new Set<string>();
-  const markSimulated = async (input: AnalysisInput) => {
-    if (!opts.analyst) return;
-    simulatedKeys.add(await opts.analyst.key(input));
-    if (simulatedKeys.size > 5000) simulatedKeys.delete(simulatedKeys.values().next().value!);
-  };
   const uploads = opts.uploads ?? new UploadStore({ dir: null, now });
   /**
    * The confirmed uploads the requesting person's workspace made for this case and dispute: none without a request
@@ -520,8 +508,6 @@ export function createApi(opts: ApiOptions): Api {
     const submitted = source.kind === 'live' && hasSellerEvidence(source.snap);
     const recs = await confirmedUploads(caseId, disputeId ?? null, req);
     const input = withUploads(pins.resolve(caseId, caseInput(demo, source), submitted), recs);
-    // An input with uploads is the seller workspace's: /progress never answers it to anyone else.
-    if (source.kind === 'simulated' && recs.length === 0) await markSimulated(input);
     return { input, uploadIds: recs.map((r) => r.id) };
   };
   const serverInput = async (caseId: string, req?: Request): Promise<AnalysisInput | Response> => {
@@ -779,8 +765,6 @@ export function createApi(opts: ApiOptions): Api {
       if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
       const key = url.searchParams.get('key') ?? '';
       if (!/^[0-9a-f]{64}$/.test(key)) return json(400, { error: 'INVALID_KEY' });
-      // The analysis of a real dispute is the seller's: anyone else gets only analyses of simulated inputs.
-      if (!simulatedKeys.has(key) && !(await viewerLive(req))) return json(404, { error: 'NO_ANALYSIS', key });
       const r = analyst.progress(key);
       return json(r.status, r.body);
     }
@@ -1101,7 +1085,6 @@ export function createApi(opts: ApiOptions): Api {
   const uploadRoutes = createUploadRoutes({
     store: uploads,
     person: personOf,
-    isLive: (req) => viewerLive(req),
     caseVisible,
     reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'upload') : null,
     caseBinding: (caseId) => bindingOf(caseId)?.dispute ?? null,

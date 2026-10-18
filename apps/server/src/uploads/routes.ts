@@ -54,9 +54,7 @@ export interface UploadRoutesOptions {
   store: UploadStore;
   /** The person acting; null when signed out. */
   person: (req: Request) => ActingPerson | null;
-  /** Whether the request comes from the seller's workspace (local mode: always). */
-  isLive: (req: Request) => Promise<boolean>;
-  /** Whether this request may address the case at all (false: UNKNOWN_CASE). */
+  /** Whether this request may address the case at all (false: UNKNOWN_CASE). Hosted: the seller's workspace only. */
   caseVisible: (req: Request, caseId: string) => Promise<boolean>;
   /** Hosted: reserve one of the day's `upload` units (seller workspace, cap, caps file). null: no cap (local mode). */
   reserve: ((req: Request) => Reservation) | null;
@@ -428,7 +426,6 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (!(await o.caseVisible(req, caseId))) return early(refuse(404, 'UNKNOWN_CASE'));
     const person = o.person(req);
     if (!person) return early(refuse(401, 'SIGN_IN_REQUIRED', 'Sign in to add evidence: with PayPal (merchants) or with the invite link you were given.'));
-    if (!(await o.isLive(req))) return early(refuse(403, 'SELLER_WORKSPACE_ONLY', 'Evidence uploads are for the seller’s workspace on this demo.'));
     s = { caseId, person, disputeId: o.caseBinding(caseId), worked: false };
     try {
       return early(await handle(req, url, s, m));

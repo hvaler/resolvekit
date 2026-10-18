@@ -144,12 +144,6 @@ export function ApproveFlow(props: ApproveFlowProps) {
   const [selected, setSelected] = useState<string[]>(() => choices.filter((x) => x.selected).map((x) => x.id));
   const request = useMemo(() => ({ ...props.request, attachments: [...selected].sort() }), [props.request, selected]);
   const toggle = (id: string) => setSelected((all) => (all.includes(id) ? all.filter((x) => x !== id) : [...all, id]));
-  // Signing in while the review waits composes it again.
-  const signedIn = !!demo?.signedIn;
-  useEffect(() => {
-    if (signedIn && ix.kind === 'error' && ix.code === 'SIGN_IN_REQUIRED') setAttempt((n) => n + 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signedIn]);
   useEffect(() => {
     let live = true;
     setIx({ kind: 'loading' });
@@ -171,7 +165,7 @@ export function ApproveFlow(props: ApproveFlowProps) {
     return () => {
       live = false;
     };
-    // Composed when the flow opens (edits close it first), again after signing in, and when the attachments change.
+    // Composed when the flow opens (edits close it first), on "Try again", and when the attachments change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt, request.attachments.join(',')]);
   if (ix.kind === 'ready') return <ApproveIntent {...props} request={request} intent={ix.intent} source={ix.source} choices={choices} selected={selected} onToggle={toggle} />;
@@ -194,7 +188,7 @@ export function ApproveFlow(props: ApproveFlowProps) {
             </p>
           ) : (
             <div role="alert" data-testid="intent-refused" className="flex flex-col gap-2 rounded-2xl border border-bad-line bg-bad-soft px-[18px] py-4">
-              <strong className="text-[15px] font-semibold">{ix.code === 'SIGN_IN_REQUIRED' ? 'Sign in required' : ix.code === 'SELLER_WORKSPACE_ONLY' || ix.code === 'NOT_THE_SELLER' ? 'Only the seller’s workspace can send this' : 'Nothing can be sent yet'}</strong>
+              <strong className="text-[15px] font-semibold">{ix.code === 'NOT_THE_SELLER' ? 'Only the seller’s workspace can send this' : 'Nothing can be sent yet'}</strong>
               <span className="text-body-lg leading-normal">{ix.message}</span>
               {ix.reasons.length > 0 && (
                 <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-body text-ink-2">
@@ -203,14 +197,13 @@ export function ApproveFlow(props: ApproveFlowProps) {
                   ))}
                 </ul>
               )}
-              {ix.code === 'SIGN_IN_REQUIRED' && <SignInPrompt reason="" signedIn={false} />}
             </div>
           )}
         </div>
         <Footer>
           <Button onClick={onClose}>← Back to edit</Button>
           <span className="flex-1" />
-          {ix.kind === 'error' && ix.code !== 'SIGN_IN_REQUIRED' && <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>}
+          {ix.kind === 'error' && <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>}
         </Footer>
       </div>
     </div>
