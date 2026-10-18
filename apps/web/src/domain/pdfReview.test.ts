@@ -11,6 +11,12 @@ import {
   afterCover,
   canPick,
   confirmPayload,
+  forgetReview,
+  hasTypedWork,
+  keepReview,
+  keptReview,
+  mergeAfterChange,
+  type PageDraft,
   includedPages,
   initialPoll,
   jobLabel,
@@ -233,5 +239,87 @@ describe('reviewing the pages of a PDF', () => {
       'Page 8 of the original document · 1 area covered · 1 line transcribed',
       'Page 9 of the original document · no text',
     ]);
+  });
+});
+
+describe('a page that changed on the server (409 UPLOAD_CHANGED, or a review reopened)', () => {
+  const SHA = (c: string) => c.repeat(64);
+  const cover = { x: 10, y: 10, w: 100, h: 40 };
+  const v = (over: Partial<PdfPageView> = {}): PdfPageView => ({ original: 2, rects: [], readLines: ['INVOICE 2026-114', 'Total 89.00 USD'], lines: [], added: [], sha256: SHA('a'), ...over });
+  const typed = (view: PdfPageView): PageDraft => ({ ...pageDraftOf(view), lines: ['INVOICE 2026-114', 'Total 98.00 USD'], added: [{ area: { x: 200, y: 200, w: 50, h: 10 }, text: 'Signed' }, { area: { x: 20, y: 20, w: 20, h: 10 }, text: 'Under' }] });
+
+  it('an unchanged page keeps everything the merchant typed, and its covers as drawn', () => {
+    const view = v();
+    const draft = { ...typed(view), rects: [cover] };
+    const m = mergeAfterChange([{ view, draft }], [v()]);
+    expect(m.drafts).toEqual([draft]);
+    expect(m.changed).toEqual([]);
+    expect(m.notice).toBeNull();
+  });
+
+  it('a changed page takes the server covers and lines, keeps transcriptions outside them and corrections of lines that did not change', () => {
+    const view = v();
+    const fresh = v({ rects: [cover], readLines: ['INVOICE 2026-114', 'Total 89.00 USD', 'Paid'], sha256: SHA('b') });
+    const m = mergeAfterChange([{ view, draft: typed(view) }], [fresh]);
+    expect(m.drafts).toEqual([{ rects: [cover], lines: ['INVOICE 2026-114', 'Total 98.00 USD', 'Paid'], added: [{ area: { x: 200, y: 200, w: 50, h: 10 }, text: 'Signed' }] }]);
+    expect(m.changed).toEqual([2]);
+    expect(m.notice).toBe('Page 2 of the original document changed; check it again.');
+  });
+
+  it('a correction of a line the server now reads differently is dropped (the new reading is shown)', () => {
+    const view = v();
+    const fresh = v({ readLines: ['INVOICE 2026-114', 'Total 89.50 USD'], sha256: SHA('b') });
+    expect(mergeAfterChange([{ view, draft: typed(view) }], [fresh]).drafts[0]!.lines).toEqual(['INVOICE 2026-114', 'Total 89.50 USD']);
+  });
+
+  it('a retry after the merge sends the fresh sha256', () => {
+    const view = v();
+    const fresh = v({ sha256: SHA('c') });
+    const p2 = v({ original: 8, readLines: [], sha256: SHA('d') });
+    const m = mergeAfterChange([{ view, draft: { ...typed(view), added: [] } }, { view: p2, draft: pageDraftOf(p2) }], [fresh, p2]);
+    expect(m.changed).toEqual([2]);
+    expect(confirmPayload([{ view: fresh, draft: m.drafts[0]! }, { view: p2, draft: m.drafts[1]! }])!.map((p) => p.sha256)).toEqual([SHA('c'), SHA('d')]);
+  });
+
+  it('a page now uncovered on the server is uncovered again, with what was typed kept', () => {
+    const view = v();
+    const fresh = v({ sha256: null });
+    const m = mergeAfterChange([{ view, draft: { ...typed(view), added: [] } }], [fresh]);
+    expect(pageState(fresh, m.drafts[0]!)).toBe('uncovered');
+    expect(m.drafts[0]!.lines).toEqual(['INVOICE 2026-114', 'Total 98.00 USD']);
+  });
+
+  it('a selection that is not the same pages starts over from the server', () => {
+    const view = v();
+    const other = v({ original: 9 });
+    const m = mergeAfterChange([{ view, draft: typed(view) }], [other]);
+    expect(m.drafts).toEqual([pageDraftOf(other)]);
+    expect(m.changed).toEqual([9]);
+    expect(m.notice).toBe('Page 9 of the original document changed; check it again.');
+  });
+
+  it('names every changed page', () => {
+    const a = v();
+    const b = v({ original: 8, sha256: SHA('d') });
+    const m = mergeAfterChange([{ view: a, draft: pageDraftOf(a) }, { view: b, draft: pageDraftOf(b) }], [v({ sha256: SHA('x') }), v({ original: 8, sha256: SHA('y') })]);
+    expect(m.notice).toBe('Page 2 of the original document changed; check it again. Page 8 of the original document changed; check it again.');
+  });
+
+  it('knows whether the merchant typed or drew anything not confirmed yet', () => {
+    const view = v();
+    expect(hasTypedWork([{ view, draft: pageDraftOf(view) }])).toBe(false);
+    expect(hasTypedWork([{ view, draft: { ...pageDraftOf(view), lines: ['x', 'Total 89.00 USD'] } }])).toBe(true);
+    expect(hasTypedWork([{ view, draft: { ...pageDraftOf(view), rects: [cover] } }])).toBe(true);
+    expect(hasTypedWork([{ view, draft: { ...pageDraftOf(view), added: [{ area: cover, text: '' }] } }])).toBe(true);
+  });
+
+  it('keeps an open review in memory by upload id until it is confirmed or discarded', () => {
+    const view = v();
+    const pages = [{ view, draft: typed(view) }];
+    keepReview('upl-1', pages);
+    expect(keptReview('upl-1')).toEqual(pages);
+    expect(keptReview('upl-2')).toBeNull();
+    forgetReview('upl-1');
+    expect(keptReview('upl-1')).toBeNull();
   });
 });

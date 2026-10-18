@@ -168,3 +168,45 @@ export function includedPages(pages: readonly ReviewedPage[]): string[] {
     return [pageLabel(view.original), ...(draft.rects.length ? [`${count(draft.rects.length, 'area')} covered`] : []), ...(text.length ? text : ['no text'])].join(' · ');
   });
 }
+
+/** `Page 8 of the original document changed; check it again.` */
+export const pageChangedCopy = (orig: number) => `${pageLabel(orig)} changed; check it again.`;
+
+/**
+ * The drafts once the server's pages are read again (after a 409 UPLOAD_CHANGED, or when a kept review is reopened).
+ * A page the server still has as reviewed keeps everything the merchant typed and drew. A changed page takes the
+ * server's covers and lines: a correction is kept where its line still reads the same, a transcription where it is
+ * outside the new covers; the merchant is told which pages changed. Another selection starts over.
+ */
+export function mergeAfterChange(pages: readonly ReviewedPage[], fresh: readonly PdfPageView[]): { drafts: PageDraft[]; changed: number[]; notice: string | null } {
+  const changed: number[] = [];
+  const drafts = fresh.map((f, i) => {
+    const old = pages[i];
+    if (!old || old.view.original !== f.original) {
+      changed.push(f.original);
+      return pageDraftOf(f);
+    }
+    const { view, draft } = old;
+    if (view.sha256 === f.sha256 && sameRects(view.rects, f.rects) && JSON.stringify(view.readLines) === JSON.stringify(f.readLines)) return draft;
+    changed.push(f.original);
+    return {
+      rects: f.rects.map((r) => ({ ...r })),
+      lines: f.readLines.map((l, j) => (view.readLines[j] === l && draft.lines[j] !== undefined ? draft.lines[j]! : l)),
+      added: draft.added.filter((a) => 'area' in transcriptionArea(a.area, f.rects)),
+    };
+  });
+  return { drafts, changed, notice: changed.length ? changed.map(pageChangedCopy).join(' ') : null };
+}
+
+/** Whether anything the merchant typed or drew is not confirmed yet (closing asks first; discarding loses it). */
+export const hasTypedWork = (pages: readonly ReviewedPage[]): boolean =>
+  pages.some(({ view, draft }) => draft.added.length > 0 || !sameRects(draft.rects, view.rects) || draft.lines.some((l, i) => l !== view.readLines[i]));
+
+/**
+ * Open reviews by upload id, in this page's memory only (never in browser storage, never sent): closing and reopening
+ * the review in the same session keeps what was typed. Forgotten when the upload is confirmed or discarded.
+ */
+const kept = new Map<string, ReviewedPage[]>();
+export const keepReview = (uploadId: string, pages: readonly ReviewedPage[]) => void kept.set(uploadId, [...pages]);
+export const keptReview = (uploadId: string): ReviewedPage[] | null => kept.get(uploadId) ?? null;
+export const forgetReview = (uploadId: string) => void kept.delete(uploadId);

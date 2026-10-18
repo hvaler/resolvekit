@@ -7,12 +7,18 @@ import {
   SELECTION_WARNING,
   afterCover,
   confirmPayload,
+  forgetReview,
+  hasTypedWork,
   includedPages,
+  keepReview,
+  keptReview,
+  mergeAfterChange,
   pageDraftOf,
   pageState,
   pdfBlocker,
   transcriptionArea,
   type PageDraft,
+  type ReviewedPage,
 } from '../domain/pdfReview';
 import { UploadRequestError, pageLabel, type Rect, type UploadRecordView, type UploadsClient } from '../domain/uploads';
 import { ImageCover, LineEditor } from './UploadReview';
@@ -28,6 +34,18 @@ export interface PdfReviewProps {
   onClose: () => void;
 }
 
+/** A page or the upload changed on the server since it was reviewed here. */
+const isChanged = (e: unknown) => e instanceof UploadRequestError && e.status === 409 && e.code === 'UPLOAD_CHANGED';
+
+/** The drafts to start from: those kept from an earlier opening in this session, merged with the server's pages now. */
+function initialDrafts(u: UploadRecordView): { drafts: PageDraft[]; notice: string | null } {
+  const fresh = u.pdf?.pages ?? [];
+  const kept = keptReview(u.id);
+  if (!kept) return { drafts: fresh.map(pageDraftOf), notice: null };
+  const m = mergeAfterChange(kept, fresh);
+  return { drafts: m.drafts, notice: m.notice };
+}
+
 const message = (e: unknown) => (e instanceof UploadRequestError || e instanceof Error ? e.message : String(e));
 
 /** A page's text hint as fetched (metered on the server, so only on request, once per page). */
@@ -39,13 +57,14 @@ type Hint = { state: 'loading' } | { state: 'ready'; lines: string[] } | { state
  * typed), then confirm the list of pages. Only the covered pages and their reviewed text are ever used.
  */
 export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps) {
+  const [start] = useState(() => initialDrafts(upload));
   const [rec, setRec] = useState(upload);
-  const [drafts, setDrafts] = useState<PageDraft[]>(() => (upload.pdf?.pages ?? []).map(pageDraftOf));
+  const [drafts, setDrafts] = useState<PageDraft[]>(start.drafts);
   const [at, setAt] = useState(0);
   const [mode, setMode] = useState<'cover' | 'text'>('cover');
   const [view, setView] = useState<'original' | 'sanitised'>('original');
   const [busy, setBusy] = useState<null | 'redact' | 'confirm' | 'discard'>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(start.notice);
   const [areaError, setAreaError] = useState<string | null>(null);
   const [hints, setHints] = useState<Record<number, Hint>>({});
   const [summary, setSummary] = useState(false);
@@ -54,20 +73,24 @@ export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps)
   useEffect(() => headingRef.current?.focus(), []);
 
   const views = rec.pdf?.pages ?? [];
-  const pages = views.map((v, i) => ({ view: v, draft: drafts[i]! }));
-  const page = pages[at]!;
-  const k = at + 1;
-  const state = pageState(page.view, page.draft);
-  const covered = state === 'covered';
-  const blocker = pdfBlocker(pages);
+  const pages: ReviewedPage[] = views.flatMap((v, i) => (drafts[i] ? [{ view: v, draft: drafts[i] }] : []));
+  const typedWork = hasTypedWork(pages);
+
+  // What was typed survives closing and reopening in this session (memory only); forgotten on confirm or discard.
+  const gone = useRef(false);
+  useEffect(() => {
+    if (!gone.current) keepReview(rec.id, pages);
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onClose();
+      if (e.key !== 'Escape' || busy) return;
+      if (typedWork && !window.confirm('Close this review? What you typed and drew is kept here until the page is reloaded; nothing is used before you confirm.')) return;
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
+  }, [busy, onClose, typedWork]);
 
   const setDraft = (f: (d: PageDraft) => PageDraft) => setDrafts((all) => all.map((d, i) => (i === at ? f(d) : d)));
   const goTo = (i: number) => {
@@ -77,14 +100,44 @@ export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps)
     setAreaError(null);
   };
 
+  const finish = (u: UploadRecordView | null) => {
+    gone.current = true;
+    forgetReview(rec.id);
+    onChange(u);
+  };
+
+  /**
+   * The server says a page or the upload changed (409 UPLOAD_CHANGED): read it again, keep what the merchant typed
+   * where it still applies (mergeAfterChange), and say which pages changed. Gone, confirmed elsewhere or no longer in
+   * review: the review closes with the upload as it is now.
+   */
+  const reload = async (why: string) => {
+    let fresh: UploadRecordView | undefined;
+    try {
+      fresh = (await client.listUploads()).find((x) => x.id === rec.id);
+    } catch (e) {
+      setError(`${why} It could not be read again (${message(e)}); close this review and open it again.`);
+      return;
+    }
+    if (!fresh || fresh.restricted || fresh.status === 'confirmed' || !fresh.pdf?.pages?.length || fresh.pdf.job.state !== 'reviewing') return finish(fresh ?? null);
+    const m = mergeAfterChange(pages, fresh.pdf.pages);
+    setRec(fresh);
+    setDrafts(m.drafts);
+    setAt((a) => Math.min(a, m.drafts.length - 1));
+    setSummary(false);
+    setError([why, m.notice].filter(Boolean).join(' '));
+    onChange(fresh);
+  };
+
   const act = async <T,>(what: 'redact' | 'confirm' | 'discard', f: () => Promise<T>): Promise<T | null> => {
     setBusy(what);
     setError(null);
     try {
       return await f();
     } catch (e) {
-      // The server's words as they are (a 422 transcription under a cover, a 409 page changed, a cover limit).
-      setError(message(e));
+      // The server's words as they are (a 422 transcription under a cover, a cover limit); a 409 page changed reloads.
+      if (isChanged(e)) await reload(message(e));
+      else setError(message(e));
       return null;
     } finally {
       setBusy(null);
@@ -105,11 +158,12 @@ export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps)
     const body = confirmPayload(pages);
     if (!body) return;
     const u = await act('confirm', () => client.confirmPdf(rec.id, body));
-    if (u) onChange(u);
+    if (u) finish(u);
   };
   const discard = async () => {
+    if (typedWork && !window.confirm('Discard this PDF? What you typed and drew on its pages is lost.')) return;
     const u = await act('discard', () => client.discard(rec.id));
-    if (u) onChange(null);
+    if (u) finish(null);
   };
   const loadHint = async (i: number) => {
     setHints((h) => ({ ...h, [i]: { state: 'loading' } }));
@@ -120,6 +174,23 @@ export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps)
       setHints((h) => ({ ...h, [i]: { state: 'failed', error: message(e) } }));
     }
   };
+  const page = pages[at];
+  if (!page) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--scrim)] px-6 pt-[34px]">
+        <div role="dialog" aria-modal="true" aria-label="Review new evidence" className="flex w-[min(520px,100%)] flex-col gap-3 rounded-3xl bg-surface p-6 shadow-modal">
+          <p className="m-0 text-body">The pages of this PDF are not available to review. Close it and open it again, or discard it.</p>
+          <Button onClick={onClose}>← Back to case</Button>
+        </div>
+      </div>
+    );
+  }
+  const k = at + 1;
+  const state = pageState(page.view, page.draft);
+  const covered = state === 'covered';
+  const blocker = pdfBlocker(pages);
+  const hint = hints[at];
+  const label = pageLabel(page.view.original);
   const addArea = (r: Rect) => {
     const res = transcriptionArea(r, page.draft.rects);
     if ('error' in res) return setAreaError(res.error);
@@ -127,9 +198,6 @@ export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps)
     setFocusAdded(page.draft.added.length);
     setDraft((d) => ({ ...d, added: [...d.added, { area: res.area, text: '' }] }));
   };
-
-  const hint = hints[at];
-  const label = pageLabel(page.view.original);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--scrim)] px-6 pt-[34px] max-md:px-0 max-md:pt-0">
