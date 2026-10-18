@@ -42,6 +42,7 @@ import {
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
 import { AccountStore, SESSION_COOKIE, SESSION_TTL_MS, StorageError, cleanName, sessionCookie, signSession, verifySession, type Invite, type Person, type SessionCheck, type Workspace } from './accounts.ts';
+import type { Connection } from './sellers.ts';
 import { json } from './app.ts';
 
 export const PENDING_COOKIE = 'rk_pp';
@@ -76,8 +77,8 @@ export interface AuthOptions {
   secret: string;
   /** The service's public origins; the first one builds PayPal's return URLs and is the passkeys' relying party. */
   origins: readonly string[];
-  /** Whether this payer id is the seller on the bound PayPal disputes (fresh reads). */
-  isConnected: (payerId: string) => Promise<boolean>;
+  /** How this payer id relates to the bound PayPal disputes (fresh reads; see {@link Connection}). */
+  connectionOf: (payerId: string) => Promise<Connection>;
   /** The seller's business name on the bound disputes (names the workspace of the seller's account), or null. */
   sellerName?: (payerId: string) => string | null;
   now?: () => Date;
@@ -168,11 +169,12 @@ export function createAuth(o: AuthOptions): Auth {
     const methods = { paypal: !!o.identity, passkey: true };
     if (!s.ok) return json(200, { signedIn: false, methods });
     o.accounts.touch(s.person);
+    const connection = await o.connectionOf(s.workspace.payerId);
     return json(200, {
       signedIn: true,
       methods,
       person: publicPerson(s.person),
-      workspace: { id: s.workspace.id, name: s.workspace.name, connected: await o.isConnected(s.workspace.payerId) },
+      workspace: { id: s.workspace.id, name: s.workspace.name, connection, connected: connection === 'evaluation' },
       expiresAt: new Date(s.expiresAt).toISOString(),
     });
   };
@@ -247,7 +249,7 @@ export function createAuth(o: AuthOptions): Auth {
     const p = state.payer;
     const name = [p.firstName, p.lastName].filter(Boolean).join(' ') || 'PayPal merchant';
     // The seller of the bound disputes: its workspace takes the business name PayPal gives on them.
-    const connected = await o.isConnected(p.payerId);
+    const connected = (await o.connectionOf(p.payerId)) === 'evaluation';
     const workspaceName = connected ? (o.sellerName?.(p.payerId) ?? null) : null;
     let r;
     try {

@@ -127,7 +127,7 @@ const req = (path: string, i: { body?: unknown; cookie?: string; ip?: string } =
 };
 const cookieFrom = (r: Response, name: string) => r.headers.getSetCookie().find((c) => c.startsWith(`${name}=`)) ?? null;
 const pair = (setCookie: string | null) => (setCookie ? setCookie.split(';')[0]! : '');
-const me = async (app: App, cookie?: string) => (await (await app(req('/api/auth/me', cookie ? { cookie } : {}))).json()) as { signedIn: boolean; person?: { role: string; name: string; via: string; email: string | null }; workspace?: { connected: boolean; name: string } };
+const me = async (app: App, cookie?: string) => (await (await app(req('/api/auth/me', cookie ? { cookie } : {}))).json()) as { signedIn: boolean; person?: { role: string; name: string; via: string; email: string | null }; workspace?: { connected: boolean; connection: string; name: string } };
 
 /** The whole PayPal sign-in of `payerId`: start, approve on PayPal, come back. Returns the session cookie. */
 async function paypalSignIn(s: Awaited<ReturnType<typeof setup>>, payerId: string): Promise<string> {
@@ -169,6 +169,7 @@ test('paypal: the seller’s account signs in as Owner of a connected workspace;
   assert.equal(m.signedIn, true);
   assert.deepEqual([m.person!.role, m.person!.via, m.person!.name, m.person!.email], ['owner', 'paypal', 'Northwind Goods', 'b•••@example.com']);
   assert.equal(m.workspace!.connected, true);
+  assert.equal(m.workspace!.connection, 'evaluation');
   // The seller's workspace takes the business name PayPal gives on its disputes.
   assert.equal(m.workspace!.name, 'Northwind Goods Ltd');
   // The single-use return key never reaches the log.
@@ -189,6 +190,7 @@ test('paypal: another PayPal account gets its own workspace, not connected: the 
   const m = await me(s.app, cookie);
   assert.equal(m.person!.role, 'owner');
   assert.equal(m.workspace!.connected, false);
+  assert.equal(m.workspace!.connection, 'not_connected');
   assert.deepEqual(((await (await s.app(req('/api/health', { cookie }))).json()) as { bound: string[] }).bound, []);
   assert.equal((await s.app(req(`/api/disputes/${CASE}`, { cookie }))).status, 404);
 });

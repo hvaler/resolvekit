@@ -25,6 +25,7 @@ import type { PayPalClient } from '@resolvekit/paypal';
 import type { AccountStore } from './accounts.ts';
 import type { LiveGate } from './analysis.ts';
 import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
+import { SellerMemory, type Connection } from './sellers.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
 import { acceptsImageBody, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
@@ -55,6 +56,8 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
   https: boolean;
   /** Merchant workspaces, people, passkeys and invites (persisted on the data dir by main.ts). */
   accounts: AccountStore;
+  /** Sellers confirmed by a complete read, kept across restarts (main.ts: sellers.json); default: this process only. */
+  sellerMemory?: SellerMemory;
   /** The platform's PayPal app, for PayPal sign-in (PAYPAL_IDENTITY_CLIENT_ID/SECRET); null: PayPal sign-in off. */
   identity: PayPalClient | null;
   /** HMAC key of the session cookies (env RESOLVEKIT_SESSION_SECRET). */
@@ -149,20 +152,32 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const uploadLimit = new KeyedLimiter({ ...L.uploadsPerIp, now: () => now().getTime() });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
-  // The seller merchant ids of the bound disputes, as last read (refreshed before each signed-in request): which
-  // workspace sees real PayPal. `api` is created below with this gate.
-  let sellers = new Set<string>();
+  // The seller merchant ids of the bound disputes (refreshed before each signed-in request): which workspace sees
+  // real PayPal. An incomplete read (a dispute unreadable) adds the remembered sellers instead of dropping them, so a
+  // slow sandbox never demotes the evaluation workspace. `api` is created below with this gate.
+  const memory = o.sellerMemory ?? new SellerMemory({ file: null });
+  let sellers: ReadonlySet<string> = new Set<string>();
+  let sellersComplete = false;
   let api: ReturnType<typeof createApi>;
   const refreshSellers = async () => {
-    sellers = await api.sellerIds();
-    return sellers;
+    const read = await api.sellerRead();
+    const effective = read.complete ? read.ids : new Set([...read.ids, ...memory.remembered()]);
+    if (read.complete && read.ids.size > 0) memory.confirm(read.ids);
+    sellers = effective;
+    sellersComplete = read.complete;
+    return effective;
+  };
+  const connectionOf = async (payerId: string): Promise<Connection> => {
+    const effective = await refreshSellers();
+    if (effective.has(payerId)) return 'evaluation';
+    return effective.size === 0 && !sellersComplete ? 'checking' : 'not_connected';
   };
   const auth = createAuth({
     accounts: o.accounts,
     identity: o.identity,
     secret: o.sessionSecret,
     origins: o.origins,
-    isConnected: async (payerId) => (await refreshSellers()).has(payerId),
+    connectionOf,
     sellerName: (payerId) => api.sellerName(payerId),
     now,
     log: o.log,
@@ -210,7 +225,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     },
     async live(req: Request) {
       const s = session(req);
-      return s.ok && (await refreshSellers()).has(s.workspace.payerId);
+      return s.ok && (await connectionOf(s.workspace.payerId)) === 'evaluation';
     },
     merchant(req: Request) {
       const s = session(req);

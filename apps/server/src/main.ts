@@ -26,6 +26,7 @@ import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
 import { checkBindings, parseBindingPools, type BindingPools } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
 import { createHostedApp, type HostedApp } from './hosted.ts';
+import { SellerMemory } from './sellers.ts';
 import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
 import { MeterMcpClient } from './metermcp.ts';
@@ -180,6 +181,13 @@ if (hosted) {
   } catch (e) {
     accounts = fail(`accounts file ${join(dataDir, 'accounts.json')}: ${(e as Error).message}`);
   }
+  // The sellers of the bound disputes seen so far: an unreadable sandbox does not demote the evaluation workspace.
+  let sellerMemory: SellerMemory;
+  try {
+    sellerMemory = new SellerMemory({ file: join(dataDir, 'sellers.json') });
+  } catch (e) {
+    sellerMemory = fail(`sellers file ${join(dataDir, 'sellers.json')}: ${(e as Error).message}`);
+  }
   const dist = process.env.RESOLVEKIT_WEB_DIST ?? fileURLToPath(new URL('../../web/dist/', import.meta.url));
   if (!existsSync(join(dist, 'index.html'))) fail(`no web build at ${dist} (run npm run build)`);
   const counters = new DailyCounters({
@@ -193,7 +201,7 @@ if (hosted) {
   });
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
-    paypal, env, bindings, reserve, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, identity, sessionSecret,
+    paypal, env, bindings, reserve, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,

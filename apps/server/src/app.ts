@@ -245,6 +245,8 @@ export type Api = Handler & {
   inputFor: (caseId: string) => Promise<AnalysisInput | Response>;
   /** The PayPal merchant ids that are the seller on a bound dispute (hosted: whose workspace sees real PayPal). */
   sellerIds: () => Promise<Set<string>>;
+  /** The same read, telling whether every bound dispute could be read (`complete`). */
+  sellerRead: () => Promise<{ ids: Set<string>; complete: boolean }>;
   /** The seller's business name on the bound disputes, by merchant id (known after sellerIds). */
   sellerName: (merchantId: string) => string | null;
   /** Forget the PayPal reads kept for building inputs and invalidate open intents (the bindings changed). */
@@ -362,7 +364,7 @@ export function createApi(opts: ApiOptions): Api {
   /** The seller's name as PayPal gives it on a bound dispute (after {@link sellerIds} read them), or null. */
   const sellerName = (merchantId: string): string | null => [...sellers.values()].find((s) => s.merchant === merchantId && s.name)?.name ?? null;
   /** The merchant ids that are the seller on a bound dispute (each dispute read once, then on every fresh read). */
-  const sellerIds = async (): Promise<Set<string>> => {
+  const sellerRead = async (): Promise<{ ids: Set<string>; complete: boolean }> => {
     const paypal = opts.paypal;
     if (paypal) {
       await Promise.all(
@@ -377,10 +379,16 @@ export function createApi(opts: ApiOptions): Api {
         }),
       );
     }
-    const out = new Set<string>();
-    for (const [caseId, s] of sellers) if (s.merchant && bindingOf(caseId)?.dispute === s.dispute) out.add(s.merchant);
-    return out;
+    const ids = new Set<string>();
+    for (const [caseId, s] of sellers) if (s.merchant && bindingOf(caseId)?.dispute === s.dispute) ids.add(s.merchant);
+    // Complete: every bound dispute has been read (one that names no seller counts as read).
+    const complete = Object.keys(opts.bindings).every((caseId) => {
+      const b = bindingOf(caseId);
+      return !b || sellers.get(caseId)?.dispute === b.dispute;
+    });
+    return { ids, complete };
   };
+  const sellerIds = async (): Promise<Set<string>> => (await sellerRead()).ids;
 
   /**
    * The MeterMCP session behind the dispute's disputed capture. `none` (with the reason) when there is no capture,
@@ -1176,6 +1184,7 @@ export function createApi(opts: ApiOptions): Api {
   return Object.assign(route, {
     inputFor: (caseId: string) => serverInput(caseId),
     sellerIds,
+    sellerRead,
     sellerName,
     forgetReads: () => {
       reads.clear();
