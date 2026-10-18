@@ -8,7 +8,7 @@ import { HttpIntentClient, LocalIntentClient, type IntentSource } from '../domai
 import { payPalSource, type PayPalSource } from '../domain/paypalView';
 import { utcHm } from '../domain/time';
 import type { AuditEntry, DisputeSnapshot } from '../domain/types';
-import { healthRetryDelay, type Area } from '../domain/environment';
+import { accountRecheckMs, healthRetryDelay, type Area } from '../domain/environment';
 import { initialSnapshots, processingDispute, processingOpening } from '../fixtures';
 
 export interface TrackedSnapshot extends DisputeSnapshot {
@@ -137,6 +137,14 @@ export function ServicesProvider({
     const t = window.setTimeout(() => void demoClient.state().then(setDemo), Math.max(1_000, Math.min(ms + 1_000, 2_147_000_000)));
     return () => window.clearTimeout(t);
   }, [demo, demoClient]);
+  // While the connection is being checked (the checking screen), read the account again until it is known. A failed
+  // read (null) keeps what is on screen and is asked again on the next tick.
+  const recheckMs = accountRecheckMs(demo);
+  useEffect(() => {
+    if (!recheckMs || !demoClient) return;
+    const t = window.setInterval(() => void demoClient.state().then((d) => d && setDemo(d)), recheckMs);
+    return () => window.clearInterval(t);
+  }, [recheckMs, demoClient]);
   // Which disputes are live depends on who is signed in: signing out reloads the app from the server's view.
   const ownSignOut = useCallback(
     async (everywhere = false, to = '/') => {

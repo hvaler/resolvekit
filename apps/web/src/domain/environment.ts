@@ -28,6 +28,11 @@ export function environmentOf(area: Area, demo: DemoState | null): Environment {
   }
 }
 
+/** How often to read the account again while its PayPal connection is still being checked; null once it is known. */
+export function accountRecheckMs(demo: DemoState | null): number | null {
+  return demo?.signedIn && demo.workspace?.connection === 'checking' ? 5_000 : null;
+}
+
 /** Where this area's case pages live. */
 export function casesBase(area: Area): '/demo/cases' | '/cases' {
   return area === 'demo' ? '/demo/cases' : '/cases';

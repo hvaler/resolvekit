@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountWorkspace, DemoState } from './demoClient';
 import { draftKey } from './draftStore';
-import { casesBase, draftScope, environmentOf, healthRetryDelay, joinUrl, knownBound, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
+import { accountRecheckMs, casesBase, draftScope, environmentOf, healthRetryDelay, joinUrl, knownBound, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
 
 function state(connection: AccountWorkspace['connection'], role: 'owner' | 'member' = 'owner'): DemoState {
   return {
@@ -127,5 +127,15 @@ describe('knownBound', () => {
 describe('healthRetryDelay', () => {
   it('doubles from 1 s after each failure, capped at 30 s', () => {
     expect([1, 2, 3, 4, 5, 6, 7, 20].map(healthRetryDelay)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000]);
+  });
+});
+
+describe('accountRecheckMs', () => {
+  it('re-reads the account every 5 s while its connection is checking, and stops once it is known', () => {
+    expect(accountRecheckMs(state('checking'))).toBe(5_000);
+    expect(accountRecheckMs(state('evaluation'))).toBeNull();
+    expect(accountRecheckMs(state('not_connected'))).toBeNull();
+    expect(accountRecheckMs(SIGNED_OUT)).toBeNull();
+    expect(accountRecheckMs(null)).toBeNull();
   });
 });
