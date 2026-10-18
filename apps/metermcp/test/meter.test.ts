@@ -492,3 +492,18 @@ function setupWithLog() {
   const meter = new Meter({ ledger, paypal: pp.client, env: 'sandbox', publicUrl: 'http://127.0.0.1:8790', log: (l) => logs.push(l) });
   return { pp, ledger, meter, logs };
 }
+
+test('each paid tool result is labelled synthetic and lists its limits; deep_report has no confidence score', async () => {
+  const run = async (name: string, args: Record<string, unknown>) => (await toolByName(name)!.run(args)) as Record<string, unknown>;
+  const quote = await run('quote_lookup', { symbol: 'ACME' });
+  const report = await run('deep_report', { topic: 'rate limits' });
+  const bulk = await run('bulk_export', { dataset: 'quotes-2026-10' });
+  for (const r of [quote, report, bulk]) assert.equal(r.synthetic, true);
+  assert.deepEqual(quote.limits, ['Current quote only: no price history.', 'No risk or supplier information.']);
+  assert.deepEqual(report.limits, ['Qualitative findings only: no row-level figures.', 'For the underlying data, use bulk_export.']);
+  assert.deepEqual(bulk.limits, ['Raw rows only: no interpretation or recommendation.', 'Preview shows at most 3 rows; the checksum covers all rows.']);
+  assert.ok(!('confidence' in report));
+  assert.doesNotMatch(String(report.summary), /confidence/i);
+  assert.equal((report.findings as string[]).length, 3);
+  assert.deepEqual((await run('deep_report', { topic: 'rate limits' })).findings, report.findings);
+});
