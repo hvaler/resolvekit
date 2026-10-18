@@ -946,6 +946,25 @@ test('a DELETE between the verifier and remembering its verdict: no verdict is k
   assert.deepEqual(store.get(id)!.analysisKeys, []);
 });
 
+test('a re-check of an input with an upload is tied to it: deleting the upload sweeps the verdict even if no analysis request noted the key', TIMEOUT, async () => {
+  const { app, people, analyst, store } = setup({ script: tokenScript, caps: { 'live-analysis': 10, recheck: 10 } });
+  const cookie = people.fullMember('Ana Lopez');
+  const id = await confirmedToken(app, cookie);
+  const first = await analyseAs(app, cookie);
+  assert.equal((await untilReady(app, first.body.key, cookie)).body.status, 'ready');
+  // As if the analysis had been requested elsewhere: the upload does not know the key.
+  store.update(id, { analysisKeys: [] });
+  const checked = await call(app, `/api/cases/${CASE}/analysis/verify`, { body: { text: 'Courier left it with the neighbour.' }, cookie });
+  assert.equal(checked.status, 200, JSON.stringify(checked.body));
+  const keys = store.get(id)!.analysisKeys;
+  assert.equal(keys.length, 1, 'the verify noted its input key on the upload');
+  const forgotten: string[] = [];
+  const forget = analyst.forget.bind(analyst);
+  analyst.forget = (k) => (forgotten.push(...k), forget(k));
+  assert.equal((await call(app, `${P}/${id}`, { method: 'DELETE', cookie })).status, 200);
+  assert.ok(forgotten.includes(keys[0]!), 'deleting purges what hangs from that key, the verdict included');
+});
+
 test('deleting an upload drops the analysis pins of intents that attach it or were composed with it, sent ones included', TIMEOUT, async () => {
   const s = sendSetup();
   const cookie = s.people.fullMember('Ana Lopez');

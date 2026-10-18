@@ -774,8 +774,9 @@ export function createApi(opts: ApiOptions): Api {
       if (r.status === 200) {
         const v = r.body as { verdict: Recheck['state']; reason: string | null; citations: Parameters<typeof toCitations>[1]; model: string };
         const key = await analyst.key(input);
-        // An upload the check read was deleted meanwhile: nothing of this answer is kept or shown.
-        if (uploads.notConfirmed(uploadIds).length) {
+        // An upload the check read was deleted meanwhile: nothing of this answer is kept or shown. Otherwise the uploads
+        // remember the key, so deleting one sweeps this verdict too.
+        if (uploadIds.length && uploads.noteAnalysisKey(uploadIds, key).length) {
           forgetAnalyses([key]);
           return staleUpload();
         }
