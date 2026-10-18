@@ -29,6 +29,7 @@ import { checkAgainstDispute } from './validate.ts';
 import { REFUSED_EARLY, acceptsImageBody, createUploadRoutes } from './uploads/routes.ts';
 import { uploadDocuments, uploadFileName } from './uploads/documents.ts';
 import { UploadStore, type UploadRecord } from './uploads/store.ts';
+import { PAYPAL_MAX_SEND_BYTES } from './uploads/limits.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
 export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload';
@@ -127,6 +128,8 @@ export interface ApiOptions {
   uploadStorageBytes?: number;
   /** Size of one stored (sanitised) upload file (default MAX_STORED_BYTES, uploads/limits.ts). */
   uploadStoredFileBytes?: number;
+  /** Total size of the files of one response (default PAYPAL_MAX_SEND_BYTES, uploads/limits.ts). */
+  paypalMaxSendBytes?: number;
 }
 
 /** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
@@ -702,6 +705,11 @@ export function createApi(opts: ApiOptions): Api {
       }
       const name = uploadFileName(r);
       out.push({ file: { name, size: `${Math.max(1, Math.round(bytes.length / 1024))} KB`, sha256: r.sha256, source: 'upload' }, data: { name, type: r.mime, data: bytes } });
+    }
+    const total = out.reduce((n, f) => n + f.data.data.length, 0);
+    const limit = opts.paypalMaxSendBytes ?? PAYPAL_MAX_SEND_BYTES;
+    if (total > limit) {
+      return json(422, { error: 'ATTACHMENTS_TOO_LARGE', detail: `The files of this response total ${total.toLocaleString('en-US')} bytes; PayPal accepts up to ${limit.toLocaleString('en-US')} bytes per response. Deselect an upload and compose it again.` });
     }
     return out;
   };

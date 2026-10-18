@@ -53,7 +53,7 @@ shows** rewrites it and checks it again, live. The bar above the send button lis
   into the sanitised file and the text under them is dropped.
 - **Read again from the covered image** (on pasted text, **Remove and read again**): the page shows the text read
   from the sanitised file. You can correct a line the OCR misread (the correction is marked "corrected by you", with
-  your name). A sanitised file over 10 MB is refused at this step: upload a screenshot or a smaller image.
+  your name). A sanitised file of 10 MB or more is refused (PayPal's limit) at this step: upload a screenshot or a smaller image.
 - **Confirm as evidence** (or **Discard**; an unconfirmed upload is deleted by itself after 24 hours). A confirmed
   upload becomes the next evidence number (E7, E8…).
 - The case file says the analysis has not read it yet: press **Re-run with AI** (30–60 s). The new analysis includes
@@ -71,7 +71,7 @@ to the PayPal sandbox. The case around it (order, tracking, buyer message) is st
 contradicts the demo documents will show as a contradiction. File names are kept in the audit trail (the text is not)
 and never sent to the model or PayPal; still, do not name a file with sensitive text, and do not upload personal data you
 care about: the PayPal side is a sandbox, and the app is a demo. *Limits:* up to 10 uploads per case, 5 MB and 3840 x
-2160 pixels (about 8 MP) per image, 10 MB per stored (sanitised) file, 20,000 Latin-1 characters of pasted text, 5
+2160 pixels (about 8 MP) per image, under 10 MB per stored (sanitised) file and 50 MB per response (PayPal's limits), 20,000 Latin-1 characters of pasted text, 5
 covering passes per upload, 40 uploads per day in total; the AI-read analysis
 counts against the live-run limits below.
 

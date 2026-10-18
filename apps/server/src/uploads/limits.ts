@@ -9,6 +9,11 @@ export const DAILY_UPLOADS = 40;
 export const OCR_TIMEOUT_MS = 20_000;
 export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_STORAGE_BYTES = 300 * 1024 * 1024;
-/** One stored (sanitised) file, checked at redact time. */
-export const MAX_STORED_BYTES = 10 * 1024 * 1024;
+/**
+ * One stored (sanitised) file, checked at redact time. PayPal takes each file under 10 MB; 9,900,000 is below that
+ * in either the decimal or the binary reading.
+ */
+export const MAX_STORED_BYTES = 9_900_000;
+/** All the files of one provide-evidence call (demo PDFs, selected uploads, receipt): PayPal accepts up to 50 MB. */
+export const PAYPAL_MAX_SEND_BYTES = 50_000_000;
 export const MAX_TEXT_CHARS = 20_000;

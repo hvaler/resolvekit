@@ -208,8 +208,8 @@ rules as every other document.
   is dropped on confirmation), and pasted text is sent as a PDF made by ResolveKit with the removed passages marked.
   A line the merchant corrected after the OCR is kept as their reading, shown as "corrected by <name>", and a
   sentence that depends on it needs the person's explicit confirmation before it can be sent.
-- **Limits**: 5 MB and 3840 x 2160 pixels (8,294,400, about 8 MP) per image, decoded one image at a time; 10 MB per
-  stored (sanitised) file; 20,000 characters of pasted text, Latin-1 only (the PDF sent to PayPal cannot show other
+- **Limits**: 5 MB and 3840 x 2160 pixels (8,294,400, about 8 MP) per image, decoded one image at a time; under 10 MB per
+  stored (sanitised) file and 50 MB per response (PayPal's limits); 20,000 characters of pasted text, Latin-1 only (the PDF sent to PayPal cannot show other
   characters, so text with one is refused naming it); 10 uploads per case, 5 covering passes per upload, 40 uploads a
   day on the hosted demo, 300 MB of storage.
 - **Pending uploads last 24 hours**: one that is not confirmed or discarded in that time is discarded the first

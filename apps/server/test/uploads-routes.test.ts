@@ -18,7 +18,7 @@ import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
 import { IntentStore } from '../src/intents.ts';
 import { toNodeListener } from '../src/node.ts';
 import { sanitiseImage, type Rect } from '../src/uploads/image.ts';
-import { MAX_FILE_BYTES, MAX_STORED_BYTES } from '../src/uploads/limits.ts';
+import { MAX_FILE_BYTES, MAX_STORED_BYTES, PAYPAL_MAX_SEND_BYTES } from '../src/uploads/limits.ts';
 import { closeOcr, ocrPng } from '../src/uploads/ocr.ts';
 import { canDeleteUpload, canEditUpload } from '../src/uploads/permissions.ts';
 import { UploadStore, type UploadRecord } from '../src/uploads/store.ts';
@@ -494,7 +494,8 @@ test('a full upload store refuses new uploads (507 STORAGE_FULL)', TIMEOUT, asyn
 });
 
 test('a sanitised file over the stored-file limit is refused at redact time (413) with what to do, and nothing is stored', TIMEOUT, async () => {
-  assert.equal(MAX_STORED_BYTES, 10 * 1024 * 1024);
+  // PayPal: each file under 10 MB, in either decimal or binary reading.
+  assert.equal(MAX_STORED_BYTES, 9_900_000);
   const { app, people, store } = setup({ storedFileBytes: 400 });
   const cookie = people.fullMember();
   const img = await uploadPng(app, cookie);
@@ -1029,7 +1030,7 @@ test('a stray temporary file in the analysis cache is swept at startup', () => {
 // ------------------------------------------------------------------------------------- attachments and the send
 
 /** A hosted app whose analyst serves the golden analysis (plus `extra` sentences) for whatever input it is asked about. */
-function sendSetup() {
+function sendSetup(o: { maxSendBytes?: number } = {}) {
   const sends: FormData[] = [];
   let hold: Promise<void> | null = null;
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
@@ -1063,6 +1064,7 @@ function sendSetup() {
     https: true,
     intents,
     uploads: store,
+    ...(o.maxSendBytes ? { paypalMaxSendBytes: o.maxSendBytes } : {}),
     limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 } },
   });
   /** The analysis of the case as `cookie` sees it now (the golden one, with `extra` sentences). */
@@ -1296,6 +1298,34 @@ test('an upload deleted while an intent is being composed: nothing is created (U
     assert.ok(!JSON.stringify(r.body).includes(TOKEN));
     assert.equal(s.intents.size(), before, 'no intent was created');
   }
+});
+
+test("a response whose files total more than PayPal's 50 MB per call is refused (422 ATTACHMENTS_TOO_LARGE) and nothing is created; at the limit it is created", TIMEOUT, async () => {
+  assert.equal(PAYPAL_MAX_SEND_BYTES, 50_000_000);
+  const compose = async (maxSendBytes?: number) => {
+    const s = sendSetup(maxSendBytes ? { maxSendBytes } : {});
+    const cookie = s.people.fullMember('Ana Lopez');
+    const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+    await s.analyse(cookie);
+    return { s, cookie, r: await s.intent(cookie, { attachments: [e7.id] }) };
+  };
+  // The real total is small: measure it, then set the limit to exactly it and to one byte less.
+  const free = await compose();
+  assert.equal(free.r.status, 201, JSON.stringify(free.r.body));
+  const cookie = free.cookie;
+  const approve = await call(free.s.app, `/api/disputes/${CASE}/intent/${free.r.body.id}/approve`, { body: { contentHash: free.r.body.contentHash }, cookie });
+  assert.equal(approve.status, 200, JSON.stringify(approve.body));
+  assert.equal((await free.s.send(cookie, free.r.body.id)).status, 202);
+  const total = (free.s.sends[0]!.getAll('evidence-file') as File[]).reduce((n, f) => n + f.size, 0);
+  assert.ok(total > 0);
+  const atLimit = await compose(total);
+  assert.equal(atLimit.r.status, 201, JSON.stringify(atLimit.r.body));
+  const over = await compose(total - 1);
+  assert.equal(over.r.status, 422, JSON.stringify(over.r.body));
+  assert.equal(over.r.body.error, 'ATTACHMENTS_TOO_LARGE');
+  assert.match(over.r.body.detail!, /deselect an upload/i);
+  assert.ok(over.r.body.detail!.includes(total.toLocaleString('en-US')) && over.r.body.detail!.includes((total - 1).toLocaleString('en-US')), over.r.body.detail);
+  assert.equal(over.s.intents.size(), 0, 'no intent was created');
 });
 
 test('an upload only quoted by an intent (in its input, not attached) is in use: refused while sending, voids the approved intent when deleted', TIMEOUT, async () => {
