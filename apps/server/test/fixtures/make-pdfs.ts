@@ -12,7 +12,8 @@ export const A3_LANDSCAPE = { w: 1191, h: 842 };
 /** The largest page PDF allows without UserUnit: 200 inches on a side. */
 export const HUGE = { w: 14400, h: 14400 };
 
-export type FixturePage = { w: number; h: number; lines: readonly string[] };
+/** `size` is the font size in points (default 12); lines are `size + 8` points apart. */
+export type FixturePage = { w: number; h: number; lines: readonly string[]; size?: number };
 
 const esc = (s: string) => s.replace(/[\\()]/g, (c) => `\\${c}`);
 const bytes = (s: string) => new Uint8Array(Buffer.from(s, 'latin1'));
@@ -35,10 +36,11 @@ function assemble(objects: readonly string[], trailer: string): Uint8Array {
 
 const stream = (dict: string, body: string) => `<< ${dict} /Length ${body.length} >>\nstream\n${body}\nendstream`;
 
-/** Text lines drawn in black Helvetica 12 from the top left, one per line. */
+/** Text lines drawn in black Helvetica (12 pt unless the page says) from the top left, one per line. */
 function content(p: FixturePage): string {
-  const ops = ['BT', '/F1 12 Tf'];
-  p.lines.forEach((l, i) => ops.push(`1 0 0 1 40 ${p.h - 60 - i * 20} Tm`, `(${esc(l)}) Tj`));
+  const size = p.size ?? 12;
+  const ops = ['BT', `/F1 ${size} Tf`];
+  p.lines.forEach((l, i) => ops.push(`1 0 0 1 40 ${p.h - 60 - i * (size + 8)} Tm`, `(${esc(l)}) Tj`));
   ops.push('ET');
   return ops.join('\n');
 }
@@ -129,24 +131,49 @@ export const HIDDEN = {
   annotation: 'Secret annotation 5190',
 };
 
+/** What `secretsPdf` hides: the visible line, then one string per place a viewer does not show. */
+export type Secrets = { visible: string; white: string; info: string; xmp: string; annotation: string; attachment: string };
+
 /**
- * One A4 page showing one black line, with a white line under it (in the text layer, invisible on white), an Info
- * title, an XMP metadata stream, an embedded file and a text annotation.
+ * One A4 page showing one black line (`visible`), with a white line at `whiteY` points from the bottom (in the text
+ * layer, invisible on white), an Info dictionary whose Title, Author and Subject are `info`, an XMP metadata stream,
+ * an embedded file and a text annotation.
  */
-export function hiddenPdf(): Uint8Array {
-  const objects = pageObjects([{ ...A4, lines: [HIDDEN.visible] }]);
+export function secretsPdf(s: Secrets, whiteY = 500): Uint8Array {
+  const objects = pageObjects([{ ...A4, lines: [s.visible] }]);
   const n = objects.length;
   const [info, xmp, file, spec, annot] = [n, n + 1, n + 2, n + 3, n + 4];
-  objects[info] = `<< /Title (${HIDDEN.title}) /Author (${HIDDEN.title}) >>`;
-  objects[xmp] = stream('/Type /Metadata /Subtype /XML', `<x:xmpmeta xmlns:x="adobe:ns:meta/"><dc:title>${HIDDEN.xmp}</dc:title></x:xmpmeta>`);
-  objects[file] = stream('/Type /EmbeddedFile', HIDDEN.attachment);
+  objects[info] = `<< /Title (${esc(s.info)}) /Author (${esc(s.info)}) /Subject (${esc(s.info)}) >>`;
+  objects[xmp] = stream('/Type /Metadata /Subtype /XML', `<x:xmpmeta xmlns:x="adobe:ns:meta/"><dc:title>${s.xmp}</dc:title></x:xmpmeta>`);
+  objects[file] = stream('/Type /EmbeddedFile', s.attachment);
   objects[spec] = `<< /Type /Filespec /F (notes.txt) /UF (notes.txt) /EF << /F ${file} 0 R >> >>`;
-  objects[annot] = `<< /Type /Annot /Subtype /Text /Rect [400 700 420 720] /Contents (${HIDDEN.annotation}) /Open false >>`;
+  objects[annot] = `<< /Type /Annot /Subtype /Text /Rect [400 700 420 720] /Contents (${esc(s.annotation)}) /Open false >>`;
   const page = 4;
   objects[page] = objects[page]!.replace(/>>$/, `/Annots [${annot} 0 R] >>`);
-  objects[page + 1] = stream('', `${content({ ...A4, lines: [HIDDEN.visible] })}\nBT /F1 12 Tf 1 1 1 rg 1 0 0 1 40 760 Tm (${HIDDEN.white}) Tj ET`);
+  objects[page + 1] = stream('', `${content({ ...A4, lines: [s.visible] })}\nBT /F1 12 Tf 1 1 1 rg 1 0 0 1 40 ${whiteY} Tm (${esc(s.white)}) Tj ET`);
   objects[1] = `<< /Type /Catalog /Pages 2 0 R /Metadata ${xmp} 0 R /Names << /EmbeddedFiles << /Names [(notes.txt) ${spec} 0 R] >> >> >>`;
   return assemble(objects, `/Root 1 0 R /Info ${info} 0 R`);
+}
+
+/** `HIDDEN` in a page, its white line just under the visible one. */
+export function hiddenPdf(): Uint8Array {
+  return secretsPdf({ ...HIDDEN, info: HIDDEN.title }, 760);
+}
+
+/**
+ * `n` A4 pages filled with 10 pt text (40 lines of about 90 characters each, different on every page and line): the
+ * densest a text page gets, for the size of a rebuilt PDF.
+ */
+export function densePdf(n: number): Uint8Array {
+  let seed = 7;
+  const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  const word = () => Array.from({ length: 3 + (next() % 7) }, () => String.fromCharCode(97 + (next() % 26))).join('');
+  const line = (page: number, i: number) => {
+    let l = `${page}.${i} ${String(next()).padStart(10, '0')}`;
+    while (l.length < 88) l += ` ${word()}`;
+    return l;
+  };
+  return textPdf(Array.from({ length: n }, (_, p) => ({ ...A4, size: 10, lines: Array.from({ length: 40 }, (_, i) => line(p + 1, i + 1)) })));
 }
 
 /**

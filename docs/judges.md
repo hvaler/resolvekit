@@ -52,13 +52,24 @@ shows** rewrites it and checks it again, live. The bar above the send button lis
 **4. Add your own evidence.** In Test Store (open as the reviewer through your link) the case file has
 **+ Add evidence** (disabled in the demo, with its reason).
 
-- Upload a screenshot (PNG or JPEG, up to 5 MB and 3840 x 2160 pixels, about 8 MP) or paste text, for example an
-  email thread. Pasted text must be Latin-1 (Western European letters and accents): a character such as € or curly
+- Upload a screenshot (PNG or JPEG, up to 5 MB and 3840 x 2160 pixels, about 8 MP), a PDF (up to 10 MB and 30
+  pages) or paste text, for example an email thread. Pasted text must be Latin-1 (Western European letters and accents): a character such as € or curly
   quotes is refused with a message naming it, because the PDF sent to PayPal could not show it. Nothing you add leaves
   the ResolveKit server yet: the text is read on the server itself (local OCR for images), not by Google, Groq or PayPal.
 - **Cover what must not be shared** (an account number, a balance, an unrelated line): on an image, drag rectangles
   over it; on pasted text, **Remove what must not be shared** by selecting the passages. The covered areas are burned
   into the sanitised file and the text under them is dropped.
+- **A PDF** is turned into page images on the server; ResolveKit never uses its text layer, fonts, attachments,
+  annotations or metadata. A PDF of up to 5 pages is taken whole; a longer one shows thumbnails and asks you to
+  choose up to 5 pages ("Keep the context the dispute needs: don't leave out pages with relevant or contradicting
+  information."). Each chosen page is reviewed on its own: cover what must not be shared on that page, then
+  **Cover this page and read it again** (even if nothing needs covering), and correct what the reading got wrong.
+  A line it missed can be **transcribed** (mark its area on the page, never over a cover, and type it): it is shown
+  as "Transcribed manually by" you, and the analyst is told you typed it. **Show it for this page** displays the
+  PDF's own text as a hint for your review (it can hold text invisible on the page; it is never stored or sent).
+  Mind barcodes: covering the text next to a barcode or QR code doesn't hide what the code contains, so cover the
+  code too if it carries data you don't want to share. On confirm, ResolveKit builds a new image-only PDF from your
+  covered pages; the original file is deleted and never leaves the server.
 - **Read again from the covered image** (on pasted text, **Remove and read again**): the page shows the text read
   from the sanitised file. You can correct a line the OCR misread (the correction is marked "corrected by you", with
   your name). A sanitised file of 10 MB or more is refused (PayPal's limit) at this step: upload a screenshot or a smaller image.
@@ -66,21 +77,25 @@ shows** rewrites it and checks it again, live. The bar above the send button lis
   upload becomes the next evidence number (E7, E8…).
 - The case file says the analysis has not read it yet: press **Re-run with AI** (30–60 s). The new analysis includes
   it and can cite it like the demo documents: hover a citation to see the exact words in the uploaded text.
-- A sentence that rests on a line you corrected asks for your explicit confirmation before it can be sent.
-- When you send, PayPal receives the sanitised file (the PNG, or a PDF made from pasted text) with the rest of the
-  evidence on the bound case, named only by its evidence number (`E7-upload.png`, `E8-pasted.pdf`): your file name
-  stays on the server.
+- A sentence that rests on a line you corrected or transcribed asks for your explicit confirmation before it can be
+  sent. A PDF's lines are cited by page ("line 2 of page 8 of E7", the page number of the original document).
+- When you send, PayPal receives the sanitised file (the PNG, the PDF rebuilt from your covered pages, or a PDF made
+  from pasted text) with the rest of the evidence on the bound case, named only by its evidence number
+  (`E7-upload.png`, `E8-upload.pdf`, `E9-pasted.pdf`): your file name stays on the server.
+- Until it is confirmed, an upload is visible only to the people who can edit it (you, and the workspace's owner and
+  full members): others see that it exists, not what it shows or reads.
 - Uploads belong to the workspace: they stay for the next person until the case moves to its next sandbox dispute
   (they are then archived: the record stays for the audit, the files and text are removed). A full member can delete one at any time; a reviewer can only discard their own before
   confirming.
 
 *Real vs synthetic.* What you upload is yours, and it is real in what it does: it is read, redacted, cited and sent
 to the PayPal sandbox. The case around it (order, tracking, buyer message) is still synthetic, so a screenshot that
-contradicts the demo documents will show as a contradiction. File names are kept in the audit trail (the text is not)
-and never sent to the model or PayPal; still, do not name a file with sensitive text, and do not upload personal data you
+contradicts the demo documents will show as a contradiction. File names stay on the upload's record (never in the
+logs or the audit trail, never sent to the model or PayPal); still, do not name a file with sensitive text, and do not upload personal data you
 care about: the PayPal side is a sandbox, and the app is a demo. *Limits:* up to 10 uploads per case, 5 MB and 3840 x
-2160 pixels (about 8 MP) per image, under 10 MB per stored (sanitised) file and 50 MB per response (PayPal's limits), 20,000 Latin-1 characters of pasted text, 5
-covering passes per upload, 40 uploads per day in total; the AI-read analysis
+2160 pixels (about 8 MP) per image, 10 MB and 30 pages per PDF of which 5 pages are kept (a PDF counts as one
+upload; each page read counts in the per-address reading limit), under 10 MB per stored (sanitised) file and 50 MB per response (PayPal's limits), 20,000 Latin-1 characters of pasted text, 5
+covering passes per upload (per page for a PDF), 40 uploads per day in total; the AI-read analysis
 counts against the live-run limits below.
 
 **5. Approve and send to real PayPal.** Click **Review what will be sent →** (signed in through your reviewer link:

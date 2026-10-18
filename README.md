@@ -223,22 +223,41 @@ scroll inside their own box.
 
 ## Merchant uploads
 
-A seller can add their own evidence to a case: a screenshot (PNG or JPEG) or pasted text such as an email thread.
+A seller can add their own evidence to a case: a screenshot (PNG or JPEG), a PDF (up to 5 of its pages) or pasted
+text such as an email thread.
 It is numbered after the case's documents (E7, E8…) and the analyst cites it with its exact words, under the same
 rules as every other document.
 
 - **Nothing leaves the server before the merchant confirms it.** Text is read on the server itself (local OCR for
-  images); no upload, byte or text, goes to Google, Groq or PayPal until it is covered where needed, read again and
-  confirmed. Logs and audit details carry ids and file names (so do not name a file with sensitive text), never upload text or bytes.
-  The file name itself never leaves the server: PayPal receives `E7-upload.png` / `E8-pasted.pdf`, and the model
-  reads the titles "Uploaded screenshot" / "Pasted text".
+  images and PDF pages); no upload, byte or text, goes to Google, Groq or PayPal until it is covered where needed,
+  read again and confirmed. Logs and audit details carry ids and evidence numbers only, never file names, upload text
+  or bytes. The file name never leaves the server: PayPal receives `E7-upload.png` / `E8-upload.pdf` /
+  `E9-pasted.pdf`, and the model reads the titles "Uploaded screenshot" / "Uploaded PDF" / "Pasted text". Until it
+  is confirmed, an upload is visible only to the people who can edit it (its uploader, owners and full members);
+  the rest of the workspace sees that it exists, not what it shows or reads.
 - **What PayPal receives is the sanitised file**: the merchant's covered areas are burned into the PNG (the original
   is dropped on confirmation), and pasted text is sent as a PDF made by ResolveKit with the removed passages marked.
   A line the merchant corrected after the OCR is kept as their reading, shown as "corrected by <name>", and a
   sentence that depends on it needs the person's explicit confirmation before it can be sent.
-- **Limits**: 5 MB and 3840 x 2160 pixels (8,294,400, about 8 MP) per image, decoded one image at a time; under 10 MB per
+- **A PDF is rasterised, covered, read and rebuilt.** The PDF is hostile input: pdf.js runs in a forked child
+  process (scripting and evaluation off, no network, no external resources, no system fonts; V8 heap capped at
+  160 MB), killed at its per-page deadline and, on Linux, above 200 MB resident; a bomb or a parser loop takes the
+  child down, not the server. A PDF of up to 5 pages is taken whole; a longer one gets thumbnails and the merchant
+  chooses up to 5 pages. Each chosen page is rendered to an image at 170 dpi (a larger page at a lower dpi, so it
+  stays within 4 MP), the merchant covers it, and the OCR reads **the covered image** (never the text layer, which
+  can hold invisible text). Lines the OCR missed can be transcribed by the merchant, outside the covers, and are
+  marked as such for the analyst ("transcribed manually by <name>"); the PDF's own text is shown only as a hint for
+  that review, never stored, logged or sent. Citations stay within one page (`E7.p<page>.l<line>`, the page of the
+  original document). On confirm the server builds `sanitised.pdf`, a new image-only PDF of the covered page images
+  (no text layer, fonts, annotations, attachments, metadata or scripts); the original PDF and its uncovered renders
+  are deleted and **the original never leaves the server**. Covering the text next to a barcode or QR code does not
+  hide what the code contains: the review says so. `apps/server/test/uploads-pdf-recovery.test.ts` tries to recover
+  a covered line, white text, metadata, an annotation and an attachment from everything that leaves an upload.
+- **Limits**: 5 MB and 3840 x 2160 pixels (8,294,400, about 8 MP) per image, decoded one image at a time; 10 MB and
+  30 pages per PDF, 5 pages kept, rendered at 170 dpi and 4 MP per page, 20 s per page render (one PDF or image job at
+  a time server-wide; a PDF counts as one upload, and each page read counts in the per-address reading limit); under 10 MB per
   stored (sanitised) file and 50 MB per response (PayPal's limits); 20,000 characters of pasted text, Latin-1 only (the PDF sent to PayPal cannot show other
-  characters, so text with one is refused naming it); 10 uploads per case, 5 covering passes per upload, 40 uploads a
+  characters, so text with one is refused naming it); 10 uploads per case, 5 covering passes per upload (per page for a PDF), 40 uploads a
   day on the hosted demo, 300 MB of storage.
 - **Pending uploads last 24 hours**: one that is not confirmed or discarded in that time is discarded the first
   time it is met. **Deleting an upload** (owners and members) removes its files and purges the stored analyses that

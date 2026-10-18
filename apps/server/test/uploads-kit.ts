@@ -115,10 +115,12 @@ export function sendSetup(o: { maxSendBytes?: number } = {}) {
   const people = testAccounts();
   const store = new UploadStore({ dir: null });
   const intents = new IntentStore();
+  const lines: string[] = [];
   const app = createHostedApp({
     paypal: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }),
     env: 'sandbox',
     bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
+    log: (l) => lines.push(l),
     analyst,
     site: null,
     counters: new DailyCounters({ file: null, limits: { upload: 40, evidence: 10 } }),
@@ -158,7 +160,7 @@ export function sendSetup(o: { maxSendBytes?: number } = {}) {
     return i.body;
   };
   const send = (cookie: string, intentId: string) => call(app, `/api/disputes/${CASE}/evidence`, { body: { intentId }, cookie }) as unknown as Promise<{ status: number; body: { error?: string; detail?: string } }>;
-  return { app, people, store, intents, analyst, analyses, sends, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
+  return { app, people, store, intents, lines, analyst, analyses, sends, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
 }
 export type SentIntent = { id: string; contentHash: string; status: string; files: { name: string; size: string; sha256?: string; source?: string }[] };
 export const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
