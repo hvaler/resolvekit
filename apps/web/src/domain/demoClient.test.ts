@@ -23,6 +23,7 @@ describe('DemoClient', () => {
 
   it('signed in to the seller’s workspace: open; to another workspace: signed in but not open', async () => {
     const seller = await new DemoClient({ fetch: server(DEMO, { signedIn: true, person: PERSON, workspace: { id: 'ws_1', name: 'Northwind Goods', connected: true }, expiresAt: '2026-10-10T22:00:00.000Z', methods: { paypal: true, passkey: true } }) }).state();
+    expect(seller?.workspace?.connection).toBe('not_connected'); // an older server sends no connection
     expect(seller).toMatchObject({ signedIn: true, unlocked: true, person: { name: 'Dana Ruiz' }, workspace: { name: 'Northwind Goods', connected: true } });
     const other = await new DemoClient({ fetch: server(DEMO, { signedIn: true, person: { ...PERSON, role: 'owner' }, workspace: { id: 'ws_2', name: 'Elsewhere', connected: false }, methods: { paypal: true, passkey: true } }) }).state();
     expect(other).toMatchObject({ signedIn: true, unlocked: false });

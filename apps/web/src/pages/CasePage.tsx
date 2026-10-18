@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
 import { usePayPalSource, usePolling, useSecondsSince, useServices } from '../app/services';
+import { draftScope } from '../domain/environment';
 import { useAnalysis } from '../app/useAnalysis';
 import { useCaseDraft } from '../app/useCaseDraft';
 import { useUploads } from '../app/useUploads';
@@ -50,7 +51,7 @@ export function CasePage() {
 
 function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const id = demo.summary.id;
-  const { snapshots, addAudit, analysis: analysisClient, demo: demoLock } = useServices();
+  const { snapshots, addAudit, analysis: analysisClient, demo: demoLock, area } = useServices();
   usePolling([id]);
   const source = usePayPalSource(id);
   // A bound case only uses a snapshot read from PayPal; a simulated one uses the simulator's.
@@ -101,7 +102,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   }, [docs, an, later.length]);
   const status = snap?.status ?? demo.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
-  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, actor: actorName(demoLock), scope: demoLock?.person?.id ?? 'local', analysis, corrections });
+  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, actor: actorName(demoLock), scope: draftScope(area, demoLock?.person?.id ?? null), analysis, corrections });
   // Confirmed evidence no analysis on screen has read yet: said so, never shown as if it were included.
   const unread = notAnalysed(up.uploads, an.kind === 'ready' ? an.input : null);
 

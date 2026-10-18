@@ -21,6 +21,8 @@ export interface AccountWorkspace {
   name: string;
   /** Its PayPal account is the seller on the connected disputes: they are live for it. */
   connected: boolean;
+  /** `evaluation`: the evaluation workspace (live for it); `not_connected`: a merchant's own; `checking`: not known yet. */
+  connection: 'evaluation' | 'not_connected' | 'checking';
 }
 
 export interface DemoState {
@@ -36,6 +38,10 @@ export interface DemoState {
   reasons: Partial<Record<DemoAction, string>>;
   caps: Partial<Record<DemoAction, { limit: number; used: number; remaining: number }>>;
   resetsAt?: string;
+}
+
+function parseConnection(c: unknown): AccountWorkspace['connection'] {
+  return c === 'evaluation' || c === 'checking' ? c : 'not_connected';
 }
 
 export const SIGN_IN_FIRST = 'Sign in to do this: with PayPal if you are the merchant, or with the invite link you were given.';
@@ -58,12 +64,12 @@ export class DemoClient {
       if (!d.ok) return null;
       const demo = (await d.json()) as { hosted?: boolean; reasons?: DemoState['reasons']; caps?: DemoState['caps']; resetsAt?: string };
       if (!demo.hosted) return null;
-      const me = m && m.ok ? ((await m.json()) as { signedIn?: boolean; person?: AccountPerson; workspace?: AccountWorkspace; expiresAt?: string; methods?: DemoState['methods'] }) : {};
+      const me = m && m.ok ? ((await m.json()) as { signedIn?: boolean; person?: AccountPerson; workspace?: Omit<AccountWorkspace, 'connection'> & { connection?: AccountWorkspace['connection'] }; expiresAt?: string; methods?: DemoState['methods'] }) : {};
       const signedIn = !!me.signedIn && !!me.person && !!me.workspace;
       return {
         signedIn,
         person: signedIn ? me.person! : null,
-        workspace: signedIn ? me.workspace! : null,
+        workspace: signedIn ? { ...me.workspace!, connection: parseConnection(me.workspace!.connection) } : null,
         expiresAt: signedIn ? (me.expiresAt ?? null) : null,
         methods: { paypal: !!me.methods?.paypal, passkey: me.methods?.passkey !== false },
         unlocked: signedIn && !!me.workspace?.connected,

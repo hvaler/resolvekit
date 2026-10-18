@@ -7,6 +7,7 @@ import { HttpIntentClient, LocalIntentClient, type IntentSource } from '../domai
 import { payPalSource, type PayPalSource } from '../domain/paypalView';
 import { utcHm } from '../domain/time';
 import type { AuditEntry, DisputeSnapshot } from '../domain/types';
+import type { Area } from '../domain/environment';
 import { initialSnapshots, processingDispute, processingOpening } from '../fixtures';
 
 export interface TrackedSnapshot extends DisputeSnapshot {
@@ -25,6 +26,8 @@ export interface SyncState {
 }
 
 interface Services {
+  /** The area on screen: the Explore demo (simulator and bundled analyses only) or the workspace. */
+  area: Area;
   /** Submission intents: composed, approved and sent by the server (local composition only without a server). */
   intents: IntentSource;
   /** The AI analyst on the ResolveKit server; null when the app runs without a server (tests). */
@@ -76,12 +79,16 @@ export function ServicesProvider({
   children,
   latencyMs = SIMULATED_LATENCY_MS,
   server,
+  area = 'workspace',
 }: {
   children: ReactNode;
   latencyMs?: number;
   /** The ResolveKit server. Pass null to run on the simulator only (tests). */
   server?: HttpDisputeGateway | null;
+  /** `demo`: simulator only, local intents, bundled golden analyses; the account still comes from the server. */
+  area?: Area;
 }) {
+  const demoArea = area === 'demo';
   const [outcome, setOutcome] = useState<SimulatedOutcome>(initialOutcome);
   const outcomeRef = useRef(outcome);
   outcomeRef.current = outcome;
@@ -96,9 +103,9 @@ export function ServicesProvider({
       }),
     [latencyMs],
   );
-  const http = useMemo(() => (server === undefined ? new HttpDisputeGateway() : server), [server]);
-  const analysis = useMemo(() => (server === null ? null : new AnalysisClient()), [server]);
-  const intents = useMemo<IntentSource>(() => (server === null ? new LocalIntentClient() : new HttpIntentClient()), [server]);
+  const http = useMemo(() => (demoArea ? null : server === undefined ? new HttpDisputeGateway() : server), [server, demoArea]);
+  const analysis = useMemo(() => (demoArea || server === null ? null : new AnalysisClient()), [server, demoArea]);
+  const intents = useMemo<IntentSource>(() => (demoArea || server === null ? new LocalIntentClient() : new HttpIntentClient()), [server, demoArea]);
   const demoClient = useMemo(() => (server === null ? null : new DemoClient()), [server]);
   const [demo, setDemo] = useState<DemoState | null>(null);
   const [accountKnown, setAccountKnown] = useState(server === null);
@@ -206,8 +213,8 @@ export function ServicesProvider({
 
   const modeKnown = !http || health != null;
   const value = useMemo<Services>(
-    () => ({ intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut }),
-    [intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut],
+    () => ({ area, intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut }),
+    [area, intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut],
   );
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }
