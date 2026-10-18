@@ -22,7 +22,7 @@ import type { ActingPerson, Reservation } from '../app.ts';
 import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
 import { uploadDocuments } from './documents.ts';
-import { UploadError, sanitiseImage, type Rect } from './image.ts';
+import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
 import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE } from './limits.ts';
 import { ocrPng } from './ocr.ts';
 import { canDeleteUpload, canEditUpload } from './permissions.ts';
@@ -224,9 +224,9 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     let readLines: string[];
     if (kind === 'image') {
       s.worked = true;
-      // Decoded (type by magic bytes, size checked first) and re-encoded as a PNG: what OCR sees is pixels only. The
-      // text goes back to the person only; it is not stored.
-      readLines = (await ocrPng(sanitiseImage(original, []).png)).map((l) => l.text);
+      // Decoded once (type by magic bytes, size checked first), one image at a time server-wide, and re-encoded as a
+      // PNG: what OCR sees is pixels only. The text goes back to the person only; it is not stored.
+      readLines = await oneImageAtATime(async () => (await ocrPng(sanitiseImage(original, []).png)).map((l) => l.text));
       // Checked again in the same synchronous step as storing: concurrent uploads cannot pass the limits.
       if (shown(s).length >= MAX_UPLOADS_PER_CASE) return tooMany();
       if (!hasRoom(original.length)) return storageFull();
@@ -269,9 +269,14 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     let patch: UploadPatch;
     let file: Uint8Array;
     if (rects) {
-      const s1 = sanitiseImage(original, rects);
-      if (!hasRoom(s1.png.length)) return storageFull();
-      const readLines = (await ocrPng(s1.png)).map((l) => l.text);
+      // Decoded once, one image at a time server-wide; the text is read again from the sanitised file.
+      const read = await oneImageAtATime(async () => {
+        const s1 = sanitiseImage(original, rects);
+        if (!hasRoom(s1.png.length)) return null;
+        return { s1, readLines: (await ocrPng(s1.png)).map((l) => l.text) };
+      });
+      if (!read) return storageFull();
+      const { s1, readLines } = read;
       patch = { status: 'reviewing', rects, removals: [], readLines, sha256: s1.sha256, size: s1.png.length, mime: 'image/png' };
       file = s1.png;
     } else {

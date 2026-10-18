@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { crc32, deflateSync } from 'node:zlib';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
-import { decodeImage, sanitiseImage, UploadError } from '../src/uploads/image.ts';
+import { decodeImage, oneImageAtATime, sanitiseImage, UploadError } from '../src/uploads/image.ts';
 
 function png(w: number, h: number, fill: (x: number, y: number) => [number, number, number] = () => [255, 255, 255]): Uint8Array {
   const p = new PNG({ width: w, height: h });
@@ -62,13 +62,55 @@ test('refuses a GIF, a PDF, random bytes (UNSUPPORTED_TYPE/UNREADABLE) and a 5,0
   const sof = huge.indexOf(Buffer.from([0xff, 0xc0]));
   huge.writeUInt16BE(5000, sof + 7);
   assert.equal(code(() => decodeImage(huge)), 'TOO_LARGE');
-  // Within each side but over 16 MP.
-  const mp = Buffer.from(png(1, 1));
-  mp.writeUInt32BE(4096, 16);
-  mp.writeUInt32BE(4096, 20);
-  assert.equal(code(() => decodeImage(mp)), 'UNREADABLE'); // exactly 16 MP is allowed: it only fails as truncated
   const err = (() => { try { decodeImage(wide); } catch (e) { return e as UploadError; } })();
   assert.equal(err?.status, 413);
+});
+
+test('at most 8,294,400 pixels (3840 x 2160): one more row is refused (413) with a message asking for a screenshot or a smaller image', () => {
+  const sized = (w: number, h: number) => {
+    const b = Buffer.from(png(1, 1));
+    b.writeUInt32BE(w, 16);
+    b.writeUInt32BE(h, 20);
+    return b;
+  };
+  assert.equal(code(() => decodeImage(sized(3840, 2160))), 'UNREADABLE'); // allowed: it only fails as truncated
+  assert.equal(code(() => decodeImage(sized(2160, 3840))), 'UNREADABLE');
+  for (const [w, h] of [[3840, 2161], [4096, 4096], [4096, 2100]]) {
+    const err = (() => { try { decodeImage(sized(w!, h!)); } catch (e) { return e as UploadError; } })();
+    assert.equal(err?.code, 'TOO_LARGE', `${w}x${h}`);
+    assert.equal(err?.status, 413);
+    assert.match(err!.message, /screenshot or a smaller image/);
+  }
+  const j = Buffer.from(jpg(8, 8));
+  const sof = j.indexOf(Buffer.from([0xff, 0xc0]));
+  j.writeUInt16BE(2161, sof + 5);
+  j.writeUInt16BE(3840, sof + 7);
+  assert.equal(code(() => decodeImage(j)), 'TOO_LARGE');
+});
+
+test('one image at a time: two concurrent image jobs never overlap, and a failing one frees the slot', async () => {
+  const events: string[] = [];
+  let open!: () => void;
+  const gate = new Promise<void>((ok) => (open = ok));
+  const a = oneImageAtATime(async () => { events.push('a start'); await gate; events.push('a end'); return 'a'; });
+  const b = oneImageAtATime(async () => { events.push('b start'); events.push('b end'); throw new Error('b failed'); });
+  const c = oneImageAtATime(async () => { events.push('c start'); events.push('c end'); return 'c'; });
+  await new Promise((ok) => setTimeout(ok, 20));
+  assert.deepEqual(events, ['a start'], 'b waits while a holds the slot');
+  open();
+  assert.equal(await a, 'a');
+  await assert.rejects(b, /b failed/);
+  assert.equal(await c, 'c');
+  assert.deepEqual(events, ['a start', 'a end', 'b start', 'b end', 'c start', 'c end']);
+});
+
+test('every pixel of the sanitised image is opaque: transparent pixels are composited onto white, colour under alpha 0 does not survive', () => {
+  const p = new PNG({ width: 3, height: 1 });
+  p.data.set([12, 34, 56, 0, 200, 0, 0, 128, 10, 20, 30, 255]);
+  const out = decodeImage(sanitiseImage(PNG.sync.write(p), []).png).rgba;
+  assert.deepEqual(px(out, 3, 0, 0), [255, 255, 255, 255]);
+  assert.deepEqual(px(out, 3, 1, 0), [227, 127, 127, 255]);
+  assert.deepEqual(px(out, 3, 2, 0), [10, 20, 30, 255]);
 });
 
 test('covered pixels are black whatever the OCR read', () => {
@@ -204,8 +246,8 @@ test('refuses a PNG whose bit depth is not allowed for its colour type', () => {
 });
 
 test('the inflate budget never exceeds the absolute cap', () => {
-  // Largest legal header (4096 x 4096, 16-bit RGBA): the budget is its exact size, so a small stream is refused.
-  const b = Buffer.concat([SIG, ihdrRaw(4096, 4096, 16, 6), chunk('IDAT', deflateSync(Buffer.alloc(100))), iend()]);
+  // Largest legal header (3840 x 2160, 16-bit RGBA): the budget is its exact size, so a small stream is refused.
+  const b = Buffer.concat([SIG, ihdrRaw(3840, 2160, 16, 6), chunk('IDAT', deflateSync(Buffer.alloc(100))), iend()]);
   assert.equal(code(() => decodeImage(b)), 'UNREADABLE');
   // One more pixel row is over the side limit before any budget is computed.
   assert.equal(code(() => decodeImage(Buffer.concat([SIG, ihdrRaw(4096, 4097, 16, 6), iend()]))), 'TOO_LARGE');

@@ -76,7 +76,8 @@ function pngSize(b: Uint8Array): [number, number] {
   return [w, h];
 }
 
-const tooLarge = () => new UploadError('TOO_LARGE', `The image is larger than ${MAX_SIDE} px or ${MAX_PIXELS / 1024 / 1024} MP`);
+const tooLarge = () =>
+  new UploadError('TOO_LARGE', `The image is larger than ${MAX_SIDE} px on a side or ${MAX_PIXELS.toLocaleString('en-US')} pixels (3840 x 2160); upload a screenshot or a smaller image`);
 
 /** Width and height from the first JPEG start-of-frame segment. */
 function jpegSize(b: Uint8Array): [number, number] {
@@ -102,25 +103,35 @@ export function decodeImage(bytes: Uint8Array): { kind: 'png' | 'jpeg'; width: n
   if (!kind) throw new UploadError('UNSUPPORTED_TYPE', 'Only PNG and JPEG images are accepted');
   const [w, h] = kind === 'png' ? pngSize(bytes) : jpegSize(bytes);
   if (w < 1 || h < 1) throw new UploadError('UNREADABLE', 'The image has no pixels');
-  if (w > MAX_SIDE || h > MAX_SIDE || w * h > MAX_PIXELS) throw new UploadError('TOO_LARGE', `The image is larger than ${MAX_SIDE} px or ${MAX_PIXELS / 1024 / 1024} MP`);
+  if (w > MAX_SIDE || h > MAX_SIDE || w * h > MAX_PIXELS) throw tooLarge();
   try {
     if (kind === 'png') {
       const p = PNG.sync.read(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
       if (p.width !== w || p.height !== h) throw new Error('size differs from the validated header');
-      return { kind, width: p.width, height: p.height, rgba: new Uint8Array(p.data) };
+      // The decoder's own buffer, not a copy.
+      return { kind, width: p.width, height: p.height, rgba: new Uint8Array(p.data.buffer, p.data.byteOffset, p.data.byteLength) };
     }
-    const j = jpeg.decode(bytes, { useTArray: true, maxResolutionInMP: 16, maxMemoryUsageInMB: 256 });
+    const j = jpeg.decode(bytes, { useTArray: true, maxResolutionInMP: Math.ceil(MAX_PIXELS / 1e6), maxMemoryUsageInMB: 256 });
     if (j.width !== w || j.height !== h) throw new Error('size differs from the validated header');
-    return { kind, width: j.width, height: j.height, rgba: new Uint8Array(j.data) };
+    return { kind, width: j.width, height: j.height, rgba: j.data };
   } catch (e) {
     if (e instanceof UploadError) throw e;
     throw new UploadError('UNREADABLE', 'The image could not be decoded', { cause: e });
   }
 }
 
-/** Decode, burn the rectangles in as opaque black (clipped to the image; empty ones ignored) and encode a fresh PNG. */
+/**
+ * Decode, make every pixel opaque (composited onto white: nothing hides under transparency), burn the rectangles in
+ * as opaque black (clipped to the image; empty ones ignored) and encode a fresh PNG.
+ */
 export function sanitiseImage(bytes: Uint8Array, rects: readonly Rect[]): { png: Uint8Array; width: number; height: number; sha256: string } {
   const { width, height, rgba } = decodeImage(bytes);
+  for (let i = 0; i < rgba.length; i += 4) {
+    const a = rgba[i + 3]!;
+    if (a === 255) continue;
+    for (let c = i; c < i + 3; c++) rgba[c] = Math.round((rgba[c]! * a + 255 * (255 - a)) / 255);
+    rgba[i + 3] = 255;
+  }
   for (const r of rects) {
     const x0 = Math.max(0, Math.floor(r.x));
     const y0 = Math.max(0, Math.floor(r.y));
@@ -136,6 +147,18 @@ export function sanitiseImage(bytes: Uint8Array, rects: readonly Rect[]): { png:
       }
     }
   }
-  const png = new Uint8Array(PNG.sync.write({ width, height, data: Buffer.from(rgba) } as PNG));
+  const png = new Uint8Array(PNG.sync.write({ width, height, data: Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength) } as PNG));
   return { png, width, height, sha256: createHash('sha256').update(png).digest('hex') };
+}
+
+let slot: Promise<unknown> = Promise.resolve();
+
+/**
+ * Run an image job (decode, sanitise, read) when no other is running, server-wide: one image's pixels are held at a
+ * time, however small. A failing job frees the slot like a finished one.
+ */
+export function oneImageAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const job = slot.then(work);
+  slot = job.catch(() => {});
+  return job;
 }

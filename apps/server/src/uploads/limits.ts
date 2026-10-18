@@ -1,7 +1,8 @@
 /** Limits for merchant evidence uploads, in one place. */
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_SIDE = 4096;
-export const MAX_PIXELS = 16 * 1024 * 1024;
+/** 3840 x 2160: a 4K screenshot. Decoding is held to this so one image fits the hosted instance's memory. */
+export const MAX_PIXELS = 8_294_400;
 export const MAX_UPLOADS_PER_CASE = 10;
 /** Daily cap key `upload`. */
 export const DAILY_UPLOADS = 40;
