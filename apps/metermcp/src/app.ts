@@ -3,7 +3,8 @@
  *
  * - `POST|GET|DELETE /mcp` — the MCP endpoint (Streamable HTTP) for MCP clients, not browsers.
  * - `GET /approved`, `GET /cancelled` — where PayPal sends the buyer's browser back. They only make MeterMCP re-read
- *   the order from PayPal; nothing there trusts the query string.
+ *   the order from PayPal; nothing there trusts the query string. A session opened by open_budget with an allowed
+ *   return_to is redirected there (303) once the re-read order shows it active.
  * - `GET /health`.
  * - Admin, for apps/server on this machine (header `x-metermcp-token`, the per-launch secret):
  *   `GET /sessions?capture=<id>`, `GET /sessions/<id>/receipt.json|.pdf`, `POST /sessions/<id>/close`.
@@ -175,6 +176,9 @@ export function createApp(opts: AppOptions): Handler {
       if (s.status === 'cancelled' && s.settlement_error) {
         return page('Payment method declined', 'PayPal declined the payment method you chose, or the authorization. Nothing was authorized or charged. Return to your agent: its next paid call gives you a new approval link, where you can choose another payment method.');
       }
+      // Opened by open_budget with an allowed return_to: back to the client's page, only once the budget is active.
+      const back = path === '/approved' && s.status === 'active' ? meter.allowedReturn(s.return_to) : null;
+      if (back) return new Response(null, { status: 303, headers: { location: back, 'cache-control': 'no-store' } });
       if (s.status === 'active') return page('Budget approved', 'PayPal authorized the budget. You can close this tab and return to your agent: it is charged only for successful tool calls, and the rest is released when the session closes.');
       return page('Waiting for PayPal', `PayPal reports the order is not approved yet (session ${s.status}). Reload this page in a moment.`);
     }

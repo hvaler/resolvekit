@@ -7,6 +7,8 @@
  * tool runs (refused before forwarding if it would exceed the cap), is charged only if the tool succeeds, and is
  * released if it fails. Closing captures exactly the sum of the OK calls with final_capture (the rest of the
  * authorization is released to the buyer), or voids the authorization when nothing was consumed.
+ *
+ * A client can also open the budget itself with open_budget, asking for a cap within the demo bounds.
  */
 import { randomBytes } from 'node:crypto';
 import { approvalUrl, PayPalError, type Authorization, type Order, type PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
@@ -15,7 +17,7 @@ import type { Ledger, SessionRow } from './ledger.ts';
 import { fromCents, toCents } from './money.ts';
 import { SESSION_ITEM_NAME as SESSION_ITEM } from './names.ts';
 import { buildReceipt, type Receipt } from './receipt.ts';
-import { CURRENCY, priceList, toolByName, type PaidTool } from './tools.ts';
+import { CURRENCY, PAID_TOOLS, priceList, toolByName, type PaidTool } from './tools.ts';
 
 
 export interface MeterOptions {
@@ -25,12 +27,21 @@ export interface MeterOptions {
   env: PayPalEnv;
   /** Where the buyer's browser comes back after PayPal: `${publicUrl}/approved` and `${publicUrl}/cancelled`. */
   publicUrl: string;
+  /** The largest budget (default 5.00): the payment_required proposal, and the most open_budget may ask for. */
   budget?: string;
+  /** The smallest cap open_budget may ask for (default 0.50). */
+  minBudget?: string;
+  /**
+   * Origins (`https://host[:port]`) an open_budget `return_to` may point at; /approved sends the buyer there once the
+   * budget is active. Any other return_to is ignored.
+   */
+  returnOrigins?: readonly string[];
   now?: () => Date;
   log?: (line: string) => void;
   /**
-   * Test switch (env METERMCP_FAIL_FIRST): in each session, the first call of each named tool fails upstream, so
-   * the "failed call is not charged" path can be shown. Recorded as such in the receipt.
+   * Test switch (env METERMCP_FAIL_FIRST): in each session opened through payment_required, the first call of each
+   * named tool fails upstream, so the "failed call is not charged" path can be shown. Recorded as such in the
+   * receipt. Sessions opened by open_budget follow their own fail_first instead.
    */
   failFirst?: readonly string[];
   newSessionId?: () => string;
@@ -87,6 +98,24 @@ export function authorizationProblem(s: SessionRow, order: Order, now: Date): st
 const isAnswer = (x: SessionRow | ToolAnswer): x is ToolAnswer => Array.isArray((x as ToolAnswer).content);
 
 export const INJECTED_FAILURE = 'UPSTREAM_UNAVAILABLE (injected by the METERMCP_FAIL_FIRST test switch)';
+/** The failure a session opened by open_budget asked for itself (its fail_first). */
+export const RUN_INJECTED_FAILURE = "UPSTREAM_UNAVAILABLE (injected for this run at the person's request)";
+
+/** An open_budget cap: whole dollars (1–2 digits) and up to 2 decimals, in {@link CURRENCY}. */
+const CAP_FORMAT = /^\d{1,2}(\.\d{1,2})?$/;
+const MAX_FAIL_FIRST = 3;
+
+/** The paid tools a session injects failures for: its own list when it has one, else the server switch. */
+function failFirstOf(s: SessionRow, serverSwitch: readonly string[]): { tools: readonly string[]; message: string } {
+  if (s.fail_first == null) return { tools: serverSwitch, message: INJECTED_FAILURE };
+  let tools: unknown;
+  try {
+    tools = JSON.parse(s.fail_first);
+  } catch {
+    tools = [];
+  }
+  return { tools: Array.isArray(tools) ? tools.filter((t): t is string => typeof t === 'string') : [], message: RUN_INJECTED_FAILURE };
+}
 
 /** A 422 whose issue is INSTRUMENT_DECLINED: the buyer must choose another funding source in a new approval. */
 function isInstrumentDeclined(e: unknown): boolean {
@@ -116,6 +145,8 @@ export const SESSION_ID = /^mm-sess-[0-9a-f]{32}$/;
 export class Meter {
   private readonly o: Required<Omit<MeterOptions, 'paypal' | 'newSessionId'>> & Pick<MeterOptions, 'paypal'> & { newSessionId: () => string };
   private readonly budgetCents: number;
+  private readonly minBudgetCents: number;
+  private readonly returnOrigins: ReadonlySet<string>;
   /** One order creation per MCP session at a time; one approval check per payment session at a time. */
   private readonly opening = new Map<string, Promise<SessionRow | ToolAnswer>>();
   private readonly approving = new Map<string, Promise<SessionRow>>();
@@ -127,12 +158,33 @@ export class Meter {
     this.o = {
       ...opts,
       budget: opts.budget ?? '5.00',
+      minBudget: opts.minBudget ?? '0.50',
+      returnOrigins: opts.returnOrigins ?? [],
       log: opts.log ?? (() => {}),
       failFirst: opts.failFirst ?? [],
       now,
       newSessionId: opts.newSessionId ?? newSessionId,
     };
     this.budgetCents = toCents(this.o.budget);
+    this.minBudgetCents = toCents(this.o.minBudget);
+    this.returnOrigins = new Set(this.o.returnOrigins.map((o) => new URL(o).origin));
+  }
+
+  /** The caps open_budget accepts, as decimal strings in {@link CURRENCY}. */
+  get capRange(): { min: string; max: string } {
+    return { min: fromCents(this.minBudgetCents), max: fromCents(this.budgetCents) };
+  }
+
+  /** `url` when it is an absolute URL on one of the allowed return origins, else null. */
+  allowedReturn(url: string | null | undefined): string | null {
+    if (!url || url.length > 2048) return null;
+    let u: URL;
+    try {
+      u = new URL(url);
+    } catch {
+      return null;
+    }
+    return this.returnOrigins.has(u.origin) ? u.href : null;
   }
 
   private iso(): string {
@@ -183,11 +235,18 @@ export class Meter {
     if (inFlight) return inFlight;
     const existing = this.o.ledger.openSessionFor(mcpSession);
     if (existing) return existing.status === 'pending_approval' ? this.checkApproval(existing) : existing;
-    // No await between this reservation and registering the opening below: one budget per MCP session at a time,
-    // and concurrent sessions cannot overshoot the gate's cap.
+    return this.beginOpening(mcpSession, gate, this.budgetCents, { failFirst: null, returnTo: null });
+  }
+
+  /**
+   * Reserve a budget with the gate and start creating it, registered in `opening`. Synchronous up to the
+   * registration (callers check `opening` and the ledger right before, with no await in between): one budget per
+   * MCP session at a time, and concurrent sessions cannot overshoot the gate's cap.
+   */
+  private beginOpening(mcpSession: string, gate: BudgetGate | undefined, capCents: number, extra: { failFirst: string[] | null; returnTo: string | null }): Promise<SessionRow | ToolAnswer> {
     const reserved = gate?.();
-    if (reserved && !reserved.ok) return reserved.answer;
-    const p = this.openSession(mcpSession)
+    if (reserved && !reserved.ok) return Promise.resolve(reserved.answer);
+    const p = this.openSession(mcpSession, capCents, extra)
       .then((r) => {
         if (isAnswer(r) && reserved?.ok) reserved.release(); // no order was created: refund
         return r;
@@ -197,12 +256,12 @@ export class Meter {
     return p;
   }
 
-  private async openSession(mcpSession: string): Promise<SessionRow | ToolAnswer> {
+  private async openSession(mcpSession: string, capCents: number, extra: { failFirst: string[] | null; returnTo: string | null }): Promise<SessionRow | ToolAnswer> {
     const paypal = this.o.paypal;
     if (!paypal) return answer({ error: 'paypal_unconfigured', message: 'MeterMCP has no PayPal credentials (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET).' }, true);
     const id = this.o.newSessionId();
-    const amount = { currency_code: CURRENCY, value: fromCents(this.budgetCents) };
-    this.o.ledger.createSession({ id, mcpSession, currency: CURRENCY, capCents: this.budgetCents, now: this.iso() });
+    const amount = { currency_code: CURRENCY, value: fromCents(capCents) };
+    this.o.ledger.createSession({ id, mcpSession, currency: CURRENCY, capCents, now: this.iso(), ...extra });
     try {
       const order = await paypal.orders.createAuthorize(
         {
@@ -302,6 +361,39 @@ export class Meter {
     return s ? this.checkApproval(s) : null;
   }
 
+  /**
+   * open_budget: open this MCP session's budget with the cap asked for (within [minBudget, budget]), instead of the
+   * payment_required proposal. Same gate and one-at-a-time rule as payment_required. The session injects failures
+   * only for its own `failFirst` (none when empty), never the server switch; `returnTo` is kept only when it is on
+   * an allowed return origin.
+   */
+  async openBudget(mcpSession: string, req: { cap: string; failFirst?: string[]; returnTo?: string }, opts: { budgetGate?: BudgetGate } = {}): Promise<ToolAnswer> {
+    const { min, max } = this.capRange;
+    const capCents = typeof req.cap === 'string' && CAP_FORMAT.test(req.cap) ? toCents(req.cap) : null;
+    if (capCents == null || capCents <= 0 || capCents < this.minBudgetCents || capCents > this.budgetCents) {
+      return answer({ error: 'invalid_cap', message: `cap must be an amount in ${CURRENCY} from ${min} to ${max} (e.g. "2.50"); got ${JSON.stringify(req.cap)}. Nothing was opened.`, min, max, currency: CURRENCY }, true);
+    }
+    const failFirst = [...new Set(req.failFirst ?? [])];
+    const unknown = failFirst.find((t) => !toolByName(t));
+    if (unknown !== undefined) return answer({ error: 'unknown_tool', tool: unknown, message: `fail_first names only paid tools (${PAID_TOOLS.map((t) => t.name).join(', ')}). Nothing was opened.` }, true);
+    if (failFirst.length > MAX_FAIL_FIRST) return answer({ error: 'invalid_fail_first', message: `fail_first names at most ${MAX_FAIL_FIRST} paid tools. Nothing was opened.` }, true);
+    // From here to beginOpening, no await: the check and the registration in `opening` are one step.
+    const existing = this.o.ledger.openSessionFor(mcpSession);
+    if (this.opening.has(mcpSession) || existing) {
+      return answer(
+        {
+          error: 'budget_exists',
+          message: 'This MCP session already has a budget (open or waiting for approval); only one at a time. Use get_balance, or close_session first.',
+          ...(existing ? { session_id: existing.id, status: existing.status } : {}),
+        },
+        true,
+      );
+    }
+    const got = await this.beginOpening(mcpSession, opts.budgetGate, capCents, { failFirst, returnTo: this.allowedReturn(req.returnTo) });
+    if (isAnswer(got)) return got;
+    return answer({ session_id: got.id, order_id: got.order_id, approval_url: got.approval_url, cap: fromCents(got.cap_cents), currency: got.currency, fail_first: failFirst, status: 'pending_approval' });
+  }
+
   // -------------------------------------------------------------------------------------------
   // Paid calls
 
@@ -352,9 +444,10 @@ export class Meter {
 
     const calls = this.o.ledger.calls(s.id);
     const thisCall = calls.find((c) => c.n === r.n)!;
-    const failNow = this.o.failFirst.includes(tool.name) && !calls.some((c) => c.tool === tool.name && c.n < r.n);
+    const inject = failFirstOf(s, this.o.failFirst);
+    const failNow = inject.tools.includes(tool.name) && !calls.some((c) => c.tool === tool.name && c.n < r.n);
     try {
-      if (failNow) throw new Error(INJECTED_FAILURE);
+      if (failNow) throw new Error(inject.message);
       const result = await tool.run(args);
       const responseHash = sha256(canonicalJson(result));
       this.o.ledger.commit(s.id, r.n, responseHash, this.iso());

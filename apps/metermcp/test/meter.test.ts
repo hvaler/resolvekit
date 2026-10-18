@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, requestHash } from '../src/hash.ts';
-import { Ledger } from '../src/ledger.ts';
-import { INJECTED_FAILURE, Meter, newSessionId, SESSION_ID, type ToolAnswer } from '../src/meter.ts';
+import { Ledger, LedgerMigrationError } from '../src/ledger.ts';
+import { INJECTED_FAILURE, Meter, newSessionId, RUN_INJECTED_FAILURE, SESSION_ID, type BudgetGate, type ToolAnswer } from '../src/meter.ts';
 import { fromCents, toCents } from '../src/money.ts';
 import { receiptLines, receiptPdf } from '../src/receipt.ts';
 import { toolByName } from '../src/tools.ts';
@@ -10,10 +14,10 @@ import { fakePayPal } from './fakePayPal.ts';
 
 const body = (a: ToolAnswer) => JSON.parse(a.content[0]!.text);
 
-function setup(o: { budget?: string; failFirst?: string[]; now?: () => Date } = {}) {
+function setup(o: { budget?: string; failFirst?: string[]; now?: () => Date; returnOrigins?: string[] } = {}) {
   const pp = fakePayPal();
   const ledger = new Ledger(':memory:');
-  const meter = new Meter({ ledger, paypal: pp.client, env: 'sandbox', publicUrl: 'http://127.0.0.1:8790', budget: o.budget, failFirst: o.failFirst, now: o.now });
+  const meter = new Meter({ ledger, paypal: pp.client, env: 'sandbox', publicUrl: 'http://127.0.0.1:8790', budget: o.budget, failFirst: o.failFirst, now: o.now, returnOrigins: o.returnOrigins });
   return { pp, ledger, meter };
 }
 
@@ -506,4 +510,289 @@ test('each paid tool result is labelled synthetic and lists its limits; deep_rep
   assert.doesNotMatch(String(report.summary), /confidence/i);
   assert.equal((report.findings as string[]).length, 3);
   assert.deepEqual((await run('deep_report', { topic: 'rate limits' })).findings, report.findings);
+});
+
+// ------------------------------------------------------------------------------------------------ open_budget
+
+const ORDERS = /^POST \/v2\/checkout\/orders$/;
+
+/** open_budget → the buyer approves → the session is active. */
+async function openBudget(meter: Meter, pp: ReturnType<typeof fakePayPal>, req: Parameters<Meter['openBudget']>[1], mcp = 'mcp-1') {
+  const r = await meter.openBudget(mcp, req, {});
+  assert.equal(r.isError, undefined, r.content[0]!.text);
+  const b = body(r);
+  pp.approve(b.order_id);
+  assert.equal(body(await meter.balance(mcp)).status, 'active');
+  return b.session_id as string;
+}
+
+test('open_budget with cap 2.50 creates an AUTHORIZE order for exactly 2.50 USD and the session cap is 250 cents', async () => {
+  const { meter, pp, ledger } = setup();
+  const r = await meter.openBudget('mcp-1', { cap: '2.50' }, {});
+  assert.equal(r.isError, undefined);
+  const b = body(r);
+  assert.match(b.session_id, SESSION_ID);
+  assert.deepEqual({ ...b, session_id: 'x', order_id: 'y', approval_url: 'z' }, { session_id: 'x', order_id: 'y', approval_url: 'z', cap: '2.50', currency: 'USD', fail_first: [], status: 'pending_approval' });
+  assert.equal(b.approval_url, `https://www.sandbox.paypal.com/checkoutnow?token=${b.order_id}`);
+  const order = pp.orders.get(b.order_id)!.body;
+  assert.equal(order.intent, 'AUTHORIZE');
+  assert.deepEqual(order.purchase_units[0].amount, { currency_code: 'USD', value: '2.50', breakdown: { item_total: { currency_code: 'USD', value: '2.50' } } });
+  assert.equal(order.payment_source.paypal.experience_context.return_url, 'http://127.0.0.1:8790/approved');
+  assert.equal(ledger.session(b.session_id)!.cap_cents, 250);
+  // Approved: the authorization for 2.50 opens the session with that cap.
+  pp.approve(b.order_id);
+  const bal = body(await meter.balance('mcp-1'));
+  assert.equal(bal.status, 'active');
+  assert.equal(bal.cap, '2.50');
+});
+
+test('open_budget refuses caps outside 0.50–5.00 and malformed caps without creating an order', async () => {
+  const { meter, pp, ledger } = setup();
+  for (const cap of ['0.49', '5.01', 'abc', '1.234', '', '100', '-1', '2.']) {
+    const r = await meter.openBudget('mcp-1', { cap }, {});
+    assert.equal(r.isError, true, cap);
+    const b = body(r);
+    assert.equal(b.error, 'invalid_cap', cap);
+    assert.match(b.message, /0\.50/);
+    assert.match(b.message, /5\.00/);
+  }
+  assert.equal(pp.count(ORDERS), 0);
+  assert.equal(ledger.latestSessionFor('mcp-1'), null);
+  // The bounds themselves are accepted.
+  assert.equal(body(await meter.openBudget('mcp-1', { cap: '0.50' }, {})).cap, '0.50');
+  assert.equal(body(await meter.openBudget('mcp-2', { cap: '5' }, {})).cap, '5.00');
+});
+
+test('open_budget refuses a second budget for the same MCP session', async () => {
+  const { meter, pp } = setup();
+  const first = body(await meter.openBudget('mcp-1', { cap: '1.00' }, {}));
+  const again = await meter.openBudget('mcp-1', { cap: '2.00' }, {});
+  assert.equal(again.isError, true);
+  assert.equal(body(again).error, 'budget_exists');
+  assert.equal(body(again).session_id, first.session_id);
+  // Once active, too; and over a session opened by payment_required.
+  pp.approve(first.order_id);
+  assert.equal(body(await meter.balance('mcp-1')).status, 'active');
+  assert.equal(body(await meter.openBudget('mcp-1', { cap: '1.00' }, {})).error, 'budget_exists');
+  await meter.call('mcp-2', 'quote_lookup', { symbol: 'A' });
+  assert.equal(body(await meter.openBudget('mcp-2', { cap: '1.00' }, {})).error, 'budget_exists');
+  assert.equal(pp.count(ORDERS), 2);
+  // Also while the first order is still being created: one order per MCP session.
+  const { meter: m2, pp: pp2 } = setup();
+  const [a, b] = await Promise.all([m2.openBudget('mcp-1', { cap: '1.00' }, {}), m2.openBudget('mcp-1', { cap: '1.00' }, {})]);
+  assert.deepEqual([a.isError, body(b).error], [undefined, 'budget_exists']);
+  const [c, d] = await Promise.all([m2.call('mcp-3', 'quote_lookup', { symbol: 'A' }), m2.openBudget('mcp-3', { cap: '1.00' }, {})]);
+  assert.deepEqual([body(c).error, body(d).error], ['payment_required', 'budget_exists']);
+  assert.equal(pp2.count(ORDERS), 2);
+});
+
+test('open_budget validates fail_first: paid tool names only, at most 3, duplicates removed', async () => {
+  const { meter, pp, ledger } = setup();
+  const unknown = await meter.openBudget('mcp-1', { cap: '1.00', failFirst: ['deep_report', 'close_session'] }, {});
+  assert.equal(unknown.isError, true);
+  assert.equal(body(unknown).error, 'unknown_tool');
+  assert.equal(body(unknown).tool, 'close_session');
+  const tooMany = await meter.openBudget('mcp-1', { cap: '1.00', failFirst: ['deep_report', 'quote_lookup', 'bulk_export', 'quote_lookup', 'deep_report', 'x'] }, {});
+  assert.equal(tooMany.isError, true);
+  assert.equal(pp.count(ORDERS), 0);
+  const ok = body(await meter.openBudget('mcp-1', { cap: '1.00', failFirst: ['deep_report', 'deep_report', 'quote_lookup'] }, {}));
+  assert.deepEqual(ok.fail_first, ['deep_report', 'quote_lookup']);
+  assert.equal(ledger.session(ok.session_id)!.fail_first, '["deep_report","quote_lookup"]');
+});
+
+test("a session opened with fail_first ['deep_report'] fails the first deep_report with RUN_INJECTED_FAILURE, not charged; the second succeeds", async () => {
+  const { meter, pp, ledger } = setup();
+  const id = await openBudget(meter, pp, { cap: '1.00', failFirst: ['deep_report'] });
+  const r1 = await meter.call('mcp-1', 'deep_report', { topic: 'x' });
+  assert.equal(r1.isError, true);
+  assert.equal(body(r1).error, 'upstream_failed');
+  assert.equal(body(r1).metering.charged, false);
+  assert.equal(body(r1).metering.remaining, '1.00');
+  assert.ok(body(r1).message.includes(RUN_INJECTED_FAILURE));
+  assert.equal(body(await meter.call('mcp-1', 'deep_report', { topic: 'x' })).metering.status, 'OK');
+  assert.deepEqual(ledger.calls(id).map((c) => [c.tool, c.status, c.error]), [['deep_report', 'FAILED', RUN_INJECTED_FAILURE], ['deep_report', 'OK', null]]);
+  assert.equal(ledger.chargedCents(id), 40);
+  assert.equal(meter.receipt(id)!.calls[0]!.error, RUN_INJECTED_FAILURE);
+});
+
+test('a session opened with fail_first [] never injects, even when the server switch names the tool', async () => {
+  const { meter, pp, ledger } = setup({ failFirst: ['deep_report'] });
+  const id = await openBudget(meter, pp, { cap: '1.00', failFirst: [] });
+  assert.equal(body(await meter.call('mcp-1', 'deep_report', { topic: 'x' })).metering.status, 'OK');
+  assert.equal(ledger.session(id)!.fail_first, '[]');
+  // An omitted fail_first is the same as [].
+  const id2 = await openBudget(meter, pp, { cap: '1.00' }, 'mcp-2');
+  assert.equal(body(await meter.call('mcp-2', 'deep_report', { topic: 'x' })).metering.status, 'OK');
+  assert.equal(ledger.session(id2)!.fail_first, '[]');
+});
+
+test('a session opened through payment_required keeps the server switch and its existing message INJECTED_FAILURE', async () => {
+  assert.equal(INJECTED_FAILURE, 'UPSTREAM_UNAVAILABLE (injected by the METERMCP_FAIL_FIRST test switch)');
+  assert.equal(RUN_INJECTED_FAILURE, "UPSTREAM_UNAVAILABLE (injected for this run at the person's request)");
+  const { meter, pp, ledger } = setup({ failFirst: ['deep_report'] });
+  const id = await openSession(meter, pp);
+  assert.equal(ledger.session(id)!.fail_first, null);
+  assert.equal(ledger.session(id)!.return_to, null);
+  assert.equal(body(await meter.call('mcp-1', 'deep_report', { topic: 'x' })).error, 'upstream_failed');
+  assert.equal(ledger.calls(id)[0]!.error, INJECTED_FAILURE);
+});
+
+test('the budget gate is asked once per open_budget and released when PayPal fails', async () => {
+  const { meter, pp } = setup();
+  let asked = 0;
+  let released = 0;
+  const gate: BudgetGate = () => ((asked += 1), { ok: true, release: () => void (released += 1) });
+  // Refused before the gate (invalid cap): not asked.
+  await meter.openBudget('mcp-1', { cap: '9.00' }, { budgetGate: gate });
+  assert.equal(asked, 0);
+  pp.failNext(ORDERS, 503);
+  const failed = await meter.openBudget('mcp-1', { cap: '1.00' }, { budgetGate: gate });
+  assert.equal(body(failed).error, 'paypal_unavailable');
+  assert.deepEqual([asked, released], [1, 1]);
+  const ok = await meter.openBudget('mcp-1', { cap: '1.00' }, { budgetGate: gate });
+  assert.equal(ok.isError, undefined);
+  assert.deepEqual([asked, released], [2, 1]);
+  // budget_exists does not ask the gate either.
+  await meter.openBudget('mcp-1', { cap: '1.00' }, { budgetGate: gate });
+  assert.equal(asked, 2);
+  // A refusing gate answers with its own refusal and no order is created.
+  const refuse: BudgetGate = () => ({ ok: false, answer: { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'demo_code_required' }) }] } });
+  assert.equal(body(await meter.openBudget('mcp-9', { cap: '1.00' }, { budgetGate: refuse })).error, 'demo_code_required');
+  assert.equal(pp.count(ORDERS), 2);
+});
+
+test('return_to on the allowlist is kept; any other origin is ignored (stored null)', async () => {
+  const { meter, ledger } = setup({ returnOrigins: ['https://resolvekit.example'] });
+  const evil = body(await meter.openBudget('mcp-1', { cap: '1.00', returnTo: 'https://evil.example/agent' }, {}));
+  assert.equal(evil.error, undefined);
+  assert.equal(ledger.session(evil.session_id)!.return_to, null);
+  const kept = body(await meter.openBudget('mcp-2', { cap: '1.00', returnTo: 'https://resolvekit.example/agent?run=run-1' }, {}));
+  assert.equal(ledger.session(kept.session_id)!.return_to, 'https://resolvekit.example/agent?run=run-1');
+  for (const [i, returnTo] of ['not a url', '/agent', 'http://resolvekit.example/agent', 'https://resolvekit.example:8443/agent', 'https://resolvekit.example.evil.example/x', 'javascript:alert(1)'].entries()) {
+    const r = body(await meter.openBudget(`mcp-x${i}`, { cap: '1.00', returnTo }, {}));
+    assert.equal(ledger.session(r.session_id)!.return_to, null, returnTo);
+  }
+  // No allowlist: nothing is kept.
+  const { meter: m2, ledger: l2 } = setup();
+  const r = body(await m2.openBudget('mcp-1', { cap: '1.00', returnTo: 'https://resolvekit.example/agent' }, {}));
+  assert.equal(l2.session(r.session_id)!.return_to, null);
+});
+
+// ------------------------------------------------------------------------------------------------ Ledger migration
+
+/** The ledger as it was before fail_first / return_to, with a settled session (two calls) and a pending one. */
+const OLD_SCHEMA = `
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY, mcp_session TEXT, status TEXT NOT NULL, currency TEXT NOT NULL, cap_cents INTEGER NOT NULL CHECK (cap_cents > 0),
+  order_id TEXT UNIQUE, approval_url TEXT, authorization_id TEXT, authorization_status TEXT, authorization_expires_at TEXT, approved_at TEXT,
+  authorized_at TEXT, created_at TEXT NOT NULL, last_activity_at TEXT NOT NULL, closed_at TEXT, capture_id TEXT, capture_status TEXT,
+  captured_cents INTEGER, settled_at TEXT, settlement_error TEXT, settlement_attempts INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX sessions_mcp ON sessions (mcp_session);
+CREATE INDEX sessions_capture ON sessions (capture_id);
+CREATE TABLE calls (
+  session_id TEXT NOT NULL REFERENCES sessions (id), n INTEGER NOT NULL, time TEXT NOT NULL, tool TEXT NOT NULL,
+  price_cents INTEGER NOT NULL CHECK (price_cents > 0), status TEXT NOT NULL CHECK (status IN ('PENDING', 'OK', 'FAILED')),
+  request_hash TEXT NOT NULL, response_hash TEXT, error TEXT, finished_at TEXT, PRIMARY KEY (session_id, n)
+);
+INSERT INTO sessions VALUES ('mm-sess-old', 'mcp-old', 'settled', 'USD', 500, 'ORD0001', 'https://x/approve', 'AUTH0001', 'CAPTURED',
+  '2026-11-06T18:09:13Z', '2026-10-08T18:00:00Z', '2026-10-08T18:00:01Z', '2026-10-08T17:59:00Z', '2026-10-08T18:10:00Z',
+  '2026-10-08T18:10:00Z', 'CAP0001', 'COMPLETED', 137, '2026-10-08T18:10:02Z', NULL, 1);
+INSERT INTO sessions (id, mcp_session, status, currency, cap_cents, created_at, last_activity_at)
+  VALUES ('mm-sess-new', 'mcp-2', 'pending_approval', 'USD', 250, '2026-10-09T10:00:00Z', '2026-10-09T10:00:00Z');
+INSERT INTO calls VALUES ('mm-sess-old', 1, '2026-10-08T18:01:00Z', 'quote_lookup', 5, 'OK', 'h1', 'r1', NULL, '2026-10-08T18:01:01Z');
+INSERT INTO calls VALUES ('mm-sess-old', 2, '2026-10-08T18:02:00Z', 'deep_report', 40, 'FAILED', 'h2', NULL, '${INJECTED_FAILURE}', '2026-10-08T18:02:01Z');
+`;
+
+function oldDatabase() {
+  const dir = mkdtempSync(join(tmpdir(), 'metermcp-ledger-'));
+  const file = join(dir, 'metermcp.sqlite');
+  const db = new DatabaseSync(file);
+  db.exec(OLD_SCHEMA);
+  db.close();
+  return { dir, file };
+}
+
+/** Columns and every row, read with a raw connection. */
+function snapshot(file: string) {
+  const db = new DatabaseSync(file);
+  try {
+    const columns = (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((c) => c.name);
+    const sessions = db.prepare('SELECT * FROM sessions ORDER BY id').all().map((r) => ({ ...r }));
+    const calls = db.prepare('SELECT * FROM calls ORDER BY session_id, n').all().map((r) => ({ ...r }));
+    return { columns, sessions, calls };
+  } finally {
+    db.close();
+  }
+}
+
+const withoutNewColumns = (rows: Array<Record<string, unknown>>) => rows.map(({ fail_first: _f, return_to: _r, ...rest }) => rest);
+
+test('ledger: an existing database without fail_first/return_to gains both columns, and old rows read as null', () => {
+  const { dir, file } = oldDatabase();
+  try {
+    const before = snapshot(file);
+    assert.ok(!before.columns.includes('fail_first'));
+    const ledger = new Ledger(file);
+    const s = ledger.session('mm-sess-old')!;
+    assert.equal(s.fail_first, null);
+    assert.equal(s.return_to, null);
+    assert.equal(s.captured_cents, 137);
+    assert.equal(ledger.calls('mm-sess-old').length, 2);
+    // The migrated ledger takes new sessions with both fields.
+    ledger.createSession({ id: 'mm-sess-3', mcpSession: 'mcp-3', currency: 'USD', capCents: 100, now: '2026-10-18T00:00:00Z', failFirst: ['deep_report'], returnTo: 'https://resolvekit.example/agent' });
+    assert.equal(ledger.session('mm-sess-3')!.fail_first, '["deep_report"]');
+    assert.equal(ledger.session('mm-sess-3')!.return_to, 'https://resolvekit.example/agent');
+    ledger.close();
+    const after = snapshot(file);
+    assert.deepEqual(after.columns, [...before.columns, 'fail_first', 'return_to']);
+    // Every old row keeps every value.
+    assert.deepEqual(withoutNewColumns(after.sessions.filter((r) => r.id !== 'mm-sess-3')), before.sessions);
+    assert.deepEqual(after.calls, before.calls);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ledger: a migration forced to fail leaves the schema and rows unchanged and throws LedgerMigrationError', () => {
+  const { dir, file } = oldDatabase();
+  try {
+    const before = snapshot(file);
+    const logs: string[] = [];
+    // The first ALTER runs, the second fails: the first is rolled back with it.
+    const migrationStep = (sql: string) => {
+      if (sql.includes('return_to')) throw new Error('injected exec failure');
+    };
+    assert.throws(
+      () => new Ledger(file, { log: (l) => logs.push(l), migrationStep }),
+      (e: unknown) => e instanceof LedgerMigrationError && /injected exec failure/.test(e.message),
+    );
+    assert.ok(logs.some((l) => /migration failed/.test(l) && /rolled back/.test(l)), logs.join('\n'));
+    assert.deepEqual(snapshot(file), before);
+    // Nothing half-done is left behind: a later healthy start migrates normally.
+    new Ledger(file).close();
+    assert.deepEqual(snapshot(file).columns, [...before.columns, 'fail_first', 'return_to']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ledger: reopening an already-migrated database is a no-op', () => {
+  const { dir, file } = oldDatabase();
+  try {
+    new Ledger(file).close();
+    const migrated = snapshot(file);
+    const steps: string[] = [];
+    new Ledger(file, { migrationStep: (sql) => void steps.push(sql) }).close();
+    assert.deepEqual(steps, []);
+    assert.deepEqual(snapshot(file), migrated);
+    // A fresh database is created with both columns and needs no migration step either.
+    const fresh = join(dir, 'fresh.sqlite');
+    const freshSteps: string[] = [];
+    new Ledger(fresh, { migrationStep: (sql) => void freshSteps.push(sql) }).close();
+    assert.deepEqual(freshSteps, []);
+    assert.ok(snapshot(fresh).columns.includes('fail_first'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

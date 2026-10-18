@@ -56,6 +56,13 @@ export interface SessionRow {
   settled_at: string | null;
   settlement_error: string | null;
   settlement_attempts: number;
+  /**
+   * Opened by open_budget: the paid tools whose first call fails upstream on purpose, as a JSON array ('[]' = none).
+   * null when opened through payment_required (the server switch METERMCP_FAIL_FIRST applies instead).
+   */
+  fail_first: string | null;
+  /** Where /approved sends the buyer once the budget is active (an allowlisted origin), or null. */
+  return_to: string | null;
 }
 
 export interface CallRow {
@@ -98,7 +105,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   captured_cents INTEGER,
   settled_at TEXT,
   settlement_error TEXT,
-  settlement_attempts INTEGER NOT NULL DEFAULT 0
+  settlement_attempts INTEGER NOT NULL DEFAULT 0,
+  fail_first TEXT,
+  return_to TEXT
 );
 CREATE INDEX IF NOT EXISTS sessions_mcp ON sessions (mcp_session);
 CREATE INDEX IF NOT EXISTS sessions_capture ON sessions (capture_id);
@@ -117,15 +126,58 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 `;
 
+/** Columns added to `sessions` after the first deploy, in order: an older database gains them at start. */
+const ADDED_COLUMNS: ReadonlyArray<readonly [name: string, type: string]> = [
+  ['fail_first', 'TEXT'],
+  ['return_to', 'TEXT'],
+];
+
+/** The ledger could not be migrated: nothing was changed, and MeterMCP must not start on it. */
+export class LedgerMigrationError extends Error {
+  override name = 'LedgerMigrationError';
+}
+
+export interface LedgerOptions {
+  log?: (line: string) => void;
+  /** Test seam: called with each migration statement right before it runs; throwing makes the migration fail. */
+  migrationStep?: (sql: string) => void;
+}
+
 export class Ledger {
   private readonly db: DatabaseSync;
 
-  /** @param file a path under apps/metermcp/data/, or ':memory:' (tests). */
-  constructor(file: string) {
+  /** @param file a path under apps/metermcp/data/, or ':memory:' (tests). Throws {@link LedgerMigrationError}. */
+  constructor(file: string, opts: LedgerOptions = {}) {
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.db.exec(SCHEMA);
+    this.migrate(opts);
+  }
+
+  /**
+   * Add the missing {@link ADDED_COLUMNS}, all in one transaction: either every column is added or none is (the
+   * schema and rows are left as they were, and the constructor throws). An up-to-date database changes nothing.
+   */
+  private migrate(opts: LedgerOptions): void {
+    const columns = () => new Set((this.db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((c) => c.name));
+    if (ADDED_COLUMNS.every(([name]) => columns().has(name))) return;
+    try {
+      this.tx(() => {
+        const have = columns(); // re-read under the write lock
+        for (const [name, type] of ADDED_COLUMNS) {
+          if (have.has(name)) continue;
+          const sql = `ALTER TABLE sessions ADD COLUMN ${name} ${type}`;
+          opts.migrationStep?.(sql);
+          this.db.exec(sql);
+        }
+      });
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      (opts.log ?? console.error)(`ledger migration failed, rolled back (nothing changed): ${why}`);
+      this.db.close();
+      throw new LedgerMigrationError(`Ledger migration failed (rolled back): ${why}`, { cause: e });
+    }
   }
 
   close(): void {
@@ -145,10 +197,10 @@ export class Ledger {
     }
   }
 
-  createSession(s: { id: string; mcpSession: string | null; currency: string; capCents: number; now: string }): void {
+  createSession(s: { id: string; mcpSession: string | null; currency: string; capCents: number; now: string; failFirst: string[] | null; returnTo: string | null }): void {
     this.db
-      .prepare('INSERT INTO sessions (id, mcp_session, status, currency, cap_cents, created_at, last_activity_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(s.id, s.mcpSession, 'pending_approval', s.currency, s.capCents, s.now, s.now);
+      .prepare('INSERT INTO sessions (id, mcp_session, status, currency, cap_cents, created_at, last_activity_at, fail_first, return_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(s.id, s.mcpSession, 'pending_approval', s.currency, s.capCents, s.now, s.now, s.failFirst ? JSON.stringify(s.failFirst) : null, s.returnTo);
   }
 
   setOrder(id: string, orderId: string, approvalUrl: string): void {
