@@ -82,12 +82,10 @@ export class DemoClient {
     }
   }
 
+  /** Ends the session on the server; rejects when it could not (the person stays signed in and is told). */
   async signOut(everywhere = false): Promise<void> {
-    try {
-      await this.fetch(`${this.base}/auth/signout`, { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ everywhere }) });
-    } catch {
-      // The session expires on its own.
-    }
+    const r = await this.fetch(`${this.base}/auth/signout`, { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ everywhere }) });
+    if (!r.ok) throw new Error(`sign-out answered ${r.status}`);
   }
 }
 

@@ -4,6 +4,8 @@ import { AccountMenu } from '../components/AccountMenu';
 import { Logo, MERCHANT } from '../components/AppBar';
 import { EnvironmentsHelp } from '../components/EnvironmentsHelp';
 import { Spinner } from '../components/ui';
+import { RoleChip } from '../components/AccountMenu';
+import { SignOutActions } from '../components/SignOutActions';
 import { CHECKING_TEXT, waitingCopy } from '../domain/copy';
 import { environmentOf } from '../domain/environment';
 
@@ -44,6 +46,19 @@ export function WaitingPage() {
             Members and invites
           </Link>
           <span className="text-[12.5px] text-ink-2">{copy.invitesNote}</span>
+        </section>
+      )}
+      {demo?.person && demo.workspace && (
+        <section aria-label="Account" className="flex flex-col gap-1.5 rounded-2xl border border-line bg-surface px-4 py-3.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong className="text-[13.5px] font-semibold">{demo.person.name}</strong>
+            <RoleChip role={demo.person.role} reviewer={demo.person.reviewer} />
+          </div>
+          <span className="text-[12px] text-ink-2">{demo.workspace.name}</span>
+          {demo.person.email && <span className="font-mono text-[11.5px] text-ink-3">{demo.person.email}</span>}
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <SignOutActions />
+          </div>
         </section>
       )}
       <EnvironmentsHelp />

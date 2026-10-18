@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useServices } from '../app/services';
 import { initials, roleLabel } from '../domain/demoClient';
 import { EnvironmentsHelp } from './EnvironmentsHelp';
+import { SignOutActions } from './SignOutActions';
 import { cx } from './ui';
 
 /** Where a signed-out visitor is sent to sign in (the page they were on comes back after a passkey sign-in). */
@@ -54,7 +55,7 @@ export function dateText(iso: string): string {
  * Local mode (no sign-in) shows the local merchant avatar instead.
  */
 export function AccountMenu({ fallback }: { fallback: { name: string; initials: string } }) {
-  const { demo, signOut } = useServices();
+  const { demo } = useServices();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -85,11 +86,6 @@ export function AccountMenu({ fallback }: { fallback: { name: string; initials: 
     );
   }
   const p = demo.person;
-  /** Sign out, then start a fresh PayPal sign-in (signOut reloads to `/`, so the page change happens first). */
-  const useAnother = async () => {
-    await signOut(false);
-    window.location.assign('/signin');
-  };
   const ws = demo.workspace;
   return (
     <div ref={box} className="relative">
@@ -129,15 +125,7 @@ export function AccountMenu({ fallback }: { fallback: { name: string; initials: 
             <Link to="/demo" onClick={() => setOpen(false)} className="text-[12.5px] font-medium text-acc">
               Explore demo
             </Link>
-            <button type="button" onClick={() => void signOut(false)} className="h-8 self-start rounded-md border border-line-2 bg-surface px-3 text-[12.5px] text-ink">
-              Sign out
-            </button>
-            <button type="button" onClick={() => void signOut(true)} className="self-start border-0 bg-transparent p-0 text-[12px] text-ink-2 underline">
-              Sign out of all devices
-            </button>
-            <button type="button" onClick={() => void useAnother()} className="self-start border-0 bg-transparent p-0 text-[12px] text-ink-2 underline">
-              Use another PayPal account
-            </button>
+            <SignOutActions everywhere />
             <details className="text-[12px] text-ink-2">
               <summary className="cursor-pointer">The three environments</summary>
               <EnvironmentsHelp className="m-0 mt-1.5 flex list-none flex-col gap-1.5 p-0 text-[12px] leading-normal text-ink-2" />

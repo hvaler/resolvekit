@@ -64,3 +64,6 @@ export function workspaceRoute(env: Environment, path: { caseId: string | null }
       return page;
   }
 }
+
+/** Where signing out leads: the home page, or straight to a fresh PayPal sign-in for "Use another PayPal account". */
+export const signOutDestination = (another: boolean): string => (another ? '/signin' : '/');

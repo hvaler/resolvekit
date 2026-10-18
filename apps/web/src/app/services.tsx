@@ -62,7 +62,7 @@ interface Services {
   /** Whether {@link demo} is known yet (the server answered, or there is no server). */
   accountKnown: boolean;
   /** Sign out of this browser, or of every device; the page reloads signed out. */
-  signOut: (everywhere?: boolean) => Promise<void>;
+  signOut: (everywhere?: boolean, to?: string) => Promise<void>;
 }
 
 const ServicesContext = createContext<Services | null>(null);
@@ -137,10 +137,10 @@ export function ServicesProvider({
   }, [demo, demoClient]);
   // Which disputes are live depends on who is signed in: signing out reloads the app from the server's view.
   const ownSignOut = useCallback(
-    async (everywhere = false) => {
+    async (everywhere = false, to = '/') => {
       if (!demoClient) return;
-      await demoClient.signOut(everywhere);
-      window.location.assign('/');
+      await demoClient.signOut(everywhere); // rejects when it fails: the caller says so and the person stays here
+      window.location.assign(to);
     },
     [demoClient],
   );

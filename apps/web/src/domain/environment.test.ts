@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountWorkspace, DemoState } from './demoClient';
 import { draftKey } from './draftStore';
-import { casesBase, draftScope, environmentOf, joinUrl, signInUrl, workspaceRoute, type Environment } from './environment';
+import { casesBase, draftScope, environmentOf, joinUrl, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
 
 function state(connection: AccountWorkspace['connection'], role: 'owner' | 'member' = 'owner'): DemoState {
   return {
@@ -90,5 +90,12 @@ describe('sign-in and join URLs keep where the person was going', () => {
     expect(joinUrl('/cases/PP-R-TVH-10190665')).toBe('/join?next=%2Fcases%2FPP-R-TVH-10190665');
     expect(signInUrl('/')).toBe('/signin');
     expect(joinUrl('/')).toBe('/join');
+  });
+});
+
+describe('signOutDestination', () => {
+  it('goes home, or to /signin for another PayPal account', () => {
+    expect(signOutDestination(false)).toBe('/');
+    expect(signOutDestination(true)).toBe('/signin');
   });
 });
