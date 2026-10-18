@@ -38,6 +38,21 @@ export function casesBase(area: Area): '/demo/cases' | '/cases' {
   return area === 'demo' ? '/demo/cases' : '/cases';
 }
 
+/** A case page, absolute (never relative to the splat route it is rendered in). */
+export function casePath(area: Area, id: string): string {
+  return `${casesBase(area)}/${id}`;
+}
+
+/** The approval dialog's page over a case. */
+export function approvePath(area: Area, id: string): string {
+  return `${casePath(area, id)}/approve`;
+}
+
+/** Route pattern that matches `approvePath` and yields `:id`. */
+export function approvePattern(area: Area): string {
+  return `${casesBase(area)}/:id/approve`;
+}
+
 /** Drafts are kept per person; the demo's are shared by everyone, apart from every workspace draft. */
 export function draftScope(area: Area, personId: string | null): string {
   return area === 'demo' ? 'demo' : (personId ?? 'local');

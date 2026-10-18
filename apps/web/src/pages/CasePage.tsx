@@ -5,7 +5,7 @@ import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
 import { DEMO_UPLOAD_REASON } from '../domain/copy';
 import { usePayPalSource, usePolling, useSecondsSince, useServices } from '../app/services';
-import { casesBase, draftScope } from '../domain/environment';
+import { approvePath, approvePattern, casePath, casesBase, draftScope } from '../domain/environment';
 import { useAnalysis } from '../app/useAnalysis';
 import { useCaseDraft } from '../app/useCaseDraft';
 import { useUploads } from '../app/useUploads';
@@ -58,8 +58,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   // A bound case only uses a snapshot read from PayPal; a simulated one uses the simulator's.
   const snap = source.kind === 'live' || source.kind === 'simulated' ? snapshots[id] : undefined;
   const navigate = useNavigate();
-  const base = casesBase(area);
-  const approveMatch = useMatch(`${base}/:id/approve`);
+  const approveMatch = useMatch(approvePattern(area));
   const secs = useSecondsSince(snap?.checkedAt ?? null);
   // PayPal's fields (amount, reason, status, requested evidence…) from PayPal for a bound case; demo data otherwise.
   const liveSnap = source.kind === 'live' ? source.snap : null;
@@ -306,7 +305,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             checkedAt={snap?.checkedAt ?? null}
             submitted={submitted}
             {...(snap ? { snapshot: snap } : {})}
-            onReview={() => navigate(`${base}/${id}/approve`)}
+            onReview={() => navigate(approvePath(area, id))}
           />
         </main>
       </div>
@@ -319,7 +318,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           uploads={confirmedUps}
           corrections={corrections}
           actionsBefore={actionsBefore.current}
-          onClose={() => navigate(`${base}/${id}`)}
+          onClose={() => navigate(casePath(area, id))}
         />
       )}
       {review && uploadsClient && (

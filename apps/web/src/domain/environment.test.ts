@@ -1,7 +1,8 @@
+import { matchPath } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { AccountWorkspace, DemoState } from './demoClient';
 import { draftKey } from './draftStore';
-import { accountRecheckMs, casesBase, draftScope, environmentOf, healthRetryDelay, joinUrl, knownBound, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
+import { accountRecheckMs, approvePath, approvePattern, casePath, casesBase, draftScope, environmentOf, healthRetryDelay, joinUrl, knownBound, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
 
 function state(connection: AccountWorkspace['connection'], role: 'owner' | 'member' = 'owner'): DemoState {
   return {
@@ -40,6 +41,26 @@ describe('casesBase', () => {
   it('is /demo/cases in the demo and /cases in the workspace', () => {
     expect(casesBase('demo')).toBe('/demo/cases');
     expect(casesBase('workspace')).toBe('/cases');
+  });
+});
+
+describe('case and approve paths', () => {
+  it('are absolute in both areas, so no relative resolution inside splat routes is involved', () => {
+    expect(casePath('workspace', 'D1')).toBe('/cases/D1');
+    expect(casePath('demo', 'D1')).toBe('/demo/cases/D1');
+    expect(approvePath('workspace', 'D1')).toBe('/cases/D1/approve');
+    expect(approvePath('demo', 'D1')).toBe('/demo/cases/D1/approve');
+  });
+  it('the approve route matches the approve path (with its id) and not the case path', () => {
+    for (const area of ['workspace', 'demo'] as const) {
+      expect(matchPath(approvePattern(area), approvePath(area, 'D1'))?.params.id).toBe('D1');
+      expect(matchPath(approvePattern(area), casePath(area, 'D1'))).toBeNull();
+    }
+    expect(matchPath(approvePattern('workspace'), approvePath('demo', 'D1'))).toBeNull();
+  });
+  it('back-to-case from approve lands on the case, which the splat route /cases/:id/* still matches', () => {
+    expect(matchPath('/cases/:id/*', casePath('workspace', 'D1'))?.params.id).toBe('D1');
+    expect(matchPath('/demo/cases/:id/*', casePath('demo', 'D1'))?.params.id).toBe('D1');
   });
 });
 

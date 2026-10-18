@@ -10,7 +10,7 @@ function render(path: string): string {
   return renderToString(
     <ThemeProvider>
       <ServicesProvider latencyMs={0} server={null}>
-        <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <MemoryRouter initialEntries={[path]}>
           <App />
         </MemoryRouter>
       </ServicesProvider>
