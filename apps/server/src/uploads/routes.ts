@@ -23,7 +23,7 @@ import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
 import { uploadDocuments } from './documents.ts';
 import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
-import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE } from './limits.ts';
+import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE } from './limits.ts';
 import { ocrPng } from './ocr.ts';
 import { canDeleteUpload, canEditUpload } from './permissions.ts';
 import type { UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
@@ -66,6 +66,8 @@ export interface UploadRoutesOptions {
   now?: () => Date;
   /** Total size of stored upload files (default MAX_STORAGE_BYTES). */
   maxStorageBytes?: number;
+  /** Size of one stored (sanitised) file (default MAX_STORED_BYTES). */
+  maxStoredBytes?: number;
   /**
    * The submission intents using an upload (attaching it, or composed from an input containing it): whether one is
    * being sent right now (deleting it waits for the outcome), and invalidating the unsent ones when it is deleted.
@@ -162,6 +164,7 @@ interface Scope {
 export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: URL) => Promise<Response | null> {
   const now = o.now ?? (() => new Date());
   const maxStorage = o.maxStorageBytes ?? MAX_STORAGE_BYTES;
+  const maxStored = o.maxStoredBytes ?? MAX_STORED_BYTES;
   const { store } = o;
 
   const audit = (s: Scope, kind: AuditEvent['kind'], r: UploadRecord) =>
@@ -184,6 +187,12 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
   const tooMany = () => refuse(409, 'TOO_MANY_UPLOADS', `A case takes at most ${MAX_UPLOADS_PER_CASE} uploads; discard or delete one first`);
   const storageFull = () => refuse(507, 'STORAGE_FULL', 'The demo has no room for more uploads right now');
   const hasRoom = (bytes: number) => store.usedBytes() + bytes <= maxStorage;
+  const megabytes = `${+(maxStored / 1024 / 1024).toFixed(1)} MB`;
+  /** A sanitised file over the per-file limit: 413 with what the person can do. */
+  const tooBig = (kind: UploadRecord['kind']) =>
+    refuse(413, 'TOO_LARGE', kind === 'image'
+      ? `Once cleaned, this image is larger than ${megabytes}, the most a stored file can be; upload a screenshot or a smaller image`
+      : `Once cleaned, this text is larger than ${megabytes}, the most a stored file can be; paste a shorter text`);
   const archived = (s: Scope, r: UploadRecord) => r.status === 'archived' || r.boundDisputeId !== s.disputeId;
   const archivedRefusal = () => refuse(409, 'UPLOAD_ARCHIVED', 'The case moved to another PayPal dispute since this was uploaded; upload it again for the current one');
 
@@ -272,16 +281,18 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       // Decoded once, one image at a time server-wide; the text is read again from the sanitised file.
       const read = await oneImageAtATime(async () => {
         const s1 = sanitiseImage(original, rects);
-        if (!hasRoom(s1.png.length)) return null;
+        if (s1.png.length > maxStored) return tooBig('image');
+        if (!hasRoom(s1.png.length)) return storageFull();
         return { s1, readLines: (await ocrPng(s1.png)).map((l) => l.text) };
       });
-      if (!read) return storageFull();
+      if (read instanceof Response) return read;
       const { s1, readLines } = read;
       patch = { status: 'reviewing', rects, removals: [], readLines, sha256: s1.sha256, size: s1.png.length, mime: 'image/png' };
       file = s1.png;
     } else {
       const lines = textLines(redactText(new TextDecoder().decode(original), removals!));
       const doc = pastedTextPdf({ title: rec.name, by: rec.uploadedBy.name.slice(0, 80), lines });
+      if (doc.pdf.length > maxStored) return tooBig('text');
       if (!hasRoom(doc.pdf.length)) return storageFull();
       patch = { status: 'reviewing', rects: [], removals: removals!, readLines: lines, sha256: doc.sha256, size: doc.pdf.length, mime: 'application/pdf' };
       file = doc.pdf;

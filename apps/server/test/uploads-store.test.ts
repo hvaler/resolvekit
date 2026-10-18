@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UploadStore, type NewUpload } from '../src/uploads/store.ts';
@@ -100,15 +100,53 @@ test('archiveCase moves pending, reviewing and confirmed uploads of that case an
   const otherCase = s.create(base({ caseId: 'C2' }), bytes(1));
   const otherDispute = s.create(base({ boundDisputeId: 'PP-D-2' }), bytes(1));
   const noDispute = s.create(base({ boundDisputeId: null }), bytes(1));
-  assert.equal(s.archiveCase('C1', 'PP-D-1'), 3);
+  assert.deepEqual(s.archiveCase('C1', 'PP-D-1'), { archived: 3, failed: 0 });
   for (const x of [a, b, c]) assert.equal(s.get(x.id)!.status, 'archived');
   assert.equal(s.original(a.id), null);
-  assert.equal(s.sanitised(c.id)!.length, 1);
   assert.equal(s.get(gone.id)!.status, 'discarded');
   assert.equal(s.get(otherCase.id)!.status, 'pending');
   assert.equal(s.get(otherDispute.id)!.status, 'pending');
   assert.equal(s.get(noDispute.id)!.status, 'pending');
-  assert.equal(s.archiveCase('C1', 'PP-D-1'), 0);
+  assert.deepEqual(s.archiveCase('C1', 'PP-D-1'), { archived: 0, failed: 0 });
+});
+
+test('archiving keeps the record (metadata) but drops its files and text, and the storage it used is free again', () => {
+  const dir = tmp();
+  const s = new UploadStore({ dir });
+  const c = s.create(base(), bytes(100));
+  const lines = [{ text: 'Account 9988776655', correctedBy: null, original: null }];
+  s.update(c.id, { status: 'confirmed', evidenceId: 'E7', mime: 'image/png', size: 300, sha256: 'a'.repeat(64), lines, readLines: ['Account 9988776655'], rects: [{ x: 1, y: 1, w: 2, h: 2 }], analysisKeys: ['k1'] }, { original: null, sanitised: bytes(300) });
+  const p = s.create(base(), bytes(200));
+  assert.equal(s.usedBytes(), 500);
+  assert.deepEqual(s.archiveCase('C1', 'PP-D-1'), { archived: 2, failed: 0 });
+  assert.equal(s.usedBytes(), 0);
+  for (const id of [c.id, p.id]) {
+    assert.equal(s.original(id), null);
+    assert.equal(s.sanitised(id), null);
+  }
+  const r = s.get(c.id)!;
+  assert.deepEqual([r.status, r.evidenceId, r.name, r.sha256, r.analysisKeys], ['archived', 'E7', 'proof.png', 'a'.repeat(64), ['k1']]);
+  assert.deepEqual([r.lines, r.readLines, r.rects, r.removals], [[], [], [], []]);
+  // On disk too: only the record is left, and it holds no text.
+  assert.deepEqual(readdirSync(join(dir, 'ws1', c.id)), ['record.json']);
+  assert.ok(!readFileSync(join(dir, 'ws1', c.id, 'record.json'), 'utf8').includes('9988776655'));
+  assert.deepEqual(new UploadStore({ dir }).get(c.id), r);
+});
+
+test('archiveCase never throws: a record that cannot be written is counted as failed and the others are archived', () => {
+  const dir = tmp();
+  const s = new UploadStore({ dir });
+  const a = s.create(base(), bytes(1));
+  const b = s.create(base(), bytes(1));
+  // A directory where b's record belongs: writing it fails.
+  const rec = join(dir, 'ws1', b.id, 'record.json');
+  rmSync(rec);
+  mkdirSync(rec);
+  let out: ReturnType<UploadStore['archiveCase']> | null = null;
+  assert.doesNotThrow(() => (out = s.archiveCase('C1', 'PP-D-1')));
+  assert.deepEqual(out, { archived: 1, failed: 1 });
+  assert.equal(s.get(a.id)!.status, 'archived');
+  assert.equal(s.get(b.id)!.status, 'pending');
 });
 
 test("list never returns another workspace's or another dispute's uploads", () => {

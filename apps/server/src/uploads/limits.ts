@@ -9,4 +9,6 @@ export const DAILY_UPLOADS = 40;
 export const OCR_TIMEOUT_MS = 20_000;
 export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_STORAGE_BYTES = 300 * 1024 * 1024;
+/** One stored (sanitised) file, checked at redact time. */
+export const MAX_STORED_BYTES = 10 * 1024 * 1024;
 export const MAX_TEXT_CHARS = 20_000;

@@ -2,7 +2,8 @@
  * Store of merchant evidence uploads, one directory per upload:
  * `<dir>/<workspaceId>/<uploadId>/{record.json, original.bin, sanitised.png|pdf}`.
  *
- * The original exists only while the upload is pending or reviewing. Writes are synchronous tmp + rename like
+ * The original exists only while the upload is pending or reviewing. A discarded, deleted or archived upload keeps
+ * its record (metadata, for the audit) but no file and no text. Writes are synchronous tmp + rename like
  * `AccountStore.commit`, the record is written last, and a failure throws `UploadError('STORAGE')` after undoing what
  * it had written. `dir: null` keeps everything in memory (tests). Nothing here logs bytes or text.
  */
@@ -50,7 +51,8 @@ export type NewUpload = Pick<UploadRecord, 'workspaceId' | 'caseId' | 'boundDisp
 const ID = /^upl-[0-9a-f]{24}$/;
 const WORKSPACE = /^[A-Za-z0-9_-]{1,64}$/;
 const LIVE: UploadStatus[] = ['pending', 'reviewing'];
-const DEAD: UploadStatus[] = ['discarded', 'deleted'];
+/** Statuses that keep the record only: no files, no text. */
+const STRIPPED: UploadStatus[] = ['discarded', 'deleted', 'archived'];
 const FILES = ['original.bin', 'sanitised.png', 'sanitised.pdf'];
 
 /** Fields an update can never change: who the upload is and what it is bound to. */
@@ -58,7 +60,7 @@ type Pinned = 'id' | 'workspaceId' | 'caseId' | 'boundDisputeId' | 'kind' | 'upl
 export type UploadPatch = Partial<Omit<UploadRecord, Pinned>>;
 const PINNED: string[] = ['id', 'workspaceId', 'caseId', 'boundDisputeId', 'kind', 'uploadedBy'];
 
-/** A discarded or deleted upload keeps its record for the audit but none of its content. */
+/** A discarded, deleted or archived upload keeps its record for the audit but none of its content. */
 const purged = (r: UploadRecord): UploadRecord => ({ ...r, rects: [], removals: [], readLines: [], lines: [] });
 
 const storage = (what: string, cause?: unknown) => new UploadError('STORAGE', `Upload storage failed: ${what}`, { cause });
@@ -129,7 +131,7 @@ export class UploadStore {
     if (!cur) throw new UploadError('NOT_FOUND', 'Upload not found');
     const clean = Object.fromEntries(Object.entries(patch).filter(([k, v]) => v !== undefined && !PINNED.includes(k)));
     let next: UploadRecord = { ...cur, ...structuredClone(clean) };
-    const dead = DEAD.includes(next.status);
+    const dead = STRIPPED.includes(next.status);
     if (dead) next = purged(next);
     let restore: (() => void) | null = null;
     try {
@@ -152,16 +154,24 @@ export class UploadStore {
     return structuredClone(next);
   }
 
-  /** Archive every pending, reviewing or confirmed upload of the case and dispute; returns how many moved. */
-  archiveCase(caseId: string, boundDisputeId: string | null): number {
-    let n = 0;
+  /**
+   * Archive every pending, reviewing or confirmed upload of the case and dispute: the record stays (metadata, analysis
+   * keys), its files and text go. Never throws: a record that cannot be written stays as it was (still bound to the
+   * old dispute, so it is in no input) and is counted as failed.
+   */
+  archiveCase(caseId: string, boundDisputeId: string | null): { archived: number; failed: number } {
+    let archived = 0, failed = 0;
     for (const r of [...this.records.values()]) {
       if (r.caseId !== caseId || r.boundDisputeId !== boundDisputeId) continue;
       if (r.status !== 'pending' && r.status !== 'reviewing' && r.status !== 'confirmed') continue;
-      this.update(r.id, { status: 'archived' }, { original: null });
-      n++;
+      try {
+        this.update(r.id, { status: 'archived' });
+        archived++;
+      } catch {
+        failed++;
+      }
     }
-    return n;
+    return { archived, failed };
   }
 
   /** The ids that are not a confirmed upload any more (deleted, discarded, archived, gone): what an analysis read may be stale. */
@@ -193,7 +203,7 @@ export class UploadStore {
         try { this.writeRecord(d); } catch { /* the in-memory state is already discarded; the next sweep retries */ }
         this.dropFiles(d, false);
         expired++;
-      } else if (DEAD.includes(r.status)) {
+      } else if (STRIPPED.includes(r.status)) {
         const leftover = FILES.some((f) => this.sizeOf(r, f) > 0 || this.readFile(r, f));
         const text = r.lines.length + r.readLines.length + r.removals.length + r.rects.length > 0;
         if (leftover || text) {

@@ -5,6 +5,7 @@ import { standardCase } from '@resolvekit/cases';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
 import { parseBindingPools } from '../src/bindings.ts';
 import { createHostedApp } from '../src/hosted.ts';
+import { UploadError } from '../src/uploads/image.ts';
 import { UploadStore } from '../src/uploads/store.ts';
 import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
 
@@ -235,6 +236,30 @@ test('when the case moves to the next dispute its uploads are archived and the n
   assert.deepEqual((await api(app, UP, people.member('Judge 2'))).body.uploads, []);
   assert.ok(lines.some((l) => l.includes(`reserve · case ${CASE}: 2 upload(s) archived`)), lines.join(' | '));
   assert.ok(!lines.some((l) => l.includes('parcel arrived')));
+});
+
+test('a storage error while archiving never breaks the request that moved the case; the log carries counts only', async () => {
+  const old = new Date(NOW.getTime() - 60 * MIN).toISOString();
+  const disputes: Record<string, Dispute> = { [A.dispute]: poolDispute(A), [B.dispute]: poolDispute(B) };
+  const { app, people, store, lines } = setup({ [CASE]: [A, B] }, disputes);
+  const judge = people.member('Judge 1');
+  const broken = await pasted(app, judge);
+  const fine = await pasted(app, judge);
+  const update = store.update.bind(store);
+  store.update = (id, patch, files) => {
+    if (id === broken.id && patch.status === 'archived') throw new UploadError('STORAGE', 'Upload storage failed: record.json');
+    return update(id, patch, files);
+  };
+  disputes[A.dispute] = poolDispute(A, { evidenceAt: old });
+  const view = () => app(new Request(`${ORIGIN}/api/disputes/${CASE}`, { headers: { host: HOST, 'x-forwarded-for': '203.0.113.7', cookie: judge } }));
+  assert.equal((await view()).status, 200);
+  const next = await view();
+  assert.equal(next.status, 200);
+  assert.equal(((await next.json()) as { origin?: { disputeId?: string } }).origin?.disputeId, B.dispute);
+  assert.equal(store.get(fine.id)!.status, 'archived');
+  assert.equal(store.get(broken.id)!.status, 'pending');
+  assert.ok(lines.some((l) => l.includes(`reserve · case ${CASE}: 1 upload(s) archived, 1 could not be archived`)), lines.join(' | '));
+  assert.ok(!lines.some((l) => l.includes('parcel arrived') || l.includes('email.txt')));
 });
 
 test('an upload pending before a rotation cannot be confirmed afterwards (409 UPLOAD_ARCHIVED)', async () => {

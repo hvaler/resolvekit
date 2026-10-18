@@ -105,8 +105,6 @@ export interface ApiOptions {
   rotateAfterMs?: number;
   /** A case moved to the next dispute of its reserve (hosted mode analyses it again). */
   onRebound?: (caseId: string) => void;
-  /** A case left a dispute: called with the old one right after the swap (the app archives that dispute's uploads). */
-  onUploadsArchived?: (caseId: string, disputeId: string) => void;
   now?: () => Date;
   log?: (line: string) => void;
   /** MeterMCP: the agent case's session receipt, found by the disputed capture. null = not used. */
@@ -127,6 +125,8 @@ export interface ApiOptions {
   uploads?: UploadStore | null;
   /** Total size of stored upload files (default MAX_STORAGE_BYTES, uploads/limits.ts). */
   uploadStorageBytes?: number;
+  /** Size of one stored (sanitised) upload file (default MAX_STORED_BYTES, uploads/limits.ts). */
+  uploadStoredFileBytes?: number;
 }
 
 /** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
@@ -582,9 +582,9 @@ export function createApi(opts: ApiOptions): Api {
     bindingStatus.delete(caseId);
     usedNow.delete(caseId);
     log(`reserve · case ${caseId}: ${binding.dispute} is used (${snap.status === 'RESOLVED' ? 'resolved' : 'seller evidence recorded'}) → ${next.dispute} · ${queue.length} left in reserve`);
-    const archivedUploads = uploads.archiveCase(caseId, binding.dispute);
-    if (archivedUploads) log(`reserve · case ${caseId}: ${archivedUploads} upload(s) archived`);
-    opts.onUploadsArchived?.(caseId, binding.dispute);
+    // The old dispute's uploads keep their records only (files and text dropped). Never breaks this request; counts only.
+    const moved = uploads.archiveCase(caseId, binding.dispute);
+    if (moved.archived || moved.failed) log(`reserve · case ${caseId}: ${moved.archived} upload(s) archived${moved.failed ? `, ${moved.failed} could not be archived (still bound to the old dispute: in no input)` : ''}`);
     opts.onRebound?.(caseId);
   };
 
@@ -1090,6 +1090,7 @@ export function createApi(opts: ApiOptions): Api {
     log,
     now,
     ...(opts.uploadStorageBytes ? { maxStorageBytes: opts.uploadStorageBytes } : {}),
+    ...(opts.uploadStoredFileBytes ? { maxStoredBytes: opts.uploadStoredFileBytes } : {}),
   });
 
   const route = async (req: Request): Promise<Response> => {

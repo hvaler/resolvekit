@@ -18,7 +18,7 @@ import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
 import { IntentStore } from '../src/intents.ts';
 import { toNodeListener } from '../src/node.ts';
 import { sanitiseImage, type Rect } from '../src/uploads/image.ts';
-import { MAX_FILE_BYTES } from '../src/uploads/limits.ts';
+import { MAX_FILE_BYTES, MAX_STORED_BYTES } from '../src/uploads/limits.ts';
 import { closeOcr, ocrPng } from '../src/uploads/ocr.ts';
 import { canDeleteUpload, canEditUpload } from '../src/uploads/permissions.ts';
 import { UploadStore, type UploadRecord } from '../src/uploads/store.ts';
@@ -71,7 +71,7 @@ const SECRET_WORDS = 'Account 9988776655 balance 4321.09 SECRETWORD';
 const fixture = new Uint8Array(readFileSync(new URL('./fixtures/tracking.png', import.meta.url)));
 const TIMEOUT = { timeout: 120_000 };
 
-function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: Partial<HostedLimits>; storageBytes?: number; analysisDir?: string; script?: Parameters<typeof fakeModel>[0]; model?: (m: AnalystModel) => AnalystModel } = {}) {
+function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: Partial<HostedLimits>; storageBytes?: number; storedFileBytes?: number; analysisDir?: string; script?: Parameters<typeof fakeModel>[0]; model?: (m: AnalystModel) => AnalystModel } = {}) {
   const calls: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
@@ -111,6 +111,7 @@ function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: P
     intents,
     uploads: store,
     ...(o.storageBytes ? { uploadStorageBytes: o.storageBytes } : {}),
+    ...(o.storedFileBytes ? { uploadStoredFileBytes: o.storedFileBytes } : {}),
     limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 }, ...o.limits },
   });
   return { app, calls, model: fm, people, lines, store, intents, bindings, counters, analyst };
@@ -472,6 +473,22 @@ test('a full upload store refuses new uploads (507 STORAGE_FULL)', TIMEOUT, asyn
   const full = await pasteText(app, cookie, 'y'.repeat(600));
   assert.equal(full.status, 507);
   assert.equal(full.body.error, 'STORAGE_FULL');
+});
+
+test('a sanitised file over the stored-file limit is refused at redact time (413) with what to do, and nothing is stored', TIMEOUT, async () => {
+  assert.equal(MAX_STORED_BYTES, 10 * 1024 * 1024);
+  const { app, people, store } = setup({ storedFileBytes: 400 });
+  const cookie = people.fullMember();
+  const img = await uploadPng(app, cookie);
+  const text = await pasteText(app, cookie, `From: buyer\n${'The parcel arrived, thanks. '.repeat(40)}`);
+  for (const [u, body, what] of [[img, { rects: [] }, /screenshot or a smaller image/], [text, { removals: [] }, /shorter text/]] as const) {
+    const r = await call(app, `${P}/${u.body.upload.id}/redact`, { body, cookie });
+    assert.equal(r.status, 413, JSON.stringify(r.body));
+    assert.equal(r.body.error, 'TOO_LARGE');
+    assert.match((r.body as unknown as { detail: string }).detail, what);
+    assert.equal(store.get(u.body.upload.id)!.status, 'pending');
+    assert.equal(store.sanitised(u.body.upload.id), null);
+  }
 });
 
 test("every step is in the case's audit trail with the person's label, and neither audit details nor log lines contain the pasted text or OCR'd words", TIMEOUT, async () => {
