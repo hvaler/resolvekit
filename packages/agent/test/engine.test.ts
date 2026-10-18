@@ -48,10 +48,21 @@ interface FakeMeterOptions {
   receipt?: 'ok' | 'error' | 'throw' | 'other_session';
   /** Runs inside a paid call before it answers (e.g. abort the run while the call is in flight). */
   duringCall?: (name: string) => void | Promise<void>;
+  /** open_budget's answer is lost (the call throws), after or before MeterMCP created the session. */
+  openBudgetThrows?: 'after_create' | 'before_create';
+  /** Runs inside the n-th get_balance call (1-based), before it answers. */
+  duringBalance?: (n: number) => void;
+  /** The n-th get_balance call answers an error. */
+  balanceFailsAt?: number;
+  /** This paid tool's call runs (and is charged) but its answer is lost. */
+  throwOn?: string;
+  /** Replaces the tool list. */
+  tools?: MeterTool[];
 }
 
 function fakeMeter(o: FakeMeterOptions = {}) {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  let balances = 0;
   let session: { id: string; status: string; capCents: number; usedCents: number; failFirst: string[]; failed: Set<string>; polls: number } | null = null;
   const ok = (body: Record<string, any>): MeterAnswer => ({ isError: false, body });
   const err = (body: Record<string, any>): MeterAnswer => ({ isError: true, body });
@@ -60,12 +71,15 @@ function fakeMeter(o: FakeMeterOptions = {}) {
     calls,
     closed: 0,
     async listTools() {
-      return TOOLS;
+      return o.tools ?? TOOLS;
     },
     async call(name, args) {
       calls.push({ name, args });
       if (name === 'price_list') return ok({ currency: 'USD', tools: Object.entries(PRICES).map(([n, price]) => ({ name: n, price })) });
       if (name === 'get_balance') {
+        balances += 1;
+        o.duringBalance?.(balances);
+        if (o.balanceFailsAt === balances) return err({ error: 'ledger_unavailable', message: 'try again' });
         if (session?.status === 'pending_approval') {
           session.polls += 1;
           if (session.polls > (o.pollsBeforeDecision ?? 1)) {
@@ -81,7 +95,9 @@ function fakeMeter(o: FakeMeterOptions = {}) {
       if (name === 'open_budget') {
         if (o.openBudgetError) return err({ error: o.openBudgetError, message: 'refused' });
         if (session) return err({ error: 'budget_exists' });
+        if (o.openBudgetThrows === 'before_create') throw new Error('socket hang up');
         session = { id: 'mm-sess-1', status: 'pending_approval', capCents: cents(String(args.cap)), usedCents: 0, failFirst: (args.fail_first as string[]) ?? [], failed: new Set(), polls: 0 };
+        if (o.openBudgetThrows === 'after_create') throw new Error('socket hang up');
         return ok({ session_id: session.id, order_id: 'ORDER1', approval_url: 'https://paypal.example/checkoutnow?token=ORDER1', cap: usd(session.capCents), status: 'pending_approval', fail_first: session.failFirst });
       }
       if (name === 'close_session') {
@@ -115,6 +131,7 @@ function fakeMeter(o: FakeMeterOptions = {}) {
         return err({ error: 'upstream_failed', message: `${name} failed: ${failWith}. This call is not charged.`, metering: { tool: name, price, status: 'FAILED', charged: false, remaining: usd(remaining) } });
       }
       session.usedCents += cents(price);
+      if (o.throwOn === name) throw new Error('socket hang up');
       const result = name === 'quote_lookup' ? { symbol: args.symbol, quote: '412.37', currency: 'USD', synthetic: true, limits: ['Current quote only: no price history.'] } : { synthetic: true, limits: ['Qualitative only.'] };
       return ok({ result, metering: { tool: name, price, status: 'OK', remaining: usd(session.capCents - session.usedCents) } });
     },
@@ -210,13 +227,14 @@ async function run(script: Script[], o: RunOptions = {}) {
 }
 
 /**
- * Every paid MeterMCP call is a metered call step, and matches, in order, a distinct answer in which the model asked
+ * Every paid MeterMCP call is a metered call step (or an uncertain one, when its answer was lost), and matches, in order, a distinct answer in which the model asked
  * for exactly that one call (same tool, same arguments).
  */
 function assertEveryPaidCallWasAsked(meter: ReturnType<typeof fakeMeter>, models: Array<ReturnType<typeof fakeModel>>, result: RunResult) {
   const paid = meter.calls.filter((c) => PAID.has(c.name)).map((c) => ({ name: c.name, args: c.args }));
-  const metered = result.steps.filter((s) => s.kind === 'call' && s.metering).map((s) => ({ name: s.tool, args: s.arguments }));
-  assert.deepEqual(paid, metered, 'every paid MeterMCP call is a metered call step');
+  const metered = result.steps.filter((s) => s.kind === 'call' && (s.metering || s.state === 'uncertain')).map((s) => ({ name: s.tool, args: s.arguments }));
+  assert.deepEqual(paid, metered, 'every paid MeterMCP call is a metered (or uncertain) call step');
+  for (const s of result.steps) if (s.state === 'uncertain') assert.ok(s.kind === 'call' && s.metering === null, 'only an unanswered paid call is uncertain');
   const asked = models.flatMap((m) => m.answered).filter((calls) => calls.length === 1).map((calls) => JSON.stringify({ name: calls[0]!.name, args: stripReason(calls[0]!.arguments) }));
   let i = 0;
   for (const p of paid) {
@@ -396,12 +414,72 @@ test('approval timeout stops the run with approval_timeout and closes the sessio
   assert.equal(result.settlement, 'not_approved');
 });
 
-test('a budget MeterMCP refuses to open ends the run not_approved without calling the tool', async () => {
-  const { result, meter } = await run([turn(act('quote_lookup', { symbol: 'A' }))], { meter: { openBudgetError: 'daily_cap' } });
-  assert.deepEqual(names(meter), ['open_budget']);
-  assert.equal(result.outcome, 'not_approved');
-  assert.match(result.steps[0]!.summary, /daily_cap/);
-  assert.equal(result.settlement, 'none');
+test('a budget MeterMCP definitively refuses ends the run stopped: budget_unavailable without calling the tool (A8)', async () => {
+  for (const code of ['demo_code_required', 'daily_cap', 'caps_unavailable', 'paypal_unavailable', 'invalid_cap']) {
+    const { result, meter } = await run([turn(act('quote_lookup', { symbol: 'A' }))], { meter: { openBudgetError: code } });
+    assert.deepEqual(names(meter), ['open_budget'], code);
+    assert.equal(result.outcome, 'stopped', code);
+    assert.equal(result.stopReason, 'budget_unavailable', code);
+    assert.match(result.steps[0]!.summary, new RegExp(`^Budget not opened: ${code}`));
+    assert.equal(result.settlement, 'none', code);
+  }
+  // budget_exists: a session does exist on this connection, so it is still closed and its receipt read.
+  const { result, meter } = await run([turn(act('quote_lookup', { symbol: 'A' }))], { meter: { openBudgetError: 'budget_exists' } });
+  assert.equal(result.stopReason, 'budget_unavailable');
+  assert.match(result.steps[0]!.summary, /^Budget not opened: budget_exists/);
+  assert.deepEqual(names(meter), ['open_budget', 'close_session', 'get_receipt']);
+  assert.notEqual(result.settlement, 'none');
+});
+
+test("open_budget's answer lost: close and receipt are still attempted, and settlement is never 'none'", async () => {
+  // MeterMCP created the session: the receipt of this connection's session is read, and gives the id.
+  const a = await run([turn(act('quote_lookup', { symbol: 'A' }))], { meter: { openBudgetThrows: 'after_create' } });
+  assert.deepEqual(names(a.meter), ['open_budget', 'close_session', 'get_receipt']);
+  assert.equal(a.result.outcome, 'stopped');
+  assert.equal(a.result.stopReason, 'budget_unavailable');
+  assert.match(a.result.steps[0]!.summary, /^Budget state unknown/);
+  assert.equal(a.result.settlement, 'not_approved');
+  assert.equal(a.result.sessionId, 'mm-sess-1');
+  // It did not: no receipt can be read, so unverified.
+  const b = await run([turn(act('quote_lookup', { symbol: 'A' }))], { meter: { openBudgetThrows: 'before_create' } });
+  assert.deepEqual(names(b.meter), ['open_budget', 'close_session', 'get_receipt']);
+  assert.equal(b.result.settlement, 'unverified');
+  assert.equal(b.result.sessionId, null);
+});
+
+test('aborted during the get_balance right after approval: no paid call is made', async () => {
+  const ac = new AbortController();
+  const { result, meter } = await run([turn(act('deep_report', { topic: 'x' }))], { signal: ac.signal, meter: { duringBalance: (n) => void (n === 3 && ac.abort()) } });
+  assert.deepEqual(names(meter), ['open_budget', 'get_balance', 'get_balance', 'get_balance', 'close_session', 'get_receipt']);
+  assert.equal(result.outcome, 'interrupted');
+  assert.equal(result.steps[0]!.state, 'done');
+  assert.match(result.steps[0]!.summary, /Not called/);
+});
+
+test('a balance that cannot be read after approval: the call is not made and the model is told, not as an invalid action', async () => {
+  const { result, meter, primary } = await run([turn(act('deep_report', { topic: 'x' })), turn(act('get_receipt')), finish('cannot_do')], { meter: { balanceFailsAt: 3 } });
+  assert.ok(!names(meter).includes('deep_report'));
+  assert.equal(result.steps[0]!.summary, 'The balance could not be read; the call was not made.');
+  assert.deepEqual(lastTool(primary.requests[1]!), { error: 'balance_unavailable', message: 'The balance could not be read; the call was not made.' });
+  assert.equal(result.outcome, 'cannot_do', 'one invalid action after it does not stop the run');
+});
+
+test('a paid call whose answer is lost is uncertain, told to the model, and never retried by code', async () => {
+  const { result, meter, primary } = await run([turn(act('quote_lookup', { symbol: 'A' })), finish('done')], { meter: { throwOn: 'quote_lookup' } });
+  assert.deepEqual(names(meter).filter((n) => PAID.has(n)), ['quote_lookup']);
+  const s = result.steps[0]!;
+  assert.deepEqual([s.kind, s.state, s.metering, s.summary], ['call', 'uncertain', null, 'Result unknown: the call may have been charged; the receipt will show it.']);
+  assert.deepEqual(lastTool(primary.requests[1]!), { error: 'result_unknown', message: 'Result unknown: the call may have been charged; the receipt will show it.' });
+  assert.equal(result.settlement, 'captured', 'the receipt shows it was charged');
+});
+
+test('a MeterMCP tool that declares its own reason parameter is refused before anything runs', async () => {
+  const tools = TOOLS.map((t) => (t.name === 'deep_report' ? { ...t, inputSchema: obj({ topic: str(1, 200), reason: str(0, 10) }, ['topic']) } : t));
+  const meter = fakeMeter({ tools });
+  const primary = fakeModel([finish('done')]);
+  await assert.rejects(runAgent({ input: { goal: 'g', cap: '1.00', failFirst: [] }, meter, models: { primary, fallback: null } }), /deep_report declares its own reason/);
+  assert.equal(primary.requests.length, 0);
+  assert.deepEqual(names(meter), []);
 });
 
 test("an injected failure is marked injected 'run' and not charged; the model's next action follows", async () => {

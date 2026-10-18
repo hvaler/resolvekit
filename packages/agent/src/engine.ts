@@ -62,7 +62,7 @@ export interface RunInput {
 }
 
 export type Outcome = 'done' | 'cannot_do' | 'out_of_budget' | 'stopped' | 'model_unavailable' | 'not_approved' | 'interrupted';
-export type StopReason = 'max_actions' | 'max_time' | 'max_model_calls' | 'model_budget' | 'invalid_action' | 'approval_timeout' | 'persistence';
+export type StopReason = 'max_actions' | 'max_time' | 'max_model_calls' | 'model_budget' | 'invalid_action' | 'approval_timeout' | 'persistence' | 'budget_unavailable';
 export type Settlement = 'none' | 'unverified' | 'open' | 'captured' | 'capture_pending' | 'capture_declined' | 'voided' | 'failed' | 'not_approved';
 
 export interface Step {
@@ -113,6 +113,10 @@ const RETRY_AFTER_MAX_MS = 20_000;
 /** Below this many output tokens left, a turn cannot hold a full action: the run stops (model_budget). */
 const MIN_OUTPUT_TOKENS = 64;
 const SETTLEMENTS: ReadonlySet<string> = new Set(['open', 'captured', 'capture_pending', 'capture_declined', 'voided', 'failed', 'not_approved']);
+/** open_budget refusals that say for sure no budget was opened for this run (Ruling A8). */
+const BUDGET_REFUSALS: ReadonlySet<string> = new Set(['demo_code_required', 'daily_cap', 'caps_unavailable', 'paypal_unavailable', 'invalid_cap', 'budget_exists']);
+const UNCERTAIN_SUMMARY = 'Result unknown: the call may have been charged; the receipt will show it.';
+const BALANCE_UNREAD = 'The balance could not be read; the call was not made.';
 const RUN_INJECTED = 'injected for this run';
 const SERVER_INJECTED = 'METERMCP_FAIL_FIRST test switch';
 
@@ -274,12 +278,23 @@ export async function runAgent(o: {
   const tools = await meter.listTools();
   const known = new Set(tools.map((t) => t.name));
   const offered = new Map<string, MeterTool>(tools.filter((t) => t.price !== null || FREE_OFFERED.has(t.name)).map((t) => [t.name, t]));
+  // The agent adds `reason` to every offered tool and strips it before calling MeterMCP: a tool with its own reason
+  // parameter would lose it, so it is refused before anything runs.
+  for (const t of offered.values()) {
+    const props = (t.inputSchema as { properties?: Record<string, unknown> }).properties;
+    if (props && Object.hasOwn(props, 'reason')) throw new Error(`MeterMCP tool ${t.name} declares its own reason parameter, which the agent reserves`);
+  }
   const decls: FunctionDecl[] = [...[...offered.values()].map((t) => ({ name: t.name, description: t.description, parameters: withReason(t.inputSchema) })), FINISH];
   const system = systemPrompt();
   const transcript: TranscriptEntry[] = [{ role: 'user', text: goalEntry(input.goal, input.cap, [...offered.values()]) }];
   const capCents = toCents(input.cap) ?? 0;
   /** From the last metering or get_balance; null before any budget. */
   let remainingCents: number | null = null;
+  /**
+   * open_budget was called and its answer was not a definitive refusal, but no session id came back (lost answer,
+   * unexpected shape): a session may exist on this MCP connection, so settlement still closes and reads its receipt.
+   */
+  let budgetUnknown = false;
   let fixed: AgentModel | null = null;
   let stepN = 0;
   let actions = 0;
@@ -384,8 +399,9 @@ export async function runAgent(o: {
     return true;
   };
 
+  /** Record a step as answered (an uncertain paid call stays uncertain). */
   const done = async (step: Step) => {
-    step.state = 'done';
+    if (step.state === 'pending') step.state = 'done';
     result.steps.push(step);
     await emit({ type: 'step', step });
   };
@@ -419,7 +435,14 @@ export async function runAgent(o: {
     const a = await callMeter('open_budget', { cap: input.cap, fail_first: input.failFirst, ...(input.returnTo ? { return_to: input.returnTo } : {}) });
     if (a.isError || typeof a.body.session_id !== 'string') {
       const why = a.body.message ? ` (${oneLine(a.body.message, 160)})` : '';
-      return { end: end('not_approved'), summary: `Budget not opened: ${a.body.error ?? 'no session'}${why}. Not called.` };
+      const code = typeof a.body.error === 'string' ? a.body.error : null;
+      // budget_exists: a session does exist on this connection, so it is settled like an unknown one.
+      if (code && BUDGET_REFUSALS.has(code) && a.body.session_id === undefined) {
+        if (code === 'budget_exists') budgetUnknown = true;
+        return { end: end('stopped', 'budget_unavailable'), summary: `Budget not opened: ${code}${why}. Not called.` };
+      }
+      budgetUnknown = true;
+      return { end: end('stopped', 'budget_unavailable'), summary: `Budget state unknown: ${code ?? 'no session id in the answer'}${why}. Not called; the receipt will show whether a budget was opened.` };
     }
     result.sessionId = a.body.session_id;
     result.orderId = typeof a.body.order_id === 'string' ? a.body.order_id : null;
@@ -449,6 +472,16 @@ export async function runAgent(o: {
   const pay = async (step: Step, c: ModelCall, tool: MeterTool, args: Record<string, unknown>) => {
     const a = await callMeter(tool.name, args);
     const m = a.body.metering as Record<string, any> | undefined;
+    // An answer is MeterMCP's metering, or a refusal with an error code; anything else leaves the charge unknown.
+    const answered = (m && (m.status === 'OK' || m.status === 'FAILED')) || (a.isError && typeof a.body.error === 'string' && a.body.error !== 'meter_unreachable');
+    if (!answered) {
+      step.state = 'uncertain';
+      step.summary = UNCERTAIN_SUMMARY;
+      remainingCents = null;
+      observe(c, { error: 'result_unknown', message: UNCERTAIN_SUMMARY });
+      await done(step);
+      return;
+    }
     if (m && (m.status === 'OK' || m.status === 'FAILED')) {
       step.metering = { status: m.status, price: String(m.price ?? tool.price), charged: m.status === 'OK', remaining: String(m.remaining), injected: m.status === 'FAILED' ? injectedOf(a.body) : null };
     }
@@ -512,9 +545,24 @@ export async function runAgent(o: {
         return;
       }
       const b = await callMeter('get_balance', {});
-      const rem = b.isError ? null : toCents(b.body.remaining);
-      remainingCents = rem ?? capCents;
+      const rem = b.isError || b.body.status !== 'active' ? null : toCents(b.body.remaining);
+      if (rem == null) {
+        // Not an invalid action: the model chose well, the balance could not be checked.
+        step.summary = BALANCE_UNREAD;
+        observe(c, { error: 'balance_unavailable', message: BALANCE_UNREAD });
+        await done(step);
+        return;
+      }
+      remainingCents = rem;
       if (price > remainingCents) return insufficient(step, c, tool, remainingCents);
+      // As begin: no paid call once aborted or not saved.
+      const late = signal?.aborted ? end('interrupted') : persistFailed ? end('stopped', 'persistence') : null;
+      if (late) {
+        step.summary = late.outcome === 'interrupted' ? 'Interrupted after approval, before the call. Not called.' : 'The run could not be saved. Not called.';
+        await done(step);
+        finished = late;
+        return;
+      }
       return pay(step, c, tool, args);
     }
     if (remainingCents !== null && price > remainingCents) return insufficient(step, c, tool, remainingCents);
@@ -551,9 +599,12 @@ export async function runAgent(o: {
   usage.reported = usage.modelCalls > 0 && allReported;
   return result;
 
-  /** Close the session and read its receipt; the settlement is only what a receipt of this session says. */
+  /**
+   * Close the session and read its receipt; the settlement is only what a receipt of this session says. 'none' only
+   * when no budget was ever asked for, or MeterMCP definitively refused it.
+   */
   async function settle() {
-    if (!result.sessionId) return;
+    if (!result.sessionId && !budgetUnknown) return;
     try {
       await meter.call('close_session', {});
     } catch {
@@ -567,7 +618,10 @@ export async function runAgent(o: {
     }
     const rc = r && !r.isError ? r.body : null;
     const status = rc?.settlement?.status;
-    if (rc && rc.session?.id === result.sessionId && typeof status === 'string' && SETTLEMENTS.has(status)) {
+    // The receipt must be this run's session; with no id known yet, the connection's own session is the run's.
+    const sameSession = result.sessionId ? rc?.session?.id === result.sessionId : typeof rc?.session?.id === 'string';
+    if (rc && sameSession && typeof status === 'string' && SETTLEMENTS.has(status)) {
+      result.sessionId = rc.session.id;
       result.settlement = status as Settlement;
       result.receipt = rc;
       result.receiptSha256 = typeof rc.receipt_sha256 === 'string' ? rc.receipt_sha256 : null;
