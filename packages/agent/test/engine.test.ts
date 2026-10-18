@@ -58,6 +58,10 @@ interface FakeMeterOptions {
   throwOn?: string;
   /** Replaces the tool list. */
   tools?: MeterTool[];
+  /** The status get_balance shows when the buyer does not approve (`approval: 'cancel'`; default 'cancelled'). */
+  refusedStatus?: string;
+  /** close_session fails (throws, or answers an error) without changing the session. */
+  closeFails?: 'throw' | 'error';
 }
 
 function fakeMeter(o: FakeMeterOptions = {}) {
@@ -87,7 +91,7 @@ function fakeMeter(o: FakeMeterOptions = {}) {
             if (a === 'approve') {
               session.status = 'active';
               if (o.remainingAfterApproval) session.usedCents = session.capCents - cents(o.remainingAfterApproval);
-            } else if (a === 'cancel') session.status = 'cancelled';
+            } else if (a === 'cancel') session.status = o.refusedStatus ?? 'cancelled';
           }
         }
         return ok(balance());
@@ -102,6 +106,8 @@ function fakeMeter(o: FakeMeterOptions = {}) {
       }
       if (name === 'close_session') {
         meter.closed += 1;
+        if (o.closeFails === 'throw') throw new Error('socket hang up');
+        if (o.closeFails === 'error') return err({ error: 'busy', message: 'try again' });
         if (!session || !['pending_approval', 'active'].includes(session.status)) return err({ error: 'no_session' });
         session.status = session.status === 'pending_approval' ? 'cancelled' : session.usedCents > 0 ? 'settled' : 'voided';
         return ok({ status: session.status, session_id: session.id });
@@ -402,6 +408,35 @@ test('the buyer cancelling gives not_approved; no tool runs; settlement is read 
   assert.equal(result.settlement, 'not_approved');
   assert.equal(result.steps[0]!.state, 'done');
   assert.equal(result.steps[0]!.metering, null);
+});
+
+test("M-3: only MeterMCP's refusal statuses (cancelled, declined) are not_approved; 'none' or an unknown status is budget_unavailable", async () => {
+  for (const status of ['cancelled', 'declined']) {
+    const { result } = await run([turn(act('deep_report', { topic: 'x' }))], { meter: { approval: 'cancel', refusedStatus: status } });
+    assert.equal(result.outcome, 'not_approved', status);
+    assert.equal(result.stopReason, null, status);
+  }
+  for (const status of ['none', 'closing', 'weird']) {
+    const { result, meter } = await run([turn(act('deep_report', { topic: 'x' }))], { meter: { approval: 'cancel', refusedStatus: status } });
+    assert.equal(result.outcome, 'stopped', status);
+    assert.equal(result.stopReason, 'budget_unavailable', status);
+    assert.match(result.steps[0]!.summary, new RegExp(`\(${status}\)`), status);
+    assert.ok(!names(meter).includes('deep_report'), status);
+    assert.deepEqual(names(meter).slice(-2), ['close_session', 'get_receipt'], status);
+  }
+});
+
+test('M-2: a failed close_session with the session still pending or open in the receipt is unverified, not final', async () => {
+  for (const closeFails of ['throw', 'error'] as const) {
+    // Still pending_approval (approval timeout, then the close fails): the receipt's not_approved is not final.
+    const a = await run([turn(act('quote_lookup', { symbol: 'A' }))], { meter: { approval: 'never', closeFails }, limits: { approvalTimeoutMs: 9000 } });
+    assert.equal(a.result.stopReason, 'approval_timeout', closeFails);
+    assert.equal(a.result.settlement, 'unverified', closeFails);
+    // Still active (the run finished, the close fails): the receipt's open is not final either.
+    const b = await run([turn(act('quote_lookup', { symbol: 'A' })), finish('done')], { meter: { closeFails } });
+    assert.equal(b.result.outcome, 'done', closeFails);
+    assert.equal(b.result.settlement, 'unverified', closeFails);
+  }
 });
 
 test('approval timeout stops the run with approval_timeout and closes the session', async () => {

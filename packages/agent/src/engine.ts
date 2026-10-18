@@ -71,7 +71,7 @@ export type Settlement = 'none' | 'unverified' | 'open' | 'captured' | 'capture_
 export interface Step {
   n: number;
   at: string;
-  /** pending: announced before its MeterMCP call (write-ahead); done: answered; uncertain: set by the server's recovery. */
+  /** pending: announced before its MeterMCP call (write-ahead); done: answered; uncertain: the paid call's charge is unknown (its answer was lost, set in pay(), or the server's recovery found it pending). */
   state: 'pending' | 'done' | 'uncertain';
   kind: 'call' | 'free' | 'finish' | 'invalid' | 'insufficient_balance';
   tool: string | null;
@@ -115,6 +115,8 @@ const BACKOFF_MS = [1000, 4000];
 const RETRY_AFTER_MAX_MS = 20_000;
 /** Below this many output tokens left, a turn cannot hold a full action: the run stops (model_budget). */
 const MIN_OUTPUT_TOKENS = 64;
+/** get_balance statuses that mean MeterMCP refused the budget: the order cancelled or voided ('cancelled'), PayPal declined the funding source or the authorization ('declined'). */
+const REFUSED: ReadonlySet<unknown> = new Set(['cancelled', 'declined']);
 const SETTLEMENTS: ReadonlySet<string> = new Set(['open', 'captured', 'capture_pending', 'capture_declined', 'voided', 'failed', 'not_approved']);
 /** open_budget refusals that say for sure no budget was opened for this run (Ruling A8). */
 const BUDGET_REFUSALS: ReadonlySet<string> = new Set(['demo_code_required', 'daily_cap', 'caps_unavailable', 'paypal_unavailable', 'invalid_cap', 'budget_exists']);
@@ -457,8 +459,10 @@ export async function runAgent(o: {
         if (persistFailed) return { end: end('stopped', 'persistence'), summary: 'The run could not be saved. Not called.' };
         const b = await callMeter('get_balance', {});
         if (!b.isError && b.body.status === 'active') break;
-        // A MeterMCP error while polling is transient; any status but pending_approval is final.
-        if (!b.isError && b.body.status !== 'pending_approval') return { end: end('not_approved'), summary: `Budget not approved (${oneLine(b.body.status, 40)}). Not called.` };
+        // A MeterMCP error while polling is transient. Only MeterMCP's refusals (the order cancelled or voided, the
+        // funding source declined) mean the budget was not approved; any other status ('none', unknown) is not a refusal.
+        if (!b.isError && REFUSED.has(b.body.status)) return { end: end('not_approved'), summary: `Budget not approved (${oneLine(b.body.status, 40)}). Not called.` };
+        if (!b.isError && b.body.status !== 'pending_approval') return { end: end('stopped', 'budget_unavailable'), summary: `Budget state unexpected while waiting for approval (${oneLine(b.body.status, 40)}). Not called; the receipt will show whether a budget was opened.` };
         if (now().getTime() - waitStart >= L.approvalTimeoutMs) return { end: end('stopped', 'approval_timeout'), summary: `Not approved within ${duration(L.approvalTimeoutMs)}. Not called.` };
         if (!(await pause(POLL_MS))) return { end: end('interrupted'), summary: 'Interrupted while waiting for approval. Not called.' };
       }
@@ -608,10 +612,11 @@ export async function runAgent(o: {
    */
   async function settle() {
     if (!result.sessionId && !budgetUnknown) return;
+    let closeFailed = false;
     try {
-      await meter.call('close_session', {});
+      closeFailed = (await meter.call('close_session', {})).isError;
     } catch {
-      /* the receipt says what happened */
+      closeFailed = true; // the receipt says what happened
     }
     let r: MeterAnswer | null = null;
     try {
@@ -623,7 +628,10 @@ export async function runAgent(o: {
     const status = rc?.settlement?.status;
     // The receipt must be this run's session; with no id known yet, the connection's own session is the run's.
     const sameSession = result.sessionId ? rc?.session?.id === result.sessionId : typeof rc?.session?.id === 'string';
-    if (rc && sameSession && typeof status === 'string' && SETTLEMENTS.has(status)) {
+    // A close that failed on a session the receipt still shows pending or active settled nothing: its not_approved
+    // or open is not final, so it stays unverified for the server's reconcile to close and read again.
+    const unsettled = closeFailed && (rc?.session?.status === 'pending_approval' || rc?.session?.status === 'active');
+    if (rc && sameSession && !unsettled && typeof status === 'string' && SETTLEMENTS.has(status)) {
       result.sessionId = rc.session.id;
       result.settlement = status as Settlement;
       result.receipt = rc;

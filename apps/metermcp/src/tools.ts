@@ -21,7 +21,7 @@ export const CURRENCY = 'USD';
 /** A deterministic number in [0, 1) from a seed. */
 const unit = (seed: string) => parseInt(sha256(seed).slice(0, 8), 16) / 0x1_0000_0000;
 
-/** Qualitative, clearly synthetic findings; which ones is three consecutive ones are picked deterministically from the topic. */
+/** Qualitative, clearly synthetic findings. Three consecutive entries are picked deterministically from the topic. */
 const FINDING_POOL = [
   'Synthetic finding: demand looks steady in this made-up scenario.',
   'Synthetic finding: supply appears concentrated among a few invented vendors.',
