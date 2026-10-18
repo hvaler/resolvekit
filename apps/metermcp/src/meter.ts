@@ -353,13 +353,25 @@ export class Meter {
       return this.o.ledger.session(s.id)!;
     }
     const auth = order.purchase_units![0]!.payments!.authorizations![0]!;
-    this.o.ledger.activate(s.id, {
+    const activated = this.o.ledger.activate(s.id, {
       authorizationId: auth.id,
       authorizationStatus: auth.status!,
       expiresAt: auth.expiration_time!,
       approvedAt: this.iso(),
       authorizedAt: auth.create_time ?? null,
     });
+    if (!activated) {
+      // The session left pending_approval while PayPal authorized (closed, timed out): no session holds this
+      // authorization, so release it now instead of leaving a hold nothing will ever settle.
+      const now = this.o.ledger.session(s.id)!;
+      try {
+        const v = await paypal.payments.voidAuthorization(auth.id, { requestId: `${s.id}-void` });
+        this.o.log(`session ${s.id}: authorization ${auth.id} arrived after the session was ${now.status}; voided (${v.status ?? 'no status'})`);
+      } catch (e) {
+        this.o.log(`session ${s.id}: authorization ${auth.id} arrived after the session was ${now.status}; void FAILED (${why(e)}), still held at PayPal`);
+      }
+      return now;
+    }
     this.o.log(`session ${s.id}: approved, authorization ${auth.id} (${auth.status}) · cap ${fromCents(s.cap_cents)} ${s.currency}`);
     return this.o.ledger.session(s.id)!;
   }
@@ -550,6 +562,9 @@ export class Meter {
   }
 
   private async settle(id: string): Promise<CloseResult> {
+    // An approval in flight (the buyer just came back) may be authorizing in PayPal: wait for it, then read the
+    // session again, so the authorization it creates is settled here instead of left on a cancelled session.
+    await this.approving.get(id)?.catch(() => {});
     const s0 = this.o.ledger.session(id);
     if (!s0) return { status: 'not_found', session_id: id };
     if (s0.status === 'pending_approval') {

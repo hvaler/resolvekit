@@ -811,3 +811,55 @@ test('ledger: reopening an already-migrated database is a no-op', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/** Hold the next orders.authorize call until `release()`; `started` resolves when it is waiting. */
+function deferAuthorize(pp: ReturnType<typeof fakePayPal>) {
+  const orig = pp.client.orders.authorize.bind(pp.client.orders);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let started!: () => void;
+  const waiting = new Promise<void>((r) => (started = r));
+  pp.client.orders.authorize = async (...a: Parameters<typeof orig>) => {
+    started();
+    await gate;
+    return orig(...a);
+  };
+  return { release, waiting };
+}
+
+test('I-1: a close racing the buyer’s approval waits for it and settles the authorization; none is left CREATED', async () => {
+  const { meter, pp, ledger, logs } = setupWithLog();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  const d = deferAuthorize(pp);
+  const approving = meter.approvedByOrder(pr.order_id);
+  await d.waiting;
+  const closing = meter.close(pr.session_id);
+  d.release();
+  await approving;
+  const r = await closing;
+  assert.equal(r.status, 'voided');
+  assert.deepEqual([...pp.auths.values()].map((a) => a.status), ['VOIDED']);
+  assert.equal(ledger.session(pr.session_id)!.status, 'voided');
+  assert.equal(meter.receipt(pr.session_id)!.settlement.status, 'voided');
+  assert.ok(logs.some((l) => /approved, authorization/.test(l)), logs.join('\n'));
+});
+
+test('I-1: an authorization that arrives after the session was cancelled is voided at once, never logged approved', async () => {
+  const { meter, pp, ledger, logs } = setupWithLog();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  const d = deferAuthorize(pp);
+  const approving = meter.approvedByOrder(pr.order_id);
+  await d.waiting;
+  ledger.cancel(pr.session_id, new Date().toISOString()); // e.g. a close that did not see the approval in flight
+  d.release();
+  const s = (await approving)!;
+  assert.equal(s.status, 'cancelled');
+  assert.deepEqual([...pp.auths.values()].map((a) => a.status), ['VOIDED']);
+  const v = pp.calls.find((c) => /void$/.test(c.path))!;
+  assert.equal(v.headers['PayPal-Request-Id'], `${pr.session_id}-void`);
+  assert.equal(meter.receipt(pr.session_id)!.session.status, 'cancelled');
+  assert.ok(!logs.some((l) => /approved, authorization/.test(l)), logs.join('\n'));
+  assert.ok(logs.some((l) => /voided/.test(l) && /cancelled/.test(l)), logs.join('\n'));
+});
