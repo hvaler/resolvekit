@@ -76,21 +76,24 @@ const req = (method: string, path: string, cookie?: string) =>
     ...(method === 'POST' ? { body: '{}' } : {}),
   });
 
-/** Every case route this task gates, as [method, path template]. */
-const ROUTES: Array<[string, (id: string) => string]> = [
-  ['GET', (id) => `/api/disputes/${id}`],
-  ['POST', (id) => `/api/disputes/${id}/intent`],
-  ['GET', (id) => `/api/disputes/${id}/audit`],
-  ['POST', (id) => `/api/disputes/${id}/evidence`],
-  ['GET', (id) => `/api/cases/${id}/analysis`],
-  ['POST', (id) => `/api/cases/${id}/analysis`],
-  ['GET', (id) => `/api/cases/${id}/analysis/progress?key=${KEY}`],
-  ['POST', (id) => `/api/cases/${id}/analysis/verify`],
-  ['GET', (id) => `/api/cases/${id}/uploads`],
-  ['POST', (id) => `/api/cases/${id}/uploads`],
+/**
+ * Every case route this task gates, as [method, path template, what the seller's workspace gets today with the
+ * empty request these tests send: status and error code (null: no error)].
+ */
+const ROUTES: Array<[string, (id: string) => string, number, string | null]> = [
+  ['GET', (id) => `/api/disputes/${id}`, 200, null],
+  ['POST', (id) => `/api/disputes/${id}/intent`, 400, 'INVALID_INTENT_REQUEST'],
+  ['GET', (id) => `/api/disputes/${id}/audit`, 200, null],
+  ['POST', (id) => `/api/disputes/${id}/evidence`, 400, 'INVALID_SUBMISSION'],
+  ['GET', (id) => `/api/cases/${id}/analysis`, 405, 'METHOD_NOT_ALLOWED'],
+  ['POST', (id) => `/api/cases/${id}/analysis`, 202, null],
+  ['GET', (id) => `/api/cases/${id}/analysis/progress?key=${KEY}`, 404, 'NO_ANALYSIS'],
+  ['POST', (id) => `/api/cases/${id}/analysis/verify`, 400, 'INVALID_TEXT'],
+  ['GET', (id) => `/api/cases/${id}/uploads`, 200, null],
+  ['POST', (id) => `/api/cases/${id}/uploads`, 400, 'INVALID_UPLOAD'],
 ];
 
-for (const [method, path] of ROUTES) {
+for (const [method, path, sellerStatus, sellerError] of ROUTES) {
   const label = `${method} ${path(':id').replace(/\?.*/, '')}`;
   test(`${label}: bound case, another workspace → 404 UNKNOWN_CASE, no analyst or PayPal work`, async () => {
     const h = hosted();
@@ -113,11 +116,11 @@ for (const [method, path] of ROUTES) {
     assert.equal(r.status, 404);
     assert.equal(((await r.json()) as { error: string }).error, 'UNKNOWN_CASE');
   });
-  test(`${label}: bound case, seller workspace → not 404 UNKNOWN_CASE`, async () => {
+  test(`${label}: bound case, seller workspace → ${sellerStatus}${sellerError ? ` ${sellerError}` : ''} (the route itself answers)`, async () => {
     const h = hosted();
     const r = await h.app(req(method, path(CASE), h.people.ownerCookie));
     const body = (await r.json().catch(() => ({}))) as { error?: string };
-    assert.notEqual(body.error, 'UNKNOWN_CASE', `status ${r.status}`);
+    assert.deepEqual([r.status, body.error ?? null], [sellerStatus, sellerError]);
   });
 }
 
