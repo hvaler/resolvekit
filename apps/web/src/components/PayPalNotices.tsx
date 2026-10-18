@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useServices } from '../app/services';
+import { casesBase } from '../domain/environment';
 import { fetchNotices, noticeAge, noticeText, type PayPalNotice } from '../domain/paypalNotices';
 
 const POLL_NOTICES_MS = 30_000;
@@ -12,8 +13,8 @@ const SHOWN = 3;
  * Nothing renders without notices.
  */
 export function PayPalNotices() {
-  const { demo, health } = useServices();
-  const on = !!demo?.signedIn && !!health && health.paypal !== 'unconfigured';
+  const { demo, health, area } = useServices();
+  const on = area !== 'demo' && !!demo?.signedIn && !!health && health.paypal !== 'unconfigured';
   const [notices, setNotices] = useState<PayPalNotice[]>([]);
   const [now, setNow] = useState(() => Date.now());
 
@@ -45,7 +46,7 @@ export function PayPalNotices() {
             <span className="min-w-0 break-words">{noticeText(n)}</span>
             <span className="font-mono text-[11.5px] text-ink-3">{noticeAge(n, now)}</span>
             {n.caseId ? (
-              <Link to={`/cases/${n.caseId}`} className="text-acc">
+              <Link to={`${casesBase(area)}/${n.caseId}`} className="text-acc">
                 Open case
               </Link>
             ) : (

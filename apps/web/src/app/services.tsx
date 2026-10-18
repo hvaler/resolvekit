@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { clientsFor } from './clients';
 import { AnalysisClient } from '../domain/analysisClient';
 import { DemoClient, type DemoState } from '../domain/demoClient';
 import { SimulatedDisputeGateway, type DisputeGateway, type SimulatedOutcome } from '../domain/gateway';
@@ -103,12 +104,18 @@ export function ServicesProvider({
       }),
     [latencyMs],
   );
-  const http = useMemo(() => (demoArea ? null : server === undefined ? new HttpDisputeGateway() : server), [server, demoArea]);
-  const analysis = useMemo(() => (demoArea || server === null ? null : new AnalysisClient()), [server, demoArea]);
-  const intents = useMemo<IntentSource>(() => (demoArea || server === null ? new LocalIntentClient() : new HttpIntentClient()), [server, demoArea]);
-  const demoClient = useMemo(() => (server === null ? null : new DemoClient()), [server]);
-  const [demo, setDemo] = useState<DemoState | null>(null);
-  const [accountKnown, setAccountKnown] = useState(server === null);
+  const kinds = clientsFor(area, server);
+  const http = useMemo(() => (kinds.gateway === 'http' ? (server ?? new HttpDisputeGateway()) : null), [kinds.gateway, server]);
+  const analysis = useMemo(() => (kinds.analysis ? new AnalysisClient() : null), [kinds.analysis]);
+  const intents = useMemo<IntentSource>(() => (kinds.intents === 'http' ? new HttpIntentClient() : new LocalIntentClient()), [kinds.intents]);
+  // The demo area is nested inside the workspace's provider and reuses its account state instead of asking again.
+  const parent = useContext(ServicesContext);
+  const inherit = demoArea && parent != null;
+  const demoClient = useMemo(() => (server === null || inherit ? null : new DemoClient()), [server, inherit]);
+  const [ownDemo, setDemo] = useState<DemoState | null>(null);
+  const [ownKnown, setAccountKnown] = useState(server === null);
+  const demo = inherit ? parent.demo : ownDemo;
+  const accountKnown = inherit ? parent.accountKnown : ownKnown;
   useEffect(() => {
     if (!demoClient) return;
     let live = true;
@@ -129,7 +136,7 @@ export function ServicesProvider({
     return () => window.clearTimeout(t);
   }, [demo, demoClient]);
   // Which disputes are live depends on who is signed in: signing out reloads the app from the server's view.
-  const signOut = useCallback(
+  const ownSignOut = useCallback(
     async (everywhere = false) => {
       if (!demoClient) return;
       await demoClient.signOut(everywhere);
@@ -137,6 +144,7 @@ export function ServicesProvider({
     },
     [demoClient],
   );
+  const signOut = inherit ? parent.signOut : ownSignOut;
   const [health, setHealth] = useState<ServerHealth | null>(null);
   const healthRef = useRef<ServerHealth | null>(null);
   healthRef.current = health;

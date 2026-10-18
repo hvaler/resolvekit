@@ -345,3 +345,15 @@ export function outcomeText(code: string | null | undefined): string {
 export function sameRow(a: InboxGridRow, b: InboxGridRow): boolean {
   return (Object.keys(a) as (keyof InboxGridRow)[]).every((k) => Object.is(a[k], b[k]));
 }
+
+/** The evaluation workspace's inbox: only the cases bound to real sandbox disputes, in the inbox order. */
+export function evaluationRows(all: InboxDispute[], bound: readonly string[]): InboxDispute[] {
+  return all.filter((d) => bound.includes(d.id));
+}
+
+export const NO_BOUND_CASES = 'No sandbox disputes are bound right now.';
+
+/** What an inbox with no rows says (only the evaluation inbox can be empty on purpose). */
+export function emptyInboxNote(env: 'demo' | 'evaluation' | 'local', rows: number): string | null {
+  return env === 'evaluation' && rows === 0 ? NO_BOUND_CASES : null;
+}

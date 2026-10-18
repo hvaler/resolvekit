@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
 import { usePayPalSource, usePolling, useSecondsSince, useServices } from '../app/services';
-import { draftScope } from '../domain/environment';
+import { casesBase, draftScope } from '../domain/environment';
 import { useAnalysis } from '../app/useAnalysis';
 import { useCaseDraft } from '../app/useCaseDraft';
 import { useUploads } from '../app/useUploads';
@@ -57,7 +57,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   // A bound case only uses a snapshot read from PayPal; a simulated one uses the simulator's.
   const snap = source.kind === 'live' || source.kind === 'simulated' ? snapshots[id] : undefined;
   const navigate = useNavigate();
-  const approveMatch = useMatch('/cases/:id/approve');
+  const base = casesBase(area);
+  const approveMatch = useMatch(`${base}/:id/approve`);
   const secs = useSecondsSince(snap?.checkedAt ?? null);
   // PayPal's fields (amount, reason, status, requested evidence…) from PayPal for a bound case; demo data otherwise.
   const liveSnap = source.kind === 'live' ? source.snap : null;
@@ -66,7 +67,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   // assembly (@resolvekit/cases) builds the analyst's input on the server.
   const caseDocs = useMemo(() => caseView(demo, source), [demo, source.kind, liveSnap]);
   // This workspace's uploads of the case (server only): confirmed ones are evidence after the case's own documents.
-  const uploadsClient = useMemo(() => (analysisClient ? createUploadsClient(id) : null), [analysisClient, id]);
+  const uploadsClient = useMemo(() => (area !== 'demo' && analysisClient ? createUploadsClient(id) : null), [area, analysisClient, id]);
   // Reloaded when the person or workspace changes (signing in after the page loaded).
   const up = useUploads(uploadsClient, `${demoLock?.person?.id ?? ''}:${demoLock?.workspace?.id ?? ''}`);
   // Signed out or another workspace: no uploads can be theirs, so their analysis never waits for the list.
@@ -304,7 +305,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             checkedAt={snap?.checkedAt ?? null}
             submitted={submitted}
             {...(snap ? { snapshot: snap } : {})}
-            onReview={() => navigate(`/cases/${id}/approve`)}
+            onReview={() => navigate(`${base}/${id}/approve`)}
           />
         </main>
       </div>
@@ -317,7 +318,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           uploads={confirmedUps}
           corrections={corrections}
           actionsBefore={actionsBefore.current}
-          onClose={() => navigate(`/cases/${id}`)}
+          onClose={() => navigate(`${base}/${id}`)}
         />
       )}
       {review && uploadsClient && (
@@ -344,7 +345,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
 
 function ProcessingScreen() {
   const s = processingDispute;
-  const { snapshots } = useServices();
+  const { snapshots, area } = useServices();
   usePolling([s.id]);
   const snap = snapshots[s.id];
   const status = snap?.status ?? s.status;
@@ -353,7 +354,7 @@ function ProcessingScreen() {
     <div className="flex min-h-screen min-w-[1180px] flex-col max-md:min-w-0">
       <AppBar caseId={s.id} checkedAt={snap?.checkedAt ?? null} />
       <main className="flex flex-col gap-2.5 px-7 pb-[30px] pt-6 max-md:px-4">
-        <Link to="/cases" className="text-[12.5px]">
+        <Link to={casesBase(area)} className="text-[12.5px]">
           ← All cases
         </Link>
         <div className="overflow-hidden rounded-2xl border border-line bg-surface">
@@ -385,14 +386,14 @@ function ProcessingScreen() {
 
 /** An id that is not a dispute of this workspace (every inbox row has a case file). */
 function NotFound({ id }: { id: string }) {
-  const { snapshots } = useServices();
+  const { snapshots, area } = useServices();
   return (
     <div className="flex min-h-screen flex-col">
       <AppBar caseId={id} checkedAt={snapshots[Object.keys(snapshots)[0] ?? '']?.checkedAt ?? null} />
       <main className="flex flex-col gap-3 px-7 py-6 max-md:px-4">
         <h1 className="m-0 text-title-lg">Case not found</h1>
         <p className="m-0 max-w-[640px] text-[14px] text-ink-2">{`There is no dispute ${id} in this workspace.`}</p>
-        <Link to="/cases" className="text-body">
+        <Link to={casesBase(area)} className="text-body">
           ← All cases
         </Link>
       </main>

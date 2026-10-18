@@ -20,7 +20,7 @@ function render(path: string): string {
 
 describe('routes render without errors', () => {
   it('inbox', () => {
-    const html = render('/');
+    const html = render('/cases');
     expect(html).toContain('Disputes');
     // The grid rows render in the browser (AG Grid); the page around them renders here.
     expect(html).toContain('8 disputes · 5 waiting for you · 2 due within 48 h · 1 new, still processing at PayPal');
@@ -109,5 +109,20 @@ describe('routes render without errors', () => {
     const html = render('/cases/PP-R-NKQ-10194410');
     expect(html).toContain('PayPal is processing this new dispute');
     expect(html).toContain('No actions allowed by PayPal yet');
+  });
+});
+
+describe('the public demo area', () => {
+  it('/demo is the inbox of every fictional case', () => {
+    const html = render('/demo');
+    expect(html).toContain('8 disputes');
+    expect(html).not.toContain('Explore demo ·');
+  });
+
+  it('/demo/cases/:id opens the case file on the simulator', () => {
+    const html = render('/demo/cases/PP-R-TVH-10190665');
+    expect(html).toContain('Response draft');
+    expect(html).toContain('Simulated PayPal');
+    expect(html).toContain('href="/demo/cases"');
   });
 });

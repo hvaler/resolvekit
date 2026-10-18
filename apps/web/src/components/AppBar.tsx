@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useServices } from '../app/services';
 import { useTheme } from '../theme/ThemeProvider';
 import { LOCAL_MERCHANT, initials } from '../domain/demoClient';
+import { casesBase } from '../domain/environment';
 import { AccountMenu } from './AccountMenu';
 import { SyncIndicator } from './SyncIndicator';
 import { cx } from './ui';
@@ -136,6 +137,7 @@ export function AppBar({
   /** Show a "Sync now" button next to the sync status (inbox). */
   syncNow?: boolean;
 }) {
+  const { area } = useServices();
   return (
     <header className="flex h-11 flex-none items-center gap-3.5 border-b border-line bg-surface px-[18px] max-md:h-auto max-md:flex-wrap max-md:gap-x-2.5 max-md:gap-y-2 max-md:px-4 max-md:py-2">
       <Logo />
@@ -143,7 +145,7 @@ export function AppBar({
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-3.5 max-md:gap-2">
         {caseId ? (
           <>
-            <Link to="/cases" className="text-[12.5px] text-ink-2 no-underline hover:text-ink">
+            <Link to={casesBase(area)} className="text-[12.5px] text-ink-2 no-underline hover:text-ink">
               Cases
             </Link>
             <span aria-hidden="true" className="text-ink-3">

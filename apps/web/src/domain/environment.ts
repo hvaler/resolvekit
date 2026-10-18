@@ -36,3 +36,24 @@ export function casesBase(area: Area): '/demo/cases' | '/cases' {
 export function draftScope(area: Area, personId: string | null): string {
   return area === 'demo' ? 'demo' : (personId ?? 'local');
 }
+
+/** What `/cases` and `/cases/:id` show for this environment. `bound`: the case ids bound to real PayPal disputes. */
+export type WorkspaceRoute = { kind: 'inbox' } | { kind: 'case'; id: string } | { kind: 'redirect'; to: string } | { kind: 'waiting' } | { kind: 'checking' };
+
+export function workspaceRoute(env: Environment, path: { caseId: string | null }, bound: readonly string[]): WorkspaceRoute {
+  const here = path.caseId ? `/cases/${path.caseId}` : '/cases';
+  const page: WorkspaceRoute = path.caseId ? { kind: 'case', id: path.caseId } : { kind: 'inbox' };
+  switch (env.kind) {
+    case 'signed-out':
+      return { kind: 'redirect', to: `/signin?next=${encodeURIComponent(here)}` };
+    case 'merchant':
+      return { kind: 'waiting' };
+    case 'checking':
+      return { kind: 'checking' };
+    case 'evaluation':
+      // The evaluation workspace sees only its bound cases; any other id is the fictional case of the same id.
+      return path.caseId && !bound.includes(path.caseId) ? { kind: 'redirect', to: `/demo/cases/${path.caseId}` } : page;
+    default:
+      return page;
+  }
+}

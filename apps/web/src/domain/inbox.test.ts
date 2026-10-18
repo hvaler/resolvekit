@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { DEMO_NOW, caseFiles, inbox, initialSnapshots, processingOpening } from '../fixtures';
 import { goldenAnalyses } from '../fixtures/golden';
 import {
+  NO_BOUND_CASES,
+  emptyInboxNote,
+  evaluationRows,
   CHIPS,
   clockNote,
   applySnapshot,
@@ -191,5 +194,21 @@ describe('the demo clock note', () => {
     expect(clockNote({ simulated: 7, bound: 1 })).toBe('Simulated disputes run on a demo clock (8 Oct 2026 19:00 UTC); the 1 on real PayPal uses PayPal’s dates.');
     expect(clockNote({ simulated: 8, bound: 0 })).toBe('Simulated disputes run on a demo clock (8 Oct 2026 19:00 UTC), so their due times read the same any day.');
     expect(clockNote({ simulated: 0, bound: 2 })).toBeNull();
+  });
+});
+
+describe('the evaluation inbox', () => {
+  it('keeps bound cases only, in the inbox order', () => {
+    const ids = inbox.map((d) => d.id);
+    const bound = [ids[3]!, ids[1]!, 'not-in-the-inbox'];
+    expect(evaluationRows(inbox, bound).map((d) => d.id)).toEqual([ids[1], ids[3]]);
+  });
+  it('no bound case: no rows, and the empty inbox says so', () => {
+    expect(evaluationRows(inbox, [])).toEqual([]);
+    expect(NO_BOUND_CASES).toBe('No sandbox disputes are bound right now.');
+    expect(emptyInboxNote('evaluation', 0)).toBe(NO_BOUND_CASES);
+    expect(emptyInboxNote('evaluation', 1)).toBeNull();
+    expect(emptyInboxNote('demo', 0)).toBeNull();
+    expect(emptyInboxNote('local', 0)).toBeNull();
   });
 });

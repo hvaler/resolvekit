@@ -1,12 +1,14 @@
-import { Navigate, Route, Routes, useMatch } from 'react-router-dom';
+import { Navigate, Route, Routes, useMatch, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { setRecording, useRecording } from './app/recording';
-import { useServices } from './app/services';
+import { ServicesProvider, useServices } from './app/services';
+import { environmentOf, workspaceRoute } from './domain/environment';
 import type { SimulatedOutcome } from './domain/gateway';
 import { JoinPage, MembersPage, SignInPage } from './pages/AuthPages';
 import { CasePage } from './pages/CasePage';
 import { LandingPage } from './pages/LandingPage';
 import { InboxPage } from './pages/InboxPage';
+import { CheckingScreen, WaitingScreen } from './pages/WorkspaceStates';
 import { processingDispute } from './fixtures';
 
 const OUTCOMES: { v: SimulatedOutcome; l: string }[] = [
@@ -80,14 +82,47 @@ function showDevControls(): boolean {
   }
 }
 
-/**
- * `/`: on the hosted demo a signed-out visitor gets the landing page; signed in (or locally, where there is no
- * sign-in) it is the inbox, also at `/cases`.
- */
+/** `/`: a signed-out visitor on the hosted demo gets the landing page; everyone else goes to the cases. */
 function Home() {
   const { demo, accountKnown } = useServices();
   if (!accountKnown) return <div className="min-h-[100dvh] bg-bg" />;
-  return demo && !demo.signedIn ? <LandingPage /> : <InboxPage />;
+  return demo && !demo.signedIn ? <LandingPage /> : <Navigate to="/cases" replace />;
+}
+
+/** `/cases` and `/cases/:id/*`: what they show depends on the environment (see `workspaceRoute`). */
+function WorkspaceCases() {
+  const { id = null } = useParams();
+  const { area, demo, accountKnown, modeKnown, health } = useServices();
+  const env = environmentOf(area, demo);
+  // Nothing is decided before the account and (for an evaluation workspace) the bound cases are known.
+  if (!accountKnown || (env.kind === 'evaluation' && !modeKnown)) return <div className="min-h-[100dvh] bg-bg" />;
+  const route = workspaceRoute(env, { caseId: id }, health?.bound ?? []);
+  switch (route.kind) {
+    case 'redirect':
+      return <Navigate to={route.to} replace />;
+    case 'waiting':
+      return <WaitingScreen />;
+    case 'checking':
+      return <CheckingScreen />;
+    case 'case':
+      return <CasePage />;
+    default:
+      return <InboxPage />;
+  }
+}
+
+/** `/demo/*`: the public Explore demo, on its own services (simulator only) inside the workspace's account state. */
+function DemoArea() {
+  return (
+    <ServicesProvider area="demo">
+      <Routes>
+        <Route index element={<InboxPage />} />
+        <Route path="cases" element={<InboxPage />} />
+        <Route path="cases/:id/*" element={<CasePage />} />
+        <Route path="*" element={<Navigate to="/demo" replace />} />
+      </Routes>
+    </ServicesProvider>
+  );
 }
 
 export function App() {
@@ -96,8 +131,9 @@ export function App() {
     <>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/cases" element={<InboxPage />} />
-        <Route path="/cases/:id/*" element={<CasePage />} />
+        <Route path="/demo/*" element={<DemoArea />} />
+        <Route path="/cases" element={<WorkspaceCases />} />
+        <Route path="/cases/:id/*" element={<WorkspaceCases />} />
         <Route path="/signin" element={<SignInPage />} />
         <Route path="/join" element={<JoinPage />} />
         <Route path="/workspace" element={<MembersPage />} />

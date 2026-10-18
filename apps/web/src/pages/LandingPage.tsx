@@ -78,7 +78,7 @@ export function LandingPage() {
         <Link to="/signin" className="whitespace-nowrap text-[12.5px] font-medium text-ink no-underline hover:text-acc">
           Sign in
         </Link>
-        <Link to="/cases" data-testid="try-demo" className="flex h-8 items-center whitespace-nowrap rounded-lg bg-acc px-3 text-[12.5px] font-semibold text-acc-ink no-underline">
+        <Link to="/demo" data-testid="try-demo" className="flex h-8 items-center whitespace-nowrap rounded-lg bg-acc px-3 text-[12.5px] font-semibold text-acc-ink no-underline">
           Try the demo
         </Link>
       </header>
@@ -93,7 +93,7 @@ export function LandingPage() {
               after you approve exactly what goes out.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <Link to="/cases" className="flex h-11 items-center rounded-xl bg-acc px-5 text-[14px] font-semibold text-acc-ink no-underline">
+              <Link to="/demo" className="flex h-11 items-center rounded-xl bg-acc px-5 text-[14px] font-semibold text-acc-ink no-underline">
                 Try the demo
               </Link>
               <Link to="/signin" className="flex h-11 items-center rounded-xl border border-line-2 bg-surface px-5 text-[14px] font-medium text-ink no-underline">

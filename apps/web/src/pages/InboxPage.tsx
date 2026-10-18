@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { usePolling, useServices } from '../app/services';
 import { AppBar } from '../components/AppBar';
 import { InboxGrid } from '../components/inbox/InboxGrid';
 import { PayPalNotices } from '../components/PayPalNotices';
 import { cx } from '../components/ui';
-import { CHIPS, applySnapshot, chipCounts, clockNote, inboxSummary, toGridRow, type ChipKey, type InboxGridRow } from '../domain/inbox';
+import { casesBase, environmentOf } from '../domain/environment';
+import { CHIPS, applySnapshot, chipCounts, clockNote, emptyInboxNote, evaluationRows, inboxSummary, toGridRow, type ChipKey, type InboxDispute, type InboxGridRow } from '../domain/inbox';
 import { boundInboxRow, payPalSource } from '../domain/paypalView';
 import { DEMO_NOW, inbox } from '../fixtures';
 
@@ -13,11 +14,11 @@ import { DEMO_NOW, inbox } from '../fixtures';
  * Inbox rows. A dispute bound to real PayPal takes every PayPal field from PayPal (or "—" while reading / when
  * unreachable) and its due time from the real clock; the synthetic ones take the simulator's read on the demo clock.
  */
-function useRows(): { rows: InboxGridRow[]; clock: { simulated: number; bound: number } } {
+function useRows(disputes: InboxDispute[]): { rows: InboxGridRow[]; clock: { simulated: number; bound: number } } {
   const { snapshots, modeOf, modeKnown, readErrors } = useServices();
   return useMemo(() => {
     const clock = { simulated: 0, bound: 0 };
-    const rows = inbox.map((d) => {
+    const rows = disputes.map((d) => {
       const src = payPalSource(modeKnown ? modeOf(d.id) : null, snapshots[d.id], readErrors[d.id]);
       if (src.kind === 'simulated' || src.kind === 'checking') {
         clock.simulated++;
@@ -27,17 +28,22 @@ function useRows(): { rows: InboxGridRow[]; clock: { simulated: number; bound: n
       return toGridRow(boundInboxRow(d, src), new Date());
     });
     return { rows, clock };
-  }, [snapshots, modeOf, modeKnown, readErrors]);
+  }, [disputes, snapshots, modeOf, modeKnown, readErrors]);
 }
 
 export function InboxPage() {
-  const { rows, clock } = useRows();
+  const { snapshots, sync, refreshAll, modeKnown, area, demo, health } = useServices();
+  const env = environmentOf(area, demo);
+  // The demo shows every fictional case; the evaluation workspace only the cases bound to real sandbox disputes.
+  const bound = health?.bound;
+  const disputes = useMemo(() => (env.kind === 'evaluation' ? evaluationRows(inbox, bound ?? []) : inbox), [env.kind, bound]);
+  const { rows, clock } = useRows(disputes);
+  const emptyNote = modeKnown ? emptyInboxNote(env.kind === 'evaluation' ? 'evaluation' : env.kind === 'demo' ? 'demo' : 'local', rows.length) : null;
   const note = clockNote(clock);
   const navigate = useNavigate();
-  const { snapshots, sync, refreshAll, modeKnown } = useServices();
   // Rows are hidden until it is known which disputes are real PayPal ones, so no demo value stands in for PayPal's.
   const loading = !sync.loaded || !modeKnown;
-  const tracked = useMemo(() => inbox.map((r) => r.id).filter((id) => snapshots[id]), [snapshots]);
+  const tracked = useMemo(() => disputes.map((r) => r.id).filter((id) => snapshots[id]), [disputes, snapshots]);
   usePolling(tracked);
   const lastChecked = Math.max(...Object.values(snapshots).map((s) => s.checkedAt));
 
@@ -52,7 +58,7 @@ export function InboxPage() {
     setChips([]);
   }, []);
   const toggle = (k: ChipKey) => setChips((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
-  const onOpen = useCallback((r: InboxGridRow) => navigate(`/cases/${r.id}`), [navigate]);
+  const onOpen = useCallback((r: InboxGridRow) => navigate(`${casesBase(area)}/${r.id}`), [navigate, area]);
 
   return (
     <div className="flex min-h-screen min-w-[1180px] flex-col max-md:min-w-0">
@@ -70,6 +76,12 @@ export function InboxPage() {
         </div>
 
         <PayPalNotices />
+
+        {env.kind === 'evaluation' && (
+          <Link to="/demo" className="self-start text-[12.5px] text-acc">
+            Explore demo · {inbox.length - rows.length} more fictional cases
+          </Link>
+        )}
 
         <div role="group" aria-label="Saved filters and search" className="flex flex-wrap items-center gap-2">
           <span className="text-[12px] text-ink-3">Saved filters</span>
@@ -122,6 +134,12 @@ export function InboxPage() {
             Reset columns
           </button>
         </div>
+
+        {emptyNote && (
+          <p role="status" className="m-0 rounded-lg border border-line bg-surface px-4 py-3 text-[13.5px] text-ink-2">
+            {emptyNote}
+          </p>
+        )}
 
         <div role="region" aria-label="Disputes grid" className="max-md:min-w-0">
           <InboxGrid

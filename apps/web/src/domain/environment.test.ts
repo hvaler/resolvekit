@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountWorkspace, DemoState } from './demoClient';
 import { draftKey } from './draftStore';
-import { casesBase, draftScope, environmentOf } from './environment';
+import { casesBase, draftScope, environmentOf, workspaceRoute, type Environment } from './environment';
 
 function state(connection: AccountWorkspace['connection'], role: 'owner' | 'member' = 'owner'): DemoState {
   return {
@@ -51,5 +51,32 @@ describe('draftScope', () => {
     expect(draftScope('workspace', null)).toBe('local');
     const k = (scope: string) => draftKey({ scope, caseId: 'c1', analysis: 'a' });
     expect(k(draftScope('demo', null))).not.toBe(k(draftScope('workspace', null)));
+  });
+});
+
+describe('workspaceRoute', () => {
+  const BOUND = ['PP-R-TVH-10190665'];
+  const evaluation: Environment = { kind: 'evaluation', workspace: 'Northwind Goods' };
+  it('signed out goes to sign-in and comes back to where it was going', () => {
+    expect(workspaceRoute({ kind: 'signed-out' }, { caseId: 'PP-R-TVH-10190665' }, [])).toEqual({ kind: 'redirect', to: '/signin?next=%2Fcases%2FPP-R-TVH-10190665' });
+    expect(workspaceRoute({ kind: 'signed-out' }, { caseId: null }, [])).toEqual({ kind: 'redirect', to: '/signin?next=%2Fcases' });
+  });
+  it('evaluation: an unbound case id goes to the same case in the demo, a bound one opens', () => {
+    expect(workspaceRoute(evaluation, { caseId: 'PP-R-PLN-10189901' }, BOUND)).toEqual({ kind: 'redirect', to: '/demo/cases/PP-R-PLN-10189901' });
+    expect(workspaceRoute(evaluation, { caseId: 'PP-R-TVH-10190665' }, BOUND)).toEqual({ kind: 'case', id: 'PP-R-TVH-10190665' });
+    expect(workspaceRoute(evaluation, { caseId: null }, BOUND)).toEqual({ kind: 'inbox' });
+  });
+  it('merchant waits, on the inbox and on any case', () => {
+    const m: Environment = { kind: 'merchant', owner: true };
+    expect(workspaceRoute(m, { caseId: null }, BOUND)).toEqual({ kind: 'waiting' });
+    expect(workspaceRoute(m, { caseId: 'PP-R-TVH-10190665' }, BOUND)).toEqual({ kind: 'waiting' });
+  });
+  it('checking checks', () => {
+    expect(workspaceRoute({ kind: 'checking' }, { caseId: null }, [])).toEqual({ kind: 'checking' });
+    expect(workspaceRoute({ kind: 'checking' }, { caseId: 'x' }, [])).toEqual({ kind: 'checking' });
+  });
+  it('local mode is the inbox and the case as today, bound or not', () => {
+    expect(workspaceRoute({ kind: 'local' }, { caseId: null }, [])).toEqual({ kind: 'inbox' });
+    expect(workspaceRoute({ kind: 'local' }, { caseId: 'PP-R-PLN-10189901' }, [])).toEqual({ kind: 'case', id: 'PP-R-PLN-10189901' });
   });
 });
