@@ -460,6 +460,12 @@ export function createApi(opts: ApiOptions): Api {
     if (!person || !(await viewerLive(req))) return [];
     return uploads.list({ workspaceId: person.workspaceId, caseId, boundDisputeId: disputeId, statuses: ['confirmed'] });
   };
+  /** Whether each of these upload records is still confirmed and unchanged in the store (synchronous). */
+  const uploadsUnchanged = (recs: readonly UploadRecord[]): boolean =>
+    recs.every((r) => {
+      const cur = uploads.get(r.id);
+      return !!cur && cur.status === 'confirmed' && cur.sha256 === r.sha256 && cur.evidenceId === r.evidenceId && JSON.stringify(cur.lines) === JSON.stringify(r.lines);
+    });
   /**
    * The input with the uploads' documents after the case's own. The pin (InputPins, keyed by case only) is resolved
    * on the input without them, so it never holds one workspace's uploads (nor their text) for another's request.
@@ -831,6 +837,12 @@ export function createApi(opts: ApiOptions): Api {
     if (notSeller) return notSeller;
     const composed = await compose(caseId, st, ir);
     if (composed instanceof Response) return composed;
+    // In the same synchronous step as creating it: every upload in the input (attached or only quoted) is still the
+    // confirmed one it was composed from. One deleted or changed while composing never ends up in an intent.
+    if (!uploadsUnchanged(st.uploads)) {
+      forgetAnalyses([composed.content.analysisKey]);
+      return json(409, { error: 'UPLOAD_CHANGED', detail: 'An upload in this response was deleted or changed while it was being composed; nothing was created. Compose it again.' });
+    }
     const intent = intents.create(
       { ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local', team: who.team ?? null, analysisHash: composed.analysisHash, inputUploads: st.uploads.map((r) => r.id) },
       composed.analysis,
@@ -1058,11 +1070,15 @@ export function createApi(opts: ApiOptions): Api {
     reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'upload') : null,
     caseBinding: (caseId) => bindingOf(caseId)?.dispute ?? null,
     record: (e) => intents.record(e),
-    // Deletion wins over reuse: an unsent intent attaching the upload is void; a send in flight is waited for.
+    // Deletion wins over reuse: an unsent intent attaching or quoting the upload is void; a send in flight is waited for.
     attachedTo: {
       sending: (id) => intents.usingUpload(id).some((i) => i.status === 'sending'),
       invalidate: (rec, actor) => {
-        for (const i of intents.usingUpload(rec.id)) if (i.status !== 'sending') intents.invalidate(i.id, `evidence ${rec.evidenceId ?? rec.id} it attaches was deleted`, actor);
+        for (const i of intents.usingUpload(rec.id)) {
+          if (i.status === 'sending') continue;
+          const how = i.request.attachments?.includes(rec.id) ? 'it attaches' : 'it was composed with';
+          intents.invalidate(i.id, `evidence ${rec.evidenceId ?? rec.id} ${how} was deleted`, actor);
+        }
       },
     },
     // Deleting an upload forgets what quotes it: stored analyses, jobs and progress, re-check verdicts, the case's pin.

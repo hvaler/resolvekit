@@ -652,9 +652,14 @@ export class IntentStore {
     }
   }
 
-  /** The open or in-flight intents that attach this upload (whoever owns them). */
+  /**
+   * The open or in-flight intents that use this upload (whoever owns them): they attach it, or it was in the input
+   * they were composed from (their notes and sentences may quote it).
+   */
   usingUpload(uploadId: string): StoredIntent[] {
-    return [...this.intents.values()].filter((i) => i.request.attachments?.includes(uploadId) && this.intents.has(this.fresh(i).id) && (OPEN.includes(i.status) || i.status === 'sending'));
+    return [...this.intents.values()].filter(
+      (i) => (i.request.attachments?.includes(uploadId) || i.inputUploads?.includes(uploadId)) && this.intents.has(this.fresh(i).id) && (OPEN.includes(i.status) || i.status === 'sending'),
+    );
   }
 
   /** Invalidate every open intent (the operator changed the bindings). */

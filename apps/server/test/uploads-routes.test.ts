@@ -1036,7 +1036,7 @@ function sendSetup() {
     return i.body;
   };
   const send = (cookie: string, intentId: string) => call(app, `/api/disputes/${CASE}/evidence`, { body: { intentId }, cookie }) as unknown as Promise<{ status: number; body: { error?: string; detail?: string } }>;
-  return { app, people, store, intents, analyses, sends, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
+  return { app, people, store, intents, analyst, analyses, sends, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
 }
 type SentIntent = { id: string; contentHash: string; status: string; files: { name: string; size: string; sha256?: string; source?: string }[] };
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -1175,6 +1175,75 @@ test('deleting an upload used by a send in flight is refused (SEND_IN_PROGRESS);
   // Once the outcome is known it can be deleted (PayPal keeps its copy; the sent intent stays sent).
   assert.equal((await call(s.app, `${P}/${e7.id}`, { method: 'DELETE', cookie })).status, 200);
   assert.equal(s.intents.peek(j.id)!.status, 'sent');
+});
+
+/** Holds the next `analyst.stored` call (composing an intent) once it has its answer, until `release()`. */
+function holdStored(analyst: AnalystService) {
+  let release!: () => void;
+  let reached!: () => void;
+  const gate = new Promise<void>((ok) => (release = ok));
+  const held = new Promise<void>((ok) => (reached = ok));
+  const real = analyst.stored.bind(analyst);
+  analyst.stored = async (input) => {
+    const a = await real(input);
+    analyst.stored = real;
+    reached();
+    await gate;
+    return a;
+  };
+  return { release, held };
+}
+
+test('an upload deleted while an intent is being composed: nothing is created (UPLOAD_CHANGED), attached or only quoted', TIMEOUT, async () => {
+  for (const attach of [true, false]) {
+    const s = sendSetup();
+    const cookie = s.people.fullMember('Ana Lopez');
+    const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+    const e8 = await s.confirmText(cookie, `${TOKEN} email\nIt arrived.`, 'email.txt');
+    const quoting = { id: 'S7', text: `Quoting ${TOKEN}.`, noteId: null, citations: [{ doc: 'E8', quote: `${TOKEN} email`, valid: true }], verdict: 'supported', reason: null, decidedBy: 'model', rewrite: null } as unknown as CaseAnalysis['sentences'][number];
+    await s.analyse(cookie, [quoting]);
+    const before = s.intents.size();
+    const h = holdStored(s.analyst);
+    const creating = s.intent(cookie, { attachments: attach ? [e7.id, e8.id] : [e7.id] });
+    await h.held;
+    assert.equal((await call(s.app, `${P}/${e8.id}`, { method: 'DELETE', cookie })).status, 200);
+    h.release();
+    const r = await creating;
+    assert.equal(r.status, 409, JSON.stringify(r.body).slice(0, 300));
+    assert.equal(r.body.error, 'UPLOAD_CHANGED');
+    assert.ok(!JSON.stringify(r.body).includes(TOKEN));
+    assert.equal(s.intents.size(), before, 'no intent was created');
+  }
+});
+
+test('an upload only quoted by an intent (in its input, not attached) is in use: refused while sending, voids the approved intent when deleted', TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+  const e8 = await s.confirmText(cookie, 'From: buyer\nIt arrived.', 'email.txt');
+  await s.analyse(cookie);
+
+  // Approved, not sent, attaches none of the uploads: deleting E8 (in its input) voids it.
+  const i = await s.approved(cookie);
+  assert.equal((await call(s.app, `${P}/${e8.id}`, { method: 'DELETE', cookie })).status, 200);
+  assert.equal(s.intents.peek(i.id)!.status, 'invalidated');
+  assert.match(s.intents.peek(i.id)!.reason!, /E8.*deleted/);
+
+  // In flight, attaching E7 only: E9 (in its input, not attached) cannot be deleted until the outcome is known.
+  const e9 = await s.confirmText(cookie, 'Note\nLeft at the door.', 'note.txt');
+  await s.analyse(cookie);
+  const j = await s.approved(cookie, { attachments: [e7.id] });
+  let release!: () => void;
+  s.holdSends(new Promise<void>((r) => (release = r)));
+  const sending = s.send(cookie, j.id);
+  while (s.sends.length === 0) await new Promise((r) => setTimeout(r, 5));
+  const del = await call(s.app, `${P}/${e9.id}`, { method: 'DELETE', cookie });
+  assert.equal(del.status, 409);
+  assert.equal(del.body.error, 'SEND_IN_PROGRESS');
+  assert.equal(s.store.get(e9.id)!.status, 'confirmed');
+  release();
+  assert.equal((await sending).status, 202);
+  assert.equal((await call(s.app, `${P}/${e9.id}`, { method: 'DELETE', cookie })).status, 200);
 });
 
 test('a sentence citing a corrected line of a confirmed upload is composed only with its sentence@line confirmation', TIMEOUT, async () => {

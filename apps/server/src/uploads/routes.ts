@@ -8,8 +8,8 @@
  *   POST   /api/cases/:id/uploads/:u/confirm       { lines, sha256 } → E<n>, the original dropped
  *   POST   /api/cases/:id/uploads/:u/discard       before confirmation: files removed
  *   DELETE /api/cases/:id/uploads/:u               owners and full members: files removed; refused while a send
- *                                                   attaching it is in flight, voids the unsent intents attaching it and
- *                                                   purges the analyses that read it
+ *                                                   using it (attached or in its input) is in flight, voids the unsent
+ *                                                   intents using it and purges the analyses that read it
  *
  * Nothing of an upload leaves this server here: OCR is local, nothing is sent to PayPal or a model. Audit details and
  * log lines carry ids and file names only, never text or bytes. A pending upload past its expiry is discarded the
@@ -67,8 +67,9 @@ export interface UploadRoutesOptions {
   /** Total size of stored upload files (default MAX_STORAGE_BYTES). */
   maxStorageBytes?: number;
   /**
-   * The submission intents attaching an upload: whether one is being sent right now (deleting it waits for the
-   * outcome), and invalidating the unsent ones when it is deleted. Absent: none.
+   * The submission intents using an upload (attaching it, or composed from an input containing it): whether one is
+   * being sent right now (deleting it waits for the outcome), and invalidating the unsent ones when it is deleted.
+   * Absent: none.
    */
   attachedTo?: { sending(uploadId: string): boolean; invalidate(rec: UploadRecord, actor: string): void };
   /**
@@ -333,7 +334,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
   const remove = (s: Scope, rec: UploadRecord): Response => {
     if (!canDeleteUpload(s.person)) return refuse(403, 'FORBIDDEN', 'Only owners and full members delete uploads');
     // Checked and done in one synchronous step: a send cannot start in between (its start is synchronous too).
-    if (o.attachedTo?.sending(rec.id)) return refuse(409, 'SEND_IN_PROGRESS', 'A response attaching this upload is being sent to PayPal right now; delete it once the outcome is known');
+    if (o.attachedTo?.sending(rec.id)) return refuse(409, 'SEND_IN_PROGRESS', 'A response that attaches or quotes this upload is being sent to PayPal right now; delete it once the outcome is known');
     // The analyses that read it (and what hangs from them) go first: if that fails the upload stays, and deleting can be retried.
     try {
       o.purge?.(rec.analysisKeys, rec.caseId, rec.id);
