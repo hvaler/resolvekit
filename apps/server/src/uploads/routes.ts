@@ -1,9 +1,15 @@
 /**
  * The HTTP routes of merchant evidence uploads, for the seller's workspace (local mode: the operator):
  *
- *   POST   /api/cases/:id/uploads                  image/png | image/jpeg (raw, `x-upload-name`) or JSON { text, name }
+ *   POST   /api/cases/:id/uploads                  image/png | image/jpeg | application/pdf (raw, `x-upload-name`) or
+ *                                                   JSON { text, name }; a PDF of up to 5 pages is selected whole and
+ *                                                   its job starts, a longer one waits for a selection (thumbnails)
  *   GET    /api/cases/:id/uploads                  this workspace's uploads of the case and its active dispute
  *   GET    /api/cases/:id/uploads/:u/image?v=…     original (pending/reviewing, people who can edit it) | sanitised
+ *   POST   /api/cases/:id/uploads/:u/select        { pages }: 1–5 pages of a PDF, once, while selecting → its job starts
+ *   GET    /api/cases/:id/uploads/:u/page/:k?v=…   page k of the selection: original (the uncovered render, as for
+ *                                                   an image's original) | sanitised
+ *   GET    /api/cases/:id/uploads/:u/thumb/:n      thumbnail of page n of the PDF, while selecting
  *   POST   /api/cases/:id/uploads/:u/redact        { rects } | { removals } → sanitised file, re-read from it
  *   POST   /api/cases/:id/uploads/:u/confirm       { lines, sha256 } → E<n>, the original dropped
  *   POST   /api/cases/:id/uploads/:u/discard       before confirmation: files removed
@@ -23,10 +29,12 @@ import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
 import { uploadDocuments, uploadTitle } from './documents.ts';
 import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
-import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE } from './limits.ts';
+import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED } from './limits.ts';
 import { ocrPng } from './ocr.ts';
+import { TOO_BIG, inspectPdf } from './pdf-input.ts';
+import type { PdfJob } from './pdf-job.ts';
 import { canDeleteUpload, canEditUpload } from './permissions.ts';
-import type { UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
+import type { PdfPage, UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
 import { pastedTextPdf, redactText, textLines, type TextRemoval } from './text.ts';
 
 /** The one route that takes a raw file body; group 1 is the case id (node.ts sizes its body limit with it). */
@@ -37,18 +45,25 @@ export const REDACT_PATH = /^\/api\/cases\/[A-Za-z0-9-]{1,64}\/uploads\/upl-[0-9
 export const REFUSED_EARLY = 'x-rk-refused-early';
 /** Redactions per upload. */
 export const MAX_REDACTS = 5;
-const ROUTE = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/uploads(?:\/(upl-[0-9a-f]{24})(?:\/(image|redact|confirm|discard))?)?$/;
+/** Groups 4 and 5: `page` or `thumb` and its number as sent, checked by the route (400), never trusted by the pattern. */
+const ROUTE = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/uploads(?:\/(upl-[0-9a-f]{24})(?:\/(image|redact|confirm|discard|select)|\/(page|thumb)\/([^/]*))?)?$/;
 const IMAGE_TYPES = ['image/png', 'image/jpeg'];
+const PDF_TYPE = 'application/pdf';
 
 const mediaType = (contentType: string | null) => (contentType ?? '').split(';')[0]!.trim().toLowerCase();
 
 /** image/png or image/jpeg. */
 export const isImageType = (contentType: string | null): boolean => IMAGE_TYPES.includes(mediaType(contentType));
+/** application/pdf. */
+export const isPdfType = (contentType: string | null): boolean => mediaType(contentType) === PDF_TYPE;
 
-/** Whether a request may carry an image body: POST to the upload route with image/png or image/jpeg. */
-export function acceptsImageBody(method: string, path: string, contentType: string | null): boolean {
-  return method === 'POST' && UPLOAD_PATH.test(path) && isImageType(contentType);
+/** Whether a request may carry a file body: POST to the upload route with image/png, image/jpeg or application/pdf. */
+export function acceptsFileBody(method: string, path: string, contentType: string | null): boolean {
+  return method === 'POST' && UPLOAD_PATH.test(path) && (isImageType(contentType) || isPdfType(contentType));
 }
+
+/** A page or thumbnail number as written in a path: 1..PDF_MAX_PAGES, digits only, no leading zero; else null. */
+const pageNumber = (raw: string): number | null => (/^[1-9]\d{0,2}$/.test(raw) && Number(raw) <= PDF_MAX_PAGES ? Number(raw) : null);
 
 export interface UploadRoutesOptions {
   store: UploadStore;
@@ -79,6 +94,13 @@ export interface UploadRoutesOptions {
    * job, progress, re-check verdicts), and the case's pinned input. May throw if a stored file cannot be removed.
    */
   purge?: (analysisKeys: string[], caseId: string, uploadId: string) => void;
+  /** Renders and reads PDF uploads in the background. Absent: PDFs are refused (415). */
+  pdfJob?: Pick<PdfJob, 'start'> | null;
+  /**
+   * Hosted: count `pages` page reads against the address's upload limit, all or none (a redaction is one). Called
+   * before a PDF's pages are chosen for reading; a refusal is answered as it is. Absent: not metered (local mode).
+   */
+  meterPages?: ((req: Request, pages: number) => Reservation) | null;
 }
 
 const json = (status: number, body: unknown) =>
@@ -115,9 +137,20 @@ const LINE_STRAY = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
  * confirmed upload (exactly what the analysis reads: lines, fragment keys, corrections), null before confirmation.
  */
 function view(r: UploadRecord) {
-  const { workspaceId: _w, analysisKeys: _a, redactions: _r, ...v } = r;
-  return { ...v, document: uploadDocuments([r])[0] ?? null };
+  const { workspaceId: _w, analysisKeys: _a, redactions: _r, pdf, ...v } = r;
+  // A PDF's pages without their counters; the text layer is never part of the record.
+  const pdfView = pdf ? { pdf: { pageCount: pdf.pageCount, selected: pdf.selected, pages: pdf.pages.map(({ redactions: _n, ...p }) => p), job: pdf.job } } : {};
+  return { ...v, ...pdfView, document: uploadDocuments([r])[0] ?? null };
 }
+
+/** A stored image (PNG; an image's original may be a JPEG), never cached, never sniffed. */
+function imageResponse(bytes: Uint8Array): Response {
+  const type = bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg' : 'image/png';
+  return new Response(bytes as BodyInit, { status: 200, headers: { 'content-type': type, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'content-disposition': 'inline' } });
+}
+
+/** A page of the selection before it is rendered: nothing covered, read or added yet. */
+const freshPage = (original: number): PdfPage => ({ original, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0 });
 
 /** A file name to show: the last path segment, without control characters, at most 120 characters. */
 function cleanName(raw: unknown, fallback: string): string {
@@ -208,11 +241,72 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
   const archived = (s: Scope, r: UploadRecord) => r.status === 'archived' || r.boundDisputeId !== s.disputeId;
   const archivedRefusal = () => refuse(409, 'UPLOAD_ARCHIVED', 'The case moved to another PayPal dispute since this was uploaded; upload it again for the current one');
 
-  /** POST /uploads: an image (raw body) or pasted text (JSON). Limits and the day's unit are checked before any work. */
+  /**
+   * POST /uploads with a PDF: its pages counted (refused when too large, encrypted or unreadable), then stored with
+   * its job state. Up to PDF_MAX_SELECTED pages are all selected and read now; a longer one waits for a selection.
+   */
+  const addPdf = async (req: Request, s: Scope): Promise<Response> => {
+    if (!o.pdfJob) return refuse(415, 'UNSUPPORTED_TYPE', 'Upload a PNG or JPEG image, or paste text');
+    const original = new Uint8Array(await req.arrayBuffer());
+    if (original.length > PDF_MAX_BYTES) return refuse(413, 'TOO_LARGE', TOO_BIG);
+    const name = cleanName(req.headers.get('x-upload-name'), 'document.pdf');
+    if (shown(s).length >= MAX_UPLOADS_PER_CASE) return tooMany();
+    if (!hasRoom(original.length)) return storageFull();
+    const reserved = o.reserve?.(req) ?? null;
+    if (reserved && !reserved.ok) return json(reserved.refusal.status, reserved.refusal.body);
+
+    // From here on the day's unit is spent, whatever happens: the file is parsed (in the PDF reader's child).
+    s.worked = true;
+    let pageCount: number;
+    try {
+      pageCount = (await inspectPdf(original)).pages;
+    } catch (e) {
+      // Encrypted or not a readable PDF: the file is the problem, not the request's type.
+      if (e instanceof UploadError && e.code === 'UNREADABLE') return refuse(422, e.code, e.message);
+      throw e;
+    }
+    // Checked again in the same synchronous step as storing: concurrent uploads cannot pass the limits.
+    if (shown(s).length >= MAX_UPLOADS_PER_CASE) return tooMany();
+    if (!hasRoom(original.length)) return storageFull();
+    const whole = pageCount <= PDF_MAX_SELECTED;
+    // Every page read counts once: the upload itself is the first (as an image's is its reading), the others here.
+    const metered = whole && pageCount > 1 ? (o.meterPages?.(req, pageCount - 1) ?? null) : null;
+    if (metered && !metered.ok) return json(metered.refusal.status, metered.refusal.body);
+    const selected = whole ? Array.from({ length: pageCount }, (_, i) => i + 1) : null;
+    const pdf = {
+      pageCount,
+      selected,
+      pages: (selected ?? []).map(freshPage),
+      job: whole ? { state: 'rendering' as const, page: 0, of: pageCount } : { state: 'selecting' as const, page: 0, of: pageCount },
+    };
+    let rec: UploadRecord;
+    try {
+      const created = store.create({ workspaceId: s.person.workspaceId, caseId: s.caseId, boundDisputeId: s.disputeId, kind: 'pdf', name, uploadedBy: { id: s.person.id, label: s.person.label, name: s.person.name } }, original);
+      try {
+        rec = store.update(created.id, { pdf });
+      } catch (e) {
+        try { store.update(created.id, { status: 'discarded' }); } catch { /* the sweep drops what is left */ }
+        throw e;
+      }
+    } catch (e) {
+      // No page was read.
+      if (metered?.ok) metered.release();
+      throw e;
+    }
+    audit(s, 'upload_added', rec);
+    o.pdfJob.start(rec.id);
+    return json(201, { upload: view(rec) });
+  };
+
+  /** POST /uploads: an image or a PDF (raw body) or pasted text (JSON). Limits and the day's unit are checked before any work. */
   const add = async (req: Request, s: Scope): Promise<Response> => {
-    const declared = Number(req.headers.get('content-length') ?? '');
-    if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) return refuse(413, 'TOO_LARGE', `Files up to ${MAX_FILE_BYTES / 1024 / 1024} MB`);
     const type = mediaType(req.headers.get('content-type'));
+    const declared = Number(req.headers.get('content-length') ?? '');
+    if (type === PDF_TYPE) {
+      if (Number.isFinite(declared) && declared > PDF_MAX_BYTES) return refuse(413, 'TOO_LARGE', TOO_BIG);
+      return addPdf(req, s);
+    }
+    if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) return refuse(413, 'TOO_LARGE', `Files up to ${MAX_FILE_BYTES / 1024 / 1024} MB`);
     let kind: UploadRecord['kind'];
     let original: Uint8Array;
     let name: string;
@@ -236,7 +330,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       kind = 'text';
       name = cleanName(b.name, 'pasted text');
     } else {
-      return refuse(415, 'UNSUPPORTED_TYPE', 'Upload a PNG or JPEG image, or paste text');
+      return refuse(415, 'UNSUPPORTED_TYPE', 'Upload a PNG or JPEG image or a PDF, or paste text');
     }
     if (shown(s).length >= MAX_UPLOADS_PER_CASE) return tooMany();
     if (!hasRoom(original.length)) return storageFull();
@@ -390,13 +484,77 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       bytes = store.sanitised(rec.id);
     }
     if (!bytes) return refuse(404, 'NOT_FOUND', 'Not redacted yet');
-    const type = bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg' : 'image/png';
-    return new Response(bytes as BodyInit, { status: 200, headers: { 'content-type': type, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'content-disposition': 'inline' } });
+    return imageResponse(bytes);
+  };
+
+  /** POST /select: the pages of a long PDF to read, once, while it is selecting; the thumbnails go, the job starts. */
+  const choose = async (req: Request, s: Scope, rec: UploadRecord): Promise<Response> => {
+    if (rec.kind !== 'pdf' || !rec.pdf || !o.pdfJob) return refuse(404, 'NOT_FOUND', 'No such PDF in this case');
+    if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'A reviewer chooses the pages of their own uploads only');
+    if (archived(s, rec)) return archivedRefusal();
+    const chosen = 'The pages of this PDF are chosen already; discard it and upload it again to choose others';
+    if (!EDITABLE.includes(rec.status) || rec.pdf.selected || rec.pdf.job.state !== 'selecting') return refuse(409, 'WRONG_STATUS', chosen);
+    const parsed = await readJson(req);
+    if (!parsed.ok) return refuse(400, 'INVALID_JSON');
+    const pages = isObject(parsed.body) ? parsed.body.pages : undefined;
+    const count = rec.pdf.pageCount;
+    if (
+      !Array.isArray(pages) || pages.length < 1 || pages.length > PDF_MAX_SELECTED || new Set(pages).size !== pages.length
+      || !pages.every((p): p is number => Number.isInteger(p) && p >= 1 && p <= count)
+    ) {
+      return refuse(400, 'BAD_SELECTION', `pages: 1 to ${PDF_MAX_SELECTED} different page numbers of the document (1 to ${count})`);
+    }
+    // Read again after the body (nothing awaits from here on, so nothing changes in between).
+    const cur = store.get(rec.id);
+    if (!cur?.pdf || !EDITABLE.includes(cur.status) || archived(s, cur)) return refuse(409, 'UPLOAD_CHANGED', 'This upload changed meanwhile; open it again');
+    if (cur.pdf.selected || cur.pdf.job.state !== 'selecting') return refuse(409, 'WRONG_STATUS', chosen);
+    const metered = o.meterPages?.(req, pages.length) ?? null;
+    if (metered && !metered.ok) return json(metered.refusal.status, metered.refusal.body);
+    const selected = [...pages].sort((a, b) => a - b);
+    const thumbs = Object.fromEntries(Array.from({ length: cur.pdf.pageCount }, (_, i) => [i + 1, null]));
+    let next: UploadRecord;
+    try {
+      next = store.update(cur.id, { pdf: { ...cur.pdf, selected, pages: selected.map(freshPage), job: { state: 'rendering', page: 0, of: selected.length } } }, { thumbs });
+    } catch (e) {
+      if (metered?.ok) metered.release();
+      throw e;
+    }
+    audit(s, 'upload_selected', next);
+    o.pdfJob.start(next.id);
+    return json(200, { upload: view(next) });
+  };
+
+  /** GET /page/:k: page k of the selection, sanitised, or (people who can edit it, until confirmed) its uncovered render. */
+  const page = (url: URL, s: Scope, rec: UploadRecord, k: number | null): Response => {
+    if (k === null) return refuse(400, 'BAD_PAGE', `A page number from 1 to ${PDF_MAX_PAGES}`);
+    const v = url.searchParams.get('v') ?? 'sanitised';
+    if (v !== 'original' && v !== 'sanitised') return refuse(400, 'BAD_VERSION', 'v=original or v=sanitised');
+    if (rec.kind !== 'pdf' || !rec.pdf || archived(s, rec)) return refuse(404, 'NOT_FOUND', 'No such PDF in this case');
+    if (k > rec.pdf.pages.length) return refuse(404, 'NOT_FOUND', 'No such page in the selection');
+    let bytes: Uint8Array | null;
+    if (v === 'original') {
+      if (!EDITABLE.includes(rec.status)) return refuse(404, 'NOT_FOUND', 'The uncovered page is kept only until the upload is confirmed');
+      if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'The uncovered page is shown only to people who can edit this upload');
+      bytes = store.origPage(rec.id, k);
+    } else {
+      bytes = store.pageImage(rec.id, k);
+    }
+    return bytes ? imageResponse(bytes) : refuse(404, 'NOT_FOUND', 'Not rendered yet');
+  };
+
+  /** GET /thumb/:n: the thumbnail of page n, uncovered, so for people who can edit the upload, while it is selecting. */
+  const thumb = (s: Scope, rec: UploadRecord, n: number | null): Response => {
+    if (n === null) return refuse(400, 'BAD_PAGE', `A page number from 1 to ${PDF_MAX_PAGES}`);
+    if (rec.kind !== 'pdf' || !rec.pdf || archived(s, rec)) return refuse(404, 'NOT_FOUND', 'No such PDF in this case');
+    if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'Thumbnails are shown only to people who can edit this upload');
+    if (n > rec.pdf.pageCount || rec.pdf.selected || rec.pdf.job.state !== 'selecting') return refuse(404, 'NOT_FOUND', 'Thumbnails are kept only until the pages are chosen');
+    const bytes = store.thumb(rec.id, n);
+    return bytes ? imageResponse(bytes) : refuse(404, 'NOT_FOUND', 'Not made yet');
   };
 
   const handle = async (req: Request, url: URL, s: Scope, m: RegExpExecArray): Promise<Response> => {
     const uploadId = m[2];
-    const sub = m[3];
+    const sub = m[3] ?? m[4];
     if (!uploadId) {
       if (req.method === 'POST') return add(req, s);
       return json(200, { uploads: shown(s).map(view) });
@@ -407,6 +565,11 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (!rec) return refuse(404, 'NOT_FOUND', 'No such upload in this case');
     if (!sub) return remove(s, rec);
     if (sub === 'image') return image(url, s, rec);
+    if (sub === 'page') return page(url, s, rec, pageNumber(m[5]!));
+    if (sub === 'thumb') return thumb(s, rec, pageNumber(m[5]!));
+    if (sub === 'select') return choose(req, s, rec);
+    // Covering and confirming a PDF go page by page, with their own checks.
+    if (rec.kind === 'pdf' && (sub === 'redact' || sub === 'confirm')) return refuse(409, 'WRONG_STATUS', 'A PDF is covered and confirmed page by page');
     if (sub === 'redact') return redact(req, s, rec);
     if (sub === 'confirm') return confirm(req, s, rec);
     return discard(s, rec);
@@ -421,7 +584,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       if (r.status >= 400 && !s?.worked) r.headers.set(REFUSED_EARLY, '1');
       return r;
     };
-    const method = !m[2] ? ['GET', 'POST'] : !m[3] ? ['DELETE'] : m[3] === 'image' ? ['GET'] : ['POST'];
+    const method = !m[2] ? ['GET', 'POST'] : m[4] || m[3] === 'image' ? ['GET'] : !m[3] ? ['DELETE'] : ['POST'];
     if (!method.includes(req.method)) return early(refuse(405, 'METHOD_NOT_ALLOWED'));
     if (!(await o.caseVisible(req, caseId))) return early(refuse(404, 'UNKNOWN_CASE'));
     const person = o.person(req);

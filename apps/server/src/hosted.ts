@@ -28,7 +28,7 @@ import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { SellerMemory, type Connection } from './sellers.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
-import { acceptsImageBody, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
+import { acceptsFileBody, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
 
 /** What the warm-up did for one bound case. */
 export interface WarmUpOutcome {
@@ -241,6 +241,19 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const s = session(req);
       return s.ok ? s.workspace.payerId : null;
     },
+    // Each PDF page read is one unit of the address's upload limit, as a redaction is: all of them or none.
+    meterPages(req: Request, pages: number): Reservation {
+      const ip = clientIp(req, hops, trust);
+      const giveBack = (n: number) => { for (let i = 0; i < n; i++) uploadLimit.release(ip); };
+      for (let taken = 0; taken < pages; taken++) {
+        const t = uploadLimit.take(ip);
+        if (!t.ok) {
+          giveBack(taken);
+          return { ok: false, refusal: { status: 429, body: { error: 'RATE_LIMITED', detail: `Too many uploads from this address; try again in ${Math.ceil(t.retryAfterSec / 60)} min`, retryAfterSec: t.retryAfterSec } } };
+        }
+      }
+      return { ok: true, release: () => giveBack(pages) };
+    },
   };
 
   // Live runs and re-checks analyse inputs the server builds itself (app.ts), behind the seller workspace and the caps.
@@ -332,8 +345,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
         return json(403, { error: 'FORBIDDEN_ORIGIN' });
       }
       const type = req.headers.get('content-type');
-      if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(type ?? '') && !acceptsImageBody(req.method, path, type)) {
-        return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json (an evidence upload may be image/png or image/jpeg)' });
+      if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(type ?? '') && !acceptsFileBody(req.method, path, type)) {
+        return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json (an evidence upload may be image/png, image/jpeg or application/pdf)' });
       }
       const ip = clientIp(req, hops, trust);
       if (!derivationLogged) {

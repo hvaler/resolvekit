@@ -8,13 +8,12 @@ import { join } from 'node:path';
 import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { DailyCounters } from '@resolvekit/hosting';
-import { FileAnalysisStore, MemoryAnalysisStore, RateLimiter, type AnalysisInput, type AnalystModel, type CaseAnalysis } from '@resolvekit/analyst/node';
-import { standardCase } from '@resolvekit/cases';
+import { FileAnalysisStore, MemoryAnalysisStore, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst/node';
 import { PayPalClient } from '@resolvekit/paypal';
-import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
+import { standardScript } from '../../../packages/analyst/test/fake.ts';
 import { AnalystService, InputPins } from '../src/analysis.ts';
 import { createApi, createApp, type ActingPerson } from '../src/app.ts';
-import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
+import { createHostedApp } from '../src/hosted.ts';
 import { IntentStore } from '../src/intents.ts';
 import { toNodeListener } from '../src/node.ts';
 import { sanitiseImage, type Rect } from '../src/uploads/image.ts';
@@ -23,6 +22,7 @@ import { closeOcr, ocrPng } from '../src/uploads/ocr.ts';
 import { canDeleteUpload, canEditUpload } from '../src/uploads/permissions.ts';
 import { UploadStore, type UploadRecord } from '../src/uploads/store.ts';
 import { MODEL, RESOLVED, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
+import { CASE, HOST, ORIGIN, P, REAL, TIMEOUT, call, req, setup, type Answer, type App, type View } from './uploads-kit.ts';
 
 after(() => closeOcr());
 
@@ -62,85 +62,10 @@ test('local mode (no gate): the acting person is the local operator, an owner an
 
 // ------------------------------------------------------------------------------------------------ the routes
 
-const ORIGIN = 'https://rk.example.com';
-const HOST = 'rk.example.com';
-const CASE = standardCase.summary.id;
-const REAL = 'PP-R-REAL-1';
 const TRACKING = '1Z999AA10123456784';
 const SECRET_WORDS = 'Account 9988776655 balance 4321.09 SECRETWORD';
 const fixture = new Uint8Array(readFileSync(new URL('./fixtures/tracking.png', import.meta.url)));
-const TIMEOUT = { timeout: 120_000 };
 
-function setup(o: { caps?: Record<string, number>; capsFile?: string; limits?: Partial<HostedLimits>; storageBytes?: number; storedFileBytes?: number; analysisDir?: string; script?: Parameters<typeof fakeModel>[0]; model?: (m: AnalystModel) => AnalystModel } = {}) {
-  const calls: string[] = [];
-  const fetch = (async (url: string | URL, init: RequestInit = {}) => {
-    const u = new URL(String(url));
-    calls.push(`${init.method ?? 'GET'} ${u.pathname}`);
-    if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
-    const id = decodeURIComponent(u.pathname.split('/').pop()!);
-    return new Response(JSON.stringify({ ...standardDispute(), dispute_id: id }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }) as typeof globalThis.fetch;
-  const fm = fakeModel(o.script ?? standardScript);
-  const analyst = new AnalystService({
-    model: o.model ? o.model(fm.model) : fm.model,
-    primaryModel: 'gemini-3.8-flash',
-    store: o.analysisDir ? new FileAnalysisStore({ dir: o.analysisDir, golden: new Map() }) : new MemoryAnalysisStore(),
-    liveLimit: new RateLimiter({ limit: 50, windowMs: 3_600_000 }),
-    verifyLimit: new RateLimiter({ limit: 50, windowMs: 3_600_000 }),
-  });
-  const people = testAccounts();
-  const lines: string[] = [];
-  const store = new UploadStore({ dir: null });
-  const intents = new IntentStore();
-  const bindings: Record<string, { dispute: string; capture: string }> = { [CASE]: { dispute: REAL, capture: STD_CAPTURE } };
-  const counters = new DailyCounters({ file: o.capsFile ?? null, limits: { upload: 40, ...o.caps } });
-  const app = createHostedApp({
-    paypal: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }),
-    env: 'sandbox',
-    bindings,
-    log: (l) => lines.push(l),
-    analyst,
-    site: null,
-    counters,
-    accounts: people.accounts,
-    identity: null,
-    sessionSecret: TEST_SECRET,
-    origins: [ORIGIN],
-    hosts: [HOST],
-    https: true,
-    intents,
-    uploads: store,
-    ...(o.storageBytes ? { uploadStorageBytes: o.storageBytes } : {}),
-    ...(o.storedFileBytes ? { uploadStoredFileBytes: o.storedFileBytes } : {}),
-    limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 }, ...o.limits },
-  });
-  return { app, calls, model: fm, people, lines, store, intents, bindings, counters, analyst };
-}
-
-type Init = { method?: string; body?: unknown; type?: string; cookie?: string; headers?: Record<string, string> };
-const req = (path: string, i: Init = {}) => {
-  const method = i.method ?? (i.body !== undefined ? 'POST' : 'GET');
-  const raw = i.body instanceof Uint8Array;
-  const headers: Record<string, string> = {
-    host: HOST,
-    'x-forwarded-for': '203.0.113.7',
-    ...(method !== 'GET' ? { origin: ORIGIN } : {}),
-    ...(i.body !== undefined ? { 'content-type': i.type ?? 'application/json' } : {}),
-    ...(i.cookie ? { cookie: i.cookie } : {}),
-    ...i.headers,
-  };
-  const body = i.body === undefined ? undefined : raw ? (i.body as Uint8Array) : typeof i.body === 'string' ? i.body : JSON.stringify(i.body);
-  return new Request(ORIGIN + path, { method, headers, ...(body !== undefined ? { body: body as BodyInit } : {}) });
-};
-const P = `/api/cases/${CASE}/uploads`;
-type View = { id: string; status: string; evidenceId: string | null; kind: string; name: string; sha256: string | null; lines: { text: string; correctedBy: string | null; original: string | null }[]; uploadedBy: { label: string } };
-type Answer = { upload: View; readLines: string[]; error?: string; uploads?: View[] };
-type App = ReturnType<typeof setup>['app'];
-const call = async (app: App, path: string, i: Init = {}) => {
-  const r = await app(req(path, i));
-  const ct = r.headers.get('content-type') ?? '';
-  return { status: r.status, body: (ct.startsWith('application/json') ? await r.json() : null) as Answer, res: r };
-};
 const uploadPng = (app: App, cookie: string, bytes: Uint8Array = fixture, type = 'image/png') => call(app, P, { body: bytes, type, cookie, headers: { 'x-upload-name': 'tracking.png' } });
 const pasteText = (app: App, cookie: string, text = 'From: buyer\nThe parcel arrived, thanks.', name = 'email.txt') => call(app, P, { body: { text, name }, cookie });
 

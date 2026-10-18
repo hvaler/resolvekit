@@ -99,6 +99,7 @@ export type AuditKind =
   /** Merchant evidence uploads (uploads/routes.ts): the detail is the upload id, evidence id and file name, never text. */
   | 'upload_added'
   | 'upload_redacted'
+  | 'upload_selected'
   | 'upload_confirmed'
   | 'upload_discarded'
   | 'upload_deleted';

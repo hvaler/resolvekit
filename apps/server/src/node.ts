@@ -2,11 +2,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PEER_HEADER, clientIp, type ProxyTrust } from '@resolvekit/hosting';
 import type { Handler } from './app.ts';
 import { CASE_FILES } from './documents.ts';
-import { MAX_FILE_BYTES } from './uploads/limits.ts';
-import { UPLOAD_PATH, isImageType } from './uploads/routes.ts';
+import { MAX_FILE_BYTES, PDF_MAX_BYTES } from './uploads/limits.ts';
+import { UPLOAD_PATH, isImageType, isPdfType } from './uploads/routes.ts';
 
 const MAX_BODY = 256 * 1024;
-/** Bodies over {@link MAX_BODY} being read at once (each up to MAX_FILE_BYTES in memory). */
+/** Bodies over {@link MAX_BODY} being read at once (each up to PDF_MAX_BYTES in memory). */
 const MAX_LARGE_IN_FLIGHT = 3;
 /** A large body must arrive whole within this time, or its connection is dropped (slow clients cannot hold a slot). */
 export const LARGE_BODY_DEADLINE_MS = 30_000;
@@ -14,12 +14,14 @@ export const LARGE_BODY_DEADLINE_MS = 30_000;
 const DRAIN_MS = 1_000;
 
 /**
- * The body limit of a request: MAX_FILE_BYTES for an image (image/png, image/jpeg) posted to the upload route of a
- * case that exists, 256 KB for everything else. Decided on the request line and headers alone, before reading.
+ * The body limit of a request: posted to the upload route of a case that exists, MAX_FILE_BYTES for an image
+ * (image/png, image/jpeg) and PDF_MAX_BYTES for a PDF (application/pdf); 256 KB for everything else. Decided on the
+ * request line and headers alone, before reading.
  */
 export function bodyLimit(method: string, path: string, contentType: string | null | undefined): number {
   const caseId = UPLOAD_PATH.exec(path)?.[1];
-  return method === 'POST' && caseId && Object.hasOwn(CASE_FILES, caseId) && isImageType(contentType ?? null) ? MAX_FILE_BYTES : MAX_BODY;
+  if (method !== 'POST' || !caseId || !Object.hasOwn(CASE_FILES, caseId)) return MAX_BODY;
+  return isImageType(contentType ?? null) ? MAX_FILE_BYTES : isPdfType(contentType ?? null) ? PDF_MAX_BYTES : MAX_BODY;
 }
 
 /** The whole body, or null as soon as it passes `limit` (nothing more is kept). */

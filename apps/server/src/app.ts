@@ -26,7 +26,8 @@ import { IntentStore, publicIntent, type StoredIntent } from './intents.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
 import { checkAgainstDispute } from './validate.ts';
-import { REFUSED_EARLY, acceptsImageBody, createUploadRoutes } from './uploads/routes.ts';
+import { createPdfJob } from './uploads/pdf-job.ts';
+import { REFUSED_EARLY, acceptsFileBody, createUploadRoutes } from './uploads/routes.ts';
 import { uploadDocuments, uploadFileName } from './uploads/documents.ts';
 import { UploadStore, type UploadRecord } from './uploads/store.ts';
 import { PAYPAL_MAX_SEND_BYTES } from './uploads/limits.ts';
@@ -83,6 +84,8 @@ export interface CostGate {
   live?(req: Request): Promise<boolean>;
   /** Hosted: the PayPal merchant id the person acts for; a send is refused unless it is the dispute's seller. */
   merchant?(req: Request): string | null;
+  /** Hosted: count `pages` PDF page reads against the address's upload limit, all or none. Absent: not metered. */
+  meterPages?(req: Request, pages: number): Reservation;
 }
 
 export type { Reservation };
@@ -162,7 +165,7 @@ function sameSecret(a: string, b: string): boolean {
  * PayPal dispute, so: Host must be this server (blocks DNS rebinding), a present Origin must be a local web origin,
  * every request carries the per-launch token (other sites cannot read it), and POST bodies must be
  * application/json (a text/plain "simple" cross-site POST is refused); only the evidence upload route also takes
- * image/png and image/jpeg (not "simple" types either).
+ * image/png, image/jpeg and application/pdf (not "simple" types either).
  */
 export function guard(req: Request, opts: Pick<AppOptions, 'port' | 'token' | 'allowedOrigins'>): Response | null {
   const host = req.headers.get('host') ?? new URL(req.url).host;
@@ -172,8 +175,8 @@ export function guard(req: Request, opts: Pick<AppOptions, 'port' | 'token' | 'a
   const token = req.headers.get(TOKEN_HEADER);
   if (!opts.token || !token || !sameSecret(token, opts.token)) return json(401, { error: 'MISSING_OR_BAD_TOKEN' });
   const type = req.headers.get('content-type');
-  if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(type ?? '') && !acceptsImageBody(req.method, new URL(req.url).pathname, type)) {
-    return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json (an evidence upload may be image/png or image/jpeg)' });
+  if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(type ?? '') && !acceptsFileBody(req.method, new URL(req.url).pathname, type)) {
+    return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json (an evidence upload may be image/png, image/jpeg or application/pdf)' });
   }
   return null;
 }
@@ -1087,6 +1090,8 @@ export function createApi(opts: ApiOptions): Api {
     person: personOf,
     caseVisible,
     reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'upload') : null,
+    pdfJob: createPdfJob({ store: uploads, log, ...(opts.uploadStorageBytes ? { maxStorageBytes: opts.uploadStorageBytes } : {}) }),
+    meterPages: opts.gate?.meterPages ? (req, pages) => opts.gate!.meterPages!(req, pages) : null,
     caseBinding: (caseId) => bindingOf(caseId)?.dispute ?? null,
     record: (e) => intents.record(e),
     // Deletion wins over reuse: an unsent intent attaching or quoting the upload is void; a send in flight is waited for.
