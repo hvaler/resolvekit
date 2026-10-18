@@ -125,4 +125,11 @@ describe('the public demo area', () => {
     expect(html).toContain('Simulated PayPal');
     expect(html).toContain('href="/demo/cases"');
   });
+
+  it('an unknown id in the demo is not found "in the demo"', () => {
+    const html = render('/demo/cases/PP-R-XXX-00000000');
+    expect(html).toContain('Case not found');
+    expect(html).toContain('There is no dispute PP-R-XXX-00000000 in the demo.');
+    expect(html).not.toContain('in this workspace');
+  });
 });

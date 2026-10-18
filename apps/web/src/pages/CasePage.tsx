@@ -385,7 +385,7 @@ function ProcessingScreen() {
   );
 }
 
-/** An id that is not a dispute of this workspace (every inbox row has a case file). */
+/** An id that is not a dispute of this area (every inbox row has a case file). */
 function NotFound({ id }: { id: string }) {
   const { snapshots, area } = useServices();
   return (
@@ -393,7 +393,7 @@ function NotFound({ id }: { id: string }) {
       <AppBar caseId={id} checkedAt={snapshots[Object.keys(snapshots)[0] ?? '']?.checkedAt ?? null} />
       <main className="flex flex-col gap-3 px-7 py-6 max-md:px-4">
         <h1 className="m-0 text-title-lg">Case not found</h1>
-        <p className="m-0 max-w-[640px] text-[14px] text-ink-2">{`There is no dispute ${id} in this workspace.`}</p>
+        <p className="m-0 max-w-[640px] text-[14px] text-ink-2">{`There is no dispute ${id} ${area === 'demo' ? 'in the demo' : 'in this workspace'}.`}</p>
         <Link to={casesBase(area)} className="text-body">
           ← All cases
         </Link>
