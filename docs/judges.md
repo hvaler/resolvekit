@@ -27,11 +27,13 @@ PayPal sandbox buyer account (to approve an agent budget): **<SANDBOX_BUYER_EMAI
 sandbox · live** in the top bar are bound to real disputes in the PayPal sandbox, read through the Customer Disputes API, and "Submit
 evidence" really calls `provide-evidence`. The AI analysis is real (Google Gemini, Groq as fallback). MeterMCP's
 budgets are real PayPal Orders v2 authorizations and captures in the sandbox. The merchant's documents (order,
-tracking, notes) are synthetic, and so are MeterMCP's tool outputs; other inbox rows run on an in-browser
-**Simulated PayPal**, and the app always says which.
+tracking, notes) are synthetic, and so are MeterMCP's tool outputs. The other (fictional) cases are in the Explore
+demo (`<APP_URL>/demo`), on an in-browser **Simulated PayPal**, and the app always says which.
 
-**1. Inbox.** Open <APP_URL> (Test Store through your link, or the demo at <APP_URL>/demo). The grid (AG Grid) sorts (shift-click for multi-sort), filters (search box and saved
-chips), keeps a pinned "Totals at risk" row, and opens a case with Enter or a double click.
+**1. Inbox.** Open <APP_URL> through your link: the Test Store inbox lists its two bound cases. The demo at
+<APP_URL>/demo shows the full grid, with every fictional case: the grid (AG Grid) sorts (shift-click for multi-sort),
+filters (search box and saved chips), keeps a pinned "Totals at risk" row, and opens a case with Enter or a double
+click.
 
 **2. A standard case.** Open **PP-R-TVH-10190665** ("item not received"). The case file shows the timeline, every
 document with its source, and the response draft. Every sentence cites its evidence: hover a citation to light up
@@ -102,7 +104,7 @@ with the receipt PDF.
 "unauthorised" booking whose evidence is already recorded (PP-R-QZE-10181290: read-back, draft locked) and a closed
 case resolved in the seller's favour (PP-R-HFA-10176021: outcome, what was sent, no actions).
 
-**7. Optional: re-run the AI.** As a member of the workspace, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
+**7. Optional: re-run the AI.** In Test Store, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
 its stages; editing a sentence sends it to the AI verifier, which re-chooses its citations and judges it again.
 
 **8. Optional: MeterMCP from your own MCP client.** MeterMCP is a metered MCP server at **<METERMCP_URL>/mcp**

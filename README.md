@@ -458,12 +458,15 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
 
 **Hosted mode** (`apps/server/src/hosted.ts`, `apps/metermcp/src/app.ts`, `packages/hosting`)
 
-- Browsing is free: inbox, cases (on the simulator), stored analyses, health.
-- People sign in ([Merchant accounts](#merchant-accounts-hosted-mode)). The real PayPal disputes, sending evidence to
-  them, live AI runs (including a plain request whose documents have no stored analysis) and AI re-checks of edited
-  sentences belong to the **seller's workspace**: the workspace whose PayPal account is the seller on the bound
-  disputes (Owner, or a member who joined with its invite). Everyone else gets the same cases on the simulator, under `/demo`; a
-  locked action says why (**Sign in required** / **Seller workspace only**).
+- Browsing is free: the Explore demo (`/demo`) runs every fictional case in the browser, on the simulator, with the
+  bundled golden analyses; `/api/health` is public.
+- People sign in ([Merchant accounts](#merchant-accounts-hosted-mode)). The server's case routes
+  (`/api/disputes/<case>…`, `/api/cases/<case>/analysis…`, `/api/cases/<case>/uploads…`) answer only the evaluation
+  cases (bound to real sandbox disputes) and only to the **seller's workspace**: the workspace whose PayPal account is
+  the seller on the bound disputes (Test Store: its Owner, or a member who joined with its invite). That covers
+  reading the disputes, sending evidence to them, live AI runs (including a plain request whose documents have no
+  stored analysis), AI re-checks of edited sentences and uploads. Anyone else, signed out included, gets
+  `404 UNKNOWN_CASE` before any work and uses the demo; another merchant's own workspace shows the waiting screen.
 - Global **daily caps**, persisted on the disk and reserved atomically before the work starts (refunded when it did
   not happen): `DAILY_LIVE_ANALYSES` (60), `DAILY_RECHECKS` (200), `DAILY_EVIDENCE_SENDS` (20), on top of the
   hourly limits (`LIVE_ANALYSES_PER_HOUR` 6, `RECHECKS_PER_HOUR` 30). Live runs and re-checks only analyse inputs the server
@@ -513,8 +516,8 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
   access end every session at once.
 - **Only the seller answers.** `/api/health` lists the bound cases, and `/api/disputes/:case` reads them, only for
   the seller's workspace. On the fresh read before composing and before sending, the person's workspace merchant id
-  must be the dispute's `seller.merchant_id` (403 `NOT_THE_SELLER` otherwise). The analysis of a real dispute is
-  answered by `/progress` only to the seller's workspace.
+  must be the dispute's `seller.merchant_id` (403 `NOT_THE_SELLER` otherwise). The other case routes (the analysis,
+  its `/progress`, uploads) answer only the seller's workspace too; anyone else gets `404 UNKNOWN_CASE`.
 - **Stored** in `<data>/accounts.json`: payer ids, display names, masked emails, passkey public keys, invite token
   hashes. A change that cannot be written is refused (503) and undone.
 
