@@ -7,7 +7,8 @@
  *   rendering  the selected pages, all in ONE pdf.js session (it holds the server-wide image slot), then closed
  *   reading    OCR of each stored render, one page at a time, never while a render runs
  *   reviewing  done: every selected page has its uncovered render (`page-<k>.orig.png`) and its read lines. No page
- *              is stored as sanitised (`page-<k>.png`, with its sha256) before the cover step makes it
+ *              is stored as sanitised (`page-<k>.png`, with its sha256) before the cover step makes it (the
+ *              routes: covered from the uncovered render, read again; at confirm `coveredPagesPdf` rebuilds the PDF)
  *   failed     with a fixed message (never content), and everything of the upload freed (`store.failPdf`): the
  *              original, renders, thumbnails and text; the person discards it and uploads again
  *
@@ -16,8 +17,9 @@
  * discarded, deleted or archived while the job runs is left alone from its next step on. Log lines carry the upload
  * id and an error code only.
  */
+import { writeImagePdf } from '@resolvekit/pdf';
 import { PNG } from 'pngjs';
-import { UploadError, oneImageAtATime, sanitiseImage } from './image.ts';
+import { UploadError, decodeImage, oneImageAtATime, sanitiseImage } from './image.ts';
 import { MAX_STORAGE_BYTES, PDF_RENDER_DPI, PDF_THUMB_DPI } from './limits.ts';
 import { ocrPng, type OcrLine } from './ocr.ts';
 import { openPdfSession, type RenderedPage } from './pdf-input.ts';
@@ -50,6 +52,28 @@ class Stop extends Error {
     super(message);
     this.code = code;
   }
+}
+
+/** The document title inside a confirmed PDF upload (never the uploaded name). */
+export const PDF_UPLOAD_TITLE = 'Uploaded PDF';
+
+/**
+ * The PDF of a confirmed upload, rebuilt from its stored covered pages only (decoded to RGB, alpha dropped: every
+ * stored page is opaque), at the render dpi: nothing of the original file is in it. Deterministic, so the same pages
+ * give the same bytes. CPU-heavy (level-9 deflate): the caller holds the image slot.
+ */
+export function coveredPagesPdf(pngs: readonly Uint8Array[]): Uint8Array {
+  const pages = pngs.map((png) => {
+    const { width, height, rgba } = decodeImage(png);
+    const rgb = new Uint8Array(width * height * 3);
+    for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
+      rgb[j] = rgba[i]!;
+      rgb[j + 1] = rgba[i + 1]!;
+      rgb[j + 2] = rgba[i + 2]!;
+    }
+    return { width, height, rgb };
+  });
+  return writeImagePdf({ title: PDF_UPLOAD_TITLE, pages, dpi: PDF_RENDER_DPI });
 }
 
 /** A fresh PNG of a render, through the same sanitising path as an uploaded image (no covers yet). */

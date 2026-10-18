@@ -9,9 +9,14 @@
  *   POST   /api/cases/:id/uploads/:u/select        { pages }: 1–5 pages of a PDF, once, while selecting → its job starts
  *   GET    /api/cases/:id/uploads/:u/page/:k?v=…   page k of the selection: original (the uncovered render, as for
  *                                                   an image's original) | sanitised
+ *   GET    /api/cases/:id/uploads/:u/page/:k/hint  { lines }: page k's PDF text layer, a hint while it is reviewed
+ *                                                   (people who can edit it), read from the original, never stored
  *   GET    /api/cases/:id/uploads/:u/thumb/:n      thumbnail of page n of the PDF, while selecting
- *   POST   /api/cases/:id/uploads/:u/redact        { rects } | { removals } → sanitised file, re-read from it
- *   POST   /api/cases/:id/uploads/:u/confirm       { lines, sha256 } → E<n>, the original dropped
+ *   POST   /api/cases/:id/uploads/:u/redact        { rects } | { removals } → sanitised file, re-read from it;
+ *                                                   a PDF: { page, rects } → that page covered, re-read from it
+ *   POST   /api/cases/:id/uploads/:u/confirm       { lines, sha256 } → E<n>, the original dropped; a PDF: { pages:
+ *                                                   [{ lines, added, sha256 }] } → its PDF rebuilt from the covered
+ *                                                   pages, the original and uncovered renders dropped
  *   POST   /api/cases/:id/uploads/:u/discard       before confirmation: files removed
  *   DELETE /api/cases/:id/uploads/:u               owners and full members: files removed; refused while a send
  *                                                   using it (attached or in its input) is in flight, voids the unsent
@@ -24,17 +29,18 @@
  * A refusal given before any decoding or OCR carries the {@link REFUSED_EARLY} header: hosted mode gives the address
  * its upload slot back for those only (and strips the header). Work once started is never refunded.
  */
+import { createHash } from 'node:crypto';
 import type { ActingPerson, Reservation } from '../app.ts';
 import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
 import { uploadDocuments, uploadTitle } from './documents.ts';
 import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
-import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED } from './limits.ts';
+import { MAX_FILE_BYTES, MAX_REDACTS_PER_PAGE, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED } from './limits.ts';
 import { ocrPng } from './ocr.ts';
-import { CANNOT_START, TOO_BIG, inspectPdf } from './pdf-input.ts';
-import type { PdfJob } from './pdf-job.ts';
+import { CANNOT_START, TOO_BIG, inspectPdf, pageTextHint } from './pdf-input.ts';
+import { coveredPagesPdf, type PdfJob } from './pdf-job.ts';
 import { canDeleteUpload, canEditUpload } from './permissions.ts';
-import type { PdfPage, UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
+import type { PdfPage, PdfState, UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
 import { pastedTextPdf, redactText, textLines, type TextRemoval } from './text.ts';
 
 /** The one route that takes a raw file body; group 1 is the case id (node.ts sizes its body limit with it). */
@@ -45,8 +51,11 @@ export const REDACT_PATH = /^\/api\/cases\/[A-Za-z0-9-]{1,64}\/uploads\/upl-[0-9
 export const REFUSED_EARLY = 'x-rk-refused-early';
 /** Redactions per upload. */
 export const MAX_REDACTS = 5;
-/** Groups 4 and 5: `page` or `thumb` and its number as sent, checked by the route (400), never trusted by the pattern. */
-const ROUTE = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/uploads(?:\/(upl-[0-9a-f]{24})(?:\/(image|redact|confirm|discard|select)|\/(page|thumb)\/([^/]*))?)?$/;
+/**
+ * Groups 4 and 5: `page` or `thumb` and its number as sent, checked by the route (400), never trusted by the pattern;
+ * group 6: `/hint` after it.
+ */
+const ROUTE = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/uploads(?:\/(upl-[0-9a-f]{24})(?:\/(image|redact|confirm|discard|select)|\/(page|thumb)\/([^/]*)(\/hint)?)?)?$/;
 const IMAGE_TYPES = ['image/png', 'image/jpeg'];
 const PDF_TYPE = 'application/pdf';
 
@@ -198,6 +207,50 @@ function parseRemovals(v: unknown): TextRemoval[] | null {
   for (const r of v) {
     if (!isObject(r) || !isCount(r.start) || !isCount(r.end)) return null;
     out.push({ start: r.start, end: r.end });
+  }
+  return out;
+}
+
+/** A PDF whose pages are rendered and read, and not confirmed yet: its pages can be covered, hinted and confirmed. */
+type PdfUpload = UploadRecord & { pdf: PdfState };
+const inReview = (r: UploadRecord): r is PdfUpload => !!r.pdf && EDITABLE.includes(r.status) && r.pdf.job.state === 'reviewing';
+
+/** Width and height of a stored page image (a PNG this server wrote), from its header. */
+function pngSize(png: Uint8Array): { width: number; height: number } {
+  const v = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  return { width: v.getUint32(16), height: v.getUint32(20) };
+}
+
+/** Whether two areas share a positive area: edges that only touch, or an empty cover, do not. */
+const overlaps = (a: Rect, b: Rect) => b.w > 0 && b.h > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+/** The refusal of a transcribed line read from under a cover (Review Focus 4). */
+const FROM_COVER = 'A transcribed line cannot come from a covered area.';
+
+/** One page of a PDF confirmation as sent: its lines, its transcribed lines and the hash of the page reviewed. */
+type PageConfirmation = { lines: string[]; added: { area: Rect; text: string }[]; sha256: string };
+
+const isLine = (l: unknown): l is string => typeof l === 'string' && l.length <= MAX_LINE && !LINE_STRAY.test(l);
+
+/** The shape of a PDF confirmation (types and sizes only; the line rules of transcriptions are checked later, 422). */
+function parsePageConfirmations(v: unknown): PageConfirmation[] | Response {
+  const shape = () => refuse(400, 'BAD_CONFIRMATION', `pages: one { lines, added, sha256 } per selected page, in order; added: up to ${MAX_ITEMS} { area: { x, y, w, h }, text }`);
+  if (!Array.isArray(v) || v.length < 1 || v.length > PDF_MAX_SELECTED) return shape();
+  const out: PageConfirmation[] = [];
+  for (const p of v) {
+    if (!isObject(p) || typeof p.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(p.sha256) || !Array.isArray(p.added) || p.added.length > MAX_ITEMS) return shape();
+    if (!Array.isArray(p.lines) || !p.lines.every(isLine)) {
+      return refuse(400, 'BAD_LINES', `lines: one string per line, up to ${MAX_LINE} characters, without line breaks or control characters`);
+    }
+    const added: PageConfirmation['added'] = [];
+    for (const a of p.added) {
+      const area = isObject(a) ? parseRects([a.area]) : null;
+      if (!area || !isObject(a) || typeof a.text !== 'string') return shape();
+      added.push({ area: area[0]!, text: a.text });
+    }
+    out.push({ lines: p.lines, added, sha256: p.sha256 });
   }
   return out;
 }
@@ -437,6 +490,126 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     return json(200, { upload: view(next, s.person), readLines: next.readLines });
   };
 
+  /** A PDF that is not in review: why (its job failed, it is still being read, or it is not editable any more). */
+  const notInReview = (r: UploadRecord): Response =>
+    r.pdf?.job.state === 'failed' ? refuse(409, 'JOB_FAILED', r.pdf.job.error ?? 'Reading this PDF failed. Discard it and upload it again.')
+      : EDITABLE.includes(r.status) ? refuse(409, 'WRONG_STATUS', 'The pages of this PDF are not read yet; wait until they are')
+        : refuse(409, 'WRONG_STATUS', `This upload is ${r.status}`);
+  const changed = () => refuse(409, 'UPLOAD_CHANGED', 'This upload changed meanwhile; open it again');
+
+  /**
+   * POST /redact on a PDF: { page, rects }. Page k is covered again from its uncovered render (never from a covered
+   * one), stored as its sanitised page and read again from that page; its corrections and transcriptions start over.
+   * At most MAX_REDACTS_PER_PAGE attempts per page; each one is one read in the per-address limit (REDACT_PATH).
+   */
+  const redactPdf = async (req: Request, s: Scope, rec: UploadRecord): Promise<Response> => {
+    if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'A reviewer edits only their own uploads');
+    if (archived(s, rec)) return archivedRefusal();
+    if (!inReview(rec)) return notInReview(rec);
+    const parsed = await readJson(req);
+    if (!parsed.ok) return refuse(400, 'INVALID_JSON');
+    const b = isObject(parsed.body) ? parsed.body : {};
+    const k = b.page;
+    const rects = b.removals === undefined ? parseRects(b.rects) : null;
+    if (typeof k !== 'number' || !Number.isInteger(k) || k < 1 || k > rec.pdf.pages.length || !rects) {
+      return refuse(400, 'BAD_REDACTION', `page: a page of the selection (1 to ${rec.pdf.pages.length}); rects: up to ${MAX_ITEMS} areas { x, y, w, h } in whole pixels`);
+    }
+    // Read again: another cover may have counted while this body was read.
+    const before = store.get(rec.id);
+    if (!before || !inReview(before) || archived(s, before)) return changed();
+    const done = before.pdf.pages[k - 1]!.redactions;
+    if (done >= MAX_REDACTS_PER_PAGE) return refuse(409, 'TOO_MANY_REDACTS', `A page can be covered ${MAX_REDACTS_PER_PAGE} times; discard this PDF and upload it again`);
+    const orig = store.origPage(rec.id, k);
+    if (!orig) return refuse(404, 'NOT_FOUND', 'The uncovered page is gone');
+    // Counted before the work, so failed attempts count too.
+    store.update(rec.id, { pdf: { ...before.pdf, pages: before.pdf.pages.map((p, i) => (i === k - 1 ? { ...p, redactions: done + 1 } : p)) } });
+    s.worked = true;
+    // One image at a time server-wide; the text is read from the covered page only.
+    const read = await oneImageAtATime(async () => {
+      const page = sanitiseImage(orig, rects);
+      if (!hasRoom(page.png.length)) return storageFull();
+      return { page, readLines: (await ocrPng(page.png)).map((l) => l.text) };
+    });
+    if (read instanceof Response) return read;
+    const { page, readLines } = read;
+    // Someone may have discarded, deleted or confirmed it while OCR ran.
+    const cur = store.get(rec.id);
+    if (!cur || !inReview(cur) || archived(s, cur)) return changed();
+    const pages = cur.pdf.pages.map((p, i) => (i === k - 1 ? { ...p, rects, readLines, lines: [], added: [], sha256: page.sha256 } : p));
+    const next = store.update(rec.id, { status: 'reviewing', pdf: { ...cur.pdf, pages } }, { pages: { [k]: page.png } });
+    audit(s, 'upload_redacted', next);
+    return json(200, { upload: view(next, s.person), readLines });
+  };
+
+  /**
+   * POST /confirm on a PDF: { pages: [{ lines, added, sha256 }] }, one per selected page in order, each against the
+   * covered page it was reviewed on. A transcribed line is one line of text whose area is on the page, at least 2×2
+   * and outside every cover. The PDF is rebuilt from the covered pages (in the image slot); then the original and the
+   * uncovered renders go.
+   */
+  const confirmPdf = async (req: Request, s: Scope, rec: UploadRecord): Promise<Response> => {
+    if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'A reviewer confirms only their own uploads');
+    const parsed = await readJson(req);
+    if (!parsed.ok) return refuse(400, 'INVALID_JSON');
+    const sent = parsePageConfirmations(isObject(parsed.body) ? parsed.body.pages : undefined);
+    if (sent instanceof Response) return sent;
+    // Checked after the body was read.
+    const got = store.get(rec.id);
+    const cur = got && !DEAD.includes(got.status) ? unlessExpired(got) : null;
+    if (!cur) return refuse(404, 'NOT_FOUND', 'No such upload in this case');
+    if (archived(s, cur)) return archivedRefusal();
+    if (!inReview(cur)) return notInReview(cur);
+    if (cur.status !== 'reviewing' || cur.pdf.pages.some((p) => !p.sha256)) {
+      return refuse(409, 'WRONG_STATUS', 'Cover what must not be shared on every page first (redact), even if nothing needs covering');
+    }
+    const pages = cur.pdf.pages;
+    if (sent.length !== pages.length) return refuse(400, 'BAD_CONFIRMATION', `pages: one entry per selected page (${pages.length}), in order`);
+    for (const [i, p] of sent.entries()) {
+      if (p.lines.length !== pages[i]!.readLines.length) return refuse(400, 'BAD_LINES', `pages[${i}].lines: exactly the ${pages[i]!.readLines.length} lines read from that page, corrected where needed`);
+    }
+    if (sent.reduce((n, p) => n + p.lines.join('').length + p.added.reduce((m, a) => m + a.text.length, 0), 0) > MAX_TEXT_CHARS) {
+      return refuse(400, 'BAD_LINES', `The text of a PDF, read and transcribed, is at most ${MAX_TEXT_CHARS} characters`);
+    }
+    const images: Uint8Array[] = [];
+    for (const [i, p] of sent.entries()) {
+      const png = store.pageImage(cur.id, i + 1);
+      if (p.sha256 !== pages[i]!.sha256 || !png || sha256(png) !== pages[i]!.sha256) return refuse(409, 'UPLOAD_CHANGED', `Page ${i + 1} changed since you reviewed it; review it again`);
+      const { width, height } = pngSize(png);
+      for (const a of p.added) {
+        if (!a.text.trim() || !isLine(a.text)) return refuse(422, 'BAD_TRANSCRIPTION', `A transcribed line is one line of text, up to ${MAX_LINE} characters`);
+        if (a.area.w < 2 || a.area.h < 2 || a.area.x + a.area.w > width || a.area.y + a.area.h > height) {
+          return refuse(422, 'BAD_TRANSCRIPTION', 'A transcribed line marks where it is on the page: an area of at least 2×2 pixels within the page');
+        }
+        if (pages[i]!.rects.some((r) => overlaps(a.area, r))) return refuse(422, 'BAD_TRANSCRIPTION', FROM_COVER);
+      }
+      images.push(png);
+    }
+    // The heavy step, in the image slot: never beside a render, a decode or an OCR.
+    const pdf = await oneImageAtATime(async () => coveredPagesPdf(images));
+    if (pdf.length > maxStored) return refuse(413, 'TOO_LARGE', `Once rebuilt from its covered pages, this PDF is larger than ${megabytes}, the most a stored file can be; upload it again and choose fewer pages`);
+    if (!hasRoom(pdf.length)) return storageFull();
+    // Nothing awaits from here on: the pages built are the ones stored now, and the evidence number is free.
+    const last = store.get(cur.id);
+    if (!last?.pdf || last.status !== 'reviewing' || archived(s, last) || last.pdf.pages.some((p, i) => p.sha256 !== pages[i]!.sha256)) return changed();
+    const highest = Math.max(
+      0,
+      ...CASE_FILES[s.caseId]!.evidence.map((e) => evidenceNumber(e.id)),
+      ...store.list({ workspaceId: s.person.workspaceId, caseId: s.caseId, boundDisputeId: s.disputeId }).map((r) => evidenceNumber(r.evidenceId)),
+    );
+    const confirmed = last.pdf.pages.map((p, i) => ({
+      ...p,
+      lines: sent[i]!.lines.map((text, j) => (text === p.readLines[j] ? { text, correctedBy: null, original: null } : { text, correctedBy: s.person.label, original: p.readLines[j]! })),
+      added: sent[i]!.added.map((a) => ({ ...a, by: s.person.label })),
+    }));
+    const next = store.update(
+      cur.id,
+      { status: 'confirmed', evidenceId: `E${highest + 1}`, sha256: sha256(pdf), size: pdf.length, mime: 'application/pdf', confirmedAt: now().toISOString(), pdf: { ...last.pdf, pages: confirmed } },
+      { sanitised: pdf, original: null },
+    );
+    audit(s, 'upload_confirmed', next);
+    return json(200, { upload: view(next, s.person) });
+  };
+
   /** POST /confirm: the reviewed lines against the sanitised file they were reviewed on. */
   const confirm = async (req: Request, s: Scope, rec: UploadRecord): Promise<Response> => {
     if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'A reviewer confirms only their own uploads');
@@ -569,6 +742,24 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     return bytes ? imageResponse(bytes) : refuse(404, 'NOT_FOUND', v === 'original' ? 'Not rendered yet' : 'Not covered yet');
   };
 
+  /**
+   * GET /page/:k/hint: the text layer of page k, read from the original in the PDF reader's child, while the pages are
+   * reviewed. A hint for spotting OCR mistakes: it can hold hidden text, so it is never stored, logged or audited.
+   */
+  const hint = async (s: Scope, rec: UploadRecord, k: number | null): Promise<Response> => {
+    if (k === null) return refuse(400, 'BAD_PAGE', `A page number from 1 to ${PDF_MAX_PAGES}`);
+    if (rec.kind !== 'pdf' || !rec.pdf || archived(s, rec)) return refuse(404, 'NOT_FOUND', 'No such PDF in this case');
+    const original = inReview(rec) && k <= rec.pdf.pages.length ? store.original(rec.id) : null;
+    if (!original) return refuse(404, 'NOT_FOUND', 'The text found in the PDF is shown only while its pages are reviewed');
+    try {
+      return json(200, { lines: await pageTextHint(original, rec.pdf.pages[k - 1]!.original) });
+    } catch (e) {
+      if (e instanceof UploadError && e.message === CANNOT_START) return refuse(503, 'PDF_READER_UNAVAILABLE', e.message);
+      if (e instanceof UploadError && e.code === 'UNREADABLE') return refuse(422, e.code, e.message);
+      throw e;
+    }
+  };
+
   /** GET /thumb/:n: the thumbnail of page n (uncovered, like an original), while it is selecting. */
   const thumb = (s: Scope, rec: UploadRecord, n: number | null): Response => {
     if (n === null) return refuse(400, 'BAD_PAGE', `A page number from 1 to ${PDF_MAX_PAGES}`);
@@ -593,13 +784,13 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     // Until confirmed, its files are only for people who can edit it; for anyone else they do not exist.
     if ((sub === 'image' || sub === 'page' || sub === 'thumb') && EDITABLE.includes(rec.status) && !canEditUpload(s.person, rec)) return refuse(404, 'NOT_FOUND', 'No such file in this case');
     if (sub === 'image') return image(url, s, rec);
+    if (m[6]) return sub === 'page' ? hint(s, rec, pageNumber(m[5]!)) : refuse(404, 'NOT_FOUND', 'No such file in this case');
     if (sub === 'page') return page(url, s, rec, pageNumber(m[5]!));
     if (sub === 'thumb') return thumb(s, rec, pageNumber(m[5]!));
     if (sub === 'select') return choose(req, s, rec);
-    // Covering and confirming a PDF go page by page, with their own checks.
-    if (rec.kind === 'pdf' && (sub === 'redact' || sub === 'confirm')) return refuse(409, 'WRONG_STATUS', 'A PDF is covered and confirmed page by page');
-    if (sub === 'redact') return redact(req, s, rec);
-    if (sub === 'confirm') return confirm(req, s, rec);
+    // A PDF is covered and confirmed page by page.
+    if (sub === 'redact') return rec.kind === 'pdf' ? redactPdf(req, s, rec) : redact(req, s, rec);
+    if (sub === 'confirm') return rec.kind === 'pdf' ? confirmPdf(req, s, rec) : confirm(req, s, rec);
     return discard(s, rec);
   };
 

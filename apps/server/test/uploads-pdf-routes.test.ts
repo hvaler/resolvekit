@@ -1,18 +1,20 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { request as httpRequest, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
+import { writeImagePdf } from '@resolvekit/pdf';
 import { toNodeListener } from '../src/node.ts';
 import { UploadError } from '../src/uploads/image.ts';
 import { PDF_MAX_BYTES, PDF_RENDER_DPI, PDF_THUMB_DPI } from '../src/uploads/limits.ts';
 import { closeOcr } from '../src/uploads/ocr.ts';
-import { pdfChildTestHooks } from '../src/uploads/pdf-input.ts';
+import { inspectPdf, pdfChildTestHooks } from '../src/uploads/pdf-input.ts';
 import { createPdfJob } from '../src/uploads/pdf-job.ts';
 import { UploadStore } from '../src/uploads/store.ts';
-import { corruptPdf, encryptedPdf, pagesPdf } from './fixtures/make-pdfs.ts';
+import { HIDDEN, corruptPdf, encryptedPdf, hiddenPdf, pagesPdf } from './fixtures/make-pdfs.ts';
 import { CASE, P, TIMEOUT, call, req, setup, type App } from './uploads-kit.ts';
 
 after(() => closeOcr());
@@ -454,4 +456,224 @@ test("a page metering refusal gives the day's unit back and says when to retry; 
   } finally {
     pdfChildTestHooks.spawnThrows = false;
   }
+});
+
+// ---- Task 5: cover, transcribe, confirm ----
+
+const OVERLAP = 'A transcribed line cannot come from a covered area.';
+type Rect = { x: number; y: number; w: number; h: number };
+type ConfirmPage = { lines: string[]; added: { area: Rect; text: string }[]; sha256: string | null };
+type Confirmed = Omit<PdfView, 'pdf'> & { evidenceId: string; sha256: string; size: number; mime: string; uploadedBy: { label: string }; pdf: { pages: (Omit<PdfPageView, 'added' | 'lines'> & { added: { area: Rect; text: string; by: string }[]; lines: { text: string; correctedBy: string | null; original: string | null }[] })[] } };
+const redactPage = async (app: App, cookie: string, id: string, page: unknown, rects: unknown) => {
+  const r = await call(app, `${P}/${id}/redact`, { body: { page, rects }, cookie });
+  return { ...r, body: r.body as unknown as PdfAnswer & { readLines: string[] } };
+};
+const confirmPdf = async (app: App, cookie: string, id: string, pages: unknown) => {
+  const r = await call(app, `${P}/${id}/confirm`, { body: { pages }, cookie });
+  return { ...r, body: r.body as unknown as { upload: Confirmed; error?: string; detail?: string } };
+};
+/** An A4 page at the render dpi, in pixels. */
+const PAGE_W = Math.floor((595 * PDF_RENDER_DPI) / 72);
+/** The top of a page, where the fixture's two lines are. */
+const TOP: Rect = { x: 0, y: 0, w: PAGE_W, h: 400 };
+
+test('covering page 2 changes only page 2: re-read from the covered page; each page is covered at most 5 times', TIMEOUT, async () => {
+  const { app, people, store } = setup();
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, pagesPdf(3));
+  const id = r.body.upload.id;
+  const before = await waitFor(app, cookie, id, settled);
+  // Malformed covers: 400, nothing counted.
+  for (const page of [0, 4, '2', 1.5, undefined]) assert.equal((await redactPage(app, cookie, id, page, [])).status, 400, String(page));
+  assert.equal((await redactPage(app, cookie, id, 2, [{ x: -1, y: 0, w: 1, h: 1 }])).status, 400);
+  assert.equal((await call(app, `${P}/${id}/redact`, { body: { page: 2, removals: [] }, cookie })).status, 400);
+
+  const c = await redactPage(app, cookie, id, 2, [TOP]);
+  assert.equal(c.status, 200, JSON.stringify(c.body));
+  const [p1, p2, p3] = c.body.upload.pdf.pages;
+  assert.deepEqual(p2!.rects, [TOP]);
+  assert.match(p2!.sha256 ?? '', /^[0-9a-f]{64}$/);
+  assert.ok(!p2!.readLines.some((l) => l.includes('Fixture line')), JSON.stringify(p2!.readLines));
+  assert.deepEqual(c.body.readLines, p2!.readLines);
+  assert.deepEqual(p2!.lines, []);
+  assert.deepEqual(p2!.added, []);
+  assert.deepEqual([p1, p3], [before.pdf.pages[0], before.pdf.pages[2]]);
+  assert.equal(c.body.upload.status, 'reviewing');
+  // The covered page is stored and served; the cover is burnt in.
+  const served = await get(app, cookie, `${id}/page/2?v=sanitised`);
+  assert.equal(served.status, 200);
+  const png = PNG.sync.read(Buffer.from(await served.arrayBuffer()));
+  assert.deepEqual([...png.data.subarray(0, 4)], [0, 0, 0, 255]);
+  assert.equal(createHash('sha256').update(store.pageImage(id, 2)!).digest('hex'), p2!.sha256);
+  assert.equal(store.pageImage(id, 1), null);
+  // Always from the uncovered render: covering nothing afterwards shows the page's lines again.
+  const again = await redactPage(app, cookie, id, 2, []);
+  assert.ok(again.body.upload.pdf.pages[1]!.readLines.some((l) => l.includes('Fixture line 2')), JSON.stringify(again.body.readLines));
+  for (let i = 3; i <= 5; i++) assert.equal((await redactPage(app, cookie, id, 2, [])).status, 200, `attempt ${i}`);
+  const sixth = await redactPage(app, cookie, id, 2, []);
+  assert.equal(sixth.status, 409);
+  assert.equal(sixth.body.error, 'TOO_MANY_REDACTS');
+  // Per page: page 1 still has its five.
+  assert.equal((await redactPage(app, cookie, id, 1, [])).status, 200);
+  // Another reviewer does not cover someone else's PDF.
+  assert.equal((await redactPage(app, people.member(), id, 1, [])).status, 403);
+});
+
+test('covering a PDF page counts one read in the per-address upload limit, and only once its pages are read', TIMEOUT, async () => {
+  const { app, people } = setup({ limits: { uploadsPerIp: { limit: 3, windowMs: 600_000 } } });
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, pagesPdf(1));
+  const id = r.body.upload.id;
+  // Still being read: refused before any work (its unit given back).
+  const early = await redactPage(app, cookie, id, 1, []);
+  assert.equal(early.status, 409);
+  await waitFor(app, cookie, id, settled);
+  for (let i = 0; i < 2; i++) assert.equal((await redactPage(app, cookie, id, 1, [])).status, 200);
+  const over = await redactPage(app, cookie, id, 1, []);
+  assert.equal(over.status, 429);
+  assert.equal(over.body.error, 'RATE_LIMITED');
+});
+
+test('the PDF text hint: for its editors while it is reviewed, never cached, stored, logged or audited; refused after confirm', TIMEOUT, async () => {
+  const { app, people, store, lines, intents } = setup();
+  const rita = people.member('Rita Reviewer');
+  // Its text layer holds white text no one sees on the page: the hint shows it, nothing keeps it.
+  const r = await uploadPdf(app, rita, hiddenPdf());
+  const id = r.body.upload.id;
+  await waitFor(app, rita, id, settled);
+  const h = await get(app, rita, `${id}/page/1/hint`);
+  assert.equal(h.status, 200);
+  assert.equal(h.headers.get('cache-control'), 'no-store');
+  const hint = (await h.json()) as { lines: string[] };
+  assert.ok(hint.lines.includes(HIDDEN.visible) && hint.lines.includes(HIDDEN.white), JSON.stringify(hint));
+  // An owner or full member may edit it, so sees it too; another reviewer does not.
+  assert.equal((await get(app, people.fullMember(), `${id}/page/1/hint`)).status, 200);
+  assert.equal((await get(app, people.member(), `${id}/page/1/hint`)).status, 404);
+  assert.equal((await get(app, rita, `${id}/page/2/hint`)).status, 404);
+  assert.equal((await get(app, rita, `${id}/page/0/hint`)).status, 400);
+  assert.equal((await get(app, rita, `${id}/thumb/1/hint`)).status, 404);
+  assert.equal((await call(app, `${P}/${id}/page/1/hint`, { body: {}, cookie: rita })).status, 405);
+
+  const c1 = await redactPage(app, rita, id, 1, []);
+  assert.equal(c1.status, 200, JSON.stringify(c1.body));
+  const p = c1.body.upload.pdf.pages[0]!;
+  const c = await confirmPdf(app, rita, id, [{ lines: p.readLines, added: [], sha256: p.sha256 }]);
+  assert.equal(c.status, 200, JSON.stringify(c.body));
+  assert.equal((await get(app, rita, `${id}/page/1/hint`)).status, 404);
+  const out = JSON.stringify(store.get(id)) + JSON.stringify(intents.events(CASE)) + lines.join('\n');
+  assert.ok(!out.includes(HIDDEN.white), out);
+});
+
+test('confirm: every page covered, its lines and sha256; transcriptions outside covers; a PDF rebuilt from the covered pages', TIMEOUT, async () => {
+  const { app, people, store, lines } = setup();
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, pagesPdf(2));
+  const id = r.body.upload.id;
+  await waitFor(app, cookie, id, settled);
+  const blank = [{ lines: [], added: [], sha256: '0'.repeat(64) }, { lines: [], added: [], sha256: '0'.repeat(64) }];
+  // Nothing covered yet (phase 1: confirm needs the cover step, even covering nothing).
+  const early = await confirmPdf(app, cookie, id, blank);
+  assert.equal(early.status, 409);
+  assert.equal(early.body.error, 'WRONG_STATUS');
+
+  // Page 1: its two lines covered, so nothing is read; page 2: nothing covered.
+  const c1 = await redactPage(app, cookie, id, 1, [TOP]);
+  assert.deepEqual(c1.body.readLines, []);
+  assert.equal((await confirmPdf(app, cookie, id, blank)).status, 409, 'page 2 is not covered yet');
+  const c2 = await redactPage(app, cookie, id, 2, []);
+  const p1 = c2.body.upload.pdf.pages[0]!;
+  const p2 = c2.body.upload.pdf.pages[1]!;
+  assert.ok(p2.readLines.length >= 2, JSON.stringify(p2.readLines));
+  const corrected = p2.readLines.map((l, i) => (i === 1 ? 'Fixture line 2 (checked)' : l));
+  const ok: ConfirmPage[] = [
+    // Touching the cover's lower edge is outside it.
+    { lines: [], added: [{ area: { x: 100, y: 400, w: 300, h: 30 }, text: 'Order 1234 shipped' }], sha256: p1.sha256 },
+    { lines: corrected, added: [], sha256: p2.sha256 },
+  ];
+  const withPage1 = (added: unknown) => [{ ...ok[0], added }, ok[1]];
+
+  // Review Focus 4: a line read from under a cover is refused, with the reason.
+  const overlap = await confirmPdf(app, cookie, id, withPage1([{ area: { x: 50, y: 350, w: 100, h: 100 }, text: 'Card 4111 1111 1111 1111' }]));
+  assert.equal(overlap.status, 422);
+  assert.equal(overlap.body.error, 'BAD_TRANSCRIPTION');
+  assert.equal(overlap.body.detail, OVERLAP);
+  for (const added of [
+    [{ area: { x: 100, y: 500, w: 1, h: 30 }, text: 'too thin' }],
+    [{ area: { x: PAGE_W - 10, y: 500, w: 20, h: 30 }, text: 'off the page' }],
+    [{ area: { x: 100, y: 500, w: 30, h: 30 }, text: '   ' }],
+    [{ area: { x: 100, y: 500, w: 30, h: 30 }, text: 'two\nlines' }],
+    [{ area: { x: 100, y: 500, w: 30, h: 30 }, text: 'x'.repeat(1001) }],
+  ]) {
+    const bad = await confirmPdf(app, cookie, id, withPage1(added));
+    assert.equal(bad.status, 422, JSON.stringify(added));
+    assert.equal(bad.body.error, 'BAD_TRANSCRIPTION');
+  }
+  for (const added of [[{ area: { x: 1 }, text: 'x' }], 'none', [{ text: 'no area' }], [{ area: { x: 1, y: 1, w: 5, h: 5 }, text: 7 }]]) {
+    assert.equal((await confirmPdf(app, cookie, id, withPage1(added))).status, 400, JSON.stringify(added));
+  }
+  // One entry per selected page, as many lines as were read, the whole text within MAX_TEXT_CHARS.
+  assert.equal((await confirmPdf(app, cookie, id, [ok[0]])).status, 400);
+  assert.equal((await confirmPdf(app, cookie, id, [ok[0], { ...ok[1], lines: corrected.slice(1) }])).status, 400);
+  assert.equal((await confirmPdf(app, cookie, id, withPage1(Array(21).fill({ area: { x: 100, y: 500, w: 30, h: 30 }, text: 'x'.repeat(1000) })))).status, 400);
+  // A stale page hash: the page changed since it was reviewed.
+  const stale = await confirmPdf(app, cookie, id, [ok[0], { ...ok[1], sha256: p1.sha256 }]);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.error, 'UPLOAD_CHANGED');
+  // Another reviewer does not confirm it.
+  assert.equal((await confirmPdf(app, people.member(), id, ok)).status, 403);
+
+  // Review Focus 5: page 1 read nothing and confirms with no lines and a transcribed one.
+  const done = await confirmPdf(app, cookie, id, ok);
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  const u = done.body.upload;
+  assert.equal(u.status, 'confirmed');
+  assert.match(u.evidenceId, /^E\d+$/);
+  assert.equal(u.mime, 'application/pdf');
+  assert.deepEqual(u.pdf.pages[0]!.added, [{ ...ok[0]!.added[0]!, by: u.uploadedBy.label }]);
+  assert.deepEqual(u.pdf.pages[0]!.lines, []);
+  assert.deepEqual(u.pdf.pages[1]!.lines.map((l) => l.text), corrected);
+  assert.deepEqual(u.pdf.pages[1]!.lines[1], { text: corrected[1], correctedBy: u.uploadedBy.label, original: p2.readLines[1] });
+  assert.deepEqual(u.pdf.pages[1]!.lines[0], { text: corrected[0], correctedBy: null, original: null });
+
+  // The PDF: the stored covered pages, one per selected page, exactly as writeImagePdf builds them ("same version").
+  const pdf = store.sanitised(id)!;
+  assert.equal(u.size, pdf.length);
+  assert.equal(u.sha256, createHash('sha256').update(pdf).digest('hex'));
+  const imgs = [1, 2].map((k) => {
+    const p = PNG.sync.read(Buffer.from(store.pageImage(id, k)!));
+    const rgb = new Uint8Array(p.width * p.height * 3);
+    for (let i = 0, j = 0; i < p.data.length; i += 4, j += 3) rgb.set(p.data.subarray(i, i + 3), j);
+    return { width: p.width, height: p.height, rgb };
+  });
+  assert.ok(Buffer.from(pdf).equals(Buffer.from(writeImagePdf({ title: 'Uploaded PDF', pages: imgs, dpi: PDF_RENDER_DPI }))));
+  assert.equal((await inspectPdf(pdf)).pages, 2);
+  // The original and the uncovered renders are gone; the covered pages stay.
+  assert.equal(store.original(id), null);
+  for (const k of [1, 2]) {
+    assert.equal(store.origPage(id, k), null);
+    assert.ok(store.pageImage(id, k));
+    assert.equal((await get(app, cookie, `${id}/page/${k}?v=original`)).status, 404);
+  }
+  assert.equal(store.usedBytes(), pdf.length + store.pageImage(id, 1)!.length + store.pageImage(id, 2)!.length);
+  // Confirmed once.
+  assert.equal((await confirmPdf(app, cookie, id, ok)).status, 409);
+  assert.equal((await redactPage(app, cookie, id, 1, [])).status, 409);
+  assert.ok(!lines.some((l) => l.includes('Order 1234') || l.includes('Fixture line')), lines.join('\n'));
+});
+
+test('a rebuilt PDF over the stored-file limit is refused (413) and the upload stays reviewable', TIMEOUT, async () => {
+  const { app, people, store } = setup({ storedFileBytes: 1_000 });
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, pagesPdf(1));
+  const id = r.body.upload.id;
+  await waitFor(app, cookie, id, settled);
+  const c = await redactPage(app, cookie, id, 1, []);
+  assert.equal(c.status, 200, JSON.stringify(c.body));
+  const p = c.body.upload.pdf.pages[0]!;
+  const big = await confirmPdf(app, cookie, id, [{ lines: p.readLines, added: [], sha256: p.sha256 }]);
+  assert.equal(big.status, 413);
+  assert.equal(big.body.error, 'TOO_LARGE');
+  assert.equal(store.get(id)!.status, 'reviewing');
+  assert.ok(store.original(id));
+  assert.equal(store.sanitised(id), null);
 });
