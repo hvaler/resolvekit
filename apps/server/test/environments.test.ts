@@ -5,14 +5,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DailyCounters, StaticSite } from '@resolvekit/hosting';
-import { MemoryAnalysisStore, RateLimiter } from '@resolvekit/analyst/node';
-import { standardCase } from '@resolvekit/cases';
+import { MemoryAnalysisStore, RateLimiter, type AnalysisInput } from '@resolvekit/analyst/node';
+import { caseInput, standardCase } from '@resolvekit/cases';
 import { PayPalClient } from '@resolvekit/paypal';
 import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
+import { SYNTHETIC_HEADER } from '../src/documents.ts';
 import { AnalystService } from '../src/analysis.ts';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
 import { createHostedApp } from '../src/hosted.ts';
-import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
+import { toSnapshot } from '../src/mapping.ts';
+import { RESOLVED, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
@@ -21,12 +23,14 @@ const DEMO = 'PP-R-PLN-10189901';
 const REAL = 'PP-R-REAL-1';
 const KEY = 'a'.repeat(64);
 
-function stubs() {
+function stubs(store = new MemoryAnalysisStore()) {
   const calls: string[] = [];
+  const sent: FormData[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
     calls.push(`${init.method ?? 'GET'} ${u.pathname}`);
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
+    if (u.pathname.endsWith('/provide-evidence')) sent.push(init.body as FormData);
     if (u.pathname.endsWith('/provide-evidence')) return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     return new Response(JSON.stringify(standardDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
@@ -34,15 +38,15 @@ function stubs() {
   const analyst = new AnalystService({
     model: fm.model,
     primaryModel: 'gemini-3.8-flash',
-    store: new MemoryAnalysisStore(),
+    store,
     liveLimit: new RateLimiter({ limit: 50, windowMs: 3_600_000 }),
     verifyLimit: new RateLimiter({ limit: 50, windowMs: 3_600_000 }),
   });
-  return { calls, fm, analyst, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
+  return { calls, sent, fm, analyst, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function hosted() {
-  const s = stubs();
+function hosted(store?: MemoryAnalysisStore) {
+  const s = stubs(store);
   const people = testAccounts();
   const app = createHostedApp({
     paypal: s.client,
@@ -121,4 +125,28 @@ test('local mode: an unbound case still has intents and analysis', async () => {
   assert.notEqual(((await r.json().catch(() => ({}))) as { error?: string }).error, 'UNKNOWN_CASE');
   const a = await app(new Request(`http://127.0.0.1:8787/api/disputes/${DEMO}/audit`, { headers: { [TOKEN_HEADER]: 'a'.repeat(64) } }));
   assert.equal(a.status, 200);
+});
+
+test('every PDF composed for a bound standard case says SYNTHETIC TEST DOCUMENT on every page', async () => {
+  const input: AnalysisInput = caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
+  const store = new MemoryAnalysisStore();
+  const g = await goldenFor(CASE, input);
+  store.cached.set(g.key, g);
+  const h = hosted(store);
+  const cookie = h.people.ownerCookie;
+  const post = (path: string, body: unknown) => h.app(new Request(ORIGIN + path, { method: 'POST', headers: { host: HOST, 'x-forwarded-for': '203.0.113.7', origin: ORIGIN, 'content-type': 'application/json', cookie }, body: JSON.stringify(body) }));
+  const c = await post(`/api/disputes/${CASE}/intent`, { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED });
+  const i = (await c.json()) as { id: string; contentHash: string };
+  assert.equal(c.status, 201, JSON.stringify(i));
+  assert.equal((await post(`/api/disputes/${CASE}/intent/${i.id}/approve`, { contentHash: i.contentHash })).status, 200);
+  assert.equal((await post(`/api/disputes/${CASE}/evidence`, { intentId: i.id })).status, 202);
+  assert.equal(h.sent.length, 1);
+  const pdfs = h.sent[0]!.getAll('evidence-file').filter((f): f is File => typeof f !== 'string' && f.type === 'application/pdf');
+  assert.ok(pdfs.length > 0, 'the intent sends at least one PDF');
+  for (const f of pdfs) {
+    const text = new TextDecoder('latin1').decode(await f.arrayBuffer());
+    const pages = (text.match(/\/Type \/Page(?![s\w])/g) ?? []).length;
+    assert.ok(pages > 0, `${f.name}: has pages`);
+    assert.equal(text.split(SYNTHETIC_HEADER).length - 1, pages, `${f.name}: header on every page`);
+  }
 });
