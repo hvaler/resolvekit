@@ -374,6 +374,24 @@ test('rectangles, removals and pasted text are checked at the door', TIMEOUT, as
   assert.equal((await conf(ok.body.readLines)).status, 200);
 });
 
+test('pasted text outside Latin-1 is refused (422 TEXT_UNSUPPORTED) naming the first such character; Latin-1 accents pass', TIMEOUT, async () => {
+  const { app, people, store } = setup();
+  const cookie = people.fullMember();
+  const before = store.usedBytes();
+  for (const [text, shown] of [['Total 5 € paid\nthanks', '€'], ['Arrived 👍 today', '👍'], ['Quote “delivered”', '“']] as const) {
+    const r = await pasteText(app, cookie, text);
+    assert.equal(r.status, 422, text);
+    assert.equal(r.body.error, 'TEXT_UNSUPPORTED');
+    const detail = (r.body as unknown as { detail: string }).detail;
+    assert.ok(detail.includes(shown), detail);
+    assert.ok(!detail.includes('paid') && !detail.includes('Arrived'), 'the message names the character, not the text');
+  }
+  assert.equal(store.usedBytes(), before);
+  const ok = await pasteText(app, cookie, 'Señora Müller · déjà reçu ¿sí?\r\nÀ bientôt');
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  assert.deepEqual(ok.body.readLines, ['Señora Müller · déjà reçu ¿sí?', 'À bientôt']);
+});
+
 test("a reviewer cannot redact or confirm someone else's upload; owner and full member can; only owner and full member delete", TIMEOUT, async () => {
   const { app, people, store } = setup();
   const a = people.member('Reviewer A');
@@ -754,7 +772,7 @@ test("the analysis input includes the workspace's confirmed uploads of the activ
   const e7 = docs.find((d) => d.id === 'E7');
   assert.deepEqual(e7, {
     id: 'E7',
-    title: 'tracking.txt',
+    title: 'Pasted text',
     type: 'Merchant upload · pasted text',
     source: 'Uploaded by Ana Lopez',
     tag: 'UPL',
@@ -1097,9 +1115,9 @@ test("only selected, confirmed uploads of the active dispute are attached; an ar
   assert.equal(i.status, 201, JSON.stringify(i.body));
   const demo = i.body.files.filter((f) => f.source === 'demo');
   assert.ok(demo.length > 0 && demo.every((f) => /^[0-9a-f]{64}$/.test(f.sha256 ?? '')), JSON.stringify(i.body.files));
-  // E8 only (E7 is confirmed but not selected), named by its evidence id with a file-name-safe, bounded name.
+  // E8 only (E7 is confirmed but not selected), named by its evidence id and kind only: the uploaded name stays here.
   const ups = i.body.files.filter((f) => f.source === 'upload');
-  assert.deepEqual(ups.map((f) => [f.name, f.sha256]), [['E8-Recibo-copia-2-of-the-email-the-buyer-sent-us-on-the-day-it.pdf', s.store.get(e8.id)!.sha256]]);
+  assert.deepEqual(ups.map((f) => [f.name, f.sha256]), [['E8-pasted.pdf', s.store.get(e8.id)!.sha256]]);
   assert.ok(!i.body.files.some((f) => f.name.startsWith(`${e7.evidenceId}-`)));
 
   for (const id of [pending.id, other, archived, old, 'upl-0123456789abcdef01234567']) {
@@ -1107,6 +1125,34 @@ test("only selected, confirmed uploads of the active dispute are attached; an ar
     assert.equal(r.status, 422, id);
     assert.equal(r.body.error, 'UNKNOWN_UPLOAD', id);
   }
+});
+
+test("the uploaded file name never leaves the server: not in PayPal's file names or bytes, not in the model's input; it is still shown to the workspace", TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const NAME = 'statement-ES9121000418450200051332';
+  const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', `${NAME}.txt`);
+  const up = await call(s.app, P, { body: fixture, type: 'image/png', cookie, headers: { 'x-upload-name': `${NAME}.png` } });
+  const red = await call(s.app, `${P}/${up.body.upload.id}/redact`, { body: { rects: [] }, cookie });
+  const e8 = (await call(s.app, `${P}/${up.body.upload.id}/confirm`, { body: { lines: red.body.readLines, sha256: red.body.upload.sha256 }, cookie })).body.upload;
+  const r = (await call(s.app, `/api/cases/${CASE}/analysis`, { body: {}, cookie })) as unknown as { body: { input: AnalysisInput } };
+  const docs = r.body.input.documents.filter((d) => d.id === 'E7' || d.id === 'E8');
+  assert.deepEqual(docs.map((d) => [d.id, d.title]), [['E7', 'Pasted text'], ['E8', 'Uploaded screenshot']]);
+  assert.ok(!JSON.stringify(r.body.input).includes('ES9121000418450200051332'));
+  await s.analyse(cookie);
+  const i = await s.approved(cookie, { attachments: [e7.id, e8.id] });
+  assert.deepEqual(i.files.filter((f) => f.source === 'upload').map((f) => f.name), ['E7-pasted.pdf', 'E8-upload.png']);
+  assert.equal((await s.send(cookie, i.id)).status, 202);
+  const sent = s.sends[0]!;
+  const files = sent.getAll('evidence-file') as File[];
+  for (const f of files) {
+    assert.ok(!f.name.includes('ES912'), f.name);
+    assert.ok(!Buffer.from(await fileBytes(f)).toString('latin1').includes('ES9121000418450200051332'), f.name);
+  }
+  assert.ok(!JSON.stringify([...sent.entries()].filter(([, v]) => typeof v === 'string')).includes('ES9121000418450200051332'));
+  // The workspace still sees the name it uploaded.
+  const list = (await call(s.app, P, { cookie })).body.uploads!;
+  assert.deepEqual(list.map((u) => u.name).sort(), [`${NAME}.png`, `${NAME}.txt`]);
 });
 
 test('the bytes sent are the approved ones', TIMEOUT, async () => {
@@ -1125,10 +1171,10 @@ test('the bytes sent are the approved ones', TIMEOUT, async () => {
   // Every file PayPal received is one the intent names, with the approved SHA-256 of its bytes.
   assert.deepEqual(files.map((f) => f.name), i.files.map((f) => f.name));
   for (const [n, f] of files.entries()) assert.equal(sha(await fileBytes(f)), i.files[n]!.sha256, f.name);
-  const png = files.find((f) => f.name === 'E7-tracking.png')!;
+  const png = files.find((f) => f.name === 'E7-upload.png')!;
   assert.equal(png.type, 'image/png');
   assert.equal(sha(await fileBytes(png)), red.body.upload.sha256);
-  assert.equal(i.files.find((f) => f.name === 'E7-tracking.png')!.sha256, red.body.upload.sha256);
+  assert.equal(i.files.find((f) => f.name === 'E7-upload.png')!.sha256, red.body.upload.sha256);
   assert.deepEqual(await fileBytes(png), s.store.sanitised(up.body.upload.id));
 });
 

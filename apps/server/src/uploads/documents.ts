@@ -7,24 +7,20 @@ import type { AnalysisDocument } from '@resolvekit/analyst';
 import type { UploadRecord } from './store.ts';
 
 const evidenceNumber = (id: string | null) => Number(/^E(\d+)$/.exec(id ?? '')?.[1] ?? 0);
-/** The document head carries title and source as quoted attributes: an uploaded name cannot close them. */
+/** The document head carries the source as a quoted attribute: a person's name cannot close it. */
 const attr = (s: string) => s.replace(/["<>]/g, '');
 
 /**
- * The file name PayPal receives for a confirmed upload: `<evidenceId>-<name>.<png|pdf>`, the uploaded name (without
- * its extension) reduced to [A-Za-z0-9._-] and at most 60 characters, so no other text of the person's reaches PayPal
- * as a file name.
+ * The file name PayPal receives for a confirmed upload: `<evidenceId>-upload.png` (image) or `<evidenceId>-pasted.pdf`
+ * (pasted text). The uploaded name never leaves this server (it can hold what the person did not cover, an account
+ * number say); only the workspace sees it.
  */
-export function uploadFileName(r: Pick<UploadRecord, 'evidenceId' | 'name' | 'mime'>): string {
-  const base =
-    r.name
-      .replace(/\.[A-Za-z0-9]{1,5}$/, '')
-      .replace(/[^A-Za-z0-9._-]+/g, '-')
-      .replace(/^[-.]+|[-.]+$/g, '')
-      .slice(0, 60)
-      .replace(/[-.]+$/, '') || 'upload';
-  return `${r.evidenceId}-${base}.${r.mime === 'application/pdf' ? 'pdf' : 'png'}`;
+export function uploadFileName(r: Pick<UploadRecord, 'evidenceId' | 'kind'>): string {
+  return r.kind === 'text' ? `${r.evidenceId}-pasted.pdf` : `${r.evidenceId}-upload.png`;
 }
+
+/** The title of an upload's document for the model and inside its PDF: by kind, never the uploaded name. */
+export const uploadTitle = (kind: UploadRecord['kind']): string => (kind === 'image' ? 'Uploaded screenshot' : 'Pasted text');
 
 /** Confirmed uploads with an evidence id, in evidence order; anything else is not a document. */
 export function uploadDocuments(records: UploadRecord[]): AnalysisDocument[] {
@@ -35,7 +31,7 @@ export function uploadDocuments(records: UploadRecord[]): AnalysisDocument[] {
       const id = r.evidenceId!;
       return {
         id,
-        title: attr(r.name),
+        title: uploadTitle(r.kind),
         type: r.kind === 'image' ? 'Merchant upload · image' : 'Merchant upload · pasted text',
         source: `Uploaded by ${attr(r.uploadedBy.name)}`,
         tag: 'UPL',

@@ -21,7 +21,7 @@
 import type { ActingPerson, Reservation } from '../app.ts';
 import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
-import { uploadDocuments } from './documents.ts';
+import { uploadDocuments, uploadTitle } from './documents.ts';
 import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
 import { MAX_FILE_BYTES, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE } from './limits.ts';
 import { ocrPng } from './ocr.ts';
@@ -95,6 +95,18 @@ const MAX_NAME = 120;
 
 /** Control characters (tab and line feed excepted), C1 controls and bidi overrides: replaced by a space in pasted text. */
 const STRAY = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/g;
+/** Outside Latin-1 (U+0000–U+00FF): the PDF PayPal receives cannot show it, while the analyst would quote it. */
+const NOT_LATIN1 = /[^\u0000-ÿ]/u;
+
+/** The refusal of pasted text with a character outside Latin-1, naming the first one (never the text around it). */
+function notLatin1(text: string): Response | null {
+  const m = NOT_LATIN1.exec(text);
+  if (!m) return null;
+  const c = m[0];
+  const code = `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`;
+  return refuse(422, 'TEXT_UNSUPPORTED', `The text has “${c}” (${code}), which the PDF sent to PayPal cannot show: only Latin-1 characters (Western European letters and accents) can be pasted. Replace it (for example € with EUR, curly quotes with straight ones) and paste again.`);
+}
+
 /** In a confirmed line, also no line break (a tab stays, as in pasted text). */
 const LINE_STRAY = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
 
@@ -218,6 +230,8 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       text = b.text.replace(/\r\n?/g, '\n').replace(STRAY, ' ');
       if (!text.trim()) return refuse(400, 'EMPTY_TEXT', 'There is no text to add');
       if (text.length > MAX_TEXT_CHARS) return refuse(413, 'TOO_LONG', `Pasted text up to ${MAX_TEXT_CHARS} characters`);
+      const unsupported = notLatin1(text);
+      if (unsupported) return unsupported;
       original = new TextEncoder().encode(text);
       kind = 'text';
       name = cleanName(b.name, 'pasted text');
@@ -291,7 +305,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       file = s1.png;
     } else {
       const lines = textLines(redactText(new TextDecoder().decode(original), removals!));
-      const doc = pastedTextPdf({ title: rec.name, by: rec.uploadedBy.name.slice(0, 80), lines });
+      const doc = pastedTextPdf({ title: uploadTitle('text'), by: rec.uploadedBy.name.slice(0, 80), lines });
       if (doc.pdf.length > maxStored) return tooBig('text');
       if (!hasRoom(doc.pdf.length)) return storageFull();
       patch = { status: 'reviewing', rects: [], removals: removals!, readLines: lines, sha256: doc.sha256, size: doc.pdf.length, mime: 'application/pdf' };

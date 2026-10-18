@@ -287,4 +287,10 @@ describe('merchant uploads in the case', () => {
     const ok = (async () => Response.json({ uploads: [confirmed()] })) as unknown as typeof fetch;
     expect(await createUploadsClient('PP-1', { fetch: ok }).listUploads()).toEqual([confirmed()]);
   });
+
+  it('pasted text the server cannot put in the PDF is refused with its message, which is what the panel shows', async () => {
+    const detail = 'The text has “€” (U+20AC), which the PDF sent to PayPal cannot show: only Latin-1 characters (Western European letters and accents) can be pasted. Replace it (for example € with EUR, curly quotes with straight ones) and paste again.';
+    const refused = (async () => Response.json({ error: 'TEXT_UNSUPPORTED', detail }, { status: 422 })) as unknown as typeof fetch;
+    await expect(createUploadsClient('PP-1', { fetch: refused }).uploadText('Total 5 € paid', 'email.txt')).rejects.toMatchObject({ status: 422, code: 'TEXT_UNSUPPORTED', message: detail });
+  });
 });
