@@ -4,7 +4,7 @@
  * never retry: retries belong to the engine, so every attempt's tokens are counted. Keys are only ever sent in
  * the provider's auth header.
  */
-import { GEMINI_MODEL, GROQ_MODEL, geminiSchema, postJson } from '@resolvekit/analyst/node';
+import { GEMINI_MODEL, GROQ_MODEL, ModelError, geminiSchema, postJson } from '@resolvekit/analyst/node';
 import type { AgentModel, ModelCall, ModelTurn, TranscriptEntry, TurnRequest, Usage } from './types.ts';
 
 interface AdapterOptions {
@@ -14,10 +14,28 @@ interface AdapterOptions {
   timeoutMs?: number;
 }
 
+/** Reported only when the provider gave both counts; half a figure is not the provider's usage. */
 const usage = (input: unknown, output: unknown): Usage =>
-  typeof input === 'number' || typeof output === 'number'
-    ? { inputTokens: typeof input === 'number' ? input : 0, outputTokens: typeof output === 'number' ? output : 0, reported: true }
-    : { inputTokens: 0, outputTokens: 0, reported: false };
+  typeof input === 'number' && typeof output === 'number' ? { inputTokens: input, outputTokens: output, reported: true } : { inputTokens: 0, outputTokens: 0, reported: false };
+
+/**
+ * Send and read one turn. A 200 whose body is not JSON, or not shaped as expected, becomes a non-retryable
+ * ModelError whose message carries no body content (postJson itself stays as the analyst uses it).
+ */
+async function readTurn<T>(provider: string, send: () => Promise<{ json: any }>, read: (json: any) => T): Promise<T> {
+  let json: unknown;
+  try {
+    ({ json } = await send());
+  } catch (e) {
+    if (e instanceof ModelError) throw e;
+    throw new ModelError(`${provider} returned an unreadable answer`, { retryable: false });
+  }
+  try {
+    return read(json);
+  } catch {
+    throw new ModelError(`${provider} returned an unexpected answer`, { retryable: false });
+  }
+}
 
 /** Gemini's functionResponse.response must be an object: anything else is wrapped as { result }. */
 const asObject = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : { result: v });
@@ -54,21 +72,29 @@ export class GeminiAgentModel implements AgentModel {
       contents: geminiContents(req.transcript),
       tools: [{ functionDeclarations: req.tools.map((t) => ({ name: t.name, description: t.description, parameters: geminiSchema(t.parameters) })) }],
       toolConfig: { functionCallingConfig: { mode: 'ANY' } },
-      generationConfig: { temperature: 0, maxOutputTokens: req.maxOutputTokens },
+      // Low thinking, as the analyst: thinking tokens are billed as output and count against maxOutputTokens.
+      generationConfig: { temperature: 0, maxOutputTokens: req.maxOutputTokens, thinkingConfig: { thinkingLevel: 'low' } },
     };
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:generateContent`;
-    const { json } = await postJson(this.fetch, url, { 'x-goog-api-key': this.key }, body, this.timeoutMs, 'gemini');
-    const parts: any[] = json?.candidates?.[0]?.content?.parts ?? [];
-    const calls: ModelCall[] = parts
-      .filter((p) => p?.functionCall && typeof p.functionCall.name === 'string')
-      .map((p) => ({
-        name: p.functionCall.name,
-        arguments: asArgs(p.functionCall.args),
-        ...(typeof p.thoughtSignature === 'string' ? { providerData: { thoughtSignature: p.thoughtSignature } } : {}),
-      }));
-    const text = parts.filter((p) => typeof p?.text === 'string' && !p.thought).map((p) => p.text).join('');
-    const u = json?.usageMetadata;
-    return { calls, text: text || null, usage: usage(u?.promptTokenCount, u?.candidatesTokenCount) };
+    return readTurn(
+      'gemini',
+      () => postJson(this.fetch, url, { 'x-goog-api-key': this.key }, body, this.timeoutMs, 'gemini'),
+      (json) => {
+        const parts: any[] = json?.candidates?.[0]?.content?.parts ?? [];
+        const calls: ModelCall[] = parts
+          .filter((p) => p?.functionCall && typeof p.functionCall.name === 'string')
+          .map((p) => ({
+            name: p.functionCall.name,
+            arguments: asArgs(p.functionCall.args),
+            ...(typeof p.thoughtSignature === 'string' ? { providerData: { thoughtSignature: p.thoughtSignature } } : {}),
+          }));
+        const text = parts.filter((p) => typeof p?.text === 'string' && !p.thought).map((p) => p.text).join('');
+        const u = json?.usageMetadata;
+        // Thinking tokens are billed as output.
+        const output = typeof u?.candidatesTokenCount === 'number' ? u.candidatesTokenCount + (typeof u.thoughtsTokenCount === 'number' ? u.thoughtsTokenCount : 0) : undefined;
+        return { calls, text: text || null, usage: usage(u?.promptTokenCount, output) };
+      },
+    );
   }
 }
 
@@ -98,7 +124,7 @@ function groqMessages(system: string, transcript: TranscriptEntry[]): unknown[] 
       messages.push({ role: 'assistant', content: null, tool_calls: [{ id: lastCall, type: 'function', function: { name: e.call.name, arguments: JSON.stringify(e.call.arguments) } }] });
     } else {
       if (!lastCall) throw new Error(`transcript entry ${i}: a tool result without a model call before it`);
-      messages.push({ role: 'tool', tool_call_id: lastCall, content: JSON.stringify(e.result) });
+      messages.push({ role: 'tool', tool_call_id: lastCall, content: JSON.stringify(e.result) ?? 'null' });
     }
   });
   return messages;
@@ -127,14 +153,19 @@ export class GroqAgentModel implements AgentModel {
       temperature: 0,
       reasoning_effort: 'low',
     };
-    const { json } = await postJson(this.fetch, 'https://api.groq.com/openai/v1/chat/completions', { authorization: `Bearer ${this.key}` }, body, this.timeoutMs, 'groq');
-    const message = json?.choices?.[0]?.message;
-    const calls: ModelCall[] = (message?.tool_calls ?? [])
-      .filter((c: any) => typeof c?.function?.name === 'string')
-      .map((c: any) => ({ name: c.function.name, arguments: parseArgs(c.function.arguments) }));
-    const text = typeof message?.content === 'string' && message.content ? message.content : null;
-    const u = json?.usage;
-    return { calls, text, usage: usage(u?.prompt_tokens, u?.completion_tokens) };
+    return readTurn(
+      'groq',
+      () => postJson(this.fetch, 'https://api.groq.com/openai/v1/chat/completions', { authorization: `Bearer ${this.key}` }, body, this.timeoutMs, 'groq'),
+      (json) => {
+        const message = json?.choices?.[0]?.message;
+        const calls: ModelCall[] = (message?.tool_calls ?? [])
+          .filter((c: any) => typeof c?.function?.name === 'string')
+          .map((c: any) => ({ name: c.function.name, arguments: parseArgs(c.function.arguments) }));
+        const text = typeof message?.content === 'string' && message.content ? message.content : null;
+        const u = json?.usage;
+        return { calls, text, usage: usage(u?.prompt_tokens, u?.completion_tokens) };
+      },
+    );
   }
 }
 

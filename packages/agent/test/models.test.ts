@@ -28,7 +28,7 @@ test('Gemini turn sends function declarations with mode ANY and returns the func
     {
       body: {
         candidates: [{ content: { role: 'model', parts: [{ functionCall: { name: 'quote_dispute_pack', args: { pages: 3 } } }] }, finishReason: 'STOP' }],
-        usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 15 },
+        usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 15, thoughtsTokenCount: 40 },
       },
     },
   ]);
@@ -36,14 +36,15 @@ test('Gemini turn sends function declarations with mode ANY and returns the func
   const turn = await m.turn(req);
   assert.deepEqual(turn.calls, [{ name: 'quote_dispute_pack', arguments: { pages: 3 } }]);
   assert.equal(turn.text, null);
-  assert.deepEqual(turn.usage, { inputTokens: 120, outputTokens: 15, reported: true });
+  // Thinking tokens are billed as output: 15 + 40.
+  assert.deepEqual(turn.usage, { inputTokens: 120, outputTokens: 55, reported: true });
 
   const body = requests[0]!.body;
   assert.match(requests[0]!.url, /generateContent$/);
   assert.equal(requests[0]!.headers['x-goog-api-key'], 'gk-secret');
   assert.deepEqual(body.toolConfig, { functionCallingConfig: { mode: 'ANY' } });
   assert.deepEqual(body.systemInstruction, { parts: [{ text: 'You buy evidence.' }] });
-  assert.deepEqual(body.generationConfig, { temperature: 0, maxOutputTokens: 512 });
+  assert.deepEqual(body.generationConfig, { temperature: 0, maxOutputTokens: 512, thinkingConfig: { thinkingLevel: 'low' } });
   // Gemini's schema subset: additionalProperties is stripped from the declared parameters.
   assert.deepEqual(body.tools, [{ functionDeclarations: [{ name: 'quote_dispute_pack', description: 'Price a dispute pack.', parameters: { type: 'object', properties: { pages: { type: 'integer' } }, required: ['pages'] } }] }]);
   assert.deepEqual(body.contents, [{ role: 'user', parts: [{ text: 'Prepare the pack.' }] }]);
@@ -189,4 +190,53 @@ test('agentModelsFromEnv picks gemini primary and groq fallback by default; null
   assert.equal(onlyGroq.fallback, null);
 
   assert.equal(agentModelsFromEnv({}), null);
+});
+
+test('Gemini functionCall with non-object args gives arguments {}', async () => {
+  const { f } = fakeFetch([{ body: { candidates: [{ content: { parts: [{ functionCall: { name: 'a', args: [1, 2] } }, { functionCall: { name: 'b', args: 'x' } }, { functionCall: { name: 'c' } }] } }] } }]);
+  const turn = await new GeminiAgentModel({ apiKey: 'k', fetch: f }).turn(req);
+  assert.deepEqual(turn.calls, [
+    { name: 'a', arguments: {} },
+    { name: 'b', arguments: {} },
+    { name: 'c', arguments: {} },
+  ]);
+});
+
+test('Groq transcript: a tool entry before any model entry throws; an undefined result is sent as null', async () => {
+  const { f, requests } = fakeFetch([{ body: { choices: [{ message: { content: 'ok' } }] } }]);
+  const m = new GroqAgentModel({ apiKey: 'k', fetch: f });
+  await assert.rejects(m.turn({ ...req, transcript: [{ role: 'user', text: 'hi' }, { role: 'tool', name: 'quote_dispute_pack', result: {} }] }), /without a model call/);
+  assert.equal(requests.length, 0);
+  await m.turn({ ...req, transcript: [{ role: 'model', call: { name: 'quote_dispute_pack', arguments: {} } }, { role: 'tool', name: 'quote_dispute_pack', result: undefined }] });
+  assert.deepEqual(requests[0]!.body.messages[2], { role: 'tool', tool_call_id: 'call_0', content: 'null' });
+});
+
+test('usage with only one of the two counts is not reported (both providers)', async () => {
+  const gemini = fakeFetch([{ body: { candidates: [{ content: { parts: [{ text: 'x' }] } }], usageMetadata: { promptTokenCount: 50 } } }]);
+  assert.deepEqual((await new GeminiAgentModel({ apiKey: 'k', fetch: gemini.f }).turn(req)).usage, { inputTokens: 0, outputTokens: 0, reported: false });
+  const groq = fakeFetch([{ body: { choices: [{ message: { content: 'x' } }], usage: { completion_tokens: 9 } } }]);
+  assert.deepEqual((await new GroqAgentModel({ apiKey: 'k', fetch: groq.f }).turn(req)).usage, { inputTokens: 0, outputTokens: 0, reported: false });
+});
+
+test('a 200 that is not JSON, or not shaped as expected, is a non-retryable ModelError without body content', async () => {
+  for (const Model of [GeminiAgentModel, GroqAgentModel]) {
+    const notJson = (async () => new Response('<html>secret-body-text</html>', { status: 200 })) as typeof fetch;
+    const e1 = await new Model({ apiKey: 'k', fetch: notJson }).turn(req).then(
+      () => assert.fail('expected a ModelError'),
+      (e: unknown) => e,
+    );
+    assert.ok(e1 instanceof ModelError);
+    assert.equal(e1.retryable, false);
+    assert.doesNotMatch(e1.message, /secret-body-text/);
+
+    // Shapes that make reading throw: parts / tool_calls that are not arrays.
+    const odd = fakeFetch([{ body: { candidates: [{ content: { parts: 'secret-body-text' } }], choices: [{ message: { tool_calls: 'secret-body-text' } }] } }]);
+    const e2 = await new Model({ apiKey: 'k', fetch: odd.f }).turn(req).then(
+      () => assert.fail('expected a ModelError'),
+      (e: unknown) => e,
+    );
+    assert.ok(e2 instanceof ModelError);
+    assert.equal(e2.retryable, false);
+    assert.doesNotMatch(e2.message, /secret-body-text/);
+  }
 });
