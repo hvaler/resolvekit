@@ -24,3 +24,18 @@ export const MAX_STORED_BYTES = 9_900_000;
 /** All the files of one provide-evidence call (demo PDFs, selected uploads, receipt): PayPal accepts up to 50 MB. */
 export const PAYPAL_MAX_SEND_BYTES = 50_000_000;
 export const MAX_TEXT_CHARS = 20_000;
+
+// ---- PDF uploads ----
+export const PDF_MAX_BYTES = 10 * 1024 * 1024;
+export const PDF_MAX_PAGES = 30;
+/** Pages of one PDF the merchant can add as evidence. */
+export const PDF_MAX_SELECTED = 5;
+/** Stored page images (legible for review and OCR). */
+export const PDF_RENDER_DPI = 170;
+/** Page thumbnails for choosing the selection. */
+export const PDF_THUMB_DPI = 36;
+/** One rendered page holds at most this many pixels: a larger page is rendered at a lower dpi so it fits. */
+export const PDF_MAX_PAGE_PIXELS = MAX_PIXELS;
+/** Reading the PDF and rendering one page. */
+export const PDF_PAGE_TIMEOUT_MS = 20_000;
+export const MAX_REDACTS_PER_PAGE = 5;
