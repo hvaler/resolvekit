@@ -429,3 +429,20 @@ test('--agent-count runs the engine and checks each run like a page run before i
   assert.deepEqual(r.refused.map((x) => x.run), [RUN2]);
   assert.ok(used.has(CAPTURE));
 });
+
+test('M-1: an engine run (--agent-count) is bound by its session only; a page run (--agent-run) keeps its run id', async () => {
+  const o = ok(['--agent', '--agent-run', RUN2, '--seller', SELLER]);
+  const said: string[] = [];
+  const src = source({ [RUN2]: { run: runOf({ id: RUN2, captureId: '9ZZ12345BC678901D' }), receipt: receiptOf({ capture: '9ZZ12345BC678901D' }) } });
+  const r = await agentEntries(o, { runEngine: async () => ({ record: runOf(), receipt: receiptOf() }), read: src.read, used: new Set(), say: (l) => said.push(l) });
+  // The engine's run record lives only in this machine's demo-prepare-runs/: the server has no such run to name.
+  assert.deepEqual(r.entries, [
+    { capture: CAPTURE, session: SESSION, amount: '0.05 USD', note: null },
+    { capture: '9ZZ12345BC678901D', run: RUN2, session: SESSION, amount: '0.05 USD', note: null },
+  ]);
+  assert.equal(said.filter((l) => /session only/.test(l) && /demo-prepare-runs/.test(l)).length, 1, said.join('\n'));
+  const b = JSON.parse(bindingsJson({ agent: r.entries.map((e, i) => ({ dispute: `PP-R-D000${i + 1}`, ...e })) }).json)[AGENT_CASE_ID];
+  assert.equal(b[0].run, undefined);
+  assert.equal(b[0].session, SESSION);
+  assert.equal(b[1].run, RUN2);
+});

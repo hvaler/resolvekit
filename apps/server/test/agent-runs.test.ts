@@ -299,9 +299,8 @@ test('a record is written at each step, and a store reopened from disk has the s
   const reopened = new RunStore({ dir });
   assert.deepEqual(reopened.get(runId), done);
   assert.deepEqual(reopened.get(runId)!.steps, done.steps);
-  assert.equal(reopened.bySession('mm-sess-0001')!.id, runId);
   assert.equal(reopened.byCapture('CAP0001')!.id, runId);
-  assert.equal(reopened.bySession('mm-sess-9999'), null);
+  assert.equal(reopened.byCapture('CAP9999'), null);
 });
 
 test('recover marks running and awaiting_approval runs interrupted, closes their sessions through the admin client, and runs no tool even if the buyer approves later', async (t) => {

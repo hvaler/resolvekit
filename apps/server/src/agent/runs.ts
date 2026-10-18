@@ -127,11 +127,6 @@ export class RunStore {
     return [...this.records.values()].map((r) => structuredClone(r));
   }
 
-  bySession(sessionId: string): RunRecord | null {
-    const r = [...this.records.values()].find((x) => x.sessionId === sessionId);
-    return r ? structuredClone(r) : null;
-  }
-
   byCapture(captureId: string): RunRecord | null {
     const r = [...this.records.values()].find((x) => x.captureId === captureId);
     return r ? structuredClone(r) : null;

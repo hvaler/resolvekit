@@ -419,10 +419,13 @@ export function localRunReader(o: { dir: string; meter: Pick<MeterMcpClient, 're
   };
 }
 
-/** One agent entry of the reserve, pending its dispute: the capture, the run and session it comes from. */
+/**
+ * One agent entry of the reserve, pending its dispute: the capture and the session it comes from, and its run when the
+ * server has that run (`--agent-run`); an engine run's record exists only in this machine's demo-prepare-runs/.
+ */
 export interface AgentEntry {
   capture: string;
-  run: string;
+  run?: string;
   session: string;
   /** What the buyer disputes, e.g. "0.45 USD". */
   amount: string;
@@ -493,6 +496,7 @@ export async function agentEntries(
   const entries: AgentEntry[] = [];
   const refused: Refusal[] = [];
   if (o.agent) {
+    deps.say("engine runs are bound by their session only (no run id in BINDINGS_JSON): their record is in this machine's demo-prepare-runs/, not on the server");
     for (let k = 1; k <= o.agentCount; k++) {
       if (o.agentCount > 1) deps.say(`agent session ${k} of ${o.agentCount}`);
       const r = await deps.runEngine(k);
@@ -502,7 +506,8 @@ export async function agentEntries(
         deps.say(`agent session ${k} cannot join the reserve: ${got.problems.join('; ')}. Stopping the agent sessions here (${entries.length} made)${k < o.agentCount ? `; run the rest later with --agent --agent-count ${o.agentCount - entries.length}` : ''}.`);
         break;
       }
-      entries.push(got);
+      const { run: _local, ...bySession } = got;
+      entries.push(bySession);
     }
   }
   if (o.agentRuns.length) {

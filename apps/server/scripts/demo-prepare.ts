@@ -12,8 +12,8 @@
  *   (d) polls PayPal until each dispute appears and reaches WAITING_FOR_SELLER_RESPONSE (with --seller, an agent
  *       dispute must be that seller's).
  *   (e) prints the BINDINGS_JSON to paste into Render: each case bound to { dispute, capture } (agent entries also name
- *       their run and session), so the server can verify, right before any send, that the dispute is about exactly
- *       that capture.
+ *       their session, and their run when it is a --agent-run one: an engine run's record is local, not on the
+ *       server), so the server can verify, right before any send, that the dispute is about exactly that capture.
  *
  * Flags run steps separately or resume (see USAGE in demo-prepare-lib.ts); --dry-run creates nothing. PayPal
  * credentials, model keys and tokens come from .env (node --env-file-if-exists); nothing secret is printed.
@@ -241,7 +241,7 @@ async function main() {
     const r = await agentEntries(o, { runEngine: () => engineStep(o, models!), read, used, say });
     for (const x of r.refused) say(`run ${x.run} is not taken into the reserve: ${x.problems.join('; ')}`);
     for (const e of r.entries) {
-      say(`agent entry: capture ${e.capture} · ${e.amount} · run ${e.run} · session ${e.session}${e.note ? ` · ${e.note}` : ''}`);
+      say(`agent entry: capture ${e.capture} · ${e.amount}${e.run ? ` · run ${e.run}` : ''} · session ${e.session}${e.note ? ` · ${e.note}` : ''}`);
       agent.push({ capture: e.capture, amount: e.amount, run: e.run, session: e.session, note: e.note });
     }
   }
@@ -250,7 +250,7 @@ async function main() {
     rule();
     say('(c) Now open the disputes as the buyer (a capture whose dispute is already open needs nothing):');
     if (o.standard) for (const c of standard) console.log(`\n${buyerInstructions('standard', c, '7.00 USD')}\n`);
-    for (const a of agent.filter((x) => x.run)) console.log(`\n${buyerInstructions('agent', a.capture, a.amount)}\n`);
+    for (const a of agent.filter((x) => x.session)) console.log(`\n${buyerInstructions('agent', a.capture, a.amount)}\n`);
   }
 
   if (!o.waitDisputes) {
@@ -286,7 +286,7 @@ async function main() {
   });
   say('(e) BINDINGS_JSON for Render (resolvekit service → Environment), ready to paste:');
   console.log(`\n${b.json}\n`);
-  for (const a of agentReady) if (a.note) say(`note · agent ${a.capture} (run ${a.run}): ${a.note}`);
+  for (const a of agentReady) if (a.note) say(`note · agent ${a.capture} (${a.run ? `run ${a.run}` : `session ${a.session}`}): ${a.note}`);
   if (b.missing.length) say(`not bound (no ready dispute): ${b.missing.join(', ')}; keep their current binding if they have one.`);
   // A capture whose dispute never got ready is left out of its case's list: say so, and how to add it later.
   const late = [...stdFound.filter((f) => !f.dispute).map((f) => `standard ${f.capture}`), ...agentFound.filter((f) => !f.dispute).map((f) => `agent ${f.capture}`)];
