@@ -203,10 +203,33 @@ export const hasTypedWork = (pages: readonly ReviewedPage[]): boolean =>
   pages.some(({ view, draft }) => draft.added.length > 0 || !sameRects(draft.rects, view.rects) || draft.lines.some((l, i) => l !== view.readLines[i]));
 
 /**
- * Open reviews by upload id, in this page's memory only (never in browser storage, never sent): closing and reopening
- * the review in the same session keeps what was typed. Forgotten when the upload is confirmed or discarded.
+ * Open reviews by person and upload id, in this page's memory only (never in browser storage, never sent): closing
+ * and reopening the review in the same session keeps what was typed. They belong to one person at a time
+ * (`scope`: `draftScope(area, personId)`, as the case drafts): another person, signing out or an expired session
+ * clears them all. Forgotten when the upload is confirmed or discarded.
  */
 const kept = new Map<string, ReviewedPage[]>();
-export const keepReview = (uploadId: string, pages: readonly ReviewedPage[]) => void kept.set(uploadId, [...pages]);
-export const keptReview = (uploadId: string): ReviewedPage[] | null => kept.get(uploadId) ?? null;
-export const forgetReview = (uploadId: string) => void kept.delete(uploadId);
+let owner: string | null = null;
+const keyOf = (scope: string, uploadId: string) => JSON.stringify([scope, uploadId]);
+
+/** Every kept review is dropped (sign-out). */
+export function clearKeptReviews(): void {
+  kept.clear();
+  owner = null;
+}
+
+/** The kept reviews are this person's from now on: anyone else's are dropped. Called on every change of account. */
+export function reviewsBelongTo(scope: string): void {
+  if (owner !== scope) kept.clear();
+  owner = scope;
+}
+
+export function keepReview(scope: string, uploadId: string, pages: readonly ReviewedPage[]): void {
+  reviewsBelongTo(scope);
+  kept.set(keyOf(scope, uploadId), [...pages]);
+}
+export function keptReview(scope: string, uploadId: string): ReviewedPage[] | null {
+  reviewsBelongTo(scope);
+  return kept.get(keyOf(scope, uploadId)) ?? null;
+}
+export const forgetReview = (scope: string, uploadId: string) => void kept.delete(keyOf(scope, uploadId));

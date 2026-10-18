@@ -28,6 +28,8 @@ export interface PdfReviewProps {
   /** A PDF whose pages are read (job `reviewing`), shown in full to a person who can edit it (never a restricted view). */
   upload: UploadRecordView;
   client: UploadsClient;
+  /** Whose review this is (`draftScope`): what was typed is kept for this person only. */
+  scope: string;
   /** The upload changed on the server (a page covered, confirmed, or discarded: null). */
   onChange: (u: UploadRecordView | null) => void;
   /** Back to the case; a pending upload stays pending. */
@@ -38,9 +40,9 @@ export interface PdfReviewProps {
 const isChanged = (e: unknown) => e instanceof UploadRequestError && e.status === 409 && e.code === 'UPLOAD_CHANGED';
 
 /** The drafts to start from: those kept from an earlier opening in this session, merged with the server's pages now. */
-function initialDrafts(u: UploadRecordView): { drafts: PageDraft[]; notice: string | null } {
+function initialDrafts(u: UploadRecordView, scope: string): { drafts: PageDraft[]; notice: string | null } {
   const fresh = u.pdf?.pages ?? [];
-  const kept = keptReview(u.id);
+  const kept = keptReview(scope, u.id);
   if (!kept) return { drafts: fresh.map(pageDraftOf), notice: null };
   const m = mergeAfterChange(kept, fresh);
   return { drafts: m.drafts, notice: m.notice };
@@ -56,8 +58,8 @@ type Hint = { state: 'loading' } | { state: 'ready'; lines: string[] } | { state
  * server read it again, correct what it misread, transcribe a line it missed (an area marked outside the covers, then
  * typed), then confirm the list of pages. Only the covered pages and their reviewed text are ever used.
  */
-export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps) {
-  const [start] = useState(() => initialDrafts(upload));
+export function PdfReview({ upload, client, scope, onChange, onClose }: PdfReviewProps) {
+  const [start] = useState(() => initialDrafts(upload, scope));
   const [rec, setRec] = useState(upload);
   const [drafts, setDrafts] = useState<PageDraft[]>(start.drafts);
   const [at, setAt] = useState(0);
@@ -79,7 +81,7 @@ export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps)
   // What was typed survives closing and reopening in this session (memory only); forgotten on confirm or discard.
   const gone = useRef(false);
   useEffect(() => {
-    if (!gone.current) keepReview(rec.id, pages);
+    if (!gone.current) keepReview(scope, rec.id, pages);
   });
 
   useEffect(() => {
@@ -102,7 +104,7 @@ export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps)
 
   const finish = (u: UploadRecordView | null) => {
     gone.current = true;
-    forgetReview(rec.id);
+    forgetReview(scope, rec.id);
     onChange(u);
   };
 
@@ -125,7 +127,7 @@ export function PdfReview({ upload, client, onChange, onClose }: PdfReviewProps)
     setDrafts(m.drafts);
     setAt((a) => Math.min(a, m.drafts.length - 1));
     setSummary(false);
-    setError([why, m.notice].filter(Boolean).join(' '));
+    setError([why, m.notice].filter(Boolean).join(' · '));
     onChange(fresh);
   };
 

@@ -589,7 +589,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     const images: { png: Uint8Array; dpi: number }[] = [];
     for (const [i, p] of sent.entries()) {
       const png = store.pageImage(cur.id, i + 1);
-      if (p.sha256 !== pages[i]!.sha256 || !png || sha256(png) !== pages[i]!.sha256) return refuse(409, 'UPLOAD_CHANGED', `Page ${i + 1} changed since you reviewed it; review it again`);
+      if (p.sha256 !== pages[i]!.sha256 || !png || sha256(png) !== pages[i]!.sha256) return refuse(409, 'UPLOAD_CHANGED', `Page ${pages[i]!.original} of the original document changed since you reviewed it; review it again`);
       const { width, height } = pngSize(png);
       for (const a of p.added) {
         if (!a.text.trim() || !isLine(a.text)) return refuse(422, 'BAD_TRANSCRIPTION', `A transcribed line is one line of text, up to ${MAX_LINE} characters`);

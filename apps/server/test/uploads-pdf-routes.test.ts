@@ -620,6 +620,7 @@ test('confirm: every page covered, its lines and sha256; transcriptions outside 
   const stale = await confirmPdf(app, cookie, id, [ok[0], { ...ok[1], sha256: p1.sha256 }]);
   assert.equal(stale.status, 409);
   assert.equal(stale.body.error, 'UPLOAD_CHANGED');
+  assert.equal(stale.body.detail, 'Page 2 of the original document changed since you reviewed it; review it again');
   // Another reviewer does not confirm it.
   assert.equal((await confirmPdf(app, people.member(), id, ok)).status, 403);
 
@@ -797,4 +798,24 @@ test('an upload that expires while its cover or its confirmation waits for the i
   assert.equal(conf.status, 409);
   assert.equal(store.get(id2)!.status, 'discarded');
   assert.equal(store.sanitised(id2), null);
+});
+
+test('a stale page names its page of the original document, not its place in the selection', TIMEOUT, async () => {
+  const { app, people } = setup();
+  const cookie = people.fullMember();
+  const id = (await uploadPdf(app, cookie, pagesPdf(7))).body.upload.id;
+  await waitFor(app, cookie, id, thumbsReady);
+  assert.equal((await select(app, cookie, id, [3, 6])).status, 200);
+  await waitFor(app, cookie, id, settled);
+  const c1 = await redactPage(app, cookie, id, 1, []);
+  const c2 = await redactPage(app, cookie, id, 2, []);
+  const [p1, p2] = c2.body.upload.pdf.pages as [PdfPageView, PdfPageView];
+  assert.ok(c1.status === 200 && p1.sha256 && p2.sha256);
+  const stale = await confirmPdf(app, cookie, id, [
+    { lines: p1.readLines, added: [], sha256: p1.sha256 },
+    { lines: p2.readLines, added: [], sha256: '0'.repeat(64) },
+  ]);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.error, 'UPLOAD_CHANGED');
+  assert.equal(stale.body.detail, 'Page 6 of the original document changed since you reviewed it; review it again');
 });

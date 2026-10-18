@@ -309,6 +309,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                   key={u.id}
                   upload={u}
                   client={uploadsClient!}
+                  scope={draftScope(area, demoLock?.person?.id ?? null)}
                   onChange={(n) => {
                     up.put(u.id, n);
                     if (!n || n.status === 'confirmed') setPdfReview(null);

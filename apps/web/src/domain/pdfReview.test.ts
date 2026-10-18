@@ -10,6 +10,7 @@ import {
   STUCK_MS,
   afterCover,
   canPick,
+  clearKeptReviews,
   confirmPayload,
   forgetReview,
   hasTypedWork,
@@ -24,6 +25,7 @@ import {
   pageDraftOf,
   pageState,
   pdfBlocker,
+  reviewsBelongTo,
   pickedLabel,
   pollDelay,
   pollStep,
@@ -313,13 +315,34 @@ describe('a page that changed on the server (409 UPLOAD_CHANGED, or a review reo
     expect(hasTypedWork([{ view, draft: { ...pageDraftOf(view), added: [{ area: cover, text: '' }] } }])).toBe(true);
   });
 
-  it('keeps an open review in memory by upload id until it is confirmed or discarded', () => {
+  it('keeps an open review in memory by person and upload id until it is confirmed or discarded', () => {
     const view = v();
     const pages = [{ view, draft: typed(view) }];
-    keepReview('upl-1', pages);
-    expect(keptReview('upl-1')).toEqual(pages);
-    expect(keptReview('upl-2')).toBeNull();
-    forgetReview('upl-1');
-    expect(keptReview('upl-1')).toBeNull();
+    reviewsBelongTo('p1');
+    keepReview('p1', 'upl-1', pages);
+    expect(keptReview('p1', 'upl-1')).toEqual(pages);
+    expect(keptReview('p1', 'upl-2')).toBeNull();
+    forgetReview('p1', 'upl-1');
+    expect(keptReview('p1', 'upl-1')).toBeNull();
+  });
+
+  it("never returns one person's typed work to another, and a change of person clears every kept review", () => {
+    const view = v();
+    const pages = [{ view, draft: typed(view) }];
+    reviewsBelongTo('p1');
+    keepReview('p1', 'upl-1', pages);
+    keepReview('p1', 'upl-2', pages);
+    reviewsBelongTo('p1');
+    expect(keptReview('p1', 'upl-1')).toEqual(pages);
+    // Person B on the same upload: nothing, and person A's reviews are gone (not just hidden).
+    expect(keptReview('p2', 'upl-1')).toBeNull();
+    expect(keptReview('p1', 'upl-1')).toBeNull();
+    keepReview('p1', 'upl-1', pages);
+    // Signed out (or the session expired): everything is cleared.
+    reviewsBelongTo('local');
+    expect(keptReview('p1', 'upl-1')).toBeNull();
+    keepReview('p2', 'upl-1', pages);
+    clearKeptReviews();
+    expect(keptReview('p2', 'upl-1')).toBeNull();
   });
 });
