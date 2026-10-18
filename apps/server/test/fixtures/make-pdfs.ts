@@ -4,6 +4,8 @@
  * Every function returns fresh bytes. All strings are latin1, so string length is the byte offset.
  */
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
+import { createDeflate } from 'node:zlib';
 
 export const A4 = { w: 595, h: 842 };
 export const A3_LANDSCAPE = { w: 1191, h: 842 };
@@ -141,4 +143,82 @@ export function hiddenPdf(): Uint8Array {
   objects[page + 1] = stream('', `${content({ ...A4, lines: [HIDDEN.visible] })}\nBT /F1 12 Tf 1 1 1 rg 1 0 0 1 40 760 Tm (${HIDDEN.white}) Tj ET`);
   objects[1] = `<< /Type /Catalog /Pages 2 0 R /Metadata ${xmp} 0 R /Names << /EmbeddedFiles << /Names [(notes.txt) ${spec} 0 R] >> >> >>`;
   return assemble(objects, `/Root 1 0 R /Info ${info} 0 R`);
+}
+
+/**
+ * A FlateDecode stream that decodes to `decodedBytes` zeros (about 1000:1), compressed in 1 MiB steps so building it
+ * holds no more than that.
+ */
+async function zeros(decodedBytes: number): Promise<Buffer> {
+  const z = createDeflate({ level: 9 });
+  const out: Buffer[] = [];
+  z.on('data', (b: Buffer) => out.push(b));
+  const chunk = Buffer.alloc(1024 * 1024);
+  for (let left = decodedBytes; left > 0; left -= chunk.length) {
+    if (!z.write(left >= chunk.length ? chunk : chunk.subarray(0, left))) await once(z, 'drain');
+  }
+  z.end();
+  await once(z, 'end');
+  return Buffer.concat(out);
+}
+
+/**
+ * A one-page PDF with a decompression bomb of `decodedMiB` in its XMP `/Metadata`, its page content stream (zeros
+ * are whitespace to the content parser) or an embedded TrueType font file.
+ */
+export async function bombPdf(where: 'metadata' | 'content' | 'font', decodedMiB: number): Promise<Uint8Array> {
+  const z = await zeros(decodedMiB * 1024 * 1024);
+  const parts: Buffer[] = [Buffer.from('%PDF-1.4\n', 'latin1')];
+  let length = parts[0]!.length;
+  const offsets: number[] = [];
+  const add = (...chunks: (string | Buffer)[]) => {
+    offsets.push(length);
+    for (const c of [`${offsets.length} 0 obj\n`, ...chunks, '\nendobj\n']) {
+      const b = typeof c === 'string' ? Buffer.from(c, 'latin1') : c;
+      parts.push(b);
+      length += b.length;
+    }
+  };
+  const bomb = (dict: string) => [`<< ${dict} /Filter /FlateDecode /Length ${z.length} >>\nstream\n`, z, '\nendstream'];
+  const text = 'BT /F1 12 Tf 1 0 0 1 40 780 Tm (Bomb fixture) Tj ET';
+  add(`<< /Type /Catalog /Pages 2 0 R${where === 'metadata' ? ' /Metadata 5 0 R' : ''} >>`);
+  add('<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 6 0 R >> >> /Contents 4 0 R >>');
+  if (where === 'content') add(...bomb(''));
+  else add(`<< /Length ${text.length} >>\nstream\n${text}\nendstream`);
+  if (where === 'metadata') add(...bomb('/Type /Metadata /Subtype /XML'));
+  else add('<< /Type /Metadata /Subtype /XML /Length 0 >>\nstream\n\nendstream');
+  if (where === 'font') {
+    add('<< /Type /Font /Subtype /TrueType /BaseFont /Bomb /FirstChar 32 /LastChar 126 /FontDescriptor 7 0 R >>');
+    add('<< /Type /FontDescriptor /FontName /Bomb /Flags 32 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 8 0 R >>');
+    add(...bomb(''));
+  } else add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const xref = length;
+  let tail = `xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) tail += `${String(o).padStart(10, '0')} 00000 n \n`;
+  tail += `trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  parts.push(Buffer.from(tail, 'latin1'));
+  return new Uint8Array(Buffer.concat(parts));
+}
+
+/**
+ * One A4 page using every external resource pdf.js could ask for: a non-embedded CJK font with a predefined CMap
+ * (UniJIS-UCS2-H, read from the CMap folder) showing `あ`, an image in an ICCBased colour space, and a JPEG 2000
+ * image (decoded with the WASM decoder; its data is junk, so it is skipped after the decoder loads).
+ */
+export function resourcesPdf(): Uint8Array {
+  const objects: string[] = [];
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objects[2] = '<< /Type /Pages /Kids [3 0 R] /Count 1 >>';
+  objects[3] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> /XObject << /Im1 8 0 R /Im2 10 0 R >> >> /Contents 4 0 R >>';
+  objects[4] = stream('', 'BT /F1 24 Tf 1 0 0 1 40 780 Tm <3042> Tj ET\nq 100 0 0 100 40 600 cm /Im1 Do Q\nq 100 0 0 100 200 600 cm /Im2 Do Q');
+  objects[5] = '<< /Type /Font /Subtype /Type0 /BaseFont /KozMinPr6N-Regular /Encoding /UniJIS-UCS2-H /DescendantFonts [6 0 R] >>';
+  objects[6] = '<< /Type /Font /Subtype /CIDFontType0 /BaseFont /KozMinPr6N-Regular /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> /FontDescriptor 7 0 R >>';
+  objects[7] = '<< /Type /FontDescriptor /FontName /KozMinPr6N-Regular /Flags 4 /FontBBox [0 -120 1000 880] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 700 /StemV 80 >>';
+  objects[8] = stream('/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace [/ICCBased 9 0 R]', '\x80\x40\x20');
+  objects[9] = stream('/N 3 /Alternate /DeviceRGB', 'not a real ICC profile');
+  // A JPEG 2000 codestream: SOC, then SIZ for one 1x1 8-bit component, then junk where the tiles should be.
+  const siz = [0xff, 0x4f, 0xff, 0x51, 0, 41, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 7, 1, 1];
+  objects[10] = stream('/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /DeviceGray /Filter /JPXDecode', `${String.fromCharCode(...siz)}junk`);
+  return assemble(objects, '/Root 1 0 R');
 }

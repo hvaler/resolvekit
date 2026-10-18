@@ -39,3 +39,8 @@ export const PDF_MAX_PAGE_PIXELS = MAX_PIXELS;
 /** Reading the PDF and rendering one page. */
 export const PDF_PAGE_TIMEOUT_MS = 20_000;
 export const MAX_REDACTS_PER_PAGE = 5;
+/**
+ * The PDF reader child is killed above this resident size (Linux only, where it can be read): the hosted instance
+ * has 512 MB for the server and the child together.
+ */
+export const PDF_CHILD_MAX_RSS_BYTES = 200 * 1024 * 1024;
