@@ -123,7 +123,8 @@ describe('the public demo area', () => {
     const html = render('/demo/cases/PP-R-TVH-10190665');
     expect(html).toContain('Response draft');
     // The demo's own indicator says it; the old simulated chip is not repeated next to it.
-    expect(html).not.toContain('Simulated PayPal');
+    expect(html).not.toContain('data-testid="mode-badge"');
+    expect(html).toContain('data-testid="environment-indicator"');
     expect(html).toContain('href="/demo/cases"');
   });
 
