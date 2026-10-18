@@ -7,6 +7,8 @@ export interface ServerHealth {
   /** Case ids bound to a real PayPal dispute. */
   bound: string[];
   error?: string;
+  /** The health read itself failed (timeout, 429, 5xx, no server): what is bound is unknown, not "nothing". */
+  failed?: true;
 }
 
 /** A refusal from the server or from PayPal, with PayPal's issue code when there is one. */
@@ -89,7 +91,7 @@ export class HttpDisputeGateway implements DisputeGateway {
       const paypal = h.paypal === 'sandbox' || h.paypal === 'live' ? h.paypal : 'unconfigured';
       return { paypal, bound: paypal === 'unconfigured' ? [] : Array.isArray(h.bound) ? h.bound : [], ...(h.error ? { error: h.error } : {}) };
     } catch (e) {
-      return { paypal: 'unconfigured', bound: [], error: e instanceof Error ? e.message : String(e) };
+      return { paypal: 'unconfigured', bound: [], failed: true, error: e instanceof Error ? e.message : String(e) };
     }
   }
 }

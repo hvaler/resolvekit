@@ -8,6 +8,7 @@ export const ENVIRONMENTS_HELP = [
 ] as const;
 
 export const CHECKING_TEXT = 'Checking your PayPal connection…';
+export const HEALTH_RETRY_TEXT = "Couldn't read the bound sandbox cases yet. Retrying…";
 export const SANDBOX_WARNING = 'This sends test documents to a PayPal sandbox dispute. No real money moves.';
 export const DEMO_UPLOAD_REASON = "Adding your own evidence reads it on the ResolveKit server; it's available in the sandbox evaluation, not in the demo.";
 

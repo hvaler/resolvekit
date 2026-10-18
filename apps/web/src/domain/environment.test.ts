@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountWorkspace, DemoState } from './demoClient';
 import { draftKey } from './draftStore';
-import { casesBase, draftScope, environmentOf, joinUrl, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
+import { casesBase, draftScope, environmentOf, healthRetryDelay, joinUrl, knownBound, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
 
 function state(connection: AccountWorkspace['connection'], role: 'owner' | 'member' = 'owner'): DemoState {
   return {
@@ -75,6 +75,19 @@ describe('workspaceRoute', () => {
     expect(workspaceRoute({ kind: 'checking' }, { caseId: null }, [])).toEqual({ kind: 'checking' });
     expect(workspaceRoute({ kind: 'checking' }, { caseId: 'x' }, [])).toEqual({ kind: 'checking' });
   });
+  it('evaluation with the bound cases unknown (health failed or not read yet) retries: no demo redirect, no inbox', () => {
+    expect(workspaceRoute(evaluation, { caseId: 'PP-R-TVH-10190665' }, null)).toEqual({ kind: 'retrying' });
+    expect(workspaceRoute(evaluation, { caseId: 'PP-R-PLN-10189901' }, null)).toEqual({ kind: 'retrying' });
+    expect(workspaceRoute(evaluation, { caseId: null }, null)).toEqual({ kind: 'retrying' });
+    // Only a successful health with nothing bound sends an unbound id to the demo.
+    expect(workspaceRoute(evaluation, { caseId: 'PP-R-TVH-10190665' }, [])).toEqual({ kind: 'redirect', to: '/demo/cases/PP-R-TVH-10190665' });
+    expect(workspaceRoute(evaluation, { caseId: null }, [])).toEqual({ kind: 'inbox' });
+  });
+  it('the other environments do not depend on the bound cases being known', () => {
+    expect(workspaceRoute({ kind: 'local' }, { caseId: 'x' }, null)).toEqual({ kind: 'case', id: 'x' });
+    expect(workspaceRoute({ kind: 'merchant', owner: true }, { caseId: null }, null)).toEqual({ kind: 'waiting' });
+    expect(workspaceRoute({ kind: 'checking' }, { caseId: null }, null)).toEqual({ kind: 'checking' });
+  });
   it('the demo redirect encodes the case id', () => {
     expect(workspaceRoute(evaluation, { caseId: 'a/b?c' }, BOUND)).toEqual({ kind: 'redirect', to: '/demo/cases/a%2Fb%3Fc' });
   });
@@ -97,5 +110,22 @@ describe('signOutDestination', () => {
   it('goes home, or to /signin for another PayPal account', () => {
     expect(signOutDestination(false)).toBe('/');
     expect(signOutDestination(true)).toBe('/signin');
+  });
+});
+
+describe('knownBound', () => {
+  it('is null while health is unread or failed, the bound list once the server answered', () => {
+    expect(knownBound(null)).toBeNull();
+    expect(knownBound({ paypal: 'unconfigured', bound: [], failed: true, error: 'HTTP 429' })).toBeNull();
+    expect(knownBound({ paypal: 'sandbox', bound: [] })).toEqual([]);
+    expect(knownBound({ paypal: 'sandbox', bound: ['A'] })).toEqual(['A']);
+    // A server that answers but cannot reach PayPal is an answer: nothing bound.
+    expect(knownBound({ paypal: 'unconfigured', bound: [], error: 'PayPal unreachable' })).toEqual([]);
+  });
+});
+
+describe('healthRetryDelay', () => {
+  it('doubles from 1 s after each failure, capped at 30 s', () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 20].map(healthRetryDelay)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000]);
   });
 });

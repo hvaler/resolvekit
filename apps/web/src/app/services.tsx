@@ -8,7 +8,7 @@ import { HttpIntentClient, LocalIntentClient, type IntentSource } from '../domai
 import { payPalSource, type PayPalSource } from '../domain/paypalView';
 import { utcHm } from '../domain/time';
 import type { AuditEntry, DisputeSnapshot } from '../domain/types';
-import type { Area } from '../domain/environment';
+import { healthRetryDelay, type Area } from '../domain/environment';
 import { initialSnapshots, processingDispute, processingOpening } from '../fixtures';
 
 export interface TrackedSnapshot extends DisputeSnapshot {
@@ -39,8 +39,10 @@ interface Services {
   gatewayFor: (caseId: string) => DisputeGateway;
   /** Which PayPal serves this case: shown in the app bar and in every "recorded" message. */
   modeOf: (caseId: string) => GatewayMode;
-  /** The server's PayPal connection, once checked (null while checking). */
+  /** The server's PayPal connection, once checked (null while checking; `failed` while it cannot be read). */
   health: ServerHealth | null;
+  /** Ask `/api/health` again now (a failed read is also retried on its own, with backoff). */
+  retryHealth: () => void;
   /** Whether each case is real or simulated is known (the server answered, or there is no server). */
   modeKnown: boolean;
   /** Why the latest read of a case failed; cleared by the next successful read. */
@@ -200,7 +202,9 @@ export function ServicesProvider({
   );
   const refresh = useCallback((id: string) => refreshAll([id]), [refreshAll]);
 
-  // Ask the server once whether PayPal is connected and which cases are bound; then read those cases from PayPal.
+  // Ask the server whether PayPal is connected and which cases are bound; then read those cases from PayPal.
+  const [healthTry, setHealthTry] = useState(0);
+  const [healthFailures, setHealthFailures] = useState(0);
   useEffect(() => {
     if (!http) return;
     let live = true;
@@ -208,12 +212,21 @@ export function ServicesProvider({
       if (!live) return;
       healthRef.current = h;
       setHealth(h);
+      setHealthFailures((n) => (h.failed ? n + 1 : 0));
       if (h.bound.length) void refreshAll(h.bound);
     });
     return () => {
       live = false;
     };
-  }, [http, refreshAll]);
+  }, [http, refreshAll, healthTry]);
+  // A failed read is "unknown", not "nothing bound": hosted, ask again with backoff until the server answers.
+  // Local mode (no account state) keeps its single read, as before.
+  useEffect(() => {
+    if (!healthFailures || !demo) return;
+    const t = window.setTimeout(() => setHealthTry((n) => n + 1), healthRetryDelay(healthFailures));
+    return () => window.clearTimeout(t);
+  }, [healthFailures, demo]);
+  const retryHealth = useCallback(() => setHealthTry((n) => n + 1), []);
 
   const addAudit = useCallback((id: string, who: string, what: string) => {
     setAudit((all) => ({ ...all, [id]: [...(all[id] ?? []), { time: utcHm(new Date()), who, what }] }));
@@ -221,8 +234,8 @@ export function ServicesProvider({
 
   const modeKnown = !http || health != null;
   const value = useMemo<Services>(
-    () => ({ area, intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut }),
-    [area, intents, analysis, gateway, gatewayFor, modeOf, health, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut],
+    () => ({ area, intents, analysis, gateway, gatewayFor, modeOf, health, retryHealth, modeKnown, readErrors, simulator, sync, refreshAll, outcome, setOutcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut }),
+    [area, intents, analysis, gateway, gatewayFor, modeOf, health, retryHealth, modeKnown, readErrors, simulator, sync, refreshAll, outcome, snapshots, applySnapshot, refresh, audit, addAudit, demo, accountKnown, signOut],
   );
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }

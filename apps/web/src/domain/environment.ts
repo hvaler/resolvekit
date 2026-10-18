@@ -1,4 +1,5 @@
 import type { DemoState } from './demoClient';
+import type { ServerHealth } from './httpGateway';
 
 /** Which of the app's areas is on screen: the public Explore demo, or the signed-in workspace. */
 export type Area = 'demo' | 'workspace';
@@ -38,7 +39,23 @@ export function draftScope(area: Area, personId: string | null): string {
 }
 
 /** What `/cases` and `/cases/:id` show for this environment. `bound`: the case ids bound to real PayPal disputes. */
-export type WorkspaceRoute = { kind: 'inbox' } | { kind: 'case'; id: string } | { kind: 'redirect'; to: string } | { kind: 'waiting' } | { kind: 'checking' };
+export type WorkspaceRoute =
+  | { kind: 'inbox' }
+  | { kind: 'case'; id: string }
+  | { kind: 'redirect'; to: string }
+  | { kind: 'waiting' }
+  | { kind: 'checking' }
+  | { kind: 'retrying' };
+
+/** The bound case ids once the server answered `/api/health`; null while unread or after a failed read (unknown). */
+export function knownBound(health: ServerHealth | null): readonly string[] | null {
+  return !health || health.failed ? null : health.bound;
+}
+
+/** How long to wait before asking `/api/health` again after `failures` failed reads in a row: 1 s, 2 s, 4 s… 30 s. */
+export function healthRetryDelay(failures: number): number {
+  return Math.min(30_000, 1_000 * 2 ** Math.max(0, failures - 1));
+}
 
 /** The sign-in / join page, carrying where the person was going (`next`, a same-site path; `/` needs none). */
 export const signInUrl = (next: string): string => withNext('/signin', next);
@@ -47,7 +64,8 @@ function withNext(page: string, next: string): string {
   return next === '/' ? page : `${page}?next=${encodeURIComponent(next)}`;
 }
 
-export function workspaceRoute(env: Environment, path: { caseId: string | null }, bound: readonly string[]): WorkspaceRoute {
+/** `bound`: see {@link knownBound}; null (unknown) never sends a case link to the demo nor shows an empty inbox. */
+export function workspaceRoute(env: Environment, path: { caseId: string | null }, bound: readonly string[] | null): WorkspaceRoute {
   const here = path.caseId ? `/cases/${path.caseId}` : '/cases';
   const page: WorkspaceRoute = path.caseId ? { kind: 'case', id: path.caseId } : { kind: 'inbox' };
   switch (env.kind) {
@@ -58,6 +76,7 @@ export function workspaceRoute(env: Environment, path: { caseId: string | null }
     case 'checking':
       return { kind: 'checking' };
     case 'evaluation':
+      if (!bound) return { kind: 'retrying' };
       // The evaluation workspace sees only its bound cases; any other id is the fictional case of the same id.
       return path.caseId && !bound.includes(path.caseId) ? { kind: 'redirect', to: `/demo/cases/${encodeURIComponent(path.caseId)}` } : page;
     default:

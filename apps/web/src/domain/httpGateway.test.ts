@@ -73,7 +73,12 @@ describe('HttpDisputeGateway', () => {
     const down = fake(() => {
       throw new TypeError('fetch failed');
     });
-    expect(await new HttpDisputeGateway({ fetch: down.fetch }).health()).toMatchObject({ paypal: 'unconfigured', bound: [] });
+    expect(await new HttpDisputeGateway({ fetch: down.fetch }).health()).toMatchObject({ paypal: 'unconfigured', bound: [], failed: true });
+    // A rate-limited or failing health is a failed read, not "nothing bound".
+    for (const status of [429, 500, 503]) {
+      const r = await new HttpDisputeGateway({ fetch: fake(() => json(status, { error: 'X' })).fetch }).health();
+      expect(r).toMatchObject({ paypal: 'unconfigured', bound: [], failed: true });
+    }
     const up = fake(() => json(200, { paypal: 'sandbox', bound: ['CASE-1'] }));
     expect(await new HttpDisputeGateway({ fetch: up.fetch }).health()).toEqual({ paypal: 'sandbox', bound: ['CASE-1'] });
   });

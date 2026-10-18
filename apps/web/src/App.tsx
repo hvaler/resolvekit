@@ -2,13 +2,13 @@ import { Navigate, Route, Routes, useMatch, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { setRecording, useRecording } from './app/recording';
 import { ServicesProvider, useServices } from './app/services';
-import { environmentOf, workspaceRoute } from './domain/environment';
+import { environmentOf, knownBound, workspaceRoute } from './domain/environment';
 import type { SimulatedOutcome } from './domain/gateway';
 import { JoinPage, MembersPage, SignInPage } from './pages/AuthPages';
 import { CasePage } from './pages/CasePage';
 import { LandingPage } from './pages/LandingPage';
 import { InboxPage } from './pages/InboxPage';
-import { CheckingPage, WaitingPage } from './pages/WaitingPage';
+import { CheckingPage, RetryingPage, WaitingPage } from './pages/WaitingPage';
 import { processingDispute } from './fixtures';
 
 const OUTCOMES: { v: SimulatedOutcome; l: string }[] = [
@@ -96,7 +96,7 @@ function WorkspaceCases() {
   const env = environmentOf(area, demo);
   // Nothing is decided before the account and (for an evaluation workspace) the bound cases are known.
   if (!accountKnown || (env.kind === 'evaluation' && !modeKnown)) return <div className="min-h-[100dvh] bg-bg" />;
-  const route = workspaceRoute(env, { caseId: id }, health?.bound ?? []);
+  const route = workspaceRoute(env, { caseId: id }, knownBound(health));
   switch (route.kind) {
     case 'redirect':
       return <Navigate to={route.to} replace />;
@@ -104,6 +104,8 @@ function WorkspaceCases() {
       return <WaitingPage />;
     case 'checking':
       return <CheckingPage />;
+    case 'retrying':
+      return <RetryingPage />;
     case 'case':
       return <CasePage />;
     default:

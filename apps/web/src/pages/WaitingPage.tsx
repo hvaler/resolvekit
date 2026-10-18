@@ -6,7 +6,7 @@ import { EnvironmentsHelp } from '../components/EnvironmentsHelp';
 import { Spinner } from '../components/ui';
 import { RoleChip } from '../components/AccountMenu';
 import { SignOutActions } from '../components/SignOutActions';
-import { CHECKING_TEXT, waitingCopy } from '../domain/copy';
+import { CHECKING_TEXT, HEALTH_RETRY_TEXT, waitingCopy } from '../domain/copy';
 import { environmentOf } from '../domain/environment';
 
 function Frame({ children }: { children: React.ReactNode }) {
@@ -74,6 +74,22 @@ export function CheckingPage() {
         <Spinner />
         {CHECKING_TEXT}
       </div>
+    </Frame>
+  );
+}
+
+/** The evaluation workspace while `/api/health` cannot be read: which cases are bound is unknown, so nothing is decided. */
+export function RetryingPage() {
+  const { retryHealth } = useServices();
+  return (
+    <Frame>
+      <div role="status" className="flex items-center gap-3 text-body-lg text-ink-2">
+        <Spinner />
+        {HEALTH_RETRY_TEXT}
+      </div>
+      <button type="button" onClick={retryHealth} className="self-start rounded-md border border-line bg-surface px-3.5 py-2 text-[13px] font-medium text-ink">
+        Retry now
+      </button>
     </Frame>
   );
 }
