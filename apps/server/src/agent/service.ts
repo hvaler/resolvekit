@@ -38,7 +38,8 @@ interface Active {
 }
 
 export class AgentService {
-  private readonly store: RunStore;
+  /** The run records (routes read and keep them; only the service writes a run's progress). */
+  readonly store: RunStore;
   private readonly models: { primary: AgentModel; fallback: AgentModel | null } | null;
   private readonly meterUrl: string;
   private readonly meterHeaders: (runId: string) => Record<string, string>;
@@ -158,6 +159,17 @@ export class AgentService {
       if (UNFINISHED.has(r.state) || this.active.has(r.id) || !r.sessionId || !UNSETTLED.has(r.settlement)) continue;
       await this.settleThroughAdmin(r.id);
     }
+  }
+
+  /** Abort one run's loop (it ends interrupted and settles, as on shutdown); false when it is not going here. */
+  stopRun(id: string): boolean {
+    const a = this.active.get(id);
+    if (!a) return false;
+    if (!a.controller.signal.aborted) {
+      a.controller.abort();
+      this.log(`agent run ${id}: stop asked`);
+    }
+    return true;
   }
 
   /** Shutdown: aborts running loops (they end interrupted and settle). */

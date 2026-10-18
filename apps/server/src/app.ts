@@ -31,9 +31,11 @@ import { REFUSED_EARLY, acceptsFileBody, createUploadRoutes } from './uploads/ro
 import { uploadDocuments, uploadFileName } from './uploads/documents.ts';
 import { UploadStore, type UploadRecord } from './uploads/store.ts';
 import { PAYPAL_MAX_SEND_BYTES } from './uploads/limits.ts';
+import { createAgentRoutes } from './agent/routes.ts';
+import type { AgentService } from './agent/service.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
-export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload';
+export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload' | 'agent-run';
 
 /** A refusal as status + JSON body. */
 export interface Refusal {
@@ -133,6 +135,8 @@ export interface ApiOptions {
   uploadStoredFileBytes?: number;
   /** Total size of the files of one response (default PAYPAL_MAX_SEND_BYTES, uploads/limits.ts). */
   paypalMaxSendBytes?: number;
+  /** The buying agent's runs (/api/agent/runs, agent/routes.ts). null/absent: those routes answer 503. */
+  agent?: AgentService | null;
 }
 
 /** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
@@ -1118,6 +1122,14 @@ export function createApi(opts: ApiOptions): Api {
     ...(opts.uploadStoredFileBytes ? { maxStoredBytes: opts.uploadStoredFileBytes } : {}),
   });
 
+  /** The buying agent's runs: signed-in people (local: the operator); hosted, one daily and one per-person unit each. */
+  const agentRoutes = createAgentRoutes({
+    agent: opts.agent ?? null,
+    person: personOf,
+    reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'agent-run') : null,
+    log,
+  });
+
   const route = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -1135,6 +1147,8 @@ export function createApi(opts: ApiOptions): Api {
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
     const up = await uploadRoutes(req, url);
     if (up) return up;
+    const ag = await agentRoutes(req, url);
+    if (ag) return ag;
     const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|intent|audit)(?:\/(int-[0-9a-f]{32})(\/approve|\/cancel)?)?)?$/.exec(path);
     if (!m) return json(404, { error: 'NOT_FOUND' });
     const caseId = m[1]!;

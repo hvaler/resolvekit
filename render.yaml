@@ -72,6 +72,23 @@ services:
         value: 200
       - key: DAILY_EVIDENCE_SENDS
         value: 20
+      # The buying agent (/agent): run limits, and runs started per day (besides 5 per person and MeterMCP's DAILY_BUDGETS).
+      - key: AGENT_MAX_ACTIONS
+        value: 8
+      - key: AGENT_MAX_MS # agent time, not counting the wait for the PayPal approval
+        value: 180000
+      - key: AGENT_APPROVAL_TIMEOUT_MS
+        value: 900000
+      - key: AGENT_MAX_MODEL_CALLS
+        value: 12
+      - key: AGENT_MAX_INPUT_TOKENS # per model call, estimated before sending
+        value: 8000
+      - key: AGENT_MAX_OUTPUT_TOKENS # per model call, requested
+        value: 1024
+      - key: AGENT_RUN_TOKEN_BUDGET # in + out per run, every attempt counted
+        value: 60000
+      - key: DAILY_AGENT_RUNS
+        value: 20
       # Two hops in front of *.onrender.com: Cloudflare appends the visitor, then Render's proxy appends Cloudflare.
       # Verified on the deployed service 2026-10-09: X-Forwarded-For had 2 entries [visitor, Cloudflare edge].
       - key: TRUSTED_PROXY_HOPS
@@ -107,8 +124,12 @@ services:
         sync: false
       - key: METERMCP_ADMIN_TOKEN # shared with resolvekit (fromService above)
         generateValue: true
-      - key: METERMCP_BUDGET
+      - key: METERMCP_BUDGET # the largest budget a run may ask for
         value: "5.00"
+      - key: METERMCP_MIN_BUDGET # the smallest
+        value: "0.50"
+      - key: METERMCP_RETURN_ORIGINS # where PayPal may return the buyer after approving a run's budget: resolvekit's public origin(s), e.g. https://resolvekit.onrender.com
+        sync: false
       - key: METERMCP_FAIL_FIRST # demo test switch: the first deep_report call of each session fails (never charged; the receipt says so)
         value: deep_report
       - key: DAILY_BUDGETS

@@ -102,6 +102,8 @@ export interface HostedLimits {
   webhookPerIp: { limit: number; windowMs: number };
   /** Evidence uploads (POST /api/cases/:id/uploads: a file read and OCR'd on this server), per IP. */
   uploadsPerIp: { limit: number; windowMs: number };
+  /** Agent runs started, per signed-in person (besides the daily cap of all of them). */
+  agentRunsPerPerson: { limit: number; windowMs: number };
 }
 
 const MIN = 60_000;
@@ -113,6 +115,7 @@ export const DEFAULT_LIMITS: HostedLimits = {
   intentsPerIp: { limit: 20, windowMs: 10 * MIN },
   webhookPerIp: { limit: 120, windowMs: 15 * MIN },
   uploadsPerIp: { limit: 20, windowMs: 10 * MIN },
+  agentRunsPerPerson: { limit: 5, windowMs: 24 * 60 * MIN },
 };
 
 /** Why each costly action is the seller workspace's only (shown by the web app as is). */
@@ -121,10 +124,11 @@ export const LOCKED_REASON: Record<CostlyAction, string> = {
   'live-analysis': 'A live AI run uses model quota, so on this public demo only the seller’s workspace runs it. The stored analysis stays on screen.',
   recheck: 'Re-checking an edited sentence calls the AI model, so on this public demo only the seller’s workspace runs it.',
   upload: 'Adding evidence stores and reads a file on this server, so on this public demo only the seller’s workspace adds it.',
+  'agent-run': 'An agent run uses model quota and asks for a real PayPal sandbox payment, so on this public demo only the seller’s workspace starts one.',
 };
 const SIGN_IN_REASON = 'Sign in to compose and approve responses: with PayPal (merchants) or with the invite link you were given.';
 
-const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks', upload: 'evidence uploads' };
+const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks', upload: 'evidence uploads', 'agent-run': 'agent runs' };
 
 /** The operator's check (demo:check). */
 export const OPS_PATH = '/api/ops/status';
@@ -150,6 +154,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const paypalStarts = new KeyedLimiter({ ...L.paypalStartsPerIp, now: () => now().getTime() });
   const webhookLimit = new KeyedLimiter({ ...L.webhookPerIp, now: () => now().getTime() });
   const uploadLimit = new KeyedLimiter({ ...L.uploadsPerIp, now: () => now().getTime() });
+  const agentRunLimit = new KeyedLimiter({ ...L.agentRunsPerPerson, now: () => now().getTime() });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
   // The seller merchant ids of the bound disputes (refreshed before each signed-in request): which workspace sees
@@ -222,7 +227,24 @@ export function createHostedApp(o: HostedOptions): HostedApp {
           refusal: { status: 429, body: { error: 'DAILY_CAP', detail: `This demo allows ${s.caps[action]?.limit ?? 0} ${CAP_NAME[action]} per day; the cap resets at ${s.resetsAt}.`, action, resetsAt: s.resetsAt } },
         };
       }
-      return { ok: true, release: () => o.counters.release(action, day) };
+      if (action !== 'agent-run') return { ok: true, release: () => o.counters.release(action, day) };
+      // An agent run also takes one of the person's own units; refused, the daily unit goes back.
+      const mine = agentRunLimit.take(s.person.id);
+      if (!mine.ok) {
+        o.counters.release(action, day);
+        const limit = L.agentRunsPerPerson.limit;
+        return {
+          ok: false,
+          refusal: { status: 429, body: { error: 'PERSON_CAP', detail: `This demo allows ${limit} agent run${limit === 1 ? '' : 's'} per person per day; try again in ${Math.ceil(mine.retryAfterSec / 3600)} h.`, action, retryAfterSec: mine.retryAfterSec } },
+        };
+      }
+      return {
+        ok: true,
+        release: () => {
+          o.counters.release(action, day);
+          agentRunLimit.release(s.person.id);
+        },
+      };
     },
     // Who approves or sends: the signed-in person, named in the audit trail of their workspace. The simulator records
     // a signed-out visitor as such; anything that needs an owner (intents) needs a signed-in person.
@@ -297,7 +319,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     if (r.paypal === 'unconfigured') problems.push(`PayPal is not connected${r.error ? ` (${r.error})` : ''}`);
     if (!webhook) problems.push('the PayPal webhook is off (PAYPAL_WEBHOOK_ID / PAYPAL_WEBHOOK_KEY)');
     const caps = o.counters.storageProblem();
-    if (caps) problems.push(`${caps} (evidence sends, live AI runs, re-checks and uploads are refused)`);
+    if (caps) problems.push(`${caps} (evidence sends, live AI runs, re-checks, uploads and agent runs are refused)`);
     const cases = Object.keys(r.bindings);
     if (cases.length === 0) problems.push('no case is bound to a real PayPal dispute (BINDINGS_JSON)');
     for (const [caseId, b] of Object.entries(r.bindings)) {
