@@ -34,8 +34,11 @@ export const PDF_MAX_SELECTED = 5;
 export const PDF_RENDER_DPI = 170;
 /** Page thumbnails for choosing the selection. */
 export const PDF_THUMB_DPI = 36;
-/** One rendered page holds at most this many pixels: a larger page is rendered at a lower dpi so it fits. */
-export const PDF_MAX_PAGE_PIXELS = MAX_PIXELS;
+/**
+ * One rendered page holds at most this many pixels (the OCR limit): a larger page is rendered at a lower dpi so it
+ * fits. Measured on Windows, an 8.3 MP render peaked at ~187 MB in the reader child, too close to its 200 MB ceiling.
+ */
+export const PDF_MAX_PAGE_PIXELS = OCR_MAX_PIXELS;
 /** Reading the PDF and rendering one page. */
 export const PDF_PAGE_TIMEOUT_MS = 20_000;
 export const MAX_REDACTS_PER_PAGE = 5;

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PNG } from 'pngjs';
 import { inspectPdf, openPdfSession, pageTextHint, pdfChildTestHooks, readRss, renderPage } from '../src/uploads/pdf-input.ts';
-import { MAX_PIXELS, MAX_SIDE, PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_PAGE_PIXELS, PDF_MAX_SELECTED, PDF_PAGE_TIMEOUT_MS, PDF_RENDER_DPI, PDF_THUMB_DPI, MAX_REDACTS_PER_PAGE } from '../src/uploads/limits.ts';
+import { MAX_SIDE, PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_PAGE_PIXELS, PDF_MAX_SELECTED, PDF_PAGE_TIMEOUT_MS, PDF_RENDER_DPI, PDF_THUMB_DPI, MAX_REDACTS_PER_PAGE } from '../src/uploads/limits.ts';
 import { A3_LANDSCAPE, HIDDEN, HUGE, bombPdf, corruptPdf, encryptedPdf, hiddenPdf, pagesPdf, resourcesPdf, textPdf, zeroPagePdf } from './fixtures/make-pdfs.ts';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -19,7 +19,7 @@ test('limits', () => {
   assert.equal(PDF_MAX_SELECTED, 5);
   assert.equal(PDF_RENDER_DPI, 170);
   assert.equal(PDF_THUMB_DPI, 36);
-  assert.equal(PDF_MAX_PAGE_PIXELS, MAX_PIXELS);
+  assert.equal(PDF_MAX_PAGE_PIXELS, 4_000_000);
   assert.equal(PDF_PAGE_TIMEOUT_MS, 20_000);
   assert.equal(MAX_REDACTS_PER_PAGE, 5);
   assert.equal(PDF_CHILD_MAX_RSS_BYTES, 200 * 1024 * 1024);
@@ -45,6 +45,17 @@ test('an encrypted PDF is refused, with or without a user password', TIMEOUT, as
   await assert.rejects(inspectPdf(encryptedPdf({ userPassword: false })), { code: 'UNREADABLE', message: ENCRYPTED });
   await assert.rejects(renderPage(encryptedPdf({ userPassword: false }), 1, 36), { code: 'UNREADABLE', message: ENCRYPTED });
   await assert.rejects(pageTextHint(encryptedPdf({ userPassword: false }), 1), { code: 'UNREADABLE', message: ENCRYPTED });
+  // `/Encr#79pt` plus a comment and no /P: the byte scan decodes the escape; pdf.js's own check refuses it too.
+  await assert.rejects(inspectPdf(encryptedPdf({ userPassword: false, disguised: true })), { code: 'UNREADABLE', message: ENCRYPTED });
+  try {
+    pdfChildTestHooks.onOpen = 'no-scan';
+    for (const pdf of [encryptedPdf({ userPassword: false, disguised: true }), encryptedPdf({ userPassword: false }), encryptedPdf({ userPassword: true })]) {
+      await assert.rejects(inspectPdf(pdf), { code: 'UNREADABLE', message: ENCRYPTED });
+    }
+    assert.deepEqual(await inspectPdf(pagesPdf(2)), { pages: 2 });
+  } finally {
+    pdfChildTestHooks.onOpen = undefined;
+  }
 });
 
 test('corrupt, zero pages, a PNG or nothing sent as a PDF is unreadable', TIMEOUT, async () => {
@@ -72,14 +83,17 @@ test('a page outside the document is refused', TIMEOUT, async () => {
 });
 
 test('a landscape A3 and a 14400 pt page stay within the pixel and side limits, and say the dpi used', TIMEOUT, async () => {
+  // A3 at 170 dpi would be 2812 x 1988 (5.6 MP): rendered at ~144 dpi to fit 4 MP.
   const a3 = await renderPage(textPdf([{ ...A3_LANDSCAPE, lines: ['A3'] }]), 1, 170);
-  assert.ok(Math.abs(a3.width - 2812) <= 2 && Math.abs(a3.height - 1988) <= 2, `${a3.width}x${a3.height}`);
-  assert.equal(a3.dpi, 170);
+  assert.ok(a3.width * a3.height <= PDF_MAX_PAGE_PIXELS && a3.width * a3.height > PDF_MAX_PAGE_PIXELS * 0.99, `${a3.width}x${a3.height}`);
+  assert.ok(Math.abs(a3.width / a3.height - 1191 / 842) < 0.01);
+  assert.ok(Math.abs(a3.dpi - 143.8) < 0.5, String(a3.dpi));
   const huge = await renderPage(textPdf([{ ...HUGE, lines: ['Poster'] }]), 1, 170);
   assert.ok(huge.width * huge.height <= PDF_MAX_PAGE_PIXELS && huge.width * huge.height > PDF_MAX_PAGE_PIXELS * 0.98, `${huge.width}x${huge.height}`);
   assert.equal(huge.width, huge.height);
   assert.equal(huge.rgba.length, huge.width * huge.height * 4);
-  assert.ok(Math.abs(huge.dpi - 14.4) < 0.1, String(huge.dpi));
+  assert.equal(huge.width, 2000);
+  assert.ok(Math.abs(huge.dpi - 10) < 0.1, String(huge.dpi));
   const strip = await renderPage(textPdf([{ w: 200, h: 14400, lines: ['Receipt'] }]), 1, 170);
   assert.ok(strip.height <= MAX_SIDE && strip.width * strip.height <= PDF_MAX_PAGE_PIXELS, `${strip.width}x${strip.height}`);
   assert.ok(Math.abs(strip.width / strip.height - 200 / 14400) < 0.01);
@@ -116,6 +130,17 @@ test('a child that hangs is killed at the deadline; one that crashes is unreadab
     await assert.rejects(inspectPdf(pagesPdf(1)), { code: 'UNREADABLE', message: UNREADABLE });
   } finally {
     pdfChildTestHooks.onOpen = undefined;
+  }
+  assert.deepEqual(await inspectPdf(pagesPdf(1)), { pages: 1 });
+});
+
+test('a reader that cannot be spawned is refused, frees the slot, and does not crash the server', TIMEOUT, async () => {
+  try {
+    pdfChildTestHooks.spawnThrows = true;
+    await assert.rejects(inspectPdf(pagesPdf(1)), { code: 'UNREADABLE', message: 'The PDF reader could not start. Try again later.' });
+    await assert.rejects(openPdfSession(pagesPdf(1)), { code: 'UNREADABLE', message: 'The PDF reader could not start. Try again later.' });
+  } finally {
+    pdfChildTestHooks.spawnThrows = false;
   }
   assert.deepEqual(await inspectPdf(pagesPdf(1)), { pages: 1 });
 });

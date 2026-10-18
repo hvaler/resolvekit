@@ -10,6 +10,7 @@
  * folders with fs (`useWorkerFetch: false`, which also turns off the ICC/WASM colour path that would use XHR).
  * fetch and XMLHttpRequest are replaced by functions that throw, and the attempts are counted in every reply.
  */
+import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCanvas } from '@napi-rs/canvas';
@@ -17,7 +18,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { MAX_PIXELS, MAX_SIDE, MAX_TEXT_CHARS, PDF_MAX_PAGE_PIXELS, PDF_MAX_PAGES } from './limits.ts';
 
 export type ChildRequest =
-  | { op: 'open'; bytes: Uint8Array; test?: 'hang' | 'crash' }
+  | { op: 'open'; bytes: Uint8Array; test?: 'hang' | 'crash' | 'no-scan' }
   | { op: 'render'; page: number; dpi: number }
   | { op: 'hint'; page: number };
 export type ChildError = { code: 'TOO_LARGE' | 'UNREADABLE' | 'NOT_FOUND'; reason: 'too-big' | 'encrypted' | 'unreadable' | 'no-page' };
@@ -82,22 +83,27 @@ class Refusal extends Error {
 const refuse = (code: ChildError['code'], reason: ChildError['reason']) => new Refusal({ code, reason });
 
 /**
- * `/Encrypt` in the raw bytes, as a trailer or xref-stream key, for a file pdf.js opens with the empty user password
- * (an owner password only); pdf.js's own permissions read covers a key spelled with `#` escapes.
+ * An early, extra refusal: an `/Encrypt` key in the raw bytes (trailer or xref-stream dictionary), with `#xx` name
+ * escapes decoded first and a comment allowed right after the name. The authoritative check is pdf.js's own, below.
  */
-const ENCRYPT_KEY = /\/Encrypt(?=[\s/<\[(0-9])/;
+const ENCRYPT_KEY = /\/Encrypt(?=[\s/<\[(%0-9])/;
+const hasEncryptKey = (b: Uint8Array) =>
+  ENCRYPT_KEY.test(Buffer.from(b.buffer, b.byteOffset, b.byteLength).toString('latin1').replace(/#([0-9a-fA-F]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16))));
 
 let doc: PDFDocumentProxy | undefined;
 
-async function open(bytes: Uint8Array): Promise<{ pages: number }> {
+async function open(bytes: Uint8Array, scan = true): Promise<{ pages: number }> {
+  if (scan && hasEncryptKey(bytes)) throw refuse('UNREADABLE', 'encrypted');
   const { getDocument } = await pdfjs();
-  // A copy is not needed here: the bytes arrived over IPC and belong to this process.
   try {
-    doc = await getDocument({ ...OPTIONS, data: bytes }).promise;
+    // A random password: pdf.js builds its security handler whenever the trailer it parsed has an Encrypt
+    // dictionary, and this password then fails both the user and the owner check, so every encrypted file (an
+    // owner-password-only one too, however its keys are spelled) ends in a PasswordException. An unencrypted file
+    // ignores it. The bytes are handed over without a copy: they arrived over IPC and belong to this process.
+    doc = await getDocument({ ...OPTIONS, data: bytes, password: randomBytes(16).toString('hex') }).promise;
   } catch (e) {
     throw (e as Error | undefined)?.name === 'PasswordException' ? refuse('UNREADABLE', 'encrypted') : e;
   }
-  if ((await doc.getPermissions()) !== null || ENCRYPT_KEY.test(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('latin1'))) throw refuse('UNREADABLE', 'encrypted');
   if (doc.numPages > PDF_MAX_PAGES) throw refuse('TOO_LARGE', 'too-big');
   if (doc.numPages < 1) throw refuse('UNREADABLE', 'unreadable');
   return { pages: doc.numPages };
@@ -187,7 +193,7 @@ async function handle(m: ChildRequest): Promise<unknown> {
     case 'open':
       if (m.test === 'hang') for (;;) { /* test hook: never answers, the parent kills it at the deadline */ }
       if (m.test === 'crash') process.exit(70);
-      return open(m.bytes);
+      return open(m.bytes, m.test !== 'no-scan'); // 'no-scan': test hook, pdf.js's check alone
     case 'render':
       return render(m.page, m.dpi);
     case 'hint':

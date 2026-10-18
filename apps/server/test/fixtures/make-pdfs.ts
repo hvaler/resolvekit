@@ -98,21 +98,25 @@ function rc4(key: Uint8Array, data: Uint8Array): Uint8Array {
 /**
  * A one-page PDF under the Standard security handler (RC4 40-bit, R2). With `userPassword: false` the empty user
  * password opens it (an owner-password-only file: viewers open it without asking, but it is still encrypted); with
- * `true` the stored U value does not match the empty password, so a password is needed.
+ * `true` the stored U value does not match the empty password, so a password is needed. `disguised` spells the
+ * trailer key `/Encr#79pt` (a valid name escape for `/Encrypt`) followed by a comment, and leaves out `/P`, so
+ * neither a byte scan for `/Encrypt` nor pdf.js's permissions read sees it.
  */
-export function encryptedPdf(o: { userPassword: boolean }): Uint8Array {
+export function encryptedPdf(o: { userPassword: boolean; disguised?: boolean }): Uint8Array {
   const id = createHash('md5').update('resolvekit-fixture').digest();
   const ownerKey = createHash('md5').update(Buffer.concat([Buffer.from('owner'), PAD]).subarray(0, 32)).digest().subarray(0, 5);
   const O = rc4(ownerKey, PAD);
   const P = -4;
-  const p = Buffer.alloc(4);
-  p.writeInt32LE(P);
+  const p = Buffer.alloc(4); // a missing /P counts as 0 in the key
+  if (!o.disguised) p.writeInt32LE(P);
   const key = createHash('md5').update(Buffer.concat([PAD, O, p, id])).digest().subarray(0, 5);
   const U = o.userPassword ? rc4(createHash('md5').update('not the empty password').digest().subarray(0, 5), PAD) : rc4(key, PAD);
   // The content stays plain: with RC4 the reader decrypts it into noise, which is fine for these tests.
   const objects = pageObjects([{ ...A4, lines: ['Encrypted fixture'] }]);
-  objects.push(`<< /Filter /Standard /V 1 /R 2 /O ${hex(O)} /U ${hex(U)} /P ${P} >>`);
-  return assemble(objects, `/Root 1 0 R /Encrypt ${objects.length - 1} 0 R /ID [${hex(id)} ${hex(id)}]`);
+  objects.push(`<< /Filter /Standard /V 1 /R 2 /O ${hex(O)} /U ${hex(U)}${o.disguised ? '' : ` /P ${P}`} >>`);
+  const ref = `${objects.length - 1} 0 R`;
+  const entry = o.disguised ? `/Encr#79pt%hidden\n${ref}` : `/Encrypt ${ref}`;
+  return assemble(objects, `/Root 1 0 R ${entry} /ID [${hex(id)} ${hex(id)}]`);
 }
 
 /** Strings planted in `hiddenPdf`, for tests that check none of them travels further. */

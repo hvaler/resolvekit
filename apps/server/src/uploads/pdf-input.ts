@@ -20,6 +20,7 @@ const TOO_BIG = 'This PDF is larger than 10 MB or has more than 30 pages. Prepar
 const ENCRYPTED = 'This PDF is password-protected or encrypted. Upload a version without protection.';
 const UNREADABLE = 'This file could not be read as a PDF.';
 const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';
+const CANNOT_START = 'The PDF reader could not start. Try again later.';
 const TOO_HUNGRY = 'This PDF needs more memory than the demo allows. Prepare a smaller extract and upload it again.';
 
 const CHILD = fileURLToPath(new URL('./pdf-child.ts', import.meta.url));
@@ -39,12 +40,16 @@ export interface PdfSession {
   close(): Promise<void>;
 }
 
-/** Test hooks: replace the RSS reader, make the child hang or crash on open, see the network attempts it counted. */
+/**
+ * Test hooks: replace the RSS reader, make the spawn throw, make the child hang or crash on open (or skip its raw
+ * `/Encrypt` scan), see the network attempts it counted.
+ */
 export const pdfChildTestHooks: {
   rss: (pid: number) => number | undefined;
-  onOpen: 'hang' | 'crash' | undefined;
+  spawnThrows: boolean;
+  onOpen: 'hang' | 'crash' | 'no-scan' | undefined;
   networkAttempts: number;
-} = { rss: readRss, onOpen: undefined, networkAttempts: 0 };
+} = { rss: readRss, spawnThrows: false, onOpen: undefined, networkAttempts: 0 };
 
 /** Resident bytes of a process, on Linux only. */
 export function readRss(pid: number): number | undefined {
@@ -75,7 +80,9 @@ class Reader {
   private readonly poll: NodeJS.Timeout;
   readonly exited: Promise<void>;
 
+  /** Throws when the child cannot be spawned synchronously (Node throws errnos such as ENOMEM rather than emit them). */
   constructor() {
+    if (pdfChildTestHooks.spawnThrows) throw new Error('spawn ENOMEM (test hook)');
     this.proc = fork(CHILD, [], {
       execArgv: ['--max-old-space-size=160'],
       serialization: 'advanced',
@@ -162,8 +169,15 @@ export function openPdfSession(bytes: Uint8Array, o: { timeoutMs?: number } = {}
   if (!looksLikePdf(bytes)) return Promise.reject(new UploadError('UNREADABLE', UNREADABLE));
   const timeoutMs = o.timeoutMs ?? PDF_PAGE_TIMEOUT_MS;
   return new Promise((resolveSession, rejectSession) => {
-    void oneImageAtATime(async () => {
-      const reader = new Reader();
+    oneImageAtATime(async () => {
+      let reader: Reader;
+      try {
+        reader = new Reader();
+      } catch (e) {
+        // Nothing was started: refuse and free the slot.
+        rejectSession(new UploadError('UNREADABLE', CANNOT_START, { cause: e }));
+        return;
+      }
       let closed = false;
       let idle: NodeJS.Timeout | undefined;
       const close = async () => {
@@ -206,7 +220,7 @@ export function openPdfSession(bytes: Uint8Array, o: { timeoutMs?: number } = {}
       }
       // The slot is held until the child has really stopped.
       await reader.exited;
-    });
+    }).catch((e: unknown) => rejectSession(e)); // never an unhandled rejection: a late one after settling is a no-op
   });
 }
 
