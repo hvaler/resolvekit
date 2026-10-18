@@ -8,14 +8,18 @@ values in this file; it is public.
 
 ---
 
-**ResolveKit** is live at **<APP_URL>** (free to use until 15 Dec 2026). Browsing works for everyone, on the
-simulator. Each merchant has its own workspace, and only the seller's workspace sees and answers its real PayPal
-disputes. To review as a member of the demo merchant's workspace, open your **reviewer link: <REVIEWER_LINK>**, type
-your name and choose **Create a passkey and join** (or **Join for this browser only**). It takes a few seconds, and
-your name appears in the audit trail of what you approve. Access ends on 15 Dec 2026.
+**ResolveKit** is live at **<APP_URL>** (free to use until 15 Dec 2026). It has three environments:
 
-(Merchants sign in with **Continue with PayPal**: they approve a no-charge request in PayPal so ResolveKit knows which
-account is theirs. Any other PayPal sandbox account gets its own workspace, with the cases on the simulator.)
+- **Explore demo** (`<APP_URL>/demo`): open to everyone. Fictional cases on a simulator; nothing is sent to PayPal.
+  **Add evidence** is disabled there, with its reason.
+- **Test Store** (sandbox evaluation, by invite): where you review. Open your **reviewer link: <REVIEWER_LINK>**, type
+  your name and choose **Create a passkey and join** (or **Join for this browser only**). It takes a few seconds, and
+  your name appears in the audit trail of what you approve. Access ends on 15 Dec 2026. Test Store has only the two
+  bound PayPal sandbox cases (below); the confirm step says **This sends test documents to a PayPal sandbox dispute.
+  No real money moves.**
+- **Your merchant space**: **in validation, not yet available**. A merchant who signs in with **Continue with PayPal**
+  (a no-charge approval so ResolveKit knows which account is theirs) lands on a waiting screen: ResolveKit can't read
+  their disputes or send responses on their behalf yet, and the screen offers the demo. Do not expect it to work.
 
 PayPal sandbox buyer account (to approve an agent budget): **<SANDBOX_BUYER_EMAIL>** / **<SANDBOX_BUYER_PASSWORD>**.
 
@@ -26,7 +30,7 @@ budgets are real PayPal Orders v2 authorizations and captures in the sandbox. Th
 tracking, notes) are synthetic, and so are MeterMCP's tool outputs; other inbox rows run on an in-browser
 **Simulated PayPal**, and the app always says which.
 
-**1. Inbox.** Open <APP_URL>. The grid (AG Grid) sorts (shift-click for multi-sort), filters (search box and saved
+**1. Inbox.** Open <APP_URL> (Test Store through your link, or the demo at <APP_URL>/demo). The grid (AG Grid) sorts (shift-click for multi-sort), filters (search box and saved
 chips), keeps a pinned "Totals at risk" row, and opens a case with Enter or a double click.
 
 **2. A standard case.** Open **PP-R-TVH-10190665** ("item not received"). The case file shows the timeline, every
@@ -41,8 +45,8 @@ both sources) in the draft, or **Mark resolved…** records your note in the aud
 its document. The verifier may also mark a sentence **Needs review** (it says why): **Rephrase to what the evidence
 shows** rewrites it and checks it again, live. The bar above the send button lists what is still open.
 
-**4. Add your own evidence.** In the seller's workspace (open as the reviewer through your link) the case file has
-**+ Add evidence**.
+**4. Add your own evidence.** In Test Store (open as the reviewer through your link) the case file has
+**+ Add evidence** (disabled in the demo, with its reason).
 
 - Upload a screenshot (PNG or JPEG, up to 5 MB and 3840 x 2160 pixels, about 8 MP) or paste text, for example an
   email thread. Pasted text must be Latin-1 (Western European letters and accents): a character such as € or curly
@@ -86,14 +90,14 @@ sentence afterwards and the approval no longer counts. ResolveKit reads the disp
 next to what was sent, and the audit log recorded by the server. PayPal accepts evidence once per dispute, so the
 case has a reserve of fresh sandbox disputes: about 15 minutes after a judge's evidence is recorded, the case moves
 to the next one (the top bar shows its id). If it still shows **Evidence recorded by PayPal**, another judge sent it
-minutes ago: you can see the read-back, come back shortly, or walk the whole flow on the simulated cases.
+minutes ago: you can see the read-back, come back shortly, or walk the whole flow on the simulated cases in the demo.
 
 **6. The agent-purchase case.** Open **PP-R-MMC-10190702**: a buyer disputes a payment an AI agent made through
 MeterMCP. The mandate, the per-call receipt (one failed call, not charged) and the settlement come from MeterMCP's real
 ledger ("From MeterMCP · session …"); the evidence goes to PayPal as digital delivery referenced by the session id,
 with the receipt PDF.
 
-**More cases.** Every inbox row opens a full case file on the simulator: two "not as described" claims
+**More cases.** These open in the Explore demo (`/demo/cases/<id>`), on the simulator: two "not as described" claims
 (PP-R-BLW-10187733, PP-R-PLN-10189901), an agent purchase disputed as "incorrect amount" (PP-R-KDA-10192258), an
 "unauthorised" booking whose evidence is already recorded (PP-R-QZE-10181290: read-back, draft locked) and a closed
 case resolved in the seller's favour (PP-R-HFA-10176021: outcome, what was sent, no actions).

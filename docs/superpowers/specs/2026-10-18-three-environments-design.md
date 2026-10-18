@@ -60,7 +60,7 @@ Every screen says which environment it is in, at all times.
 This is what a workspace that is not the seller workspace sees in place of its inbox. The owner's text, in English for the interface:
 
 1. **Account status.** «You're signed in with PayPal. Access to your disputes isn't available yet.» Signing in and connecting the disputes are kept apart, so nobody thinks we have already read their account.
-2. **Short explanation.** «Connecting disputes for new merchants is waiting for PayPal to enable it. For now, ResolveKit can't read your disputes or send responses on your business's behalf.» No date. Nothing implies that changing a setting would fix it.
+2. **Short explanation.** «Connecting disputes for new merchants is being validated and isn't available yet. For now, ResolveKit can't read your disputes or send responses on your business's behalf.» (wording changed by the owner on 18/10: in validation) No date. Nothing implies that changing a setting would fix it.
 3. **Main action.** An «Explore demo» button, with «Try the full flow on fictional cases. Nothing you do in the demo is sent to PayPal.»
 4. **Secondary: the space.** Members and invites, with «Inviting someone doesn't connect your disputes to PayPal.» This is not shown as a required step.
 5. **Exit and help.**
@@ -110,7 +110,7 @@ This is what a workspace that is not the seller workspace sees in place of its i
 
 ## Documentation and the submission
 
-- `docs/judges.md` and `README.md`: the three environments, how to enter Test Store with the invite, and the merchant connection marked **pending PayPal's enabling**, never as working.
+- `docs/judges.md` and `README.md`: the three environments, how to enter Test Store with the invite, and the merchant connection marked **in validation, not yet available**, never as working.
 - The form's testing instructions (`PayPalAI/entrega/formulario.md`): the same, with no claim that other merchants can connect today.
 - If PayPal enables access before submission, this design is extended (onboarding, permissions, merchant inbox), validated with a second, independent sandbox seller account, and the documents are updated.
 

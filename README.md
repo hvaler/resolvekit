@@ -120,6 +120,17 @@ The public demo runs the same API in **hosted mode** instead (see [Deploy on Ren
    explicit approval.
 3. **What you see is what PayPal recorded.** After any action the dispute is re-read from PayPal.
 
+## Three environments
+
+| Environment | Routes | Who | What happens |
+|---|---|---|---|
+| **Explore demo** | `/demo`, `/demo/cases/:id` | Everyone | Fictional cases on a simulator. Nothing is sent to PayPal. **Add evidence** is disabled, with its reason. |
+| **Test Store (sandbox evaluation)** | `/cases`, `/cases/:id` | Invited people (judges enter with the reviewer invite link) | Only the bound PayPal sandbox cases (today `PP-R-TVH-10190665` standard and `PP-R-MMC-10190702` agent). Confirming shows `This sends test documents to a PayPal sandbox dispute. No real money moves.` |
+| **Your merchant space** | the merchant's own workspace | A merchant signed in with PayPal | **In validation, not yet available.** The merchant sees a waiting screen: ResolveKit can't read their disputes or send responses on their behalf yet, and the screen offers the demo. This is not working today and is not presented as such. |
+
+Every case that is not bound to a sandbox dispute lives under `/demo/cases/<id>`; the server refuses anything else in
+hosted mode.
+
 ## Run
 
 Requires Node.js 24+ (TypeScript runs natively, no build step).
@@ -451,7 +462,7 @@ be empty), `--approval-minutes`, `--dispute-minutes`.
 - People sign in ([Merchant accounts](#merchant-accounts-hosted-mode)). The real PayPal disputes, sending evidence to
   them, live AI runs (including a plain request whose documents have no stored analysis) and AI re-checks of edited
   sentences belong to the **seller's workspace**: the workspace whose PayPal account is the seller on the bound
-  disputes (Owner, or a member who joined with its invite). Everyone else gets the same cases on the simulator; a
+  disputes (Owner, or a member who joined with its invite). Everyone else gets the same cases on the simulator, under `/demo`; a
   locked action says why (**Sign in required** / **Seller workspace only**).
 - Global **daily caps**, persisted on the disk and reserved atomically before the work starts (refunded when it did
   not happen): `DAILY_LIVE_ANALYSES` (60), `DAILY_RECHECKS` (200), `DAILY_EVIDENCE_SENDS` (20), on top of the

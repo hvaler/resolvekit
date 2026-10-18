@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Split ResolveKit into Explore demo (browser-only, never sends), Sandbox evaluation (Test Store, the seller workspace, bound sandbox disputes only) and the merchant space (a waiting screen until PayPal enables third-party access), with the server refusing everything else.
+**Goal:** Split ResolveKit into Explore demo (browser-only, never sends), Sandbox evaluation (Test Store, the seller workspace, bound sandbox disputes only) and the merchant space (a waiting screen while the dispute connection is in validation and not yet available), with the server refusing everything else.
 
 **Architecture:**
 - The server decides one connection state per workspace (`evaluation | not_connected | checking`). It remembers the last seller ids PayPal confirmed, so a slow sandbox never demotes Test Store.
@@ -26,7 +26,7 @@
 - Copy (verbatim, English):
   - Owner waiting line: `You're signed in with PayPal. Access to your disputes isn't available yet.`
   - Member waiting line: `This workspace isn't connected to its PayPal disputes yet.`
-  - Explanation: `Connecting disputes for new merchants is waiting for PayPal to enable it. For now, ResolveKit can't read your disputes or send responses on your business's behalf.`
+  - Explanation: `Connecting disputes for new merchants is being validated and isn't available yet. For now, ResolveKit can't read your disputes or send responses on your business's behalf.`
   - Demo button: `Explore demo`, with `Try the full flow on fictional cases. Nothing you do in the demo is sent to PayPal.`
   - Invites note: `Inviting someone doesn't connect your disputes to PayPal.`
   - Account actions: `Sign out` and `Use another PayPal account` (signs out, then goes to `/signin`).
@@ -39,7 +39,7 @@
 - Environments help (three lines, shown on the waiting screen and from the account menu):
   - `Explore demo: fictional cases on a simulator. Nothing is sent to PayPal.`
   - `Sandbox evaluation: invited people only. Test documents go to PayPal sandbox disputes; no real money moves.`
-  - `Your merchant space: your own disputes and evidence, once PayPal enables the connection.`
+  - `Your merchant space: your own disputes and evidence, once the dispute connection is validated and available.`
 - No new dependencies. The send path (binding verification, seller check, content hash, caps, rotation) is not changed.
 
 ## Review Focus
@@ -233,7 +233,7 @@
 - [ ] **Step 1:** Describe the three environments with the help lines from Global Constraints:
   - Explore demo at `/demo`, open to everyone, with nothing sent.
   - Test Store by invite, where a judge enters with the reviewer link and gets the bound sandbox cases and the sandbox warning.
-  - The merchant connection **pending PayPal's enabling**, with the waiting screen described, never claimed as working.
+  - The merchant connection **in validation, not yet available**, with the waiting screen described, never claimed as working.
 - [ ] **Step 2:** Update every `/cases/<id>` link to an unbound case so it points to `/demo/cases/<id>`. Bound case links stay under `/cases/`.
 - [ ] **Step 3: Run** `npm test` and `npm run typecheck`. Expected: PASS. Run `grep -n "/cases/PP-R-" docs/judges.md README.md` and check that each hit is a bound case or under `/demo/`.
-- [ ] **Step 4: Commit** `docs: three environments; merchant connection pending PayPal`.
+- [ ] **Step 4: Commit** `docs: three environments; merchant connection in validation`.
