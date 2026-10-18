@@ -219,7 +219,7 @@ export interface ComposeInput {
   allowedActions: readonly ActionCode[];
   /** PayPal already shows the seller's evidence. */
   submitted: boolean;
-  /** Corrected lines of the case's uploads, by fragment key (correctionsOf). Absent: none. */
+  /** Corrected and transcribed lines of the case's uploads, by fragment key (linesToConfirmOf). Absent: none. */
   corrections?: ReadonlyMap<string, Correction>;
 }
 

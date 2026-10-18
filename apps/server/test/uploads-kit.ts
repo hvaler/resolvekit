@@ -1,6 +1,8 @@
 /** Hosted-app helpers shared by the upload route tests: one app with the standard case bound, requests, answers. */
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { DailyCounters } from '@resolvekit/hosting';
-import { FileAnalysisStore, MemoryAnalysisStore, RateLimiter, type AnalystModel } from '@resolvekit/analyst/node';
+import { FileAnalysisStore, MemoryAnalysisStore, RateLimiter, type AnalysisInput, type AnalystModel, type CaseAnalysis } from '@resolvekit/analyst/node';
 import { standardCase } from '@resolvekit/cases';
 import { PayPalClient } from '@resolvekit/paypal';
 import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
@@ -8,7 +10,7 @@ import { AnalystService } from '../src/analysis.ts';
 import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
 import { IntentStore } from '../src/intents.ts';
 import { UploadStore } from '../src/uploads/store.ts';
-import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
+import { MODEL, RESOLVED, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
 
 
 export const ORIGIN = 'https://rk.example.com';
@@ -87,3 +89,77 @@ export const call = async (app: App, path: string, i: Init = {}) => {
   const ct = r.headers.get('content-type') ?? '';
   return { status: r.status, body: (ct.startsWith('application/json') ? await r.json() : null) as Answer, res: r };
 };
+
+/** Pasted text, as the upload route takes it. */
+export const pasteText = (app: App, cookie: string, text = 'From: buyer\nThe parcel arrived, thanks.', name = 'email.txt') => call(app, P, { body: { text, name }, cookie });
+
+// ------------------------------------------------------------------------------------- attachments and the send
+
+/** A hosted app whose analyst serves the golden analysis (plus `extra` sentences) for whatever input it is asked about. */
+export function sendSetup(o: { maxSendBytes?: number } = {}) {
+  const sends: FormData[] = [];
+  let hold: Promise<void> | null = null;
+  const fetch = (async (url: string | URL, init: RequestInit = {}) => {
+    const u = new URL(String(url));
+    if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
+    if (u.pathname.endsWith('/provide-evidence')) {
+      sends.push(init.body as FormData);
+      if (hold) await hold;
+      return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    const id = decodeURIComponent(u.pathname.split('/').pop()!);
+    return new Response(JSON.stringify({ ...standardDispute(), dispute_id: id }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof globalThis.fetch;
+  const analyses = new MemoryAnalysisStore();
+  const analyst = new AnalystService({ model: null, primaryModel: MODEL, store: analyses });
+  const people = testAccounts();
+  const store = new UploadStore({ dir: null });
+  const intents = new IntentStore();
+  const app = createHostedApp({
+    paypal: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }),
+    env: 'sandbox',
+    bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
+    analyst,
+    site: null,
+    counters: new DailyCounters({ file: null, limits: { upload: 40, evidence: 10 } }),
+    accounts: people.accounts,
+    identity: null,
+    sessionSecret: TEST_SECRET,
+    origins: [ORIGIN],
+    hosts: [HOST],
+    https: true,
+    intents,
+    uploads: store,
+    ...(o.maxSendBytes ? { paypalMaxSendBytes: o.maxSendBytes } : {}),
+    limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 } },
+  });
+  /** The analysis of the case as `cookie` sees it now (the golden one, with `extra` sentences). */
+  const analyse = async (cookie: string, extra: CaseAnalysis['sentences'] = []) => {
+    const r = (await call(app, `/api/cases/${CASE}/analysis`, { body: {}, cookie })) as unknown as { body: { input: AnalysisInput } };
+    assert.ok(r.body.input, JSON.stringify(r.body).slice(0, 300));
+    const a = await goldenFor(CASE, r.body.input);
+    analyses.cached.set(a.key, { ...a, sentences: [...a.sentences, ...extra] });
+  };
+  /** Pasted text, redacted (nothing removed) and confirmed with `lines` (default: as read). */
+  const confirmText = async (cookie: string, text: string, name: string, lines?: string[]) => {
+    const t = await pasteText(app, cookie, text, name);
+    const red = await call(app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie });
+    const conf = await call(app, `${P}/${t.body.upload.id}/confirm`, { body: { lines: lines ?? red.body.readLines, sha256: red.body.upload.sha256 }, cookie });
+    assert.equal(conf.status, 200, JSON.stringify(conf.body));
+    return conf.body.upload;
+  };
+  const intent = (cookie: string, over: Record<string, unknown> = {}) =>
+    call(app, `/api/disputes/${CASE}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED, ...over }, cookie }) as unknown as Promise<{ status: number; body: SentIntent & { error?: string; detail?: string; blockers?: string[] } }>;
+  const approved = async (cookie: string, over: Record<string, unknown> = {}) => {
+    const i = await intent(cookie, over);
+    assert.equal(i.status, 201, JSON.stringify(i.body));
+    const a = await call(app, `/api/disputes/${CASE}/intent/${i.body.id}/approve`, { body: { contentHash: i.body.contentHash }, cookie });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    return i.body;
+  };
+  const send = (cookie: string, intentId: string) => call(app, `/api/disputes/${CASE}/evidence`, { body: { intentId }, cookie }) as unknown as Promise<{ status: number; body: { error?: string; detail?: string } }>;
+  return { app, people, store, intents, analyst, analyses, sends, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
+}
+export type SentIntent = { id: string; contentHash: string; status: string; files: { name: string; size: string; sha256?: string; source?: string }[] };
+export const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+export const fileBytes = async (f: File) => new Uint8Array(await f.arrayBuffer());

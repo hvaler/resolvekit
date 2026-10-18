@@ -16,7 +16,7 @@ import { workspaceIdFor } from './accounts.ts';
 import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
 import type { AgentReceiptSource, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
-import { correctionsOf, type Recheck } from '../../web/src/domain/draft.ts';
+import { linesToConfirmOf, type Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
 import { hasSellerEvidence, sellerEvidence } from '../../web/src/domain/recorded.ts';
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
@@ -646,8 +646,8 @@ export function createApi(opts: ApiOptions): Api {
       },
       allowedActions: caseAllowedActions(st.source, undefined, demo.allowedActions),
       submitted: !!st.snap && hasSellerEvidence(st.snap),
-      // From the uploads in the input this server built: the same corrections the web app shows.
-      corrections: correctionsOf(st.input.documents),
+      // From the uploads in the input this server built: the same corrected and transcribed lines the web app shows.
+      corrections: linesToConfirmOf(st.input.documents),
     });
     if (isComposeProblem(composed)) return json(composed.status, { error: composed.error, detail: composed.detail, ...(composed.blockers ? { blockers: composed.blockers } : {}) });
     const s = composed.submission;
@@ -715,7 +715,8 @@ export function createApi(opts: ApiOptions): Api {
     const recs = st.uploads.filter((r) => selected.includes(r.id)).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId));
     for (const r of recs) {
       const bytes = uploads.sanitised(r.id);
-      if (!bytes || !r.mime || !r.sha256 || sha256(bytes) !== r.sha256) {
+      // A screenshot goes as its PNG; pasted text and a PDF (rebuilt from its covered pages) as their stored sanitised.pdf.
+      if (!bytes || r.mime !== (r.kind === 'image' ? 'image/png' : 'application/pdf') || !r.sha256 || sha256(bytes) !== r.sha256) {
         return json(409, { error: 'UPLOAD_CHANGED', detail: `The stored file of ${r.evidenceId} no longer matches the one confirmed; it is not attached` });
       }
       const name = uploadFileName(r);

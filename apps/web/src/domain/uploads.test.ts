@@ -1,7 +1,7 @@
 import { buildInput } from '@resolvekit/analyst';
 import { standardCase } from '@resolvekit/cases';
 import { describe, expect, it } from 'vitest';
-import { correctionsOf, deriveSentences, type DraftContext } from './draft';
+import { correctionsOf, deriveSentences, linesToConfirmOf, transcriptionsOf, type DraftContext } from './draft';
 import { composeSubmission, isComposeProblem, parseIntentRequest } from './intent';
 import { fragmentTexts } from './quotes';
 import type { CaseFile, SentenceView } from './types';
@@ -22,7 +22,9 @@ import {
   evidenceCount,
   mergeRemoval,
   notAnalysed,
+  pageLabel,
   toImageRect,
+  transcribedLabel,
   uploadCorrections,
   uploadEvidence,
   withUploadDocuments,
@@ -224,7 +226,7 @@ describe('merchant uploads in the case', () => {
 
   it('a citation says which of its lines were corrected, and by whom', () => {
     const e = uploadEvidence(confirmed());
-    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] })).toEqual([{ line: 2, fragment: 'E7.l2', by: 'local operator' }]);
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] })).toEqual([{ line: 2, fragment: 'E7.l2', by: 'local operator', kind: 'corrected', label: 'line 2 corrected by local operator' }]);
     expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.l1'] })).toEqual([]);
     expect(citedCorrections(standardCase.evidence[0]!, { evidenceId: 'E1', fragments: [] })).toEqual([]);
   });
@@ -293,6 +295,109 @@ describe('merchant uploads in the case', () => {
     const detail = 'The text has “€” (U+20AC), which the PDF sent to PayPal cannot show: only Latin-1 characters (Western European letters and accents) can be pasted. Replace it (for example € with EUR, curly quotes with straight ones) and paste again.';
     const refused = (async () => Response.json({ error: 'TEXT_UNSUPPORTED', detail }, { status: 422 })) as unknown as typeof fetch;
     await expect(createUploadsClient('PP-1', { fetch: refused }).uploadText('Total 5 € paid', 'email.txt')).rejects.toMatchObject({ status: 422, code: 'TEXT_UNSUPPORTED', message: detail });
+  });
+});
+
+/** A confirmed PDF upload of pages 2, 5 (no text) and 8, as the server shows it: its lines are in its document. */
+const ANA = 'Ana Lopez (member)';
+function confirmedPdf(signed = 'Signed by J. D.'): UploadRecordView {
+  return confirmed({
+    kind: 'pdf',
+    name: 'invoice.pdf',
+    uploadedBy: { id: 'p1', label: ANA, name: 'Ana Lopez' },
+    mime: 'application/pdf',
+    rects: [],
+    readLines: [],
+    lines: [],
+    document: {
+      id: 'E7',
+      title: 'Uploaded PDF',
+      type: 'Merchant upload · PDF',
+      source: 'Uploaded by Ana Lopez',
+      tag: 'UPL',
+      lines: [
+        { text: 'INVOICE 2026-114', fragment: 'E7.p2.l1' },
+        { text: 'Total 89.00 USD', fragment: 'E7.p2.l2', corrected: ANA },
+        { text: 'Delivered 8 Oct 2026', fragment: 'E7.p8.l1' },
+        { text: signed, fragment: 'E7.p8.l2', transcribed: ANA },
+      ],
+    },
+  });
+}
+
+describe('PDF uploads: page fragments and transcribed lines', () => {
+  it('transcribed lines are found like corrected ones, with their page and their line in the page', () => {
+    const docs = [confirmedPdf().document!];
+    expect([...transcriptionsOf(docs).values()]).toEqual([{ kind: 'transcribed', line: 2, page: 8, fragment: 'E7.p8.l2', evidenceId: 'E7', text: 'Signed by J. D.', by: ANA }]);
+    expect([...correctionsOf(docs).values()]).toEqual([{ kind: 'corrected', line: 2, page: 2, fragment: 'E7.p2.l2', evidenceId: 'E7', text: 'Total 89.00 USD', by: ANA }]);
+    // One list of lines to confirm: corrected and transcribed, the same for the server and the browser.
+    expect([...linesToConfirmOf(docs).keys()]).toEqual(['E7.p2.l2', 'E7.p8.l2']);
+    expect([...uploadCorrections([confirmedPdf()]).keys()]).toEqual(['E7.p2.l2', 'E7.p8.l2']);
+  });
+
+  it('a sentence citing a transcribed line needs its sentence@line confirmation, on the server and in the browser alike', () => {
+    const uploads = [confirmedPdf()];
+    const c: CaseFile = {
+      ...standardCase,
+      evidence: [...standardCase.evidence, ...confirmedUploads(uploads).map(uploadEvidence)],
+      sentences: [
+        { id: 'S1', text: 'The buyer signed for the parcel.', verdict: 'supported', citations: [{ evidenceId: 'E7', fragments: ['E7.p8.l2'], quotes: ['Signed by J. D.'] }] },
+        { id: 'S2', text: 'Order #10482 was paid.', verdict: 'supported', citations: [{ evidenceId: 'E1', fragments: [] }] },
+      ],
+      contradictions: [],
+      analysis: { steps: ['a', 'b', 'c', 'd', 'e', 'f'], contradictionStep: 3, rejectionStep: 5, note: '' },
+    };
+    const serverInput = withUploadDocuments(buildInput(standardCase), uploads);
+    const server = (confirmedCorrections: string[]) =>
+      composeSubmission({ c, req: { evidenceType: 'PROOF_OF_FULFILLMENT', edits: {}, resolutions: {}, confirmedCorrections, attachments: [] }, verified: () => null, allowedActions: ['provide_evidence'], submitted: false, corrections: linesToConfirmOf(serverInput.documents) });
+    const ctx: DraftContext = { edits: {}, checking: null, analysisStep: 6, rejectionStep: 5, contradictions: [], resolutions: {}, corrections: uploadCorrections(uploads) };
+    const browser = (pairs: string[]) => deriveSentences(c.sentences, { ...ctx, confirmedCorrections: new Set(pairs) });
+
+    for (const pairs of [[], ['S1@E7.p8.l1'], ['S2@E7.p8.l2'], ['S1@E7.l2']]) {
+      const open = server(pairs);
+      expect(isComposeProblem(open) && open.error).toBe('DRAFT_BLOCKED');
+      expect(isComposeProblem(open) && open.blockers).toEqual(['sentence 1 needs review']);
+    }
+    const held = browser([])[0]!;
+    expect(held.state).toBe('needs_review');
+    expect(held.awaitsCorrections).toEqual(['E7.p8.l2']);
+    expect(held.reason).toBe('Why: it depends on line 2 of page 8 of E7, transcribed manually by Ana Lopez (member) ("Signed by J. D."). Confirm it is what the file shows.');
+    expect(correctionsToConfirm(held, uploadCorrections(uploads), new Set()).map((k) => k.fragment)).toEqual(['E7.p8.l2']);
+
+    const ok = server(['S1@E7.p8.l2']);
+    if (isComposeProblem(ok)) throw new Error(ok.detail);
+    expect(browser(['S1@E7.p8.l2'])).toEqual(ok.views);
+    expect(ok.views[0]!.note).toBe('Relies on line 2 of page 8 of E7 as transcribed manually by Ana Lopez (member)');
+    // The pair the browser sends is the one the server parses, and it survives effectivePairs.
+    const req = approvalRequest({ evidenceType: 'PROOF_OF_FULFILLMENT', edits: {}, resolutions: {}, views: ok.views, corrections: uploadCorrections(uploads), confirmed: ['S1@E7.p8.l2', 'S2@E7.p8.l2'], attachments: [] });
+    expect(req.confirmedCorrections).toEqual(['S1@E7.p8.l2']);
+    expect(parseIntentRequest(req)).toEqual(req);
+  });
+
+  it('a citation of a PDF says its page of the original document and who transcribed or corrected its lines, verbatim', () => {
+    const e = uploadEvidence(confirmedPdf());
+    expect(e.body.kind === 'lines' && e.body.lines[3]).toEqual({ text: 'Signed by J. D.', fragment: 'E7.p8.l2', transcribed: ANA });
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.p8.l1', 'E7.p8.l2'] })).toEqual([
+      { line: 2, page: 8, fragment: 'E7.p8.l2', by: ANA, kind: 'transcribed', label: 'Page 8 of the original document · Transcribed manually by Ana Lopez (member)' },
+    ]);
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.p2.l2'] })).toEqual([
+      { line: 2, page: 2, fragment: 'E7.p2.l2', by: ANA, kind: 'corrected', label: 'Page 2 of the original document · line 2 corrected by Ana Lopez (member)' },
+    ]);
+    expect(provenanceOf(e)).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez' });
+    expect(provenanceOf(e, { evidenceId: 'E7', fragments: ['E7.p8.l1', 'E7.p8.l2'] })).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez · Page 8 of the original document' });
+    expect(provenanceOf(e, { evidenceId: 'E7', fragments: ['E7.p2.l2', 'E7.p8.l1'] })).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez · Page 2 of the original document · Page 8 of the original document' });
+    // Not a page-scoped citation: as before.
+    expect(provenanceOf(uploadEvidence(confirmed()), { evidenceId: 'E7', fragments: ['E7.l2'] })).toEqual({ kind: 'upload', text: 'Uploaded by local operator' });
+    expect(pageLabel(8)).toBe('Page 8 of the original document');
+    expect(transcribedLabel(ANA)).toBe('Transcribed manually by Ana Lopez (member)');
+  });
+
+  it('a PDF attachment says who corrected and who transcribed its lines; a restricted view is never read', () => {
+    const restricted = { id: 'upl-444444444444444444444444', caseId: standardCase.summary.id, kind: 'pdf', name: 'other.pdf', uploadedBy: { id: 'p2', label: 'Bo (member)', name: 'Bo' }, status: 'reviewing', createdAt: '2026-10-17T19:00:00.000Z', expiresAt: '2026-10-17T20:00:00.000Z', restricted: true } as unknown as UploadRecordView;
+    const choices = attachmentChoices([restricted, confirmedPdf()], views([['S1', 'supported', ['E7']]]));
+    expect(choices.map((c) => [c.evidenceId, c.corrected, c.selected])).toEqual([['E7', `lines corrected by ${ANA} · lines transcribed manually by ${ANA}`, true]]);
+    expect([...uploadCorrections([restricted]).keys()]).toEqual([]);
+    expect(withUploadDocuments(buildInput(standardCase), [restricted]).documents.some((d) => d.id === 'E7')).toBe(false);
   });
 });
 

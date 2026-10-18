@@ -223,7 +223,7 @@ describe('corrections of an uploaded file', () => {
   ];
 
   it('a correction that flips meaning needs an explicit confirmation', () => {
-    expect(corrections.get('E7.l2')).toEqual({ line: 2, fragment: 'E7.l2', evidenceId: 'E7', text: 'Delivered 8 Oct 2026', by: 'Ana (member)' });
+    expect(corrections.get('E7.l2')).toEqual({ kind: 'corrected', line: 2, fragment: 'E7.l2', evidenceId: 'E7', text: 'Delivered 8 Oct 2026', by: 'Ana (member)' });
     const open = deriveSentences(base, { ...done, corrections });
     expect(byId(open, 'S1').state).toBe('needs_review');
     expect(byId(open, 'S1').reason).toBe('Why: it depends on your correction of line 2 of E7 ("Delivered 8 Oct 2026"). Confirm it reads the file correctly.');

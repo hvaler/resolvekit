@@ -1,28 +1,24 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { request as httpRequest, createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
-import { DailyCounters } from '@resolvekit/hosting';
-import { FileAnalysisStore, MemoryAnalysisStore, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst/node';
+import { FileAnalysisStore, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst/node';
 import { PayPalClient } from '@resolvekit/paypal';
 import { standardScript } from '../../../packages/analyst/test/fake.ts';
 import { AnalystService, InputPins } from '../src/analysis.ts';
 import { createApi, createApp, type ActingPerson } from '../src/app.ts';
-import { createHostedApp } from '../src/hosted.ts';
-import { IntentStore } from '../src/intents.ts';
 import { toNodeListener } from '../src/node.ts';
 import { sanitiseImage, type Rect } from '../src/uploads/image.ts';
 import { MAX_FILE_BYTES, MAX_STORED_BYTES, PAYPAL_MAX_SEND_BYTES } from '../src/uploads/limits.ts';
 import { closeOcr, ocrPng } from '../src/uploads/ocr.ts';
 import { canDeleteUpload, canEditUpload } from '../src/uploads/permissions.ts';
 import { UploadStore, type UploadRecord } from '../src/uploads/store.ts';
-import { MODEL, RESOLVED, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
-import { CASE, HOST, ORIGIN, P, REAL, TIMEOUT, call, req, setup, type Answer, type App, type View } from './uploads-kit.ts';
+import { STD_CAPTURE } from './kit.ts';
+import { CASE, P, REAL, TIMEOUT, call, fileBytes, pasteText, req, sendSetup, setup, sha, type Answer, type App, type View } from './uploads-kit.ts';
 
 after(() => closeOcr());
 
@@ -67,7 +63,6 @@ const SECRET_WORDS = 'Account 9988776655 balance 4321.09 SECRETWORD';
 const fixture = new Uint8Array(readFileSync(new URL('./fixtures/tracking.png', import.meta.url)));
 
 const uploadPng = (app: App, cookie: string, bytes: Uint8Array = fixture, type = 'image/png') => call(app, P, { body: bytes, type, cookie, headers: { 'x-upload-name': 'tracking.png' } });
-const pasteText = (app: App, cookie: string, text = 'From: buyer\nThe parcel arrived, thanks.', name = 'email.txt') => call(app, P, { body: { text, name }, cookie });
 
 let trackingBox: Rect | null = null;
 /** Where OCR finds the tracking number on the fixture (what the person covers in the web app). */
@@ -964,75 +959,6 @@ test('a stray temporary file in the analysis cache is swept at startup', () => {
 });
 
 // ------------------------------------------------------------------------------------- attachments and the send
-
-/** A hosted app whose analyst serves the golden analysis (plus `extra` sentences) for whatever input it is asked about. */
-function sendSetup(o: { maxSendBytes?: number } = {}) {
-  const sends: FormData[] = [];
-  let hold: Promise<void> | null = null;
-  const fetch = (async (url: string | URL, init: RequestInit = {}) => {
-    const u = new URL(String(url));
-    if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
-    if (u.pathname.endsWith('/provide-evidence')) {
-      sends.push(init.body as FormData);
-      if (hold) await hold;
-      return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-    const id = decodeURIComponent(u.pathname.split('/').pop()!);
-    return new Response(JSON.stringify({ ...standardDispute(), dispute_id: id }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }) as typeof globalThis.fetch;
-  const analyses = new MemoryAnalysisStore();
-  const analyst = new AnalystService({ model: null, primaryModel: MODEL, store: analyses });
-  const people = testAccounts();
-  const store = new UploadStore({ dir: null });
-  const intents = new IntentStore();
-  const app = createHostedApp({
-    paypal: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }),
-    env: 'sandbox',
-    bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
-    analyst,
-    site: null,
-    counters: new DailyCounters({ file: null, limits: { upload: 40, evidence: 10 } }),
-    accounts: people.accounts,
-    identity: null,
-    sessionSecret: TEST_SECRET,
-    origins: [ORIGIN],
-    hosts: [HOST],
-    https: true,
-    intents,
-    uploads: store,
-    ...(o.maxSendBytes ? { paypalMaxSendBytes: o.maxSendBytes } : {}),
-    limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 } },
-  });
-  /** The analysis of the case as `cookie` sees it now (the golden one, with `extra` sentences). */
-  const analyse = async (cookie: string, extra: CaseAnalysis['sentences'] = []) => {
-    const r = (await call(app, `/api/cases/${CASE}/analysis`, { body: {}, cookie })) as unknown as { body: { input: AnalysisInput } };
-    assert.ok(r.body.input, JSON.stringify(r.body).slice(0, 300));
-    const a = await goldenFor(CASE, r.body.input);
-    analyses.cached.set(a.key, { ...a, sentences: [...a.sentences, ...extra] });
-  };
-  /** Pasted text, redacted (nothing removed) and confirmed with `lines` (default: as read). */
-  const confirmText = async (cookie: string, text: string, name: string, lines?: string[]) => {
-    const t = await pasteText(app, cookie, text, name);
-    const red = await call(app, `${P}/${t.body.upload.id}/redact`, { body: { removals: [] }, cookie });
-    const conf = await call(app, `${P}/${t.body.upload.id}/confirm`, { body: { lines: lines ?? red.body.readLines, sha256: red.body.upload.sha256 }, cookie });
-    assert.equal(conf.status, 200, JSON.stringify(conf.body));
-    return conf.body.upload;
-  };
-  const intent = (cookie: string, over: Record<string, unknown> = {}) =>
-    call(app, `/api/disputes/${CASE}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED, ...over }, cookie }) as unknown as Promise<{ status: number; body: SentIntent & { error?: string; detail?: string; blockers?: string[] } }>;
-  const approved = async (cookie: string, over: Record<string, unknown> = {}) => {
-    const i = await intent(cookie, over);
-    assert.equal(i.status, 201, JSON.stringify(i.body));
-    const a = await call(app, `/api/disputes/${CASE}/intent/${i.body.id}/approve`, { body: { contentHash: i.body.contentHash }, cookie });
-    assert.equal(a.status, 200, JSON.stringify(a.body));
-    return i.body;
-  };
-  const send = (cookie: string, intentId: string) => call(app, `/api/disputes/${CASE}/evidence`, { body: { intentId }, cookie }) as unknown as Promise<{ status: number; body: { error?: string; detail?: string } }>;
-  return { app, people, store, intents, analyst, analyses, sends, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
-}
-type SentIntent = { id: string; contentHash: string; status: string; files: { name: string; size: string; sha256?: string; source?: string }[] };
-const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
-const fileBytes = async (f: File) => new Uint8Array(await f.arrayBuffer());
 
 test("only selected, confirmed uploads of the active dispute are attached; an archived or another workspace's id is refused", TIMEOUT, async () => {
   const s = sendSetup();

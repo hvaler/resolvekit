@@ -40,6 +40,8 @@ export interface EvidenceLine {
   fragment?: string;
   /** On a merchant upload: who corrected this line by hand (its text is their reading of the file). */
   corrected?: string;
+  /** On a PDF upload: who typed this line by hand (the recognition did not read it). */
+  transcribed?: string;
 }
 
 export interface KeyValueRow {

@@ -1,11 +1,11 @@
 /**
  * Merchant evidence uploads (`/api/cases/:id/uploads…` on the ResolveKit server, apps/server/src/uploads/routes.ts):
  * the client, and how a confirmed upload takes part in the case — an evidence card with its provenance, a document of
- * the analyst's input (exactly the server's), corrected lines a sentence must have confirmed, and an attachment the
- * merchant chooses in the final review. Nothing here reads or keeps an upload's content beyond what the server returns.
+ * the analyst's input (exactly the server's), corrected or transcribed lines a sentence must have confirmed, and an
+ * attachment the merchant chooses in the final review. Nothing here reads or keeps an upload's content beyond what the server returns.
  */
 import type { AnalysisDocument, AnalysisInput } from '@resolvekit/analyst';
-import { correctionPair, correctionsOf, type Correction } from './draft';
+import { correctionPair, linesToConfirmOf, pageOf, type Correction } from './draft';
 import type { IntentRequest } from './intent';
 import { utcStamp } from './time';
 import type { Citation, ContradictionResolution, Evidence, EvidenceType, SentenceView } from './types';
@@ -24,7 +24,7 @@ export interface UploadRecordView {
   boundDisputeId: string | null;
   /** E7…, set at confirmation. */
   evidenceId: string | null;
-  kind: 'image' | 'text';
+  kind: 'image' | 'text' | 'pdf';
   name: string;
   uploadedBy: { id: string; label: string; name: string };
   status: UploadStatus;
@@ -42,6 +42,11 @@ export interface UploadRecordView {
   confirmedAt: string | null;
   /** The analyst's document of a confirmed upload (lines, fragment keys, corrections); null before confirmation. */
   document: AnalysisDocument | null;
+  /**
+   * A pending upload someone else is reviewing, shown to a person who cannot edit it: metadata only (who added what
+   * kind of file when, where its job is); it carries none of the fields above that hold what it shows or reads.
+   */
+  restricted?: true;
 }
 
 /** A refusal by the uploads routes, with the server's code and words. */
@@ -115,7 +120,7 @@ export function evidenceCount(evidence: readonly unknown[]): string {
   return `${evidence.length} document${evidence.length === 1 ? '' : 's'}`;
 }
 
-/** A confirmed upload as an evidence card: the server's lines and fragments, who uploaded it, who corrected what. */
+/** A confirmed upload as an evidence card: the server's lines and fragments, who uploaded it, who corrected or transcribed what. */
 export function uploadEvidence(r: UploadRecordView): Evidence {
   const doc = r.document!;
   return {
@@ -124,7 +129,7 @@ export function uploadEvidence(r: UploadRecordView): Evidence {
     title: r.name,
     meta: { type: doc.type, tag: doc.tag, source: doc.source, received: r.confirmedAt ? utcStamp(new Date(r.confirmedAt)) : '', hash: r.sha256 ?? '' },
     sourceLabel: { kind: 'upload', text: `Uploaded by ${r.uploadedBy.name}` },
-    body: { kind: 'lines', lines: doc.lines.map((l) => ({ text: l.text, ...(l.fragment ? { fragment: l.fragment } : {}), ...(l.corrected ? { corrected: l.corrected } : {}) })) },
+    body: { kind: 'lines', lines: doc.lines.map((l) => ({ text: l.text, ...(l.fragment ? { fragment: l.fragment } : {}), ...(l.corrected ? { corrected: l.corrected } : {}), ...(l.transcribed ? { transcribed: l.transcribed } : {}) })) },
   };
 }
 
@@ -134,9 +139,12 @@ export function withUploadDocuments(input: AnalysisInput, uploads: readonly Uplo
   return docs.length ? { ...input, documents: [...input.documents, ...docs] } : input;
 }
 
-/** The corrected lines of the confirmed uploads, by fragment key (as the server derives them from its input). */
+/**
+ * The corrected and transcribed lines of the confirmed uploads, by fragment key (as the server derives them from its
+ * input): every line a sentence needs a confirmation for.
+ */
 export function uploadCorrections(uploads: readonly UploadRecordView[]): Map<string, Correction> {
-  return correctionsOf(confirmedUploads(uploads).map((u) => u.document!));
+  return linesToConfirmOf(confirmedUploads(uploads).map((u) => u.document!));
 }
 
 /** Evidence ids of confirmed uploads that the analysis on screen did not read (none ready: all of them). */
@@ -145,7 +153,7 @@ export function notAnalysed(uploads: readonly UploadRecordView[], analysed: Anal
   return confirmedUploads(uploads).map((u) => u.evidenceId!).filter((id) => !read.has(id));
 }
 
-/** The corrected lines this sentence is held back on until the merchant confirms them (deriveSentences says which). */
+/** The corrected or transcribed lines this sentence is held back on until the merchant confirms them (deriveSentences says which). */
 export function correctionsToConfirm(view: SentenceView, corrections: ReadonlyMap<string, Correction>, confirmed: ReadonlySet<string>): Correction[] {
   if (view.state !== 'needs_review' || !view.awaitsCorrections) return [];
   return view.awaitsCorrections.flatMap((f) => {
@@ -157,7 +165,7 @@ export function correctionsToConfirm(view: SentenceView, corrections: ReadonlyMa
 /** The pairs without those of `sentenceId` (its text changed: what it relies on must be confirmed again). */
 export const dropPairsOf = (pairs: readonly string[], sentenceId: string): string[] => pairs.filter((p) => !p.startsWith(`${sentenceId}@`));
 
-/** The confirmed pairs that still mean something: a sentence to be sent citing that corrected line. */
+/** The confirmed pairs that still mean something: a sentence to be sent citing that corrected or transcribed line. */
 export function effectivePairs(views: readonly SentenceView[], corrections: ReadonlyMap<string, Correction>, confirmed: Iterable<string>): string[] {
   const live = new Set<string>();
   for (const v of views) {
@@ -192,14 +200,24 @@ export interface Provenance {
   text: string;
 }
 
+/** Where a PDF upload's cited line is: `Page 8 of the original document` (the page number in the uploaded PDF). */
+export const pageLabel = (page: number) => `Page ${page} of the original document`;
+
+/** Who typed a line of a PDF upload by hand: `Transcribed manually by Ana (member)`. */
+export const transcribedLabel = (person: string) => `Transcribed manually by ${person}`;
+
+/** The pages of the original document a citation of a PDF upload covers, in order (none for any other citation). */
+const citedPages = (c: Citation): number[] => [...new Set(c.fragments.map((f) => pageOf(f)?.page).filter((p): p is number => p !== undefined))].sort((a, b) => a - b);
+
 /**
  * Where a document comes from: a merchant upload (and who uploaded it), the real MeterMCP session, PayPal's record of
  * the disputed payment as read from PayPal, or a synthetic demo document (the demo case's own, or PayPal's record on a
- * simulated case). One decision for the whole app.
+ * simulated case). One decision for the whole app. For a citation `c` of a PDF upload, also the pages it cites.
  */
-export function provenanceOf(e: Evidence): Provenance {
+export function provenanceOf(e: Evidence, c?: Citation): Provenance {
   const l = e.sourceLabel;
-  if (l?.kind === 'upload' || l?.kind === 'metermcp') return { kind: l.kind, text: l.text };
+  if (l?.kind === 'upload') return { kind: 'upload', text: [l.text, ...(c ? citedPages(c).map(pageLabel) : [])].join(' · ') };
+  if (l?.kind === 'metermcp') return { kind: l.kind, text: l.text };
   if (e.paypalRecord === 'capture' && e.meta?.source.startsWith('PayPal')) {
     // Bound case: from the PayPal read, or (not read yet) a placeholder that says so; never demo data.
     if (e.meta.received.startsWith('read ')) return { kind: 'paypal', text: `From ${e.meta.source}` };
@@ -208,10 +226,31 @@ export function provenanceOf(e: Evidence): Provenance {
   return { kind: 'demo', text: l?.kind === 'demo' ? l.text : 'Synthetic demo document' };
 }
 
-/** The lines of `e` this citation covers that the merchant corrected by hand (line number, fragment, who). */
-export function citedCorrections(e: Evidence, c: Citation): { line: number; fragment: string; by: string }[] {
+/** A cited line the merchant corrected or transcribed by hand, and the words that say so on the citation. */
+export interface CitedCorrection {
+  /** 1-based line number in the upload; on a PDF, in its page. */
+  line: number;
+  /** On a PDF: the page of the original document. */
+  page?: number;
+  fragment: string;
+  by: string;
+  kind: Correction['kind'];
+  /** `line 2 corrected by Ana`; on a PDF `Page 8 of the original document · line 2 corrected by Ana`, or `… · Transcribed manually by Ana`. */
+  label: string;
+}
+
+/** The lines of `e` this citation covers that the merchant corrected or transcribed by hand. */
+export function citedCorrections(e: Evidence, c: Citation): CitedCorrection[] {
   if (e.body.kind !== 'lines' || !c.fragments.length) return [];
-  return e.body.lines.flatMap((l, i) => (l.corrected && l.fragment && c.fragments.includes(l.fragment) ? [{ line: i + 1, fragment: l.fragment, by: l.corrected }] : []));
+  return e.body.lines.flatMap((l, i) => {
+    const kind = l.corrected ? 'corrected' : l.transcribed ? 'transcribed' : null;
+    const by = l.corrected ?? l.transcribed;
+    if (!kind || !by || !l.fragment || !c.fragments.includes(l.fragment)) return [];
+    const p = pageOf(l.fragment);
+    const line = p ? p.line : i + 1;
+    const what = kind === 'transcribed' ? transcribedLabel(by) : `line ${line} corrected by ${by}`;
+    return [{ line, ...(p ? { page: p.page } : {}), fragment: l.fragment, by, kind, label: p ? `${pageLabel(p.page)} · ${what}` : what }];
+  });
 }
 
 /** Who may review (redact, correct, confirm) or discard an upload: owners and members any; a reviewer their own (server's rule). Local mode (no person): the operator. */
@@ -289,7 +328,7 @@ export interface AttachmentChoice {
   name: string;
   /** "Uploaded by <name>". */
   provenance: string;
-  /** "lines corrected by <who>" when any line was corrected by hand. */
+  /** "lines corrected by <who>" and/or "lines transcribed manually by <who>" (joined by " · "), when any line was. */
   corrected: string | null;
   /** A sentence that will be sent cites it. */
   cited: boolean;
@@ -302,9 +341,11 @@ export interface AttachmentChoice {
 export function attachmentChoices(uploads: readonly UploadRecordView[], views: readonly SentenceView[]): AttachmentChoice[] {
   const cited = new Set(views.filter((v) => v.state === 'supported').flatMap((v) => v.citations.map((c) => c.evidenceId)));
   return confirmedUploads(uploads).map((u) => {
-    const by = [...new Set(u.lines.map((l) => l.correctedBy).filter((x): x is string => !!x))];
+    // From the document (a PDF's lines are in its pages, not in `lines`), as the analysis read it.
+    const who = (k: 'corrected' | 'transcribed') => [...new Set(u.document!.lines.map((l) => l[k]).filter((x): x is string => !!x))];
+    const corrected = [who('corrected'), who('transcribed')].flatMap((by, i) => (by.length ? [`lines ${i ? 'transcribed manually' : 'corrected'} by ${by.join(', ')}`] : []));
     const isCited = cited.has(u.evidenceId!);
-    return { id: u.id, evidenceId: u.evidenceId!, name: u.name, provenance: `Uploaded by ${u.uploadedBy.name}`, corrected: by.length ? `lines corrected by ${by.join(', ')}` : null, cited: isCited, selected: isCited, sha256: u.sha256 };
+    return { id: u.id, evidenceId: u.evidenceId!, name: u.name, provenance: `Uploaded by ${u.uploadedBy.name}`, corrected: corrected.length ? corrected.join(' · ') : null, cited: isCited, selected: isCited, sha256: u.sha256 };
   });
 }
 
