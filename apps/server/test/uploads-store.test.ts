@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { UploadStore, type NewUpload } from '../src/uploads/store.ts';
+import { UploadStore, type NewUpload, type UploadRecord } from '../src/uploads/store.ts';
 import { UploadError } from '../src/uploads/image.ts';
 import { PENDING_TTL_MS } from '../src/uploads/limits.ts';
 
@@ -243,4 +243,125 @@ test('update cannot rewrite identity or binding fields, and undefined does not o
   const u = s.update(r.id, bad);
   assert.deepEqual([u.boundDisputeId, u.caseId, u.workspaceId, u.kind, u.uploadedBy, u.id, u.name, u.status], ['PP-D-1', 'C1', 'ws1', 'image', who, r.id, 'proof.png', 'reviewing']);
   assert.equal(s.get(NONE), null);
+});
+
+// -- PDF uploads --------------------------------------------------------------------------------------------
+
+const pdfState = (job: NonNullable<UploadRecord['pdf']>['job'] = { state: 'reviewing' }): NonNullable<UploadRecord['pdf']> => ({
+  pageCount: 3, selected: [1, 3], job,
+  pages: [
+    { original: 1, rects: [{ x: 0, y: 0, w: 2, h: 2 }], readLines: ['PDF-SECRET'], lines: [{ text: 'PDF-SECRET', correctedBy: null, original: null }], added: [{ area: { x: 1, y: 1, w: 3, h: 3 }, text: 'PDF-ADDED', by: 'u1' }], sha256: 'abc', redactions: 2 },
+    { original: 3, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0 },
+  ],
+});
+const pdfUpload = (s: UploadStore, job?: NonNullable<UploadRecord['pdf']>['job']) => {
+  const r = s.create(base({ kind: 'pdf', name: 'doc.pdf' }), bytes(8));
+  return s.update(r.id, { status: 'reviewing', pdf: pdfState(job) }, {
+    pages: { 1: bytes(5, 1), 3: bytes(6, 3) }, thumbs: { 1: bytes(2, 9), 3: bytes(2, 8) }, origPages: { 1: bytes(4, 5) },
+  });
+};
+
+test('a pdf record round-trips its pdf state and page files across a restart', () => {
+  const dir = tmp();
+  const s = new UploadStore({ dir });
+  const r = pdfUpload(s);
+  assert.deepEqual(r.pdf, pdfState());
+  const b = new UploadStore({ dir });
+  assert.deepEqual(b.get(r.id)!.pdf, pdfState());
+  assert.deepEqual([...b.pageImage(r.id, 3)!], [...bytes(6, 3)]);
+  assert.deepEqual([...b.thumb(r.id, 1)!], [...bytes(2, 9)]);
+  assert.deepEqual([...b.origPage(r.id, 1)!], [...bytes(4, 5)]);
+  assert.equal(b.pageImage(r.id, 2), null);
+  assert.equal(b.origPage(r.id, 3), null);
+  assert.equal(b.usedBytes(), 8 + 5 + 6 + 2 + 2 + 4);
+});
+
+test('setting thumbs, pages or origPages to null deletes those files only', () => {
+  for (const dir of [tmp(), null]) {
+    const s = new UploadStore({ dir });
+    const r = pdfUpload(s);
+    s.update(r.id, {}, { thumbs: { 1: null, 3: null }, origPages: { 1: null }, pages: { 3: null } });
+    assert.equal(s.thumb(r.id, 1), null);
+    assert.equal(s.thumb(r.id, 3), null);
+    assert.equal(s.origPage(r.id, 1), null);
+    assert.equal(s.pageImage(r.id, 3), null);
+    assert.deepEqual([...s.pageImage(r.id, 1)!], [...bytes(5, 1)]);
+    assert.equal(s.usedBytes(), 8 + 5);
+    if (dir) assert.deepEqual(readdirSync(join(dir, 'ws1', r.id)).sort(), ['original.bin', 'page-1.png', 'record.json']);
+  }
+});
+
+const gone = (dir: string | null, s: UploadStore, id: string) => {
+  assert.equal(s.pageImage(id, 1), null);
+  assert.equal(s.thumb(id, 1), null);
+  assert.equal(s.origPage(id, 1), null);
+  assert.equal(s.usedBytes(), 0);
+  const rec = s.get(id)!;
+  assert.deepEqual([rec.pdf!.pages.flatMap((p) => [p.rects, p.readLines, p.lines, p.added]).flat()], [[]]);
+  assert.equal(rec.pdf!.pages.length, 2);
+  if (dir) {
+    assert.deepEqual(readdirSync(join(dir, 'ws1', id)), ['record.json']);
+    const text = readFileSync(join(dir, 'ws1', id, 'record.json'), 'utf8');
+    assert.equal(text.includes('PDF-SECRET') || text.includes('PDF-ADDED'), false);
+  }
+};
+
+for (const end of ['discarded', 'deleted', 'archived'] as const) {
+  for (const dir of [tmp(), null]) {
+    test(`${end} pdf uploads lose every page file, thumb, render and text (${dir ? 'disk' : 'memory'})`, () => {
+      const s = new UploadStore({ dir });
+      const r = pdfUpload(s);
+      assert.equal(s.update(r.id, { status: end }).status, end);
+      gone(dir, s, r.id);
+    });
+  }
+}
+
+test('archiveCase and expiry purge a pdf upload completely', () => {
+  const dir = tmp();
+  let t = new Date('2026-10-18T10:00:00Z');
+  const s = new UploadStore({ dir, now: () => t });
+  const a = pdfUpload(s);
+  assert.deepEqual(s.archiveCase('C1', 'PP-D-1'), { archived: 1, failed: 0 });
+  gone(dir, s, a.id);
+  const b = pdfUpload(s);
+  t = new Date(t.getTime() + PENDING_TTL_MS + 1000);
+  assert.equal(s.sweep().expired, 1);
+  gone(dir, s, b.id);
+});
+
+test('sweep removes page files and text a crash left behind on a settled pdf record', () => {
+  const dir = tmp();
+  const s = new UploadStore({ dir });
+  const r = pdfUpload(s);
+  s.update(r.id, { status: 'discarded' });
+  writeFileSync(join(dir, 'ws1', r.id, 'thumb-1.png'), bytes(3));
+  writeFileSync(join(dir, 'ws1', r.id, 'page-2.orig.png'), bytes(3));
+  assert.equal(new UploadStore({ dir }).sweep().orphans, 1);
+  assert.deepEqual(readdirSync(join(dir, 'ws1', r.id)), ['record.json']);
+});
+
+for (const state of ['rendering', 'reading'] as const) {
+  test(`a pdf job that was ${state} when the server stopped reloads as failed`, () => {
+    const dir = tmp();
+    const r = pdfUpload(new UploadStore({ dir }), { state, page: 1, of: 2 });
+    const b = new UploadStore({ dir });
+    assert.deepEqual(b.get(r.id)!.pdf!.job, { state: 'failed', error: 'The server restarted while reading this PDF. Discard it and upload it again.' });
+    assert.equal(new UploadStore({ dir }).get(r.id)!.pdf!.job.state, 'failed');
+  });
+}
+
+test('selecting, reviewing and failed pdf jobs reload as they were', () => {
+  const dir = tmp();
+  for (const job of [{ state: 'selecting' }, { state: 'reviewing' }, { state: 'failed', error: 'x' }] as const) {
+    const r = pdfUpload(new UploadStore({ dir }), job);
+    assert.deepEqual(new UploadStore({ dir }).get(r.id)!.pdf!.job, job);
+  }
+});
+
+test('an invalid page number fails closed and a failed write restores the files it overwrote', () => {
+  const s = new UploadStore({ dir: tmp() });
+  const r = pdfUpload(s);
+  assert.throws(() => s.update(r.id, { pdf: undefined }, { pages: { 1: bytes(9, 2), [-1]: bytes(1) } }), (e) => e instanceof UploadError && e.code === 'STORAGE');
+  assert.deepEqual([...s.pageImage(r.id, 1)!], [...bytes(5, 1)]);
 });

@@ -1,6 +1,7 @@
 /**
  * Store of merchant evidence uploads, one directory per upload:
- * `<dir>/<workspaceId>/<uploadId>/{record.json, original.bin, sanitised.png|pdf}`.
+ * `<dir>/<workspaceId>/<uploadId>/{record.json, original.bin, sanitised.png|pdf}`, plus for a pdf `page-<k>.png`
+ * (sanitised page), `page-<k>.orig.png` (uncovered render, only while reviewing) and `thumb-<n>.png`.
  *
  * The original exists only while the upload is pending or reviewing. A discarded, deleted or archived upload keeps
  * its record (metadata, for the audit) but no file and no text. Writes are synchronous tmp + rename like
@@ -24,7 +25,7 @@ export interface UploadRecord {
   boundDisputeId: string | null;
   /** E7… id, set at confirmation */
   evidenceId: string | null;
-  kind: 'image' | 'text';
+  kind: 'image' | 'text' | 'pdf';
   name: string;
   uploadedBy: { id: string; label: string; name: string };
   status: UploadStatus;
@@ -43,6 +44,26 @@ export interface UploadRecord {
   analysisKeys: string[];
   /** How many redactions were attempted (each runs OCR; the routes cap it). Absent: none. */
   redactions?: number;
+  /** pdf uploads only */
+  pdf?: PdfState;
+}
+
+export interface PdfPage {
+  /** 1-based page number in the original PDF */
+  original: number;
+  rects: Rect[];
+  readLines: string[];
+  lines: { text: string; correctedBy: string | null; original: string | null }[];
+  added: { area: Rect; text: string; by: string }[];
+  sha256: string | null;
+  redactions: number;
+}
+
+export interface PdfState {
+  pageCount: number;
+  selected: number[] | null;
+  pages: PdfPage[];
+  job: { state: 'selecting' | 'rendering' | 'reading' | 'reviewing' | 'failed'; page?: number; of?: number; error?: string };
 }
 
 /** What the caller knows when an upload starts; the store fills in the rest. */
@@ -61,7 +82,26 @@ export type UploadPatch = Partial<Omit<UploadRecord, Pinned>>;
 const PINNED: string[] = ['id', 'workspaceId', 'caseId', 'boundDisputeId', 'kind', 'uploadedBy'];
 
 /** A discarded, deleted or archived upload keeps its record for the audit but none of its content. */
-const purged = (r: UploadRecord): UploadRecord => ({ ...r, rects: [], removals: [], readLines: [], lines: [] });
+const purged = (r: UploadRecord): UploadRecord => ({
+  ...r, rects: [], removals: [], readLines: [], lines: [],
+  ...(r.pdf ? { pdf: { ...r.pdf, pages: r.pdf.pages.map((p) => ({ ...p, rects: [], readLines: [], lines: [], added: [] })) } } : {}),
+});
+
+/** Does the record still hold any text or area of the merchant's content? */
+const hasText = (r: UploadRecord): boolean =>
+  r.lines.length + r.readLines.length + r.removals.length + r.rects.length > 0
+  || (r.pdf?.pages.some((p) => p.rects.length + p.readLines.length + p.lines.length + p.added.length > 0) ?? false);
+
+/** Per-page files of a pdf upload. */
+const PAGE_FILE = /^(page|thumb)-\d+(\.orig)?\.png$/;
+const pageName = (k: number, orig = false) => `page-${k}${orig ? '.orig' : ''}.png`;
+const thumbName = (n: number) => `thumb-${n}.png`;
+const RESTARTED = 'The server restarted while reading this PDF. Discard it and upload it again.';
+
+type FileSet = {
+  original?: Uint8Array | null; sanitised?: Uint8Array | null;
+  pages?: Record<number, Uint8Array | null>; thumbs?: Record<number, Uint8Array | null>; origPages?: Record<number, Uint8Array | null>;
+};
 
 const storage = (what: string, cause?: unknown) => new UploadError('STORAGE', `Upload storage failed: ${what}`, { cause });
 
@@ -125,32 +165,70 @@ export class UploadStore {
     return r?.mime ? this.readFile(r, this.sanitisedName(r.mime)) : null;
   }
 
-  /** Merge `patch` into the record; `files.original: null` deletes the original, `files.sanitised` is stored per `mime`. */
-  update(id: string, patch: UploadPatch, files: { original?: Uint8Array | null; sanitised?: Uint8Array | null } = {}): UploadRecord {
+  /** The sanitised render of page `k` of a pdf upload. */
+  pageImage(id: string, k: number): Uint8Array | null {
+    const r = this.live(id);
+    return r && Number.isInteger(k) && k >= 0 ? this.readFile(r, pageName(k)) : null;
+  }
+
+  /** The uncovered render of page `k`, kept only while the upload is being reviewed. */
+  origPage(id: string, k: number): Uint8Array | null {
+    const r = this.live(id);
+    return r && Number.isInteger(k) && k >= 0 ? this.readFile(r, pageName(k, true)) : null;
+  }
+
+  thumb(id: string, n: number): Uint8Array | null {
+    const r = this.live(id);
+    return r && Number.isInteger(n) && n >= 0 ? this.readFile(r, thumbName(n)) : null;
+  }
+
+  /**
+   * Merge `patch` into the record; `files.original: null` deletes the original, `files.sanitised` is stored per `mime`;
+   * `pages`, `origPages` and `thumbs` map a number to the bytes of that file (null deletes it).
+   */
+  update(id: string, patch: UploadPatch, files: FileSet = {}): UploadRecord {
     const cur = this.live(id);
     if (!cur) throw new UploadError('NOT_FOUND', 'Upload not found');
     const clean = Object.fromEntries(Object.entries(patch).filter(([k, v]) => v !== undefined && !PINNED.includes(k)));
     let next: UploadRecord = { ...cur, ...structuredClone(clean) };
     const dead = STRIPPED.includes(next.status);
     if (dead) next = purged(next);
-    let restore: (() => void) | null = null;
+    const restores: (() => void)[] = [];
+    const deletes: string[] = [];
     try {
-      if (files.sanitised && !dead) {
-        if (!next.mime) throw storage('sanitised file without a mime type');
-        const name = this.sanitisedName(next.mime);
-        const before = this.readFile(next, name);
-        this.writeFile(next, name, files.sanitised);
-        restore = () => (before ? this.writeFile(next, name, before) : this.removeFile(next, name));
+      if (!dead) {
+        const put = (name: string, bytes: Uint8Array) => {
+          const before = this.readFile(next, name);
+          restores.push(() => (before ? this.writeFile(next, name, before) : this.removeFile(next, name)));
+          this.writeFile(next, name, bytes);
+        };
+        if (files.sanitised) {
+          if (!next.mime) throw storage('sanitised file without a mime type');
+          put(this.sanitisedName(next.mime), files.sanitised);
+        }
+        const numbered: [Record<number, Uint8Array | null> | undefined, (k: number) => string][] =
+          [[files.pages, (k) => pageName(k)], [files.origPages, (k) => pageName(k, true)], [files.thumbs, thumbName]];
+        for (const [map, nameOf] of numbered) {
+          for (const [key, bytes] of Object.entries(map ?? {})) {
+            const k = Number(key);
+            if (!Number.isInteger(k) || k < 0) throw storage('invalid page number');
+            if (bytes) put(nameOf(k), bytes);
+            else if (bytes === null) deletes.push(nameOf(k));
+          }
+        }
       }
       this.writeRecord(next);
     } catch (e) {
-      try { restore?.(); } catch { /* best effort: the record is unchanged either way */ }
+      for (const undo of restores.reverse()) { try { undo(); } catch { /* best effort: the record is unchanged either way */ } }
       throw e instanceof UploadError ? e : storage('update', e);
     }
     this.records.set(next.id, next);
     if (dead) this.dropFiles(next, false);
-    else if (files.original === null) this.removeFile(next, 'original.bin');
-    else if (files.original) this.writeFile(next, 'original.bin', files.original);
+    else {
+      for (const name of deletes) this.removeFile(next, name);
+      if (files.original === null) this.removeFile(next, 'original.bin');
+      else if (files.original) this.writeFile(next, 'original.bin', files.original);
+    }
     return structuredClone(next);
   }
 
@@ -204,9 +282,8 @@ export class UploadStore {
         this.dropFiles(d, false);
         expired++;
       } else if (STRIPPED.includes(r.status)) {
-        const leftover = FILES.some((f) => this.sizeOf(r, f) > 0 || this.readFile(r, f));
-        const text = r.lines.length + r.readLines.length + r.removals.length + r.rects.length > 0;
-        if (leftover || text) {
+        const leftover = this.fileNames(r).some((f) => this.sizeOf(r, f) > 0 || this.readFile(r, f));
+        if (leftover || hasText(r)) {
           const d = purged(r);
           this.records.set(r.id, d);
           try { this.writeRecord(d); } catch { /* retried next sweep */ }
@@ -225,7 +302,7 @@ export class UploadStore {
   usedBytes(): number {
     let n = 0;
     for (const r of this.records.values()) {
-      for (const name of FILES) n += this.sizeOf(r, name);
+      for (const name of this.fileNames(r)) n += this.sizeOf(r, name);
     }
     return n;
   }
@@ -234,6 +311,18 @@ export class UploadStore {
 
   private live(id: string): UploadRecord | null {
     return ID.test(id) ? this.records.get(id) ?? null : null;
+  }
+
+  /** Every file name the upload may have: the fixed ones and its page and thumb files. */
+  private fileNames(r: UploadRecord): string[] {
+    const extra: string[] = [];
+    if (!this.dir) {
+      const prefix = `${r.id}/`;
+      for (const key of this.mem.keys()) if (key.startsWith(prefix) && PAGE_FILE.test(key.slice(prefix.length))) extra.push(key.slice(prefix.length));
+    } else {
+      try { for (const f of readdirSync(this.path(r))) if (PAGE_FILE.test(f)) extra.push(f); } catch { /* no directory: no files */ }
+    }
+    return [...FILES, ...extra];
   }
 
   private sanitisedName(mime: 'image/png' | 'application/pdf'): string {
@@ -295,12 +384,12 @@ export class UploadStore {
   /** Remove every file of an upload; with `all` also its record and directory. */
   private dropFiles(r: UploadRecord, all: boolean): void {
     if (!this.dir) {
-      for (const name of FILES) this.mem.delete(this.memKey(r, name));
+      for (const name of this.fileNames(r)) this.mem.delete(this.memKey(r, name));
       return;
     }
     try {
       if (all) rmSync(this.path(r), { recursive: true, force: true });
-      else for (const name of FILES) this.removeFile(r, name);
+      else for (const name of this.fileNames(r)) this.removeFile(r, name);
     } catch { /* invalid ids never reach the disk */ }
   }
 
@@ -309,9 +398,18 @@ export class UploadStore {
       if (!WORKSPACE.test(ws)) continue;
       for (const id of this.subdirs(join(this.dir!, ws))) {
         const r = this.readRecord(ws, id);
-        if (r) this.records.set(r.id, r);
+        if (r) this.records.set(r.id, this.afterRestart(r));
       }
     }
+  }
+
+  /** A pdf job that was rendering or reading died with the process: it is failed, not stuck. */
+  private afterRestart(r: UploadRecord): UploadRecord {
+    const job = r.pdf?.job;
+    if (!r.pdf || !job || (job.state !== 'rendering' && job.state !== 'reading')) return r;
+    const next: UploadRecord = { ...r, pdf: { ...r.pdf, job: { state: 'failed', error: RESTARTED } } };
+    try { this.writeRecord(next); } catch { /* the in-memory state is failed; the next start retries */ }
+    return next;
   }
 
   private subdirs(p: string): string[] {
