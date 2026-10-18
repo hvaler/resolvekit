@@ -30,7 +30,8 @@ import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
 import { checkBindings, parseBindingPools, type BindingPools } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
-import { createHostedApp, type HostedApp } from './hosted.ts';
+import { AGENT_RUNS_PER_PERSON, createHostedApp, type HostedApp } from './hosted.ts';
+import { PersonRunCaps } from './agent/person-caps.ts';
 import { SellerMemory } from './sellers.ts';
 import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
@@ -233,6 +234,7 @@ if (hosted) {
       'agent-run': envInt(process.env, 'DAILY_AGENT_RUNS', 20),
     },
   });
+  if (!meterToken) log('WARNING: METERMCP_ADMIN_TOKEN is not set: agent runs cannot authenticate to MeterMCP (/agent/mcp) and will stop as meter_unavailable; receipts and settlement through the admin routes fail too');
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
     paypal, env, bindings, reserve, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
@@ -244,6 +246,7 @@ if (hosted) {
     opsToken,
     modelProbes: modelProbesFromEnv(process.env),
     agent,
+    agentRunsPerPerson: new PersonRunCaps({ file: join(dataDir, 'agent-run-caps.json'), limit: AGENT_RUNS_PER_PERSON }),
   });
   log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · PayPal sign-in ${identity ? 'on' : 'OFF'} · PayPal webhook ${webhook && paypal ? 'on' : 'OFF'} · ops check ${opsToken ? 'on' : 'OFF'} · data in ${dataDir}`);
 } else {

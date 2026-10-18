@@ -7,14 +7,17 @@ import { DEFAULT_LIMITS, type AgentModel, type MeterAnswer, type MeterConnection
 import { createApi } from '../src/app.ts';
 import { createHostedApp } from '../src/hosted.ts';
 import { RunStore, type NewRun } from '../src/agent/runs.ts';
-import { AgentService } from '../src/agent/service.ts';
+import { AgentService, RECONCILE_EVERY_MS } from '../src/agent/service.ts';
+import { PersonRunCaps } from '../src/agent/person-caps.ts';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
 const CASE = standardCase.summary.id;
 const ADMIN_TOKEN = 'ADMINTOKEN-'.padEnd(64, 'z');
-const DAY = 86_400_000;
 const tick = () => new Promise((r) => setTimeout(r, 5));
 async function until(cond: () => boolean, what: string) {
   for (let i = 0; i < 400; i++) {
@@ -111,7 +114,7 @@ function agentService(o: { models?: 'none'; log: (l: string) => void }) {
   return { agent, store, mm, model: m.c };
 }
 
-function setup(o: { agentRuns?: number; perPerson?: number; models?: 'none' } = {}) {
+function setup(o: { agentRuns?: number; perPerson?: number; personCaps?: PersonRunCaps; models?: 'none' } = {}) {
   const lines: string[] = [];
   const log = (l: string) => lines.push(l);
   const fetch = (async (url: string | URL) => {
@@ -137,7 +140,8 @@ function setup(o: { agentRuns?: number; perPerson?: number; models?: 'none' } = 
     hosts: [HOST],
     https: true,
     agent: s.agent,
-    ...(o.perPerson ? { limits: { agentRunsPerPerson: { limit: o.perPerson, windowMs: DAY } } } : {}),
+    ...(o.personCaps ? { agentRunsPerPerson: o.personCaps } : {}),
+    ...(o.perPerson ? { agentRunsPerPerson: new PersonRunCaps({ file: null, limit: o.perPerson }) } : {}),
   });
   const call = async (path: string, i: { cookie?: string; body?: unknown; method?: string } = {}) => {
     const method = i.method ?? (i.body !== undefined ? 'POST' : 'GET');
@@ -205,7 +209,11 @@ test('a signed-in member starts a run and reads it back; another member gets 404
   const viewLog = s.lines.slice(before).filter((l) => l.includes(`agent run ${id}: viewed by the owner`));
   assert.equal(viewLog.length, 1);
   assert.ok(viewLog[0]!.includes('Northwind Goods'));
+  const beforeList = s.lines.length;
   const list = await s.call('/api/agent/runs?scope=workspace', { cookie: s.people.ownerCookie });
+  const listLog = s.lines.slice(beforeList).filter((l) => l.includes('(workspace list)'));
+  assert.equal(listLog.length, 1);
+  assert.ok(listLog[0]!.includes(id) && listLog[0]!.includes('viewed by the owner Northwind Goods'), listLog[0]);
   assert.deepEqual(list.body.runs.map((r: any) => [r.id, r.viewedAs]), [[id, 'owner']]);
 });
 
@@ -345,8 +353,8 @@ test('keep is owner-only', async (t) => {
   assert.equal((await s.call(`/api/agent/runs/${id}/keep`, { cookie: s.people.ownerCookie, body: { kept: 'yes' } })).status, 400);
   const kept = await s.call(`/api/agent/runs/${id}/keep`, { cookie: s.people.ownerCookie, body: { kept: true } });
   assert.equal(kept.status, 200);
-  assert.equal(kept.body.run.kept, true);
-  assert.equal(kept.body.run.viewedAs, 'owner');
+  // Only the flag, never the run: keep is no way around the explicit workspace view.
+  assert.deepEqual(kept.body, { id, kept: true });
   assert.equal(s.store.get(id)!.kept, true);
   assert.equal((await s.call(`/api/agent/runs/${id}/keep?scope=workspace`, { cookie: s.people.ownerCookie, body: { kept: false } })).status, 200);
   assert.equal(s.store.get(id)!.kept, false);
@@ -393,9 +401,15 @@ test('PublicRun never carries personId, approval tokens or secrets; the approval
   assert.match(author.body.run.approvalUrl, /^https:\/\/paypal\.example\/checkoutnow\?token=/);
   const owner = await s.call(`/api/agent/runs/${id}?scope=workspace`, { cookie: s.people.ownerCookie });
   assert.equal('approvalUrl' in owner.body.run, false);
+  // Ruling A10: the order id (the approval link's token) and the session id are the author's only.
+  assert.ok(author.body.run.orderId && author.body.run.sessionId);
+  assert.equal('orderId' in owner.body.run, false);
+  assert.equal('sessionId' in owner.body.run, false);
+  assert.ok(!owner.text.includes(author.body.run.orderId) && !owner.text.includes(author.body.run.sessionId));
   assert.ok(!owner.text.includes('checkoutnow'));
   const ownerList = await s.call('/api/agent/runs?scope=workspace', { cookie: s.people.ownerCookie });
   assert.ok(!ownerList.text.includes('checkoutnow'));
+  assert.ok(!ownerList.text.includes(author.body.run.orderId) && !ownerList.text.includes(author.body.run.sessionId));
 
   for (const r of [started, author, owner, ownerList, await s.call('/api/agent/runs', { cookie: ana })]) {
     assert.ok(!r.text.includes('personId'), r.text);
@@ -429,4 +443,49 @@ test('local mode: the operator starts and reads runs, with no caps', async (t) =
   // No agent service: 503.
   const none = createApi({ paypal: null, env: 'sandbox', bindings: {} });
   assert.equal((await none(new Request('http://127.0.0.1:8787/api/agent/runs'))).status, 503);
+});
+
+test('the per-person agent-run count survives a restart: a new instance over the same file keeps it, and fails closed on an unreadable file', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-caps-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, 'agent-run-caps.json');
+  let at = Date.parse('2026-10-18T10:00:00Z');
+  const now = () => new Date(at);
+  const a = new PersonRunCaps({ file, limit: 2, now });
+  const first = a.take('p-ana');
+  assert.ok(first.ok);
+  assert.ok(a.take('p-ana').ok);
+  assert.ok(a.take('p-bea').ok);
+  // The same day after a restart: Ana is at her limit; Bea has one left; a release on the new instance counts.
+  const b = new PersonRunCaps({ file, limit: 2, now });
+  assert.deepEqual([b.used('p-ana'), b.used('p-bea')], [2, 1]);
+  const refused = b.take('p-ana');
+  assert.ok(!refused.ok && refused.reason === 'cap' && refused.retryAfterSec === 14 * 3600);
+  if (first.ok) b.release('p-ana', first.day);
+  assert.equal(new PersonRunCaps({ file, limit: 2, now }).used('p-ana'), 1);
+  // The next UTC day starts at zero.
+  at = Date.parse('2026-10-19T00:00:01Z');
+  assert.equal(new PersonRunCaps({ file, limit: 2, now }).used('p-ana'), 0);
+  // A file that is there but unreadable refuses (storage) and is not overwritten.
+  writeFileSync(file, '{not json');
+  const c = new PersonRunCaps({ file, limit: 2, now });
+  const broken = c.take('p-cal');
+  assert.ok(!broken.ok && broken.reason === 'storage');
+});
+
+test('hosted: an unreadable per-person caps file refuses a run with 503 CAPS_UNAVAILABLE and gives the daily unit back', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-caps-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, 'agent-run-caps.json');
+  writeFileSync(file, '{not json');
+  const s = setup({ personCaps: new PersonRunCaps({ file, limit: 5 }) });
+  t.after(() => s.agent.stop());
+  const r = await s.call('/api/agent/runs', { cookie: s.people.member('Ana'), body: GOAL });
+  assert.deepEqual([r.status, r.body.error], [503, 'CAPS_UNAVAILABLE']);
+  assert.equal(s.counters.state().caps['agent-run']!.used, 0);
+  assert.deepEqual(s.store.all(), []);
+});
+
+test('the reconcile sweep runs every 5 minutes', () => {
+  assert.equal(RECONCILE_EVERY_MS, 5 * 60_000);
 });

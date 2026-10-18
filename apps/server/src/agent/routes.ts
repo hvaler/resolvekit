@@ -7,7 +7,7 @@
  *   GET  /api/agent/runs/:id             the caller's own run; someone else's only to the owner with ?scope=workspace
  *   POST /api/agent/runs/:id/stop        202: aborts the run's loop (it ends interrupted and settles); the author, or
  *                                        the owner with ?scope=workspace
- *   POST /api/agent/runs/:id/keep        { kept } → never swept; the owner only
+ *   POST /api/agent/runs/:id/keep        { kept } → { id, kept }: never swept; the owner only (never the run itself)
  *
  * Isolation (Ruling A2): a run nobody may read answers 404, whoever asks and whatever exists, so its id tells nothing.
  * Owner access is explicit (?scope=workspace), shown in the answer (`viewedAs: 'owner'`) and logged (run id and the
@@ -20,7 +20,14 @@ import type { AgentService, StartError } from './service.ts';
 import type { RunRecord } from './runs.ts';
 
 /** A run as the API shows it: no person id; the approval link only for its author. */
-export type PublicRun = Omit<RunRecord, 'by' | 'approvalUrl'> & { by: { label: string; workspaceId: string }; approvalUrl?: string | null; viewedAs?: 'owner' };
+export type PublicRun = Omit<RunRecord, 'by' | 'approvalUrl' | 'orderId' | 'sessionId'> & {
+  by: { label: string; workspaceId: string };
+  /** The author's only. */
+  approvalUrl?: string | null;
+  orderId?: string | null;
+  sessionId?: string | null;
+  viewedAs?: 'owner';
+};
 
 export const GOAL_MAX = 300;
 /** The demo's cap range and format, as MeterMCP's defaults (METERMCP_MIN_BUDGET 0.50, METERMCP_BUDGET 5.00). */
@@ -52,13 +59,17 @@ const refusal = (r: { status: number; body: unknown }) => {
   return res;
 };
 
-/** The run as its author sees it, or as the owner sees someone else's (`owner`: marked, no approval link). */
+/** The run as its author sees it, or as the owner sees someone else's (`owner`: marked; no approval link, order or session id). */
 export function publicRun(r: RunRecord, as: 'author' | 'owner'): PublicRun {
   const { by, approvalUrl, ...rest } = r;
   const out: PublicRun = { ...rest, by: { label: by.label, workspaceId: by.workspaceId } };
-  if (as === 'author') out.approvalUrl = approvalUrl;
-  else out.viewedAs = 'owner';
-  return out;
+  if (as === 'author') {
+    out.approvalUrl = approvalUrl;
+    return out;
+  }
+  // Ruling A10: the order id is the approval link's token; the session id names the budget. Neither for the owner.
+  const { orderId: _o, sessionId: _s, ...owner } = out;
+  return { ...owner, viewedAs: 'owner' };
 }
 
 /** Goal, cap and failFirst checked as MeterMCP would, before anything is reserved or opened. */
@@ -133,8 +144,8 @@ export function createAgentRoutes(o: {
       if (!scope) return json(200, { runs: agent.store.list({ personId: p.id, workspaceId: p.workspaceId }).map((r) => publicRun(r, 'author')) });
       if (p.role !== 'owner') return json(403, { error: 'OWNER_ONLY', detail: 'Only the workspace’s owner sees everyone’s runs.' });
       const runs = agent.store.list({ workspaceId: p.workspaceId });
-      const others = runs.filter((r) => r.by.personId !== p.id).length;
-      if (others) o.log(`agent runs: the workspace's list (${others} run(s) of others) viewed by the owner ${p.label}`);
+      const others = runs.filter((r) => r.by.personId !== p.id).map((r) => r.id);
+      if (others.length) o.log(`agent runs ${others.join(', ')}: viewed by the owner ${p.label} (workspace list)`);
       return json(200, { runs: runs.map((r) => publicRun(r, r.by.personId === p.id ? 'author' : 'owner')) });
     }
 
@@ -159,7 +170,8 @@ export function createAgentRoutes(o: {
         return json(503, { error: 'STORAGE', detail: 'The run could not be saved; try again later.' });
       }
       o.log(`agent run ${id}: ${kept ? 'kept' : 'no longer kept'} by the owner ${p.label}`);
-      return json(200, { run: publicRun(next, r.by.personId === p.id ? 'author' : 'owner') });
+      // Only the flag: keeping is no way to read someone else's run without asking for the workspace's view (A2).
+      return json(200, { id: next.id, kept: next.kept });
     }
 
     const r = agent.store.get(id);

@@ -27,6 +27,7 @@ import type { LiveGate } from './analysis.ts';
 import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { SellerMemory, type Connection } from './sellers.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
+import { PersonRunCaps } from './agent/person-caps.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
 import { acceptsFileBody, HINT_PATH, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
 
@@ -83,6 +84,8 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
    * the webhook, each binding verified now and the last warm-up. Absent: no such route.
    */
   opsToken?: string | null;
+  /** Agent runs started per person per day (main.ts: persisted next to the daily caps); default 5, this process only. */
+  agentRunsPerPerson?: PersonRunCaps;
   /** Each configured AI provider's health check, run by /api/ops/status?probe=models (modelProbesFromEnv). */
   modelProbes?: readonly { name: string; probe: () => Promise<void> }[];
 }
@@ -102,8 +105,6 @@ export interface HostedLimits {
   webhookPerIp: { limit: number; windowMs: number };
   /** Evidence uploads (POST /api/cases/:id/uploads: a file read and OCR'd on this server), per IP. */
   uploadsPerIp: { limit: number; windowMs: number };
-  /** Agent runs started, per signed-in person (besides the daily cap of all of them). */
-  agentRunsPerPerson: { limit: number; windowMs: number };
 }
 
 const MIN = 60_000;
@@ -115,8 +116,10 @@ export const DEFAULT_LIMITS: HostedLimits = {
   intentsPerIp: { limit: 20, windowMs: 10 * MIN },
   webhookPerIp: { limit: 120, windowMs: 15 * MIN },
   uploadsPerIp: { limit: 20, windowMs: 10 * MIN },
-  agentRunsPerPerson: { limit: 5, windowMs: 24 * 60 * MIN },
 };
+
+/** Agent runs a person may start per UTC day (env-free: the spec's 5). */
+export const AGENT_RUNS_PER_PERSON = 5;
 
 /** Why each costly action is the seller workspace's only (shown by the web app as is). */
 export const LOCKED_REASON: Record<CostlyAction, string> = {
@@ -154,7 +157,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const paypalStarts = new KeyedLimiter({ ...L.paypalStartsPerIp, now: () => now().getTime() });
   const webhookLimit = new KeyedLimiter({ ...L.webhookPerIp, now: () => now().getTime() });
   const uploadLimit = new KeyedLimiter({ ...L.uploadsPerIp, now: () => now().getTime() });
-  const agentRunLimit = new KeyedLimiter({ ...L.agentRunsPerPerson, now: () => now().getTime() });
+  const agentRunCaps = o.agentRunsPerPerson ?? new PersonRunCaps({ file: null, limit: AGENT_RUNS_PER_PERSON, now });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
   // The seller merchant ids of the bound disputes (refreshed before each signed-in request): which workspace sees
@@ -229,10 +232,14 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       }
       if (action !== 'agent-run') return { ok: true, release: () => o.counters.release(action, day) };
       // An agent run also takes one of the person's own units; refused, the daily unit goes back.
-      const mine = agentRunLimit.take(s.person.id);
+      const mine = agentRunCaps.take(s.person.id);
       if (!mine.ok) {
         o.counters.release(action, day);
-        const limit = L.agentRunsPerPerson.limit;
+        if (mine.reason === 'storage') {
+          o.log?.(`agent-run caps · refused · ${mine.detail}`);
+          return { ok: false, refusal: { status: 503, body: { error: 'CAPS_UNAVAILABLE', detail: 'The demo cannot record this action’s use right now, so it is not done; try again later.', action } } };
+        }
+        const limit = agentRunCaps.limit;
         return {
           ok: false,
           refusal: { status: 429, body: { error: 'PERSON_CAP', detail: `This demo allows ${limit} agent run${limit === 1 ? '' : 's'} per person per day; try again in ${Math.ceil(mine.retryAfterSec / 3600)} h.`, action, retryAfterSec: mine.retryAfterSec } },
@@ -242,7 +249,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
         ok: true,
         release: () => {
           o.counters.release(action, day);
-          agentRunLimit.release(s.person.id);
+          agentRunCaps.release(s.person.id, mine.day);
         },
       };
     },
