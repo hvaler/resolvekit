@@ -22,7 +22,7 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** A merchant's own workspace before PayPal enables the dispute connection: what is and is not available. */
+/** A merchant's own workspace while the dispute connection is in validation and not yet available: what is and is not available. */
 export function WaitingPage() {
   const { area, demo } = useServices();
   const env = environmentOf(area, demo);

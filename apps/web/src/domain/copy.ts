@@ -4,7 +4,7 @@ import type { Environment } from './environment';
 export const ENVIRONMENTS_HELP = [
   'Explore demo: fictional cases on a simulator. Nothing is sent to PayPal.',
   'Sandbox evaluation: invited people only. Test documents go to PayPal sandbox disputes; no real money moves.',
-  'Your merchant space: your own disputes and evidence, once PayPal enables the connection.',
+  'Your merchant space: your own disputes and evidence, once the dispute connection is validated and available.',
 ] as const;
 
 export const CHECKING_TEXT = 'Checking your PayPal connection…';
@@ -16,7 +16,7 @@ export function waitingCopy(env: { kind: 'merchant'; owner: boolean }): { status
   return {
     status: env.owner ? "You're signed in with PayPal. Access to your disputes isn't available yet." : "This workspace isn't connected to its PayPal disputes yet.",
     explanation:
-      "Connecting disputes for new merchants is waiting for PayPal to enable it. For now, ResolveKit can't read your disputes or send responses on your business's behalf.",
+      "Connecting disputes for new merchants is being validated and isn't available yet. For now, ResolveKit can't read your disputes or send responses on your business's behalf.",
     demoButton: 'Explore demo',
     demoNote: 'Try the full flow on fictional cases. Nothing you do in the demo is sent to PayPal.',
     invitesNote: "Inviting someone doesn't connect your disputes to PayPal.",

@@ -8,7 +8,7 @@ describe('copy', () => {
     expect(owner.status).toBe("You're signed in with PayPal. Access to your disputes isn't available yet.");
     expect(member.status).toBe("This workspace isn't connected to its PayPal disputes yet.");
     expect(owner.explanation).toBe(
-      "Connecting disputes for new merchants is waiting for PayPal to enable it. For now, ResolveKit can't read your disputes or send responses on your business's behalf.",
+      "Connecting disputes for new merchants is being validated and isn't available yet. For now, ResolveKit can't read your disputes or send responses on your business's behalf.",
     );
     expect(owner.demoButton).toBe('Explore demo');
     expect(owner.demoNote).toBe('Try the full flow on fictional cases. Nothing you do in the demo is sent to PayPal.');
@@ -33,7 +33,7 @@ describe('copy', () => {
     expect([...ENVIRONMENTS_HELP]).toEqual([
       'Explore demo: fictional cases on a simulator. Nothing is sent to PayPal.',
       'Sandbox evaluation: invited people only. Test documents go to PayPal sandbox disputes; no real money moves.',
-      'Your merchant space: your own disputes and evidence, once PayPal enables the connection.',
+      'Your merchant space: your own disputes and evidence, once the dispute connection is validated and available.',
     ]);
   });
 });
