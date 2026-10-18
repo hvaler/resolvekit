@@ -6,7 +6,11 @@ import assert from 'node:assert/strict';
 import { DailyCounters } from '@resolvekit/hosting';
 import { standardCase } from '@resolvekit/cases';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
+import { DEFAULT_LIMITS } from '@resolvekit/agent';
 import { createHostedApp } from '../src/hosted.ts';
+import { RunStore, type RunRecord } from '../src/agent/runs.ts';
+import { AgentService } from '../src/agent/service.ts';
+import type { Receipt } from '../src/metermcp.ts';
 import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
@@ -166,4 +170,81 @@ test('daily caps that cannot be persisted are a problem (costly actions are refu
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// GET /api/ops/agent-run/:id: a run as demo:prepare --agent-run reads it, with its receipt.
+
+const RUN_ID = `run-${'a'.repeat(32)}`;
+const SESSION_ID = `mm-sess-${'b'.repeat(32)}`;
+
+function agentSetup(o: { receipt?: () => Promise<Receipt> } = {}) {
+  const store = new RunStore({ dir: null });
+  const meterCalls: string[] = [];
+  const meterMcp = {
+    findByCapture: async () => (meterCalls.push('findByCapture'), null),
+    receipt: async (id: string) => (meterCalls.push(`receipt ${id}`), o.receipt ? o.receipt() : ({ session: { id }, receipt_sha256: 'c'.repeat(64) } as unknown as Receipt)),
+    receiptPdf: async () => (meterCalls.push('receiptPdf'), new Uint8Array()),
+  };
+  const agent = new AgentService({
+    store, models: null, meterUrl: 'http://metermcp.internal/agent/mcp', meterHeaders: () => ({}), meterAdmin: null, limits: DEFAULT_LIMITS, returnTo: () => undefined, log: () => {},
+    connect: async () => { throw new Error('the ops route never connects to MeterMCP'); },
+  });
+  const people = testAccounts();
+  const pp = paypal();
+  const app = createHostedApp({
+    paypal: pp.client, env: 'sandbox', bindings: {}, log: () => {}, counters: new DailyCounters({ file: null, limits: {} }), site: null,
+    accounts: people.accounts, identity: null, sessionSecret: TEST_SECRET, origins: [ORIGIN], hosts: [HOST], https: true, opsToken: OPS, agent, meterMcp,
+  });
+  const rec = store.create({
+    finishedAt: new Date().toISOString(), by: { personId: 'p1', label: 'Ana', workspaceId: 'w1' }, goal: 'Quote', cap: '1.00', failFirst: [], state: 'done', stopReason: null, answer: 'x',
+    steps: [], approvalUrl: null, provider: 'gemini', model: 'gemini-test', usage: { modelCalls: 1, inputTokens: 1, outputTokens: 1, reported: true },
+    sessionId: SESSION_ID, orderId: 'ORDER1', captureId: '7AG12345BC678901D', settlement: 'captured', receiptSha256: 'c'.repeat(64), captured: '0.05', released: '0.95', kept: false,
+  });
+  return { app, rec, store, meterCalls, people };
+}
+
+const agentRun = (id: string, o: { token?: string; cookie?: string; method?: string } = {}) =>
+  new Request(`${ORIGIN}/api/ops/agent-run/${id}`, {
+    method: o.method ?? 'GET',
+    headers: { host: HOST, 'x-forwarded-for': '203.0.113.9', ...(o.token ? { authorization: `Bearer ${o.token}` } : {}), ...(o.cookie ? { cookie: o.cookie } : {}) },
+  });
+
+test('ops agent-run: 401 without the ops token or with a wrong one, also for a signed-in person; nothing read', async () => {
+  const s = agentSetup();
+  assert.equal((await s.app(agentRun(s.rec.id))).status, 401);
+  assert.equal((await s.app(agentRun(s.rec.id, { token: 'x'.repeat(36) }))).status, 401);
+  assert.equal((await s.app(agentRun(s.rec.id, { cookie: s.people.ownerCookie }))).status, 401);
+  assert.equal((await s.app(agentRun(s.rec.id, { cookie: s.people.member() }))).status, 401);
+  assert.deepEqual(s.meterCalls, []);
+});
+
+test('ops agent-run: without RESOLVEKIT_OPS_TOKEN the route does not exist', async () => {
+  const pp = paypal();
+  const app = createHostedApp({
+    paypal: pp.client, env: 'sandbox', bindings: {}, log: () => {}, counters: new DailyCounters({ file: null, limits: {} }), site: null,
+    accounts: testAccounts().accounts, identity: null, sessionSecret: TEST_SECRET, origins: [ORIGIN], hosts: [HOST], https: true, opsToken: null,
+  });
+  assert.equal((await app(agentRun(RUN_ID, { token: OPS }))).status, 404);
+});
+
+test('ops agent-run: the full run record and its receipt read through MeterMCP’s admin route', async () => {
+  const s = agentSetup();
+  const r = await s.app(agentRun(s.rec.id, { token: OPS }));
+  assert.equal(r.status, 200);
+  const body = (await r.json()) as { run: RunRecord; receipt: { session: { id: string } }; receiptError: string | null };
+  assert.deepEqual(body.run, s.store.get(s.rec.id));
+  assert.equal(body.receipt.session.id, SESSION_ID);
+  assert.equal(body.receiptError, null);
+  assert.deepEqual(s.meterCalls, [`receipt ${SESSION_ID}`]);
+});
+
+test('ops agent-run: an unknown id is 404, a malformed one 400, only GET; an unreadable receipt is said, not invented', async () => {
+  const s = agentSetup({ receipt: async () => { throw new Error('MeterMCP unreachable'); } });
+  assert.equal((await s.app(agentRun(`run-${'f'.repeat(32)}`, { token: OPS }))).status, 404);
+  for (const bad of ['run-123', 'run-..%2F..%2Fx', `RUN-${'a'.repeat(32)}`, `${RUN_ID}/x`]) assert.equal((await s.app(agentRun(bad, { token: OPS }))).status, 400, bad);
+  assert.equal((await s.app(agentRun(s.rec.id, { token: OPS, method: 'DELETE' }))).status, 405);
+  const r = (await (await s.app(agentRun(s.rec.id, { token: OPS }))).json()) as { receipt: unknown; receiptError: string };
+  assert.equal(r.receipt, null);
+  assert.match(r.receiptError, /MeterMCP unreachable/);
 });

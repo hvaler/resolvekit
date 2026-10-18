@@ -4,12 +4,13 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=../../.env src/main.ts",
-    "demo-agent": "node scripts/demo-agent.ts",
+    "demo-agent": "node --env-file-if-exists=../../.env scripts/demo-agent.ts",
     "test": "node --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
+    "@resolvekit/agent": "*",
     "@resolvekit/hosting": "*",
     "@resolvekit/paypal": "*",
     "@resolvekit/pdf": "*",

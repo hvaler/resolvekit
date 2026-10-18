@@ -28,6 +28,8 @@ import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { SellerMemory, type Connection } from './sellers.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { PersonRunCaps } from './agent/person-caps.ts';
+import { RUN_ID } from './agent/runs.ts';
+import type { Receipt } from './metermcp.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
 import { acceptsFileBody, HINT_PATH, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
 
@@ -135,6 +137,8 @@ const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'li
 
 /** The operator's check (demo:check). */
 export const OPS_PATH = '/api/ops/status';
+/** `GET <prefix><run id>`: one agent run and its receipt, for `demo:prepare --agent-run` (same ops token). */
+export const OPS_AGENT_RUN_PREFIX = '/api/ops/agent-run/';
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -356,6 +360,32 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const bearer = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1] ?? '';
       if (!bearer || !sameSecret(bearer, o.opsToken)) return json(404, { error: 'NOT_FOUND' });
       return req.method === 'GET' ? json(200, await opsStatus(url.searchParams.get('probe') === 'models')) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+    }
+    // demo:prepare --agent-run: the full run record and its receipt as MeterMCP's admin route reads it now. A read
+    // only: no engine, no MCP connection. The ops token or 401, whoever is signed in; a session cookie is not enough.
+    if (path.startsWith(OPS_AGENT_RUN_PREFIX)) {
+      if (!o.opsToken) return json(404, { error: 'NOT_FOUND' });
+      const t = authLimit.take(clientIp(req, hops, trust));
+      if (!t.ok) return tooMany(t.retryAfterSec, 'Too many requests from this address');
+      const bearer = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1] ?? '';
+      if (!bearer || !sameSecret(bearer, o.opsToken)) return json(401, { error: 'MISSING_OR_BAD_TOKEN' });
+      if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+      const id = path.slice(OPS_AGENT_RUN_PREFIX.length);
+      if (!RUN_ID.test(id)) return json(400, { error: 'INVALID_RUN_ID', detail: 'run-<32 hex>' });
+      const run = o.agent?.store.get(id) ?? null;
+      if (!run) return json(404, { error: 'NOT_FOUND' });
+      let receipt: Receipt | null = null;
+      let receiptError: string | null = null;
+      if (!run.sessionId) receiptError = 'the run has no MeterMCP session';
+      else if (!o.meterMcp) receiptError = 'MeterMCP is not configured on this server';
+      else {
+        try {
+          receipt = await o.meterMcp.receipt(run.sessionId);
+        } catch (e) {
+          receiptError = e instanceof Error ? e.message : 'the receipt could not be read';
+        }
+      }
+      return json(200, { run, receipt, receiptError });
     }
 
     // PayPal's webhook deliveries: no browser, so none of the browser rules below (Origin, session); PayPal confirms
