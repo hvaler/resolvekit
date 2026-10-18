@@ -131,6 +131,23 @@ The public demo runs the same API in **hosted mode** instead (see [Deploy on Ren
 Every case that is not bound to a sandbox dispute lives under `/demo/cases/<id>`; the server refuses anything else in
 hosted mode.
 
+**What we verified about connecting merchants (PayPal sandbox, 18/10/2026, outside the app).** A separate sandbox
+*Platform* app onboarded an independent sandbox seller through Partner Referrals (`THIRD_PARTY`,
+`READ_SELLER_DISPUTE`, `UPDATE_SELLER_DISPUTE`). PayPal's `merchant-integrations` lists the granted
+`disputes/read-seller` and `disputes/update-seller` scopes. Calling with `PayPal-Auth-Assertion` as that seller:
+
+- **Works for a payment the platform itself processed.** An Orders v2 order created by the platform with the seller
+  as payee was disputed by the buyer. The platform read the dispute and sent an approved `provide-evidence` on the
+  seller's behalf, and PayPal recorded it as `SUBMITTED_BY_SELLER`.
+- **Does not work for the seller's own invoices.** Two invoice disputes, one created after enabling Invoicing and
+  Transaction search on the app, answered `403 ACTION_NOT_ALLOWED` and were absent from the seller's dispute list.
+- **Cross-seller access is refused** by PayPal (403 / 400).
+
+So a platform can answer the disputes of payments that went through it, not every dispute of a merchant's account.
+PayPal does not document this limit: we observed it with controlled tests and asked PayPal to confirm. Until that
+is settled and built into ResolveKit, with its own isolation tests, the merchant connection stays **in validation,
+not yet available**.
+
 ## Run
 
 Requires Node.js 24+ (TypeScript runs natively, no build step).

@@ -20,6 +20,8 @@ values in this file; it is public.
 - **Your merchant space**: **in validation, not yet available**. A merchant who signs in with **Continue with PayPal**
   (a no-charge approval so ResolveKit knows which account is theirs) lands on a waiting screen: ResolveKit can't read
   their disputes or send responses on their behalf yet, and the screen offers the demo. Do not expect it to work.
+  (What we verified with PayPal's partner APIs, and its limit, is in the README under *What we verified about
+  connecting merchants*.)
 
 PayPal sandbox buyer account (to approve an agent budget): **<SANDBOX_BUYER_EMAIL>** / **<SANDBOX_BUYER_PASSWORD>**.
 
