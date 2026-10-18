@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UploadStore, type NewUpload, type UploadRecord } from '../src/uploads/store.ts';
 import { UploadError } from '../src/uploads/image.ts';
-import { PENDING_TTL_MS } from '../src/uploads/limits.ts';
+import { PDF_MAX_PAGES, PENDING_TTL_MS } from '../src/uploads/limits.ts';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'rk-uploads-'));
 const who = { id: 'u1', label: 'Owner', name: 'Ana' };
@@ -364,4 +364,112 @@ test('an invalid page number fails closed and a failed write restores the files 
   const r = pdfUpload(s);
   assert.throws(() => s.update(r.id, { pdf: undefined }, { pages: { 1: bytes(9, 2), [-1]: bytes(1) } }), (e) => e instanceof UploadError && e.code === 'STORAGE');
   assert.deepEqual([...s.pageImage(r.id, 1)!], [...bytes(5, 1)]);
+});
+
+// -- fix round 1 --------------------------------------------------------------------------------------------
+
+const MODES = () => [tmp(), null];
+const onDisk = (dir: string | null, id: string) => (dir ? readdirSync(join(dir, 'ws1', id)).sort() : null);
+
+test('uncovered page renders go with the original: confirm, leaving the live statuses', () => {
+  for (const dir of MODES()) {
+    const s = new UploadStore({ dir });
+    const r = pdfUpload(s);
+    assert.equal(s.origPage(r.id, 1)!.length, 4);
+    // confirm drops the original and the uncovered renders, keeps the sanitised pages
+    s.update(r.id, { status: 'confirmed', mime: 'application/pdf' }, { original: null, sanitised: bytes(3) });
+    assert.equal(s.origPage(r.id, 1), null);
+    assert.equal(s.pageImage(r.id, 1)!.length, 5);
+    if (dir) assert.equal(onDisk(dir, r.id)!.includes('page-1.orig.png'), false);
+    // a render written for a record that is not live is not stored
+    s.update(r.id, {}, { origPages: { 1: bytes(4) } });
+    assert.equal(s.origPage(r.id, 1), null);
+  }
+});
+
+test('files.original null alone drops the uncovered renders of a live record', () => {
+  for (const dir of MODES()) {
+    const s = new UploadStore({ dir });
+    const r = pdfUpload(s);
+    s.update(r.id, {}, { original: null });
+    assert.equal(s.original(r.id), null);
+    assert.equal(s.origPage(r.id, 1), null);
+    assert.equal(s.pageImage(r.id, 1)!.length, 5);
+  }
+});
+
+test('origPage is null unless the record is live, even if the file is still there', () => {
+  const dir = tmp();
+  const s = new UploadStore({ dir });
+  const r = pdfUpload(s);
+  s.update(r.id, { status: 'confirmed', mime: 'application/pdf' }, { original: null });
+  writeFileSync(join(dir, 'ws1', r.id, 'page-1.orig.png'), bytes(4));
+  assert.equal(s.origPage(r.id, 1), null);
+});
+
+test('sweep removes uncovered renders of a confirmed record as orphans', () => {
+  const dir = tmp();
+  const s = new UploadStore({ dir });
+  const r = pdfUpload(s);
+  s.update(r.id, { status: 'confirmed', mime: 'application/pdf' }, { original: null });
+  writeFileSync(join(dir, 'ws1', r.id, 'page-2.orig.png'), bytes(4));
+  assert.equal(new UploadStore({ dir }).sweep().orphans, 1);
+  assert.equal(readdirSync(join(dir, 'ws1', r.id)).includes('page-2.orig.png'), false);
+  assert.equal(s.sweep().orphans, 0);
+  assert.equal(s.pageImage(r.id, 1)!.length, 5);
+});
+
+test('sweep in memory mode removes leftover pdf files of settled records and uncovered renders of confirmed ones', () => {
+  let t = new Date('2026-10-18T10:00:00Z');
+  const s = new UploadStore({ dir: null, now: () => t });
+  const live = pdfUpload(s);
+  const conf = pdfUpload(s);
+  s.update(conf.id, { status: 'confirmed', mime: 'application/pdf' }, { original: null });
+  (s as any).writeFile(conf, 'page-2.orig.png', bytes(4));
+  assert.equal(s.sweep().orphans, 1);
+  assert.equal(s.origPage(conf.id, 2), null);
+  const dead = pdfUpload(s);
+  s.update(dead.id, { status: 'discarded' });
+  (s as any).writeFile(dead, 'thumb-2.png', bytes(4));
+  assert.equal(s.sweep().orphans, 1);
+  assert.equal(s.thumb(dead.id, 2), null);
+  assert.equal(s.usedBytes(), 27 + 15);
+  void live;
+  t = new Date(t.getTime() + PENDING_TTL_MS + 1000);
+  assert.equal(s.sweep().expired, 1);
+  assert.equal(s.usedBytes(), 15);
+});
+
+test('memory mode: archiveCase and expiry purge a pdf upload completely', () => {
+  let t = new Date('2026-10-18T10:00:00Z');
+  const s = new UploadStore({ dir: null, now: () => t });
+  const a = pdfUpload(s);
+  assert.deepEqual(s.archiveCase('C1', 'PP-D-1'), { archived: 1, failed: 0 });
+  gone(null, s, a.id);
+  const b = pdfUpload(s);
+  t = new Date(t.getTime() + PENDING_TTL_MS + 1000);
+  assert.equal(s.sweep().expired, 1);
+  gone(null, s, b.id);
+});
+
+test('page and thumb numbers must be integers within 1..PDF_MAX_PAGES, in readers and writers', () => {
+  const bad = [0, -1, PDF_MAX_PAGES + 1, 1.5, 1e21, NaN];
+  for (const dir of MODES()) {
+    const s = new UploadStore({ dir });
+    const r = pdfUpload(s);
+    const before = onDisk(dir, r.id);
+    const storageErr = (e: unknown) => e instanceof UploadError && e.code === 'STORAGE';
+    for (const n of bad) {
+      assert.throws(() => s.pageImage(r.id, n), storageErr, `pageImage ${n}`);
+      assert.throws(() => s.origPage(r.id, n), storageErr, `origPage ${n}`);
+      assert.throws(() => s.thumb(r.id, n), storageErr, `thumb ${n}`);
+      for (const key of ['pages', 'origPages', 'thumbs']) {
+        assert.throws(() => s.update(r.id, {}, { [key]: { [String(n)]: bytes(1) } }), storageErr, `${key} ${n}`);
+        assert.throws(() => s.update(r.id, {}, { [key]: { [String(n)]: null } }), storageErr, `${key} null ${n}`);
+      }
+    }
+    assert.deepEqual(onDisk(dir, r.id), before);
+    s.update(r.id, {}, { pages: { [PDF_MAX_PAGES]: bytes(1) } });
+    assert.equal(s.pageImage(r.id, PDF_MAX_PAGES)!.length, 1);
+  }
 });
