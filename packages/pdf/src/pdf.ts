@@ -3,6 +3,8 @@
  * A4 pages of Helvetica text. It writes real PDF 1.4 (objects, xref table with byte offsets, trailer, %%EOF) and no more than that.
  */
 
+import { deflateSync } from 'node:zlib';
+
 // Characters the fixtures use beyond ASCII, in WinAnsiEncoding (the standard Helvetica encoding).
 const WIN_ANSI: Readonly<Record<string, number>> = {
   '€': 0x80, '‚': 0x82, '„': 0x84, '…': 0x85, '•': 0x95, '–': 0x96, '—': 0x97, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94,
@@ -89,4 +91,58 @@ export function writePdf(doc: PdfDocument): Uint8Array {
   for (let id = 1; id < objects.length; id++) out += `${String(offsets[id]).padStart(10, '0')} 00000 n \n`;
   out += `trailer\n<< /Size ${objects.length} /Root 1 0 R /Info 5 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return new Uint8Array(Buffer.from(out, 'latin1'));
+}
+
+export interface ImagePage {
+  width: number;
+  height: number;
+  /** width * height * 3 bytes, 8-bit RGB, row by row. */
+  rgb: Uint8Array;
+}
+
+/** Points with at most 4 decimals, no trailing zeros. */
+function pt(n: number): string {
+  return String(Number(n.toFixed(4)));
+}
+
+/**
+ * Image-only PDF: one full-page DeviceRGB image per page (FlateDecode, level 9), sized from `dpi`. Only catalog, pages,
+ * Info (/Title, /Producer) and the page drawing; no fonts, annotations, attachments, scripts or XMP. Deterministic.
+ */
+export function writeImagePdf(o: { title: string; pages: readonly ImagePage[]; dpi: number }): Uint8Array {
+  // Objects: 1 catalog, 2 pages, 3 info, then (page, image, content) triples. Streams are binary, so offsets count bytes.
+  const pageId = (i: number) => 4 + i * 3;
+  const objects: Buffer[] = [];
+  const text = (s: string) => Buffer.from(s, 'latin1');
+  const streamObj = (dict: string, data: Uint8Array) =>
+    Buffer.concat([text(`<< ${dict ? `${dict} ` : ''}/Length ${data.length} >>\nstream\n`), data, text('\nendstream')]);
+  objects[1] = text('<< /Type /Catalog /Pages 2 0 R >>');
+  objects[2] = text(`<< /Type /Pages /Kids [${o.pages.map((_, i) => `${pageId(i)} 0 R`).join(' ')}] /Count ${o.pages.length} >>`);
+  objects[3] = text(`<< /Title (${pdfText(o.title)}) /Producer (ResolveKit) >>`);
+  o.pages.forEach((p, i) => {
+    const w = pt((p.width * 72) / o.dpi);
+    const h = pt((p.height * 72) / o.dpi);
+    const id = pageId(i);
+    objects[id] = text(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /XObject << /Im0 ${id + 1} 0 R >> >> /Contents ${id + 2} 0 R >>`);
+    objects[id + 1] = streamObj(
+      `/Type /XObject /Subtype /Image /Width ${p.width} /Height ${p.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode`,
+      deflateSync(p.rgb, { level: 9 }),
+    );
+    objects[id + 2] = streamObj('', text(`q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`));
+  });
+
+  const chunks: Buffer[] = [text('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n')];
+  let size = chunks[0]!.length;
+  const offsets: number[] = [];
+  for (let id = 1; id < objects.length; id++) {
+    offsets[id] = size;
+    const chunk = Buffer.concat([text(`${id} 0 obj\n`), objects[id]!, text('\nendobj\n')]);
+    chunks.push(chunk);
+    size += chunk.length;
+  }
+  let tail = `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id++) tail += `${String(offsets[id]).padStart(10, '0')} 00000 n \n`;
+  tail += `trailer\n<< /Size ${objects.length} /Root 1 0 R /Info 3 0 R >>\nstartxref\n${size}\n%%EOF\n`;
+  chunks.push(text(tail));
+  return new Uint8Array(Buffer.concat(chunks));
 }
