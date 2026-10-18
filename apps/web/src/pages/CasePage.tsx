@@ -3,6 +3,7 @@ import { caseView, documentsFinal } from '@resolvekit/cases';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
+import { DEMO_UPLOAD_REASON } from '../domain/copy';
 import { usePayPalSource, usePolling, useSecondsSince, useServices } from '../app/services';
 import { casesBase, draftScope } from '../domain/environment';
 import { useAnalysis } from '../app/useAnalysis';
@@ -90,7 +91,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   );
   const locked = useMemo(() => ({ live: lockedReason(demoLock, 'live-analysis'), recheck: lockedReason(demoLock, 'recheck') }), [demoLock]);
   // The server's reason when this person cannot add evidence here (signed out, another workspace).
-  const uploadRefused = lockedReason(demoLock, 'upload') ?? up.refused;
+  const uploadRefused = area === 'demo' ? DEMO_UPLOAD_REASON : (lockedReason(demoLock, 'upload') ?? up.refused);
   const uploadLocked = uploadRefused ?? (uploadsClient ? null : 'Adding evidence needs the ResolveKit server (npm run server)');
   const analysis = useAnalysis(id, input, analysisClient, locked);
   const an = analysis.state;

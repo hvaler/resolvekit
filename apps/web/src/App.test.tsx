@@ -116,7 +116,7 @@ describe('the public demo area', () => {
   it('/demo is the inbox of every fictional case', () => {
     const html = render('/demo');
     expect(html).toContain('8 disputes');
-    expect(html).not.toContain('Explore demo ·');
+    expect(html).toContain('Explore demo · fictional cases, nothing is sent');
   });
 
   it('/demo/cases/:id opens the case file on the simulator', () => {

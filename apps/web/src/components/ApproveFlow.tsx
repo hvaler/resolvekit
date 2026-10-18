@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useServices } from '../app/services';
+import { sandboxNotice } from '../domain/copy';
+import { environmentOf } from '../domain/environment';
 import { allowedActionsAfter } from '../domain/allowedActions';
 import { compareSentRecorded } from '../domain/compare';
 import { actorName, lockedReason, roleLabel } from '../domain/demoClient';
@@ -229,7 +231,7 @@ function ApproveIntent({
   selected,
   onToggle,
 }: ApproveFlowProps & { intent: SubmissionIntent; source: IntentSource; choices: readonly AttachmentChoice[]; selected: readonly string[]; onToggle: (uploadId: string) => void }) {
-  const { gatewayFor, modeOf, applySnapshot, addAudit, audit, demo, snapshots } = useServices();
+  const { gatewayFor, modeOf, applySnapshot, addAudit, audit, demo, snapshots, area } = useServices();
   const id = c.summary.id;
   // Decided once when the flow opens: a submission never switches between the simulator and real PayPal mid-way.
   const [{ gateway, mode }] = useState(() => ({ gateway: gatewayFor(id), mode: modeOf(id) }));
@@ -244,6 +246,7 @@ function ApproveIntent({
   const [checked, setChecked] = useState(false);
   // Hosted demo: real PayPal sends are the seller workspace's (the simulator is anyone's).
   const locked = mode.kind === 'paypal' ? lockedReason(demo, 'evidence') : null;
+  const sandboxWarning = sandboxNotice(environmentOf(area, demo).kind, mode.kind === 'paypal' ? mode.env : null);
   // Who approves: the signed-in person (hosted), or the local merchant.
   const approver = demo?.person && demo.workspace ? { name: demo.person.name, role: roleLabel(demo.person), workspace: demo.workspace.name } : null;
   const approverName = actorName(demo);
@@ -614,6 +617,11 @@ function ApproveIntent({
                 {approveError && (
                   <div role="alert" className="rounded-2xl border border-bad-line bg-bad-soft px-4 py-3 text-body">
                     The approval was not recorded, so nothing was sent: {approveError}
+                  </div>
+                )}
+                {sandboxWarning && (
+                  <div role="note" data-testid="sandbox-warning" className="rounded-2xl border border-info-line bg-info-soft px-4 py-3 text-body-lg leading-normal">
+                    {sandboxWarning}
                   </div>
                 )}
                 <label className="grid cursor-pointer grid-cols-[22px_minmax(0,1fr)] items-start gap-2.5 rounded-2xl border-[1.5px] border-line-2 bg-surface-2 px-4 py-3.5">

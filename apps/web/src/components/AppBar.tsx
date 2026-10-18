@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { useServices } from '../app/services';
 import { useTheme } from '../theme/ThemeProvider';
 import { LOCAL_MERCHANT, initials } from '../domain/demoClient';
-import { casesBase } from '../domain/environment';
+import { environmentLabel } from '../domain/copy';
+import { casesBase, environmentOf } from '../domain/environment';
 import { AccountMenu } from './AccountMenu';
 import { SyncIndicator } from './SyncIndicator';
 import { cx } from './ui';
@@ -122,6 +123,25 @@ export function ModeBadge({ caseId }: { caseId?: string }) {
 /** The merchant in local mode (no sign-in): the operator at this machine. Hosted mode names the signed-in person. */
 export const MERCHANT = { name: LOCAL_MERCHANT, initials: initials(LOCAL_MERCHANT) } as const;
 
+/** Which of the three environments is on screen (the local single-user mode has none). */
+export function EnvironmentIndicator() {
+  const { area, demo } = useServices();
+  const env = environmentOf(area, demo);
+  const label = environmentLabel(env, demo?.workspace?.name ?? null);
+  if (!label) return null;
+  return (
+    <span
+      data-testid="environment-indicator"
+      className={cx(
+        'truncate rounded-md border px-2 py-1 text-[11.5px] font-medium',
+        env.kind === 'demo' ? 'border-dashed border-info-line bg-info-soft text-info' : 'border-ok-line bg-ok-soft text-ok',
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
 export function AppBar({
   caseId,
   badge,
@@ -169,6 +189,7 @@ export function AppBar({
           Sync now
         </button>
       )}
+      <EnvironmentIndicator />
       <ModeBadge caseId={caseId} />
       <ThemeControls />
       <AccountMenu fallback={MERCHANT} />

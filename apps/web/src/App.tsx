@@ -8,7 +8,7 @@ import { JoinPage, MembersPage, SignInPage } from './pages/AuthPages';
 import { CasePage } from './pages/CasePage';
 import { LandingPage } from './pages/LandingPage';
 import { InboxPage } from './pages/InboxPage';
-import { CheckingScreen, WaitingScreen } from './pages/WorkspaceStates';
+import { CheckingPage, WaitingPage } from './pages/WaitingPage';
 import { processingDispute } from './fixtures';
 
 const OUTCOMES: { v: SimulatedOutcome; l: string }[] = [
@@ -101,9 +101,9 @@ function WorkspaceCases() {
     case 'redirect':
       return <Navigate to={route.to} replace />;
     case 'waiting':
-      return <WaitingScreen />;
+      return <WaitingPage />;
     case 'checking':
-      return <CheckingScreen />;
+      return <CheckingPage />;
     case 'case':
       return <CasePage />;
     default:

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useServices } from '../app/services';
 import { initials, roleLabel } from '../domain/demoClient';
+import { EnvironmentsHelp } from './EnvironmentsHelp';
 import { cx } from './ui';
 
 /** Where a signed-out visitor is sent to sign in (the page they were on comes back after a passkey sign-in). */
@@ -34,6 +35,12 @@ export function RoleChip({ role, reviewer }: { role: 'owner' | 'member'; reviewe
     </span>
   );
 }
+
+const CONNECTION_TEXT: Record<'evaluation' | 'not_connected' | 'checking', string> = {
+  evaluation: 'Sandbox evaluation: this workspace’s PayPal account is the seller on the bound sandbox disputes. Test documents go to PayPal sandbox disputes; no real money moves.',
+  not_connected: 'This workspace isn’t connected to its PayPal disputes yet. Explore demo shows the full flow on fictional cases.',
+  checking: 'Checking this workspace’s PayPal connection…',
+};
 
 const VIA: Record<string, string> = { paypal: 'PayPal', passkey: 'passkey', browser: 'this browser only' };
 
@@ -78,6 +85,11 @@ export function AccountMenu({ fallback }: { fallback: { name: string; initials: 
     );
   }
   const p = demo.person;
+  /** Sign out, then start a fresh PayPal sign-in (signOut reloads to `/`, so the page change happens first). */
+  const useAnother = async () => {
+    await signOut(false);
+    window.location.assign('/signin');
+  };
   const ws = demo.workspace;
   return (
     <div ref={box} className="relative">
@@ -104,10 +116,8 @@ export function AccountMenu({ fallback }: { fallback: { name: string; initials: 
             </span>
             {p.email && <span className="font-mono text-[11.5px] text-ink-3">{p.email}</span>}
           </div>
-          <div className={cx('rounded-lg border px-2.5 py-2 text-[12px] leading-normal', ws.connected ? 'border-ok-line bg-ok-soft text-ok' : 'border-line-2 bg-surface-2 text-ink-2')}>
-            {ws.connected
-              ? 'This workspace’s PayPal account is the seller on the connected disputes: they are live here.'
-              : 'This workspace’s PayPal account is not the seller on the connected disputes: the cases run on the simulator here.'}
+          <div className={cx('rounded-lg border px-2.5 py-2 text-[12px] leading-normal', ws.connection === 'evaluation' ? 'border-ok-line bg-ok-soft text-ok' : 'border-line-2 bg-surface-2 text-ink-2')}>
+            {CONNECTION_TEXT[ws.connection]}
           </div>
           {p.accessUntil && <span className="text-[12px] text-ink-2">Reviewer access until {dateText(p.accessUntil)}.</span>}
           <div className="flex flex-col gap-1.5">
@@ -116,12 +126,22 @@ export function AccountMenu({ fallback }: { fallback: { name: string; initials: 
                 Members and invites
               </Link>
             )}
+            <Link to="/demo" onClick={() => setOpen(false)} className="text-[12.5px] font-medium text-acc">
+              Explore demo
+            </Link>
             <button type="button" onClick={() => void signOut(false)} className="h-8 self-start rounded-md border border-line-2 bg-surface px-3 text-[12.5px] text-ink">
               Sign out
             </button>
             <button type="button" onClick={() => void signOut(true)} className="self-start border-0 bg-transparent p-0 text-[12px] text-ink-2 underline">
               Sign out of all devices
             </button>
+            <button type="button" onClick={() => void useAnother()} className="self-start border-0 bg-transparent p-0 text-[12px] text-ink-2 underline">
+              Use another PayPal account
+            </button>
+            <details className="text-[12px] text-ink-2">
+              <summary className="cursor-pointer">The three environments</summary>
+              <EnvironmentsHelp className="m-0 mt-1.5 flex list-none flex-col gap-1.5 p-0 text-[12px] leading-normal text-ink-2" />
+            </details>
           </div>
         </div>
       )}
