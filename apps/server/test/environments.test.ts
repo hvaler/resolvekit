@@ -10,6 +10,7 @@ import { caseInput, standardCase } from '@resolvekit/cases';
 import { PayPalClient } from '@resolvekit/paypal';
 import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
 import { SYNTHETIC_HEADER } from '../src/documents.ts';
+import { writePdf } from '@resolvekit/pdf';
 import { AnalystService } from '../src/analysis.ts';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
 import { createHostedApp } from '../src/hosted.ts';
@@ -30,8 +31,10 @@ function stubs(store = new MemoryAnalysisStore()) {
     const u = new URL(String(url));
     calls.push(`${init.method ?? 'GET'} ${u.pathname}`);
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
-    if (u.pathname.endsWith('/provide-evidence')) sent.push(init.body as FormData);
-    if (u.pathname.endsWith('/provide-evidence')) return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (u.pathname.endsWith('/provide-evidence')) {
+      sent.push(init.body as FormData);
+      return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
     return new Response(JSON.stringify(standardDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   const fm = fakeModel(standardScript);
@@ -127,6 +130,32 @@ test('local mode: an unbound case still has intents and analysis', async () => {
   assert.equal(a.status, 200);
 });
 
+/**
+ * Page by page: every `/Type /Page` object's content stream must carry the header. Assumes the writer's content
+ * streams are plain text (no filter), so the header is readable in the bytes; a `/FlateDecode` fails loudly. Returns
+ * the page count.
+ */
+function headerPerPage(name: string, bytes: Uint8Array): number {
+  const text = new TextDecoder('latin1').decode(bytes);
+  assert.ok(!text.includes('/FlateDecode'), `${name}: compressed content streams; inflate them before scanning`);
+  const objs = new Map<number, string>();
+  for (const m of text.matchAll(/(\d+) 0 obj\n([\s\S]*?)\nendobj/g)) objs.set(Number(m[1]), m[2]!);
+  const pages = [...objs.values()].filter((o) => /\/Type \/Page(?![s\w])/.test(o));
+  assert.ok(pages.length > 0, `${name}: has pages`);
+  pages.forEach((p, i) => {
+    const ref = /\/Contents (\d+) 0 R/.exec(p);
+    assert.ok(ref, `${name}: page ${i + 1} has a content stream`);
+    assert.ok(objs.get(Number(ref[1]))!.includes(`(${SYNTHETIC_HEADER})`), `${name}: header on page ${i + 1} of ${pages.length}`);
+  });
+  return pages.length;
+}
+
+test('the page-by-page check sees a header missing from a later page of a multi-page PDF', () => {
+  const lines = Array.from({ length: 130 }, (_, i) => `line ${i}`);
+  assert.equal(headerPerPage('with header', writePdf({ header: SYNTHETIC_HEADER, title: 't', lines })), 3);
+  assert.throws(() => headerPerPage('no header', writePdf({ title: 't', lines })), /header on page 1 of 3/);
+});
+
 test('every PDF composed for a bound standard case says SYNTHETIC TEST DOCUMENT on every page', async () => {
   const input: AnalysisInput = caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
   const store = new MemoryAnalysisStore();
@@ -143,10 +172,8 @@ test('every PDF composed for a bound standard case says SYNTHETIC TEST DOCUMENT 
   assert.equal(h.sent.length, 1);
   const pdfs = h.sent[0]!.getAll('evidence-file').filter((f): f is File => typeof f !== 'string' && f.type === 'application/pdf');
   assert.ok(pdfs.length > 0, 'the intent sends at least one PDF');
-  for (const f of pdfs) {
-    const text = new TextDecoder('latin1').decode(await f.arrayBuffer());
-    const pages = (text.match(/\/Type \/Page(?![s\w])/g) ?? []).length;
-    assert.ok(pages > 0, `${f.name}: has pages`);
-    assert.equal(text.split(SYNTHETIC_HEADER).length - 1, pages, `${f.name}: header on every page`);
-  }
+  const counts: number[] = [];
+  for (const f of pdfs) counts.push(headerPerPage(f.name, new Uint8Array(await f.arrayBuffer())));
+  // Today's standard-case PDFs are one page each; the multi-page case is covered by the test above (same writePdf).
+  assert.ok(counts.length >= 1);
 });
