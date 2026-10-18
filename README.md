@@ -202,16 +202,21 @@ rules as every other document.
 - **Nothing leaves the server before the merchant confirms it.** Text is read on the server itself (local OCR for
   images); no upload, byte or text, goes to Google, Groq or PayPal until it is covered where needed, read again and
   confirmed. Logs and audit details carry ids and file names (so do not name a file with sensitive text), never upload text or bytes.
+  The file name itself never leaves the server: PayPal receives `E7-upload.png` / `E8-pasted.pdf`, and the model
+  reads the titles "Uploaded screenshot" / "Pasted text".
 - **What PayPal receives is the sanitised file**: the merchant's covered areas are burned into the PNG (the original
   is dropped on confirmation), and pasted text is sent as a PDF made by ResolveKit with the removed passages marked.
   A line the merchant corrected after the OCR is kept as their reading, shown as "corrected by <name>", and a
   sentence that depends on it needs the person's explicit confirmation before it can be sent.
-- **Limits**: 5 MB and 4096 px (16 MP) per image, 20,000 characters of pasted text, 10 uploads per case, 5 redaction
-  passes per upload, 40 uploads a day on the hosted demo, 300 MB of storage.
+- **Limits**: 5 MB and 3840 x 2160 pixels (8,294,400, about 8 MP) per image, decoded one image at a time; 10 MB per
+  stored (sanitised) file; 20,000 characters of pasted text, Latin-1 only (the PDF sent to PayPal cannot show other
+  characters, so text with one is refused naming it); 10 uploads per case, 5 covering passes per upload, 40 uploads a
+  day on the hosted demo, 300 MB of storage.
 - **Pending uploads last 24 hours**: one that is not confirmed or discarded in that time is discarded the first
   time it is met. **Deleting an upload** (owners and members) removes its files and purges the stored analyses that
   quoted it; the audit trail keeps the event, not the text. Uploads belong to the workspace and to the dispute that
-  was active when they were added, and are archived when the case moves to its next dispute.
+  was active when they were added, and are archived when the case moves to its next dispute (the record stays for
+  the audit; files and text are removed).
 
 How well the analyst uses them is measured in [`docs/evals.md`](docs/evals.md) (case `upl-carrier-evidence`).
 

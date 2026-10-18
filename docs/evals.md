@@ -125,7 +125,8 @@ Raw results: `packages/analyst/evals/results/groq-rk-analyst-2026-10-09.7.json`.
 The question this case answers, because in one live browser run the analyst did not cite E7 (it repeated a demo
 document). The case gives the analyst two uploaded documents built exactly as the server builds them
 (`uploadDocuments`: tag `UPL`, type "Merchant upload · image" / "· pasted text", source "Uploaded by …", fragments
-`E7.l<n>`, one line marked `corrected`) and **three required facts that only an upload states**: the delivery date
+`E7.l<n>`, one line marked `corrected`; the titles are file names, as the server set them when this was measured: it
+now titles uploads "Uploaded screenshot" / "Pasted text") and **three required facts that only an upload states**: the delivery date
 and the delivery address (E7) and the signature "signed for by M. K." (E8). Three measures, kept apart:
 
 1. **Verbatim validity**: citations into E7/E8 that are exact substrings of their document.
