@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { UploadRequestError, pendingLine, type ReadAnswer, type UploadRecordView, type UploadsClient } from '../domain/uploads';
+import { thumbsReady } from '../domain/pdfReview';
 import { PdfProgress } from './PdfProgress';
 import { Button, MiniButton, Spinner } from './ui';
 
 const message = (e: unknown) => (e instanceof UploadRequestError || e instanceof Error ? e.message : String(e));
 
-const isPdf = (f: File) => f.type === 'application/pdf' || (!f.type && /.pdf$/i.test(f.name));
+const isPdf = (f: File) => f.type === 'application/pdf' || (!f.type && /\.pdf$/i.test(f.name));
 
 /** Choose an image (PNG, JPEG) or a PDF, or paste text; the server reads it and the review opens (a PDF: its pages are chosen and read first). */
 export function AddEvidencePanel({ client, onAdded, onPdf, onClose }: { client: UploadsClient; onAdded: (a: ReadAnswer, pastedText: string | null) => void; onPdf: (u: UploadRecordView) => void; onClose: () => void }) {
@@ -112,8 +113,12 @@ export function PendingUploads({
           <li key={u.id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-2xl border border-dashed border-warn-line bg-warn-soft px-4 py-2.5">
             <span className="rounded-sm bg-surface px-1.5 py-1 font-mono text-[11px] font-semibold leading-none text-warn">New · pending</span>
             <span className="min-w-[10rem] flex-1 text-[13.5px] font-semibold">{u.name}</span>
-            {job && job.state !== 'reviewing' && job.state !== 'selecting' ? <PdfProgress job={job} /> : <span className="text-[12px] text-warn">Not used yet: review it first</span>}
-            {job?.state === 'selecting' && job.page === undefined && <MiniButton onClick={() => onChoosePages(u)}>Choose pages</MiniButton>}
+            {job && job.state !== 'reviewing' && !thumbsReady(job) ? <PdfProgress job={job} /> : <span className="text-[12px] text-warn">Not used yet: review it first</span>}
+            {job?.state === 'selecting' && (
+              <MiniButton disabled={!thumbsReady(job)} onClick={() => onChoosePages(u)}>
+                Choose pages
+              </MiniButton>
+            )}
             {(!job || job.state === 'reviewing') && <MiniButton onClick={() => onReview(u)}>Review</MiniButton>}
             <MiniButton onClick={() => onDiscard(u)}>Discard</MiniButton>
           </li>

@@ -8,7 +8,6 @@ import { usePayPalSource, usePolling, useSecondsSince, useServices } from '../ap
 import { approvePath, approvePattern, casePath, casesBase, draftScope } from '../domain/environment';
 import { useAnalysis } from '../app/useAnalysis';
 import { useCaseDraft } from '../app/useCaseDraft';
-import { usePdfJobs } from '../app/usePdfJobs';
 import { useUploads } from '../app/useUploads';
 import { AddEvidencePanel, PendingUploads } from '../components/AddEvidence';
 import { AnalysisBar, analysisLabel } from '../components/AnalysisBar';
@@ -23,6 +22,7 @@ import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
 import { UploadReview } from '../components/UploadReview';
 import { PdfReviewPlaceholder } from '../components/PdfProgress';
+import { STUCK_COPY, thumbsReady } from '../domain/pdfReview';
 import { PdfSelect } from '../components/PdfSelect';
 import { MiniButton } from '../components/ui';
 import { actorName, lockedReason } from '../domain/demoClient';
@@ -118,7 +118,6 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const [choosing, setChoosing] = useState<string | null>(null);
   const [pdfReview, setPdfReview] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  usePdfJobs(uploadsClient, up.uploads, up.put);
   const uploadAction = async (f: () => Promise<void>) => {
     setUploadError(null);
     try {
@@ -284,8 +283,13 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
               onChoosePages={(u) => setChoosing(u.id)}
               onDiscard={discardUpload}
             />
+            {up.stuck && (
+              <p role="alert" data-testid="pdf-stuck" className="m-0 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
+                {STUCK_COPY}
+              </p>
+            )}
             {pendingUps
-              .filter((u) => u.id === choosing && !u.restricted && u.pdf?.job.state === 'selecting')
+              .filter((u) => u.id === choosing && !u.restricted && u.pdf && thumbsReady(u.pdf.job))
               .map((u) => (
                 <PdfSelect
                   key={u.id}

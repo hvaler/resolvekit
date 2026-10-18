@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PDF_MAX_SELECTED, SELECTION_WARNING, canPick, jobLabel, jobSettled, pickedLabel, pollDelay, selectionCopy, togglePick } from './pdfReview';
+import { PDF_MAX_SELECTED, SELECTION_WARNING, STUCK_COPY, STUCK_MS, canPick, initialPoll, jobLabel, jobSettled, pickablePages, pickedLabel, pollDelay, pollStep, runningJobs, selectionCopy, thumbsReady, togglePick } from './pdfReview';
 
 describe('choosing the pages of a long PDF', () => {
   it('says how many pages the document has and how many can be chosen (verbatim)', () => {
@@ -46,5 +46,82 @@ describe('following a PDF job', () => {
 
   it('backs off from a second to five seconds and keeps polling', () => {
     expect([0, 1, 2, 3, 4, 5, 50].map(pollDelay)).toEqual([1000, 1500, 2000, 3000, 5000, 5000, 5000]);
+  });
+});
+
+describe('long PDFs wait for their thumbnails', () => {
+  it('opens the page step only when every thumbnail exists, and lets no page be picked before', () => {
+    expect(thumbsReady({ state: 'selecting', page: 0, of: 12 })).toBe(false);
+    expect(thumbsReady({ state: 'selecting', page: 7, of: 12 })).toBe(false);
+    expect(thumbsReady({ state: 'selecting' })).toBe(true);
+    expect(thumbsReady({ state: 'reading', page: 1, of: 2 })).toBe(false);
+    expect(pickablePages({ state: 'selecting', page: 7, of: 12 }, 12)).toEqual([]);
+    expect(pickablePages({ state: 'selecting' }, 4)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('labels the wait, and a settled selection as waiting for the person', () => {
+    expect(jobLabel({ state: 'selecting', page: 7, of: 12 })).toBe('Preparing thumbnails (7 of 12)…');
+    expect(jobLabel({ state: 'selecting', page: 0, of: 12 })).toBe('Preparing pages…');
+    expect(jobLabel({ state: 'selecting' })).toBe('Waiting for the pages to be chosen');
+  });
+});
+
+describe('polling a running job (one timer, with backoff)', () => {
+  const T0 = 1_000_000;
+  const job = (page: number) => ({ u1: `reading:${page}/3` });
+
+  it('asks again soon while the job moves, and stops by itself when nothing runs', () => {
+    let s = pollStep(initialPoll(), { type: 'ok', jobs: job(1), now: T0 });
+    expect(s.delay).toBe(1000);
+    s = pollStep(s.state, { type: 'ok', jobs: job(2), now: T0 + 1000 });
+    expect(s.delay).toBe(1000);
+    s = pollStep(s.state, { type: 'ok', jobs: {}, now: T0 + 2000 });
+    expect(s).toMatchObject({ delay: null, stuck: false });
+  });
+
+  it('backs off while the job does not move, and a finished upload does not restart the backoff', () => {
+    let s = pollStep(initialPoll(), { type: 'ok', jobs: { a: 'reading:1/3', b: 'reading:1/3' }, now: T0 });
+    const delays: (number | null)[] = [];
+    for (let i = 1; i <= 5; i++) {
+      s = pollStep(s.state, { type: 'ok', jobs: { a: 'reading:1/3', b: 'reading:1/3' }, now: T0 + i * 1000 });
+      delays.push(s.delay);
+    }
+    expect(delays).toEqual([1500, 2000, 3000, 5000, 5000]);
+    // b finished: a is unchanged, so the schedule goes on (not back to 1 s).
+    expect(pollStep(s.state, { type: 'ok', jobs: { a: 'reading:1/3' }, now: T0 + 7000 }).delay).toBe(5000);
+    // a moved: back to the start.
+    expect(pollStep(s.state, { type: 'ok', jobs: { a: 'reading:2/3', b: 'reading:1/3' }, now: T0 + 7000 }).delay).toBe(1000);
+  });
+
+  it('gives up on a job that makes no progress for 5 minutes', () => {
+    let s = pollStep(initialPoll(), { type: 'ok', jobs: job(1), now: T0 });
+    s = pollStep(s.state, { type: 'ok', jobs: job(1), now: T0 + STUCK_MS - 1 });
+    expect(s.stuck).toBe(false);
+    s = pollStep(s.state, { type: 'ok', jobs: job(1), now: T0 + STUCK_MS });
+    expect(s).toMatchObject({ delay: null, stuck: true });
+    expect(STUCK_COPY).toBe('Reading is taking longer than expected. Reload the page to check again.');
+  });
+
+  it('retries a failed request with phase 1’s delays, then gives up, and never on 401 or 403', () => {
+    let s = pollStep(initialPoll(), { type: 'ok', jobs: job(1), now: T0 });
+    const delays: (number | null)[] = [];
+    for (let i = 0; i < 8; i++) {
+      s = pollStep(s.state, { type: 'error', status: 502, now: T0 + i });
+      delays.push(s.delay);
+    }
+    expect(delays).toEqual([2000, 5000, 10000, 20000, 30000, 30000, 30000, null]);
+    expect(pollStep(initialPoll(), { type: 'error', status: 401, now: T0 })).toMatchObject({ delay: null });
+    expect(pollStep(initialPoll(), { type: 'error', status: 403, now: T0 })).toMatchObject({ delay: null });
+  });
+
+  it('a good answer after errors starts the error backoff over', () => {
+    let s = pollStep(initialPoll(), { type: 'error', status: 0, now: T0 });
+    s = pollStep(s.state, { type: 'ok', jobs: job(1), now: T0 + 1 });
+    expect(pollStep(s.state, { type: 'error', status: 0, now: T0 + 2 }).delay).toBe(2000);
+  });
+
+  it('runningJobs lists only the uploads whose job is still moving', () => {
+    const up = (id: string, job: { state: 'reading' | 'reviewing' | 'selecting'; page?: number; of?: number }) => ({ id, pdf: { pageCount: 3, selected: null, job } }) as never;
+    expect(runningJobs([up('a', { state: 'reading', page: 2, of: 3 }), up('b', { state: 'reviewing' }), up('c', { state: 'selecting' }), { id: 'd' } as never])).toEqual({ a: 'reading:2/3' });
   });
 });

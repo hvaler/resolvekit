@@ -1,9 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PDF_MAX_SELECTED, SELECTION_WARNING, canPick, pickedLabel, selectionCopy, togglePick } from '../domain/pdfReview';
 import { UploadRequestError, type UploadRecordView, type UploadsClient } from '../domain/uploads';
 import { Button, cx } from './ui';
 
 const message = (e: unknown) => (e instanceof UploadRequestError || e instanceof Error ? e.message : String(e));
+
+/** A thumbnail that is asked for again (up to 3 times, 1.5 s apart) when it fails, and shows a placeholder after that, never a broken image. */
+function Thumb({ src }: { src: string }) {
+  const [tries, setTries] = useState(0);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!failed || tries >= 3) return;
+    const t = window.setTimeout(() => {
+      setTries((n) => n + 1);
+      setFailed(false);
+    }, 1_500);
+    return () => window.clearTimeout(t);
+  }, [failed, tries]);
+  if (failed && tries >= 3) return <span className="flex h-[130px] w-full items-center justify-center rounded-sm bg-bg text-[11px] text-ink-3">No preview</span>;
+  return <img key={tries} src={`${src}${tries ? `?retry=${tries}` : ''}`} alt="" loading="lazy" onError={() => setFailed(true)} className="h-[130px] w-full rounded-sm bg-bg object-contain" />;
+}
 
 /**
  * A PDF of more than 5 pages waits here for the pages to add: its thumbnails (labelled with their number in the
@@ -51,7 +67,7 @@ export function PdfSelect({ upload, client, onSelected, onClose }: { upload: Upl
                 onClick={() => setPicked((p) => togglePick(p, n))}
                 className={cx('flex w-[104px] flex-col items-center gap-1 rounded-lg border bg-surface p-1.5 text-[11.5px] disabled:cursor-not-allowed disabled:opacity-50', on ? 'border-acc bg-acc-soft' : 'border-line-2')}
               >
-                <img src={client.thumbUrl(upload.id, n)} alt="" loading="lazy" className="h-[130px] w-full rounded-sm bg-bg object-contain" />
+                <Thumb src={client.thumbUrl(upload.id, n)} />
                 <span className="font-mono">{on ? `✓ ${n}` : n}</span>
               </button>
             </li>
