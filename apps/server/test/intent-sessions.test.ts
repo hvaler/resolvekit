@@ -104,8 +104,9 @@ test('hosted: signed out, intents cannot be composed, read, approved, cancelled 
     await send(app, i, null),
     await app(req(`${base}/audit`)),
   ]) {
-    assert.equal(r.status, 401);
-    assert.equal(((await r.json()) as { error: string }).error, 'SIGN_IN_REQUIRED');
+    // three-environments plan, task 2: signed out, the case does not exist on the server
+    assert.equal(r.status, 404);
+    assert.equal(((await r.json()) as { error: string }).error, 'UNKNOWN_CASE');
   }
   assert.equal(pp.sends.length, 0);
 });
@@ -132,7 +133,8 @@ test('hosted: another person, a teammate included, cannot read, approve, cancel 
   const shared = await trail(theirs);
   assert.deepEqual(shared.map((e) => e.kind), ['intent_created', 'intent_approved', 'send_started', 'sent']);
   assert.match(shared[1]!.actor, /^Member \d+ \(Member, reviewer · browser\) p_/);
-  assert.equal((await trail(people.outsider())).length, 0);
+  // three-environments plan, task 2: another workspace gets 404 UNKNOWN_CASE (no events key) instead of an empty trail
+  assert.equal((await app(req(`${base}/audit`, { cookie: people.outsider() }))).status, 404);
 });
 
 test('hosted: another session’s new intent or sentence edit does not invalidate mine', async () => {

@@ -15,6 +15,7 @@ import { caseInput, standardCase } from '@resolvekit/cases';
 import { AccountStore, SESSION_COOKIE } from '../src/accounts.ts';
 import type { WebAuthn } from '../src/auth.ts';
 import { createHostedApp } from '../src/hosted.ts';
+import { IntentStore } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
 import { RESOLVED, SELLER_ID, STD_CAPTURE, TEST_SECRET, analystFor, standardDispute } from './kit.ts';
 
@@ -91,7 +92,7 @@ function fakeWebAuthn() {
 /** What a browser sends back for a ceremony: the challenge inside clientDataJSON. */
 const ceremony = (challenge: string, id = 'cred-1') => ({ id, rawId: id, type: 'public-key', response: { clientDataJSON: Buffer.from(JSON.stringify({ challenge, type: 'webauthn.get', origin: ORIGIN })).toString('base64url') } });
 
-async function setup(o: { accounts?: AccountStore; now?: () => Date; seller?: { id: string } } = {}) {
+async function setup(o: { accounts?: AccountStore; now?: () => Date; seller?: { id: string }; intents?: IntentStore } = {}) {
   const pp = sellerPayPal(o.seller ? { seller: o.seller } : {});
   const platform = platformPayPal();
   const authn = fakeWebAuthn();
@@ -115,6 +116,7 @@ async function setup(o: { accounts?: AccountStore; now?: () => Date; seller?: { 
     hosts: [HOST],
     https: true,
     ...(o.now ? { now: o.now } : {}),
+    ...(o.intents ? { intents: o.intents } : {}),
   });
   return { app, pp, platform, authn, accounts, lines };
 }
@@ -387,7 +389,7 @@ test('sessions: revoking a member, signing out everywhere and the end of reviewe
   const id = danaId.members.find((m) => m.name === 'Dana Ruiz')!.id;
   assert.equal((await s.app(req(`/api/workspace/members/${id}/revoke`, { body: {}, cookie: owner }))).status, 200);
   assert.equal((await me(s.app, dana)).signedIn, false);
-  assert.equal((await s.app(req(`/api/disputes/${CASE}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED }, cookie: dana }))).status, 401);
+  assert.equal((await s.app(req(`/api/disputes/${CASE}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED }, cookie: dana }))).status, 404); // three-environments plan, task 2: a signed-out visitor does not see the case at all
   // The Owner cannot be revoked.
   const ownerId = s.accounts.members(s.accounts.person(owner.split('.')[1]!)!.workspaceId).find((p) => p.role === 'owner')!.id;
   assert.equal((await s.app(req(`/api/workspace/members/${ownerId}/revoke`, { body: {}, cookie: owner }))).status, 404);
@@ -420,7 +422,8 @@ test('sessions: a forged, tampered or foreign-secret session cookie is nobody', 
 // ------------------------------------------------------------------------------------------------ the seller check
 
 test('seller: only the seller’s workspace answers the dispute; if the dispute’s seller is someone else at send time, nothing is sent', async () => {
-  const s = await setup();
+  const intents = new IntentStore();
+  const s = await setup({ intents });
   const owner = await paypalSignIn(s, SELLER_ID);
   const r = await s.app(req(`/api/disputes/${CASE}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED }, cookie: owner }));
   const i = (await r.json()) as { id: string; contentHash: string };
@@ -432,7 +435,8 @@ test('seller: only the seller’s workspace answers the dispute; if the dispute�
   assert.equal(send.status, 403);
   assert.equal(((await send.json()) as { error: string }).error, 'NOT_THE_SELLER');
   assert.equal(s.pp.sends.length, 0);
-  const trail = ((await (await s.app(req(`/api/disputes/${CASE}/audit`, { cookie: owner }))).json()) as { events: Array<{ kind: string; detail?: string }> }).events;
+  // three-environments plan, task 2: while PayPal names another seller the workspace no longer sees the case over HTTP; the trail is read from the store.
+  const trail = intents.events(CASE);
   assert.equal(trail.at(-1)!.kind, 'send_refused');
   assert.match(trail.at(-1)!.detail!, /not the seller/);
 });

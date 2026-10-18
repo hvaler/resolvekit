@@ -136,8 +136,8 @@ test('an UPDATED for the bound case: the workspace’s audit trail records it, a
   assert.equal(e!.actor, 'PayPal (webhook)');
   assert.match(e!.detail!, /CUSTOMER\.DISPUTE\.UPDATED · dispute PP-R-REAL-1 is /);
   // Another workspace's trail does not show it.
-  const other = (await (await app(get(`/api/disputes/${CASE}/audit`, people.outsider()))).json()) as { events: Array<{ kind: string }> };
-  assert.ok(!other.events.some((x) => x.kind === 'paypal_notified'));
+  // three-environments plan, task 2: another workspace does not see the case at all
+  assert.equal((await app(get(`/api/disputes/${CASE}/audit`, people.outsider()))).status, 404);
   assert.ok(pp.calls.filter((c) => c === `GET /v1/customer/disputes/${BOUND}`).length > readsBefore);
 });
 

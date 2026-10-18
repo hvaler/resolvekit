@@ -151,7 +151,7 @@ async function trackingRect(): Promise<Rect> {
   return trackingBox;
 }
 
-test("a reviewer of the seller's workspace uploads a PNG; another workspace and a signed-out visitor are refused (403/401)", TIMEOUT, async () => {
+test("a reviewer of the seller's workspace uploads a PNG; another workspace and a signed-out visitor get 404 UNKNOWN_CASE", TIMEOUT, async () => {
   // PayPal reads are limited to 1 per IP: the uploads routes must not count as PayPal reads.
   const { app, people } = setup({ limits: { paypalReads: { limit: 1, windowMs: 600_000 } } });
   const reviewer = people.member('Rita Reviewer');
@@ -169,12 +169,13 @@ test("a reviewer of the seller's workspace uploads a PNG; another workspace and 
     assert.deepEqual(list.body.uploads!.map((u) => u.id), [r.body.upload.id]);
   }
   const outsider = people.outsider();
-  assert.equal((await uploadPng(app, outsider)).status, 403);
-  assert.equal((await uploadPng(app, '')).status, 401);
-  assert.equal((await call(app, P, { cookie: outsider })).status, 403);
-  assert.equal((await call(app, P)).status, 401);
-  assert.equal((await call(app, `${P}/${r.body.upload.id}/image?v=original`, { cookie: outsider })).status, 403);
-  assert.equal((await call(app, `${P}/${r.body.upload.id}/discard`, { body: {}, cookie: outsider })).status, 403);
+  // three-environments plan, task 2: outside the seller's workspace the case does not exist (404, was 403/401)
+  assert.equal((await uploadPng(app, outsider)).status, 404);
+  assert.equal((await uploadPng(app, '')).status, 404);
+  assert.equal((await call(app, P, { cookie: outsider })).status, 404);
+  assert.equal((await call(app, P)).status, 404);
+  assert.equal((await call(app, `${P}/${r.body.upload.id}/image?v=original`, { cookie: outsider })).status, 404);
+  assert.equal((await call(app, `${P}/${r.body.upload.id}/discard`, { body: {}, cookie: outsider })).status, 404);
   assert.equal((await call(app, `/api/cases/NOPE-1/uploads`, { cookie: reviewer })).status, 404);
   // The original is shown back to the person who can edit it.
   const img = await app(req(`${P}/${r.body.upload.id}/image?v=original`, { cookie: reviewer }));
@@ -788,12 +789,10 @@ test("the analysis input includes the workspace's confirmed uploads of the activ
   assert.match(r.body.key, /^[0-9a-f]{64}$/);
   assert.deepEqual(store.get(t.body.upload.id)!.analysisKeys, [r.body.key]);
 
-  // The same case for someone outside the workspace (and signed out): no uploads, and a different input.
+  // The same case for someone outside the workspace (and signed out): not found.
   for (const c of [people.outsider(), undefined]) {
-    const o = await analyse(c);
-    assert.ok(o.body.input, JSON.stringify(o.body).slice(0, 300));
-    assert.ok(!o.body.input.documents.some((d) => d.tag === 'UPL'));
-    assert.notEqual(o.body.key, r.body.key);
+    // three-environments plan, task 2: no analysis at all outside the seller's workspace (was: a simulated one without uploads)
+    assert.equal((await analyse(c)).status, 404);
   }
   // The seller's workspace again: its uploads are still there (the pin never carries one workspace's uploads).
   assert.equal((await analyse(cookie)).body.key, r.body.key);

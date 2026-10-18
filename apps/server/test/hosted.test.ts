@@ -185,10 +185,10 @@ test('open: health and stored analyses need no sign-in; the real dispute is list
     assert.deepEqual(await health(cookie), []);
     const d = await app(req(`/api/disputes/${CASE}`, cookie ? { cookie } : {}));
     assert.equal(d.status, 404);
-    assert.equal(((await d.json()) as { error: string }).error, 'NOT_BOUND');
+    assert.equal(((await d.json()) as { error: string }).error, 'UNKNOWN_CASE'); // three-environments plan, task 2: no simulated case on the server
     const a = await app(req(analysisPath, { body: {}, ...(cookie ? { cookie } : {}) }));
-    assert.equal(a.status, 200);
-    assert.equal(((await a.json()) as { input: AnalysisInput }).input.dispute.id === caseInput(standardCase, { kind: 'simulated' }).dispute.id, true);
+    assert.equal(a.status, 404);
+    assert.equal(((await a.json()) as { error: string }).error, 'UNKNOWN_CASE');
   }
   // The seller's people: the real dispute.
   const member = people.member();
@@ -209,36 +209,25 @@ test('protected: evidence send, live re-run, cache-miss analysis and re-check ne
   const sim = await goldenFor(CASE, caseInput(standardCase, { kind: 'simulated' }));
   store.cached.set(sim.key, sim);
   const { app, pp, model, counters, people } = setup({ store });
-  // Composing an intent needs a signed-in person; approving or sending without one is refused.
-  assert.equal((await app(req(intentPath, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED } }))).status, 401);
+  // three-environments plan, task 2: signed out (or another workspace) the case does not exist on the server: 404
+  // UNKNOWN_CASE for every route, before any sign-in check, model call or send.
+  const unknownCase = async (r: Response) => {
+    assert.equal(r.status, 404);
+    assert.equal(((await r.json()) as { error: string }).error, 'UNKNOWN_CASE');
+  };
+  await unknownCase(await app(req(intentPath, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED } })));
   const { cookie } = await unlock(app);
   const i = await intentFor(app, cookie!, false);
-  const send2 = await app(req(evidencePath, { body: { intentId: i.id } }));
-  assert.equal(send2.status, 401);
-  const send = await app(req(`${intentPath}/${i.id}/approve`, { body: { contentHash: i.contentHash } }));
-  assert.equal(send.status, 401);
-  const sb = (await send.json()) as { error: string; detail: string };
-  assert.equal(sb.error, 'SIGN_IN_REQUIRED');
-  assert.match(sb.detail, /invite link/);
-  assert.equal((await app(req(`${analysisPath}?refresh=1`, { body: {} }))).status, 401);
-  assert.equal((await app(req(`${analysisPath}/verify`, { body: { text: 'The parcel was delivered.' } }))).status, 401);
-  // Another PayPal account's workspace is signed in, but the costly actions are the seller workspace's.
+  await unknownCase(await app(req(evidencePath, { body: { intentId: i.id } })));
+  await unknownCase(await app(req(`${intentPath}/${i.id}/approve`, { body: { contentHash: i.contentHash } })));
+  await unknownCase(await app(req(`${analysisPath}?refresh=1`, { body: {} })));
+  await unknownCase(await app(req(`${analysisPath}/verify`, { body: { text: 'The parcel was delivered.' } })));
   const outsider = people.outsider();
-  for (const r of [
-    await app(req(`${analysisPath}?refresh=1`, { body: {}, cookie: outsider })),
-    await app(req(`${analysisPath}/verify`, { body: { text: 'The parcel was delivered.' }, cookie: outsider })),
-  ]) {
-    assert.equal(r.status, 403);
-    const b = (await r.json()) as { error: string; detail: string };
-    assert.equal(b.error, 'SELLER_WORKSPACE_ONLY');
-  }
-  // …and the real dispute is not theirs: for them the case runs on the simulator.
-  assert.equal((await app(req(evidencePath, { body: { intentId: i.id }, cookie: outsider }))).status, 404);
-  // A plain POST whose documents miss the cache would run the model: gated too.
+  await unknownCase(await app(req(`${analysisPath}?refresh=1`, { body: {}, cookie: outsider })));
+  await unknownCase(await app(req(`${analysisPath}/verify`, { body: { text: 'The parcel was delivered.' }, cookie: outsider })));
+  await unknownCase(await app(req(evidencePath, { body: { intentId: i.id }, cookie: outsider })));
   const empty = setup();
-  const miss = await empty.app(req(analysisPath, { body: {} }));
-  assert.equal(miss.status, 401);
-  assert.equal(((await miss.json()) as { error: string }).error, 'SIGN_IN_REQUIRED');
+  await unknownCase(await empty.app(req(analysisPath, { body: {} })));
   assert.equal(empty.model.requests.length, 0);
   // Progress never starts work.
   assert.equal((await app(req(`${analysisPath}/progress?key=${'0'.repeat(64)}`))).status, 404);

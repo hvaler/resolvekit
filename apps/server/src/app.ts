@@ -362,6 +362,13 @@ export function createApi(opts: ApiOptions): Api {
   /** Whether this request sees the real PayPal disputes (hosted: the seller's workspace only; local: always). */
   const viewerLive = async (req?: Request): Promise<boolean> => !req || !opts.gate?.live || (await opts.gate.live(req));
 
+  /**
+   * Whether this request may address the case at all. Local: any fixture case. Hosted: only a bound case, and only
+   * for the seller's workspace; everything else is UNKNOWN_CASE (three-environments plan, task 2).
+   */
+  const caseVisible = async (req: Request, caseId: string): Promise<boolean> =>
+    Object.hasOwn(CASE_FILES, caseId) && (!opts.gate || (!!bindingOf(caseId) && (await viewerLive(req))));
+
   /** The seller's PayPal merchant id on each bound dispute, from the last read of it. */
   const sellers = new Map<string, { dispute: string; merchant: string | null; name: string | null }>();
   const noteSeller = (caseId: string, d: Dispute) => {
@@ -765,7 +772,7 @@ export function createApi(opts: ApiOptions): Api {
    * POST /api/cases/:id/analysis/verify {input, text} → the verifier's verdict on an edited sentence
    */
   const analysisRoute = async (req: Request, url: URL, caseId: string, sub: string): Promise<Response> => {
-    if (!CASE_FILES[caseId]) return json(404, { error: 'UNKNOWN_CASE' });
+    if (!(await caseVisible(req, caseId))) return json(404, { error: 'UNKNOWN_CASE' });
     const analyst = opts.analyst;
     if (!analyst) return json(503, { error: 'ANALYST_UNAVAILABLE', detail: 'The analyst is not set up on this server' });
     if (sub === '/progress') {
@@ -1095,6 +1102,7 @@ export function createApi(opts: ApiOptions): Api {
     store: uploads,
     person: personOf,
     isLive: (req) => viewerLive(req),
+    caseVisible,
     reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'upload') : null,
     caseBinding: (caseId) => bindingOf(caseId)?.dispute ?? null,
     record: (e) => intents.record(e),
@@ -1143,11 +1151,11 @@ export function createApi(opts: ApiOptions): Api {
     const caseId = m[1]!;
     const sub = m[2];
     const intentId = m[3];
+    if (!(await caseVisible(req, caseId))) return json(404, { error: 'UNKNOWN_CASE' });
 
     // Intents and the audit log exist for every case: a simulated case's intent is approved here too, and the
     // in-browser simulator records it.
     if (sub === 'intent' || sub === 'audit') {
-      if (!CASE_FILES[caseId]) return json(404, { error: 'UNKNOWN_CASE' });
       if (!intentId && sub === 'intent') return req.method === 'POST' ? createIntent(req, caseId) : json(405, { error: 'METHOD_NOT_ALLOWED' });
       if (m[4] === '/approve') return req.method === 'POST' ? approveIntent(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
       // Reads, cancels and the audit trail: the session's own (hosted: needs the demo unlock).
@@ -1171,13 +1179,11 @@ export function createApi(opts: ApiOptions): Api {
 
     const disputeId = bindingOf(caseId)?.dispute;
     if (!disputeId) return json(404, { error: 'NOT_BOUND', detail: `Case ${caseId} is not bound to a PayPal dispute` });
-    // Sending needs a signed-in person first (hosted); then, a real dispute is the seller's: for anyone else this case
-    // runs on the simulator.
+    // Sending needs a signed-in person first (hosted). caseVisible already limited hosted to the seller's bound cases.
     if (sub === 'evidence') {
       const who = actorOf(req, true);
       if (!who.ok) return json(who.refusal.status, who.refusal.body);
     }
-    if (!(await viewerLive(req))) return json(404, { error: 'NOT_BOUND', detail: `Case ${caseId} runs on the simulator for this workspace` });
     const paypal = opts.paypal;
     if (!paypal) return json(503, { error: 'PAYPAL_UNCONFIGURED' });
 
