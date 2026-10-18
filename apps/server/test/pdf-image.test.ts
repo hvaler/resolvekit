@@ -54,3 +54,8 @@ test('writeImagePdf: valid xref offsets', () => {
   assert.equal(entries.length, 3 + 3 * 2);
   entries.forEach((off, i) => assert.ok(s.slice(off).startsWith(`${i + 1} 0 obj`), `object ${i + 1} at ${off}`));
 });
+
+test('writeImagePdf: a page with its own dpi is sized from it; the others from the call', () => {
+  const s = Buffer.from(writeImagePdf({ title: 'Mixed', pages: [{ ...page(340, 170, 1), dpi: 85 }, page(340, 170, 2)], dpi: 170 })).toString('latin1');
+  assert.deepEqual([...s.matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((m) => [m[1], m[2]]), [['288', '144'], ['144', '72']]);
+});

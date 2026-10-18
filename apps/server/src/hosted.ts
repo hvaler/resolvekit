@@ -28,7 +28,7 @@ import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { SellerMemory, type Connection } from './sellers.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
-import { acceptsFileBody, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
+import { acceptsFileBody, HINT_PATH, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
 
 /** What the warm-up did for one bound case. */
 export interface WarmUpOutcome {
@@ -90,7 +90,7 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
 export interface HostedLimits {
   /** Every /api request, per IP. */
   api: { limit: number; windowMs: number };
-  /** Reads that go to PayPal (GET /api/disputes/…), per IP. */
+  /** Reads that go to PayPal (GET /api/disputes/…) and PDF text hints (GET …/page/:k/hint), per IP. */
   paypalReads: { limit: number; windowMs: number };
   /** Sign-in and invite requests (POST /api/auth/*), per IP: passkey ceremonies, invite checks and joins. */
   authPerIp: { limit: number; windowMs: number };
@@ -380,6 +380,11 @@ export function createHostedApp(o: HostedOptions): HostedApp {
           if (composing) intentLimit.release(ip);
           return tooMany(r.retryAfterSec, `Too many PayPal reads; try again in ${r.retryAfterSec} s`);
         }
+      }
+      // A PDF page's text hint (a pdf.js read of the file when not cached) counts as a read: it cannot be looped.
+      if (req.method === 'GET' && HINT_PATH.test(path)) {
+        const r = readLimit.take(ip);
+        if (!r.ok) return tooMany(r.retryAfterSec, `Too many reads; try again in ${r.retryAfterSec} s`);
       }
       // Uploads and redactions (/api/cases/…, never a PayPal read): a file decoded and OCR'd here, limited per address.
       const uploading = req.method === 'POST' && (UPLOAD_PATH.test(path) || REDACT_PATH.test(path));

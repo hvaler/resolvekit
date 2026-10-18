@@ -59,11 +59,12 @@ export const PDF_UPLOAD_TITLE = 'Uploaded PDF';
 
 /**
  * The PDF of a confirmed upload, rebuilt from its stored covered pages only (decoded to RGB, alpha dropped: every
- * stored page is opaque), at the render dpi: nothing of the original file is in it. Deterministic, so the same pages
- * give the same bytes. CPU-heavy (level-9 deflate): the caller holds the image slot.
+ * stored page is opaque), each at the dpi it was rendered at (so it keeps the original page's size): nothing of the
+ * original file is in it. Deterministic, so the same pages give the same bytes. CPU-heavy (level-9 deflate): the
+ * caller holds the image slot.
  */
-export function coveredPagesPdf(pngs: readonly Uint8Array[]): Uint8Array {
-  const pages = pngs.map((png) => {
+export function coveredPagesPdf(covered: readonly { png: Uint8Array; dpi: number }[]): Uint8Array {
+  const pages = covered.map(({ png, dpi }) => {
     const { width, height, rgba } = decodeImage(png);
     const rgb = new Uint8Array(width * height * 3);
     for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
@@ -71,7 +72,7 @@ export function coveredPagesPdf(pngs: readonly Uint8Array[]): Uint8Array {
       rgb[j + 1] = rgba[i + 1]!;
       rgb[j + 2] = rgba[i + 2]!;
     }
-    return { width, height, rgb };
+    return { width, height, rgb, dpi };
   });
   return writeImagePdf({ title: PDF_UPLOAD_TITLE, pages, dpi: PDF_RENDER_DPI });
 }
@@ -132,11 +133,14 @@ export function createPdfJob(o: PdfJobOptions): PdfJob {
         const before = current(id);
         if (!before) return;
         setJob(before, { state: 'rendering', page: k, of });
-        const page = pagePng(await session.render(selected[k - 1]!, PDF_RENDER_DPI));
+        const rendered = await session.render(selected[k - 1]!, PDF_RENDER_DPI);
+        const page = pagePng(rendered);
         const cur = current(id);
         if (!cur) return;
         room(page.png.length);
-        store.update(id, {}, { origPages: { [k]: page.png } });
+        // The dpi used (lower for a page over the pixel limit), so the rebuilt PDF keeps the page's size.
+        const pages = cur.pdf.pages.map((p, i) => (i === k - 1 ? { ...p, dpi: rendered.dpi } : p));
+        store.update(id, { pdf: { ...cur.pdf, pages } }, { origPages: { [k]: page.png } });
       }
     } finally {
       await session.close();

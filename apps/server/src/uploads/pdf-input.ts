@@ -20,7 +20,7 @@ import type { ChildError, ChildReply, ChildRequest, ChildStrip } from './pdf-chi
 export const TOO_BIG = 'This PDF is larger than 10 MB or has more than 30 pages. Prepare a smaller extract and upload it again.';
 const ENCRYPTED = 'This PDF is password-protected or encrypted. Upload a version without protection.';
 const UNREADABLE = 'This file could not be read as a PDF.';
-const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';
+export const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';
 export const CANNOT_START = 'The PDF reader could not start. Try again later.';
 const TOO_HUNGRY = 'This PDF needs more memory than the demo allows. Prepare a smaller extract and upload it again.';
 
@@ -43,14 +43,16 @@ export interface PdfSession {
 
 /**
  * Test hooks: replace the RSS reader, make the spawn throw, make the child hang or crash on open (or skip its raw
- * `/Encrypt` scan), see the network attempts it counted.
+ * `/Encrypt` scan), see the network attempts it counted and the text layer reads asked of it.
  */
 export const pdfChildTestHooks: {
   rss: (pid: number) => number | undefined;
   spawnThrows: boolean;
   onOpen: 'hang' | 'crash' | 'no-scan' | undefined;
   networkAttempts: number;
-} = { rss: readRss, spawnThrows: false, onOpen: undefined, networkAttempts: 0 };
+  /** Text layer reads asked of a child (each one a hint). */
+  hintReads: number;
+} = { rss: readRss, spawnThrows: false, onOpen: undefined, networkAttempts: 0, hintReads: 0 };
 
 /** Resident bytes of a process, on Linux only. */
 export function readRss(pid: number): number | undefined {
@@ -213,7 +215,7 @@ export function openPdfSession(bytes: Uint8Array, o: { timeoutMs?: number } = {}
           pages,
           render: (page, dpi) =>
             dpi > 0 && Number.isFinite(dpi) ? run<RenderedPage>({ op: 'render', page, dpi }) : Promise.reject(new RangeError('dpi must be a positive number')),
-          hint: (page) => run<string[]>({ op: 'hint', page }),
+          hint: (page) => (pdfChildTestHooks.hintReads++, run<string[]>({ op: 'hint', page })),
           close,
         });
       } catch (e) {

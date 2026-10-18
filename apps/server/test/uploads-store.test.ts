@@ -250,8 +250,8 @@ test('update cannot rewrite identity or binding fields, and undefined does not o
 const pdfState = (job: NonNullable<UploadRecord['pdf']>['job'] = { state: 'reviewing' }): NonNullable<UploadRecord['pdf']> => ({
   pageCount: 3, selected: [1, 3], job,
   pages: [
-    { original: 1, rects: [{ x: 0, y: 0, w: 2, h: 2 }], readLines: ['PDF-SECRET'], lines: [{ text: 'PDF-SECRET', correctedBy: null, original: null }], added: [{ area: { x: 1, y: 1, w: 3, h: 3 }, text: 'PDF-ADDED', by: 'u1' }], sha256: 'abc', redactions: 2 },
-    { original: 3, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0 },
+    { original: 1, rects: [{ x: 0, y: 0, w: 2, h: 2 }], readLines: ['PDF-SECRET'], lines: [{ text: 'PDF-SECRET', correctedBy: null, original: null }], added: [{ area: { x: 1, y: 1, w: 3, h: 3 }, text: 'PDF-ADDED', by: 'u1' }], sha256: 'abc', redactions: 2, dpi: 170 },
+    { original: 3, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0, dpi: 170 },
   ],
 });
 const pdfUpload = (s: UploadStore, job?: NonNullable<UploadRecord['pdf']>['job']) => {

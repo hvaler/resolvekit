@@ -98,6 +98,8 @@ export interface ImagePage {
   height: number;
   /** width * height * 3 bytes, 8-bit RGB, row by row. */
   rgb: Uint8Array;
+  /** The resolution this page was rendered at (its physical size); default: the call's `dpi`. */
+  dpi?: number;
 }
 
 /** Points with at most 4 decimals, no trailing zeros. */
@@ -106,8 +108,9 @@ function pt(n: number): string {
 }
 
 /**
- * Image-only PDF: one full-page DeviceRGB image per page (FlateDecode, level 9), sized from `dpi`. Only catalog, pages,
- * Info (/Title, /Producer) and the page drawing; no fonts, annotations, attachments, scripts or XMP. Deterministic.
+ * Image-only PDF: one full-page DeviceRGB image per page (FlateDecode, level 9), sized from its own `dpi` or else the
+ * call's. Only catalog, pages, Info (/Title, /Producer) and the page drawing; no fonts, annotations, attachments,
+ * scripts or XMP. Deterministic.
  */
 export function writeImagePdf(o: { title: string; pages: readonly ImagePage[]; dpi: number }): Uint8Array {
   // Objects: 1 catalog, 2 pages, 3 info, then (page, image, content) triples. Streams are binary, so offsets count bytes.
@@ -120,8 +123,9 @@ export function writeImagePdf(o: { title: string; pages: readonly ImagePage[]; d
   objects[2] = text(`<< /Type /Pages /Kids [${o.pages.map((_, i) => `${pageId(i)} 0 R`).join(' ')}] /Count ${o.pages.length} >>`);
   objects[3] = text(`<< /Title (${pdfText(o.title)}) /Producer (ResolveKit) >>`);
   o.pages.forEach((p, i) => {
-    const w = pt((p.width * 72) / o.dpi);
-    const h = pt((p.height * 72) / o.dpi);
+    const dpi = p.dpi ?? o.dpi;
+    const w = pt((p.width * 72) / dpi);
+    const h = pt((p.height * 72) / dpi);
     const id = pageId(i);
     objects[id] = text(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /XObject << /Im0 ${id + 1} 0 R >> >> /Contents ${id + 2} 0 R >>`);
     objects[id + 1] = streamObj(

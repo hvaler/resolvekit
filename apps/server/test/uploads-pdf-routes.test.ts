@@ -8,13 +8,14 @@ import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { writeImagePdf } from '@resolvekit/pdf';
 import { toNodeListener } from '../src/node.ts';
-import { UploadError } from '../src/uploads/image.ts';
+import { UploadError, oneImageAtATime } from '../src/uploads/image.ts';
 import { PDF_MAX_BYTES, PDF_RENDER_DPI, PDF_THUMB_DPI } from '../src/uploads/limits.ts';
 import { closeOcr } from '../src/uploads/ocr.ts';
 import { inspectPdf, pdfChildTestHooks } from '../src/uploads/pdf-input.ts';
 import { createPdfJob } from '../src/uploads/pdf-job.ts';
+import { hintCacheSize } from '../src/uploads/routes.ts';
 import { UploadStore } from '../src/uploads/store.ts';
-import { HIDDEN, corruptPdf, encryptedPdf, hiddenPdf, pagesPdf } from './fixtures/make-pdfs.ts';
+import { A3_LANDSCAPE, HIDDEN, corruptPdf, encryptedPdf, hiddenPdf, pagesPdf, textPdf } from './fixtures/make-pdfs.ts';
 import { CASE, P, TIMEOUT, call, req, setup, type App } from './uploads-kit.ts';
 
 after(() => closeOcr());
@@ -334,7 +335,7 @@ test('the job works on one upload at a time: the second waits until the first is
   });
   const ids = ['first', 'second'].map((name) => {
     const rec = store.create({ workspaceId: 'ws1', caseId: CASE, boundDisputeId: null, kind: 'pdf', name, uploadedBy: by }, pagesPdf(2));
-    const pages = [1, 2].map((original) => ({ original, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0 }));
+    const pages = [1, 2].map((original) => ({ original, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0, dpi: PDF_RENDER_DPI }));
     store.update(rec.id, { pdf: { pageCount: 2, selected: [1, 2], pages, job: { state: 'rendering', page: 0, of: 2 } } });
     return rec.id;
   });
@@ -353,7 +354,7 @@ const BY = { id: 'p1', label: 'Ana', name: 'Ana' };
 /** A pdf upload in the store as the route leaves it: `selected` pages (null: still choosing) and its job state. */
 function pdfRecord(store: UploadStore, n: number, selected: number[] | null, job: { state: 'selecting' | 'rendering' | 'reading'; page?: number; of?: number }, name = 'doc') {
   const rec = store.create({ workspaceId: 'ws1', caseId: CASE, boundDisputeId: null, kind: 'pdf', name, uploadedBy: BY }, pagesPdf(n));
-  const pages = (selected ?? []).map((original) => ({ original, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0 }));
+  const pages = (selected ?? []).map((original) => ({ original, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0, dpi: PDF_RENDER_DPI }));
   store.update(rec.id, { pdf: { pageCount: n, selected, pages, job } });
   return rec.id;
 }
@@ -643,9 +644,9 @@ test('confirm: every page covered, its lines and sha256; transcriptions outside 
     const p = PNG.sync.read(Buffer.from(store.pageImage(id, k)!));
     const rgb = new Uint8Array(p.width * p.height * 3);
     for (let i = 0, j = 0; i < p.data.length; i += 4, j += 3) rgb.set(p.data.subarray(i, i + 3), j);
-    return { width: p.width, height: p.height, rgb };
+    return { width: p.width, height: p.height, rgb, dpi: store.get(id)!.pdf!.pages[k - 1]!.dpi };
   });
-  assert.ok(Buffer.from(pdf).equals(Buffer.from(writeImagePdf({ title: 'Uploaded PDF', pages: imgs, dpi: PDF_RENDER_DPI }))));
+  assert.ok(Buffer.from(pdf).equals(Buffer.from(writeImagePdf({ title: 'Uploaded PDF', pages: imgs, dpi: 1 }))));
   assert.equal((await inspectPdf(pdf)).pages, 2);
   // The original and the uncovered renders are gone; the covered pages stay.
   assert.equal(store.original(id), null);
@@ -676,4 +677,124 @@ test('a rebuilt PDF over the stored-file limit is refused (413) and the upload s
   assert.equal(store.get(id)!.status, 'reviewing');
   assert.ok(store.original(id));
   assert.equal(store.sanitised(id), null);
+});
+
+// ---- Task 5, fix round 1 ----
+
+/** Every `/MediaBox [0 0 w h]` of a PDF, in points. */
+const mediaBoxes = (pdf: Uint8Array) => [...Buffer.from(pdf).toString('latin1').matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((m) => [Number(m[1]), Number(m[2])]);
+
+test('a page rendered below the render dpi (an A3 page over the pixel limit) keeps its physical size in the rebuilt PDF', TIMEOUT, async () => {
+  const { app, people, store } = setup();
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, textPdf([{ ...A3_LANDSCAPE, lines: ['A3 page'] }, { w: 595, h: 842, lines: ['A4 page'] }]));
+  const id = r.body.upload.id;
+  await waitFor(app, cookie, id, settled);
+  const [a3, a4] = store.get(id)!.pdf!.pages;
+  assert.ok(a3!.dpi < PDF_RENDER_DPI, String(a3!.dpi));
+  assert.equal(a4!.dpi, PDF_RENDER_DPI);
+  // The dpi is the job's, not shown in the view.
+  assert.ok(!('dpi' in (await waitFor(app, cookie, id, settled)).pdf.pages[0]!));
+  for (const k of [1, 2]) assert.equal((await redactPage(app, cookie, id, k, [])).status, 200);
+  const pages = store.get(id)!.pdf!.pages;
+  const c = await confirmPdf(app, cookie, id, pages.map((p) => ({ lines: p.readLines, added: [], sha256: p.sha256 })));
+  assert.equal(c.status, 200, JSON.stringify(c.body));
+  const [b3, b4] = mediaBoxes(store.sanitised(id)!);
+  // Whole pixels: at most one pixel (under a point at these dpi) short of the original page.
+  assert.ok(b3![0]! <= A3_LANDSCAPE.w && b3![0]! > A3_LANDSCAPE.w - 1 && b3![1]! <= A3_LANDSCAPE.h && b3![1]! > A3_LANDSCAPE.h - 1, JSON.stringify(b3));
+  assert.ok(b4![0]! <= 595 && b4![0]! > 594 && b4![1]! <= 842 && b4![1]! > 841, JSON.stringify(b4));
+});
+
+test('the text hint is read once per page per review, kept in memory only, and forgotten at confirm and discard', TIMEOUT, async () => {
+  const { app, people, store } = setup();
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, pagesPdf(2));
+  const id = r.body.upload.id;
+  await waitFor(app, cookie, id, settled);
+  const reads = pdfChildTestHooks.hintReads;
+  for (let i = 0; i < 3; i++) assert.deepEqual(((await (await get(app, cookie, `${id}/page/1/hint`)).json()) as { lines: string[] }).lines, ['Page 1 of 2', 'Fixture line 1']);
+  assert.equal(pdfChildTestHooks.hintReads, reads + 1);
+  assert.equal(hintCacheSize(id), 1);
+  await get(app, cookie, `${id}/page/2/hint`);
+  assert.equal(pdfChildTestHooks.hintReads, reads + 2);
+  assert.equal(hintCacheSize(id), 2);
+  for (const k of [1, 2]) assert.equal((await redactPage(app, cookie, id, k, [])).status, 200);
+  const pages = store.get(id)!.pdf!.pages;
+  assert.equal((await confirmPdf(app, cookie, id, pages.map((p) => ({ lines: p.readLines, added: [], sha256: p.sha256 })))).status, 200);
+  assert.equal(hintCacheSize(id), 0);
+
+  const other = await uploadPdf(app, cookie, pagesPdf(1));
+  const oid = other.body.upload.id;
+  await waitFor(app, cookie, oid, settled);
+  await get(app, cookie, `${oid}/page/1/hint`);
+  assert.equal(hintCacheSize(oid), 1);
+  assert.equal((await call(app, `${P}/${oid}/discard`, { body: {}, cookie })).status, 200);
+  assert.equal(hintCacheSize(oid), 0);
+});
+
+test('a hint the reader cannot give is 422 or 503, never a 500, and is not kept; hints count in the per-address read limit', TIMEOUT, async () => {
+  const { app, people } = setup({ limits: { paypalReads: { limit: 3, windowMs: 600_000 } } });
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, pagesPdf(1));
+  const id = r.body.upload.id;
+  await waitFor(app, cookie, id, settled);
+  pdfChildTestHooks.spawnThrows = true;
+  try {
+    const busy = await call(app, `${P}/${id}/page/1/hint`, { cookie });
+    assert.equal(busy.status, 503);
+    assert.equal(busy.body.error, 'PDF_READER_UNAVAILABLE');
+  } finally {
+    pdfChildTestHooks.spawnThrows = false;
+  }
+  pdfChildTestHooks.onOpen = 'crash';
+  try {
+    assert.equal((await call(app, `${P}/${id}/page/1/hint`, { cookie })).status, 422);
+  } finally {
+    pdfChildTestHooks.onOpen = undefined;
+  }
+  assert.equal(hintCacheSize(id), 0);
+  assert.equal((await call(app, `${P}/${id}/page/1/hint`, { cookie })).status, 200);
+  // The 4th hint request from this address: refused before any work.
+  const over = await call(app, `${P}/${id}/page/1/hint`, { cookie });
+  assert.equal(over.status, 429);
+  assert.equal(over.body.error, 'RATE_LIMITED');
+});
+
+test('an upload that expires while its cover or its confirmation waits for the image slot is discarded, not changed', TIMEOUT, async () => {
+  const { app, people, store } = setup();
+  const cookie = people.fullMember();
+  const r = await uploadPdf(app, cookie, pagesPdf(1));
+  const id = r.body.upload.id;
+  await waitFor(app, cookie, id, settled);
+  /** Hold the image slot until `release`; `run` starts while it is held. */
+  const held = async (run: () => Promise<{ status: number; body: unknown }>, queued: () => boolean) => {
+    let release!: () => void;
+    const slot = oneImageAtATime(() => new Promise<void>((ok) => (release = ok)));
+    const pending = run();
+    for (let i = 0; i < 200 && !queued(); i++) await sleep(10);
+    assert.ok(queued(), 'the request did not reach the slot');
+    store.update(id, { expiresAt: new Date(Date.now() - 1000).toISOString() });
+    release();
+    await slot;
+    return pending;
+  };
+  const cover = await held(() => redactPage(app, cookie, id, 1, []), () => store.get(id)!.pdf!.pages[0]!.redactions === 1);
+  assert.equal(cover.status, 409);
+  assert.equal(store.get(id)!.status, 'discarded');
+
+  const r2 = await uploadPdf(app, cookie, pagesPdf(1));
+  const id2 = r2.body.upload.id;
+  await waitFor(app, cookie, id2, settled);
+  const p = (await redactPage(app, cookie, id2, 1, [])).body.upload.pdf.pages[0]!;
+  let release!: () => void;
+  const slot = oneImageAtATime(() => new Promise<void>((ok) => (release = ok)));
+  const pending = confirmPdf(app, cookie, id2, [{ lines: p.readLines, added: [], sha256: p.sha256 }]);
+  await sleep(300);
+  store.update(id2, { expiresAt: new Date(Date.now() - 1000).toISOString() });
+  release();
+  await slot;
+  const conf = await pending;
+  assert.equal(conf.status, 409);
+  assert.equal(store.get(id2)!.status, 'discarded');
+  assert.equal(store.sanitised(id2), null);
 });

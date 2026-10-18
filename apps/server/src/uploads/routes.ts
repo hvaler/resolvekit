@@ -35,9 +35,9 @@ import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
 import { uploadDocuments, uploadTitle } from './documents.ts';
 import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
-import { MAX_FILE_BYTES, MAX_REDACTS_PER_PAGE, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED } from './limits.ts';
+import { MAX_FILE_BYTES, MAX_REDACTS_PER_PAGE, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED, PDF_RENDER_DPI } from './limits.ts';
 import { ocrPng } from './ocr.ts';
-import { CANNOT_START, TOO_BIG, inspectPdf, pageTextHint } from './pdf-input.ts';
+import { CANNOT_START, TOO_BIG, TOO_SLOW, inspectPdf, pageTextHint } from './pdf-input.ts';
 import { coveredPagesPdf, type PdfJob } from './pdf-job.ts';
 import { canDeleteUpload, canEditUpload } from './permissions.ts';
 import type { PdfPage, PdfState, UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
@@ -47,6 +47,20 @@ import { pastedTextPdf, redactText, textLines, type TextRemoval } from './text.t
 export const UPLOAD_PATH = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/uploads$/;
 /** A redaction (each one runs OCR): metered per address like an upload. */
 export const REDACT_PATH = /^\/api\/cases\/[A-Za-z0-9-]{1,64}\/uploads\/upl-[0-9a-f]{24}\/redact$/;
+/** A PDF page's text hint (a pdf.js read of the original when not cached): metered per address like a read. */
+export const HINT_PATH = /^\/api\/cases\/[A-Za-z0-9-]{1,64}\/uploads\/upl-[0-9a-f]{24}\/page\/[^/]*\/hint$/;
+
+/**
+ * The text hints read in this review, by `<upload id>/<page>`: in memory only (never on disk, never logged, lost on
+ * a restart), so each page's text layer is read at most once per review. Dropped when the upload is confirmed,
+ * discarded, deleted or expires, and on the next hint once it is no longer in review (failed, archived).
+ */
+const hints = new Map<string, Promise<string[]>>();
+const forgetHints = (uploadId: string) => {
+  for (const key of hints.keys()) if (key.startsWith(`${uploadId}/`)) hints.delete(key);
+};
+/** Tests: how many pages of an upload have a hint kept. */
+export const hintCacheSize = (uploadId: string): number => [...hints.keys()].filter((k) => k.startsWith(`${uploadId}/`)).length;
 /** Set on a refusal given before any decoding or OCR (internal: hosted.ts strips it). */
 export const REFUSED_EARLY = 'x-rk-refused-early';
 /** Redactions per upload. */
@@ -154,8 +168,8 @@ function view(r: UploadRecord, viewer: ActingPerson) {
     return { id, kind, name, uploadedBy, status, createdAt, expiresAt, ...pdfView, restricted: true as const };
   }
   const { workspaceId: _w, analysisKeys: _a, redactions: _r, pdf, ...v } = r;
-  // A PDF's pages without their counters; the text layer is never part of the record.
-  const pdfView = pdf ? { pdf: { pageCount: pdf.pageCount, selected: pdf.selected, pages: pdf.pages.map(({ redactions: _n, ...p }) => p), job: pdf.job } } : {};
+  // A PDF's pages without their counters and render dpi; the text layer is never part of the record.
+  const pdfView = pdf ? { pdf: { pageCount: pdf.pageCount, selected: pdf.selected, pages: pdf.pages.map(({ redactions: _n, dpi: _d, ...p }) => p), job: pdf.job } } : {};
   return { ...v, ...pdfView, document: uploadDocuments([r])[0] ?? null };
 }
 
@@ -174,7 +188,7 @@ function imageResponse(bytes: Uint8Array): Response {
 }
 
 /** A page of the selection before it is rendered: nothing covered, read or added yet. */
-const freshPage = (original: number): PdfPage => ({ original, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0 });
+const freshPage = (original: number): PdfPage => ({ original, rects: [], readLines: [], lines: [], added: [], sha256: null, redactions: 0, dpi: PDF_RENDER_DPI });
 
 /** A file name to show: the last path segment, without control characters, at most 120 characters. */
 function cleanName(raw: unknown, fallback: string): string {
@@ -215,7 +229,7 @@ function parseRemovals(v: unknown): TextRemoval[] | null {
 type PdfUpload = UploadRecord & { pdf: PdfState };
 const inReview = (r: UploadRecord): r is PdfUpload => !!r.pdf && EDITABLE.includes(r.status) && r.pdf.job.state === 'reviewing';
 
-/** Width and height of a stored page image (a PNG this server wrote), from its header. */
+/** Width and height of a stored page image, from its header: trusted for PNGs this server wrote, never client bytes. */
 function pngSize(png: Uint8Array): { width: number; height: number } {
   const v = new DataView(png.buffer, png.byteOffset, png.byteLength);
   return { width: v.getUint32(16), height: v.getUint32(20) };
@@ -287,6 +301,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
   const unlessExpired = (r: UploadRecord): UploadRecord | null => {
     if (!EDITABLE.includes(r.status) || r.expiresAt > now().toISOString()) return r;
     store.update(r.id, { status: 'discarded' });
+    forgetHints(r.id);
     o.record({ caseId: r.caseId, kind: 'upload_discarded', actor: 'ResolveKit (expired)', team: r.workspaceId, disputeId: r.boundDisputeId, detail: `${r.id} · expired` });
     return null;
   };
@@ -532,8 +547,9 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     });
     if (read instanceof Response) return read;
     const { page, readLines } = read;
-    // Someone may have discarded, deleted or confirmed it while OCR ran.
-    const cur = store.get(rec.id);
+    // Someone may have discarded, deleted or confirmed it while OCR ran, or it expired meanwhile.
+    const after = store.get(rec.id);
+    const cur = after ? unlessExpired(after) : null;
     if (!cur || !inReview(cur) || archived(s, cur)) return changed();
     const pages = cur.pdf.pages.map((p, i) => (i === k - 1 ? { ...p, rects, readLines, lines: [], added: [], sha256: page.sha256 } : p));
     const next = store.update(rec.id, { status: 'reviewing', pdf: { ...cur.pdf, pages } }, { pages: { [k]: page.png } });
@@ -570,7 +586,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (sent.reduce((n, p) => n + p.lines.join('').length + p.added.reduce((m, a) => m + a.text.length, 0), 0) > MAX_TEXT_CHARS) {
       return refuse(400, 'BAD_LINES', `The text of a PDF, read and transcribed, is at most ${MAX_TEXT_CHARS} characters`);
     }
-    const images: Uint8Array[] = [];
+    const images: { png: Uint8Array; dpi: number }[] = [];
     for (const [i, p] of sent.entries()) {
       const png = store.pageImage(cur.id, i + 1);
       if (p.sha256 !== pages[i]!.sha256 || !png || sha256(png) !== pages[i]!.sha256) return refuse(409, 'UPLOAD_CHANGED', `Page ${i + 1} changed since you reviewed it; review it again`);
@@ -582,14 +598,15 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
         }
         if (pages[i]!.rects.some((r) => overlaps(a.area, r))) return refuse(422, 'BAD_TRANSCRIPTION', FROM_COVER);
       }
-      images.push(png);
+      images.push({ png, dpi: pages[i]!.dpi });
     }
     // The heavy step, in the image slot: never beside a render, a decode or an OCR.
     const pdf = await oneImageAtATime(async () => coveredPagesPdf(images));
     if (pdf.length > maxStored) return refuse(413, 'TOO_LARGE', `Once rebuilt from its covered pages, this PDF is larger than ${megabytes}, the most a stored file can be; upload it again and choose fewer pages`);
     if (!hasRoom(pdf.length)) return storageFull();
     // Nothing awaits from here on: the pages built are the ones stored now, and the evidence number is free.
-    const last = store.get(cur.id);
+    const built = store.get(cur.id);
+    const last = built ? unlessExpired(built) : null;
     if (!last?.pdf || last.status !== 'reviewing' || archived(s, last) || last.pdf.pages.some((p, i) => p.sha256 !== pages[i]!.sha256)) return changed();
     const highest = Math.max(
       0,
@@ -606,6 +623,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       { status: 'confirmed', evidenceId: `E${highest + 1}`, sha256: sha256(pdf), size: pdf.length, mime: 'application/pdf', confirmedAt: now().toISOString(), pdf: { ...last.pdf, pages: confirmed } },
       { sanitised: pdf, original: null },
     );
+    forgetHints(cur.id);
     audit(s, 'upload_confirmed', next);
     return json(200, { upload: view(next, s.person) });
   };
@@ -648,6 +666,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (!canEditUpload(s.person, rec)) return refuse(403, 'FORBIDDEN', 'A reviewer discards only their own uploads');
     if (!EDITABLE.includes(rec.status)) return refuse(409, 'WRONG_STATUS', rec.status === 'confirmed' ? 'A confirmed upload is deleted, not discarded' : `This upload is ${rec.status}`);
     const next = store.update(rec.id, { status: 'discarded' });
+    forgetHints(rec.id);
     audit(s, 'upload_discarded', next);
     return json(200, { upload: view(next, s.person) });
   };
@@ -663,6 +682,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       return refuse(500, 'PURGE_FAILED', 'The analyses that quote this upload could not be removed, so it was not deleted; try again');
     }
     const next = store.update(rec.id, { status: 'deleted', analysisKeys: [] });
+    forgetHints(rec.id);
     audit(s, 'upload_deleted', next);
     o.attachedTo?.invalidate(next, s.person.label);
     return json(200, { upload: view(next, s.person) });
@@ -744,19 +764,32 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
 
   /**
    * GET /page/:k/hint: the text layer of page k, read from the original in the PDF reader's child, while the pages are
-   * reviewed. A hint for spotting OCR mistakes: it can hold hidden text, so it is never stored, logged or audited.
+   * reviewed. A hint for spotting OCR mistakes: it can hold hidden text, so it is never stored, logged or audited; it
+   * is read once per page per review and kept in memory only ({@link hints}). A failed read is not kept.
    */
   const hint = async (s: Scope, rec: UploadRecord, k: number | null): Promise<Response> => {
     if (k === null) return refuse(400, 'BAD_PAGE', `A page number from 1 to ${PDF_MAX_PAGES}`);
+    // Hints of uploads that left review (failed, archived) are dropped here.
+    for (const key of hints.keys()) {
+      const r = store.get(key.slice(0, key.indexOf('/')));
+      if (!r || !inReview(r)) hints.delete(key);
+    }
     if (rec.kind !== 'pdf' || !rec.pdf || archived(s, rec)) return refuse(404, 'NOT_FOUND', 'No such PDF in this case');
     const original = inReview(rec) && k <= rec.pdf.pages.length ? store.original(rec.id) : null;
     if (!original) return refuse(404, 'NOT_FOUND', 'The text found in the PDF is shown only while its pages are reviewed');
+    const key = `${rec.id}/${k}`;
+    let read = hints.get(key);
+    if (!read) {
+      read = pageTextHint(original, rec.pdf.pages[k - 1]!.original);
+      hints.set(key, read);
+    }
     try {
-      return json(200, { lines: await pageTextHint(original, rec.pdf.pages[k - 1]!.original) });
+      return json(200, { lines: await read });
     } catch (e) {
-      if (e instanceof UploadError && e.message === CANNOT_START) return refuse(503, 'PDF_READER_UNAVAILABLE', e.message);
-      if (e instanceof UploadError && e.code === 'UNREADABLE') return refuse(422, e.code, e.message);
-      throw e;
+      if (hints.get(key) === read) hints.delete(key);
+      // Never a 500: the reader could not start or was too slow (try again), or the page could not be read.
+      if (!(e instanceof UploadError) || e.message === CANNOT_START || e.message === TOO_SLOW) return refuse(503, 'PDF_READER_UNAVAILABLE', 'The PDF reader could not read this page now. Try again later.');
+      return refuse(422, 'UNREADABLE', e.message);
     }
   };
 

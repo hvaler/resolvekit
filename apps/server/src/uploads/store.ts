@@ -57,6 +57,8 @@ export interface PdfPage {
   added: { area: Rect; text: string; by: string }[];
   sha256: string | null;
   redactions: number;
+  /** The dpi its render was made at: PDF_RENDER_DPI, or lower for a page over the pixel limit (set by the job). */
+  dpi: number;
 }
 
 export interface PdfState {
