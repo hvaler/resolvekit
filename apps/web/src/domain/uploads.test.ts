@@ -1,7 +1,7 @@
 import { buildInput } from '@resolvekit/analyst';
 import { standardCase } from '@resolvekit/cases';
 import { describe, expect, it } from 'vitest';
-import { correctionsOf, deriveSentences, type DraftContext } from './draft';
+import { correctionsOf, deriveSentences, linesToConfirmOf, transcriptionsOf, type Correction, type DraftContext } from './draft';
 import { composeSubmission, isComposeProblem, parseIntentRequest } from './intent';
 import { fragmentTexts } from './quotes';
 import type { CaseFile, SentenceView } from './types';
@@ -12,6 +12,10 @@ import {
   listRetryDelay,
   uploadsForInput,
   citedCorrections,
+  citationProvenance,
+  confirmButtonLabel,
+  confirmationText,
+  pagesLabel,
   provenanceOf,
   uploadsListReducer,
   type UploadsListState,
@@ -22,7 +26,11 @@ import {
   evidenceCount,
   mergeRemoval,
   notAnalysed,
+  pageLabel,
+  pendingLine,
+  canReviewUpload,
   toImageRect,
+  transcribedLabel,
   uploadCorrections,
   uploadEvidence,
   withUploadDocuments,
@@ -224,7 +232,7 @@ describe('merchant uploads in the case', () => {
 
   it('a citation says which of its lines were corrected, and by whom', () => {
     const e = uploadEvidence(confirmed());
-    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] })).toEqual([{ line: 2, fragment: 'E7.l2', by: 'local operator' }]);
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.l1', 'E7.l2'] })).toEqual([{ line: 2, fragment: 'E7.l2', by: 'local operator', kind: 'corrected', label: 'line 2 corrected by local operator' }]);
     expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.l1'] })).toEqual([]);
     expect(citedCorrections(standardCase.evidence[0]!, { evidenceId: 'E1', fragments: [] })).toEqual([]);
   });
@@ -296,11 +304,239 @@ describe('merchant uploads in the case', () => {
   });
 });
 
+/** A confirmed PDF upload of pages 2, 5 (no text) and 8, as the server shows it: its lines are in its document. */
+const ANA = 'Ana Lopez (member)';
+function confirmedPdf(signed = 'Signed by J. D.'): UploadRecordView {
+  return confirmed({
+    kind: 'pdf',
+    name: 'invoice.pdf',
+    uploadedBy: { id: 'p1', label: ANA, name: 'Ana Lopez' },
+    mime: 'application/pdf',
+    rects: [],
+    readLines: [],
+    lines: [],
+    document: {
+      id: 'E7',
+      title: 'Uploaded PDF',
+      type: 'Merchant upload · PDF',
+      source: 'Uploaded by Ana Lopez',
+      tag: 'UPL',
+      lines: [
+        { text: 'INVOICE 2026-114', fragment: 'E7.p2.l1' },
+        { text: 'Total 89.00 USD', fragment: 'E7.p2.l2', corrected: ANA },
+        { text: 'Delivered 8 Oct 2026', fragment: 'E7.p8.l1' },
+        { text: signed, fragment: 'E7.p8.l2', transcribed: ANA },
+      ],
+    },
+  });
+}
+
+describe('PDF uploads: page fragments and transcribed lines', () => {
+  it('transcribed lines are found like corrected ones, with their page and their line in the page', () => {
+    const docs = [confirmedPdf().document!];
+    expect([...transcriptionsOf(docs).values()]).toEqual([{ kind: 'transcribed', line: 2, page: 8, fragment: 'E7.p8.l2', evidenceId: 'E7', text: 'Signed by J. D.', by: ANA }]);
+    expect([...correctionsOf(docs).values()]).toEqual([{ kind: 'corrected', line: 2, page: 2, fragment: 'E7.p2.l2', evidenceId: 'E7', text: 'Total 89.00 USD', by: ANA }]);
+    // One list of lines to confirm: corrected and transcribed, the same for the server and the browser.
+    expect([...linesToConfirmOf(docs).keys()]).toEqual(['E7.p2.l2', 'E7.p8.l2']);
+    expect([...uploadCorrections([confirmedPdf()]).keys()]).toEqual(['E7.p2.l2', 'E7.p8.l2']);
+  });
+
+  it('a sentence citing a transcribed line needs its sentence@line confirmation, on the server and in the browser alike', () => {
+    const uploads = [confirmedPdf()];
+    const c: CaseFile = {
+      ...standardCase,
+      evidence: [...standardCase.evidence, ...confirmedUploads(uploads).map(uploadEvidence)],
+      sentences: [
+        { id: 'S1', text: 'The buyer signed for the parcel.', verdict: 'supported', citations: [{ evidenceId: 'E7', fragments: ['E7.p8.l2'], quotes: ['Signed by J. D.'] }] },
+        { id: 'S2', text: 'Order #10482 was paid.', verdict: 'supported', citations: [{ evidenceId: 'E1', fragments: [] }] },
+      ],
+      contradictions: [],
+      analysis: { steps: ['a', 'b', 'c', 'd', 'e', 'f'], contradictionStep: 3, rejectionStep: 5, note: '' },
+    };
+    const serverInput = withUploadDocuments(buildInput(standardCase), uploads);
+    const server = (confirmedCorrections: string[]) =>
+      composeSubmission({ c, req: { evidenceType: 'PROOF_OF_FULFILLMENT', edits: {}, resolutions: {}, confirmedCorrections, attachments: [] }, verified: () => null, allowedActions: ['provide_evidence'], submitted: false, corrections: linesToConfirmOf(serverInput.documents) });
+    const ctx: DraftContext = { edits: {}, checking: null, analysisStep: 6, rejectionStep: 5, contradictions: [], resolutions: {}, corrections: uploadCorrections(uploads) };
+    const browser = (pairs: string[]) => deriveSentences(c.sentences, { ...ctx, confirmedCorrections: new Set(pairs) });
+
+    for (const pairs of [[], ['S1@E7.p8.l1'], ['S2@E7.p8.l2'], ['S1@E7.l2']]) {
+      const open = server(pairs);
+      expect(isComposeProblem(open) && open.error).toBe('DRAFT_BLOCKED');
+      expect(isComposeProblem(open) && open.blockers).toEqual(['sentence 1 needs review']);
+    }
+    const held = browser([])[0]!;
+    expect(held.state).toBe('needs_review');
+    expect(held.awaitsCorrections).toEqual(['E7.p8.l2']);
+    expect(held.reason).toBe('Why: it depends on line 2 of page 8 of E7, transcribed manually by Ana Lopez (member) ("Signed by J. D."). Confirm it is what the file shows.');
+    expect(correctionsToConfirm(held, uploadCorrections(uploads), new Set()).map((k) => k.fragment)).toEqual(['E7.p8.l2']);
+
+    const ok = server(['S1@E7.p8.l2']);
+    if (isComposeProblem(ok)) throw new Error(ok.detail);
+    expect(browser(['S1@E7.p8.l2'])).toEqual(ok.views);
+    expect(ok.views[0]!.note).toBe('Relies on line 2 of page 8 of E7 as transcribed manually by Ana Lopez (member)');
+    // The pair the browser sends is the one the server parses, and it survives effectivePairs.
+    const req = approvalRequest({ evidenceType: 'PROOF_OF_FULFILLMENT', edits: {}, resolutions: {}, views: ok.views, corrections: uploadCorrections(uploads), confirmed: ['S1@E7.p8.l2', 'S2@E7.p8.l2'], attachments: [] });
+    expect(req.confirmedCorrections).toEqual(['S1@E7.p8.l2']);
+    expect(parseIntentRequest(req)).toEqual(req);
+  });
+
+  it('a citation of a PDF says its page of the original document and who transcribed or corrected its lines, verbatim', () => {
+    const e = uploadEvidence(confirmedPdf());
+    expect(e.body.kind === 'lines' && e.body.lines[3]).toEqual({ text: 'Signed by J. D.', fragment: 'E7.p8.l2', transcribed: ANA });
+    // The page goes once on the citation (its provenance), never on each line.
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.p8.l1', 'E7.p8.l2'] })).toEqual([
+      { line: 2, page: 8, fragment: 'E7.p8.l2', by: ANA, kind: 'transcribed', label: 'Transcribed manually by Ana Lopez (member)' },
+    ]);
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.p2.l2'] })).toEqual([
+      { line: 2, page: 2, fragment: 'E7.p2.l2', by: ANA, kind: 'corrected', label: 'line 2 corrected by Ana Lopez (member)' },
+    ]);
+    // A citation over two pages: a corrected line says which page its line number is in.
+    expect(citedCorrections(e, { evidenceId: 'E7', fragments: ['E7.p2.l2', 'E7.p8.l2'] }).map((k) => k.label)).toEqual(['line 2 of page 2 corrected by Ana Lopez (member)', 'Transcribed manually by Ana Lopez (member)']);
+    expect(provenanceOf(e)).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez' });
+    expect(provenanceOf(e, { evidenceId: 'E7', fragments: ['E7.p8.l1', 'E7.p8.l2'] })).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez · Page 8 of the original document' });
+    expect(provenanceOf(e, { evidenceId: 'E7', fragments: ['E7.p2.l2', 'E7.p8.l1'] })).toEqual({ kind: 'upload', text: 'Uploaded by Ana Lopez · Pages 2 and 8 of the original document' });
+    // Not a page-scoped citation: as before.
+    expect(provenanceOf(uploadEvidence(confirmed()), { evidenceId: 'E7', fragments: ['E7.l2'] })).toEqual({ kind: 'upload', text: 'Uploaded by local operator' });
+    expect(pageLabel(8)).toBe('Page 8 of the original document');
+    expect(transcribedLabel(ANA)).toBe('Transcribed manually by Ana Lopez (member)');
+  });
+
+  it('names several pages once: "Pages 2 and 8", "Pages 2, 5 and 8"', () => {
+    expect(pagesLabel([8])).toBe('Page 8 of the original document');
+    expect(pagesLabel([2, 8])).toBe('Pages 2 and 8 of the original document');
+    expect(pagesLabel([2, 5, 8])).toBe('Pages 2, 5 and 8 of the original document');
+  });
+
+  it('what a citation says, compact: provenance and pages once, each corrected or transcribed label once', () => {
+    const e = uploadEvidence(confirmedPdf());
+    expect(citationProvenance(e, { evidenceId: 'E7', fragments: ['E7.p2.l1', 'E7.p2.l2', 'E7.p8.l1', 'E7.p8.l2'] })).toBe(
+      'Uploaded by Ana Lopez · Pages 2 and 8 of the original document · line 2 of page 2 corrected by Ana Lopez (member) · Transcribed manually by Ana Lopez (member)',
+    );
+    const two = { ...e, body: { kind: 'lines' as const, lines: [{ text: 'a', fragment: 'E7.p8.l1', transcribed: ANA }, { text: 'b', fragment: 'E7.p8.l2', transcribed: ANA }] } };
+    expect(citationProvenance(two, { evidenceId: 'E7', fragments: ['E7.p8.l1', 'E7.p8.l2'] })).toBe('Uploaded by Ana Lopez · Page 8 of the original document · Transcribed manually by Ana Lopez (member)');
+    expect(citationProvenance(uploadEvidence(confirmed()), { evidenceId: 'E7', fragments: ['E7.l1'] })).toBe('Uploaded by local operator');
+  });
+
+  it('the approval tells a transcribed line from a corrected one', () => {
+    const [corr, tr] = [...linesToConfirmOf([confirmedPdf().document!]).values()] as [Correction, Correction];
+    expect(confirmationText(2, corr)).toEqual({ relies: 'Sentence 2 relies on line 2 of page 2 of E7 as corrected by Ana Lopez (member)', confirmed: 'You confirmed it reads the file correctly' });
+    expect(confirmationText(1, tr)).toEqual({ relies: 'Sentence 1 relies on line 2 of page 8 of E7, transcribed manually by Ana Lopez (member)', confirmed: 'You confirmed it is what the file shows' });
+    expect(confirmButtonLabel(corr)).toBe('Confirm it reads line 2 of page 2 of E7 correctly');
+    expect(confirmButtonLabel(tr)).toBe('Confirm line 2 of page 8 of E7 is what the file shows (transcribed manually by Ana Lopez (member))');
+    const image = { kind: 'corrected' as const, line: 3, fragment: 'E7.l3', evidenceId: 'E7', text: 'x', by: 'Bo' };
+    expect(confirmationText(4, image).relies).toBe('Sentence 4 relies on line 3 of E7 as corrected by Bo');
+    expect(confirmButtonLabel(image)).toBe('Confirm it reads line 3 of E7 correctly');
+  });
+
+  it('a PDF attachment says who corrected and who transcribed its lines; a restricted view is never read', () => {
+    const restricted = { id: 'upl-444444444444444444444444', caseId: standardCase.summary.id, kind: 'pdf', name: 'other.pdf', uploadedBy: { id: 'p2', label: 'Bo (member)', name: 'Bo' }, status: 'reviewing', createdAt: '2026-10-17T19:00:00.000Z', expiresAt: '2026-10-17T20:00:00.000Z', restricted: true } as unknown as UploadRecordView;
+    const choices = attachmentChoices([restricted, confirmedPdf()], views([['S1', 'supported', ['E7']]]));
+    expect(choices.map((c) => [c.evidenceId, c.corrected, c.selected])).toEqual([['E7', `lines corrected by ${ANA} · lines transcribed manually by ${ANA}`, true]]);
+    expect([...uploadCorrections([restricted]).keys()]).toEqual([]);
+    expect(withUploadDocuments(buildInput(standardCase), [restricted]).documents.some((d) => d.id === 'E7')).toBe(false);
+  });
+});
+
 describe('evidenceCount', () => {
   it('counts the cards shown, confirmed uploads included', () => {
     const shown = [...standardCase.evidence, uploadEvidence(confirmed())];
     expect(evidenceCount(standardCase.evidence)).toBe(`${standardCase.evidence.length} documents`);
     expect(evidenceCount(shown)).toBe(`${standardCase.evidence.length + 1} documents`);
     expect(evidenceCount(shown.slice(0, 1))).toBe('1 document');
+  });
+});
+
+/** The requests of the PDF methods, as the server's routes expect them (apps/server/src/uploads/routes.ts). */
+describe('the uploads client, PDFs', () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const answer = (body: unknown) =>
+    (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return Response.json(body);
+    }) as unknown as typeof fetch;
+  const client = (body: unknown = {}) => createUploadsClient('PP-1', { fetch: answer(body) });
+  const ID = 'upl-0123456789abcdef01234567';
+
+  it('uploadPdf sends the file as is with its type and its encoded name, and returns the upload', async () => {
+    calls.length = 0;
+    const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'factura ñ.pdf', { type: 'application/pdf' });
+    const r = await client({ upload: { id: ID } }).uploadPdf(file);
+    expect(r).toEqual({ upload: { id: ID } });
+    expect(calls[0]!.url).toBe('/api/cases/PP-1/uploads');
+    expect(calls[0]!.init).toMatchObject({ method: 'POST', body: file });
+    expect(calls[0]!.init.headers).toEqual({ 'content-type': 'application/pdf', 'x-upload-name': encodeURIComponent('factura ñ.pdf') });
+  });
+
+  it('select sends the chosen pages as JSON and returns the upload', async () => {
+    calls.length = 0;
+    const u = await client({ upload: { id: ID, status: 'pending' } }).select(ID, [2, 5, 8]);
+    expect(u).toEqual({ id: ID, status: 'pending' });
+    expect(calls[0]!.url).toBe(`/api/cases/PP-1/uploads/${ID}/select`);
+    expect(calls[0]!.init).toMatchObject({ method: 'POST', body: JSON.stringify({ pages: [2, 5, 8] }) });
+  });
+
+  it('redactPage and confirmPdf send the shapes of the routes', async () => {
+    calls.length = 0;
+    const c = client({ upload: { id: ID }, readLines: ['a'] });
+    expect(await c.redactPage(ID, 2, [{ x: 1, y: 2, w: 30, h: 4 }])).toEqual({ upload: { id: ID }, readLines: ['a'] });
+    expect(calls[0]!.url).toBe(`/api/cases/PP-1/uploads/${ID}/redact`);
+    expect(calls[0]!.init.body).toBe(JSON.stringify({ page: 2, rects: [{ x: 1, y: 2, w: 30, h: 4 }] }));
+    const pages = [{ lines: ['x'], added: [{ area: { x: 1, y: 1, w: 5, h: 5 }, text: 'y' }], sha256: 'b'.repeat(64) }];
+    await c.confirmPdf(ID, pages);
+    expect(calls[1]!.url).toBe(`/api/cases/PP-1/uploads/${ID}/confirm`);
+    expect(calls[1]!.init.body).toBe(JSON.stringify({ pages }));
+  });
+
+  it('hint returns the text found in the page, and the image urls carry their version', async () => {
+    calls.length = 0;
+    const c = client({ lines: ['hidden', 'visible'] });
+    expect(await c.hint(ID, 3)).toEqual(['hidden', 'visible']);
+    expect(calls[0]!.url).toBe(`/api/cases/PP-1/uploads/${ID}/page/3/hint`);
+    expect(calls[0]!.init.method).toBe('GET');
+    expect(c.pageUrl(ID, 3, 'sanitised', 'abcdef0123456789abcd')).toBe(`/api/cases/PP-1/uploads/${ID}/page/3?v=sanitised&k=abcdef0123456789`);
+    expect(c.pageUrl(ID, 1, 'original', '')).toBe(`/api/cases/PP-1/uploads/${ID}/page/1?v=original`);
+    expect(c.thumbUrl(ID, 12)).toBe(`/api/cases/PP-1/uploads/${ID}/thumb/12`);
+  });
+
+  it('a refused PDF carries the server code and words', async () => {
+    const refused = (async () => Response.json({ error: 'UNREADABLE', detail: 'This file could not be read as a PDF.' }, { status: 422 })) as unknown as typeof fetch;
+    await expect(createUploadsClient('PP-1', { fetch: refused }).uploadPdf(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).rejects.toMatchObject({ status: 422, code: 'UNREADABLE', message: 'This file could not be read as a PDF.' });
+  });
+});
+
+describe('a pending upload this person cannot edit (restricted)', () => {
+  const restricted = (over: Partial<UploadRecordView> = {}): UploadRecordView => ({
+    id: 'upl-fedcba9876543210fedcba98',
+    kind: 'pdf',
+    name: 'contract.pdf',
+    uploadedBy: { id: 'p2', label: 'Eva (reviewer)', name: 'Eva' },
+    status: 'pending',
+    createdAt: '2026-10-18T10:00:00.000Z',
+    expiresAt: '2026-10-18T11:00:00.000Z',
+    restricted: true,
+    pdf: { pageCount: 3, selected: [1, 2, 3], job: { state: 'reading', page: 1, of: 3 } },
+    ...over,
+  });
+
+  it('is shown as «pending · name · uploaded by person», with no content and no review action', () => {
+    expect(pendingLine(restricted())).toBe('pending · contract.pdf · uploaded by Eva');
+    expect(canReviewUpload({ id: 'p1', role: 'member', reviewer: true }, restricted())).toBe(false);
+    // Even for someone the role rules would let edit it: a restricted view has nothing to open.
+    expect(canReviewUpload(null, restricted())).toBe(false);
+    expect(canReviewUpload({ id: 'p1', role: 'owner', reviewer: false }, pending())).toBe(true);
+  });
+
+  it('takes no part in the analysis, the evidence, the attachments or the corrections', () => {
+    const list = [restricted(), confirmed()];
+    expect(confirmedUploads(list).map((u) => u.id)).toEqual([confirmed().id]);
+    expect(withUploadDocuments({ documents: [] } as never, [restricted()])).toEqual({ documents: [] });
+    expect(notAnalysed([restricted()], null)).toEqual([]);
+    expect(attachmentChoices([restricted()], [])).toEqual([]);
+    expect(uploadCorrections([restricted()]).size).toBe(0);
+  });
+
+  it('is kept by the list like any other pending upload', () => {
+    const s = uploadsListReducer({ uploads: [], known: true, refused: null, error: null }, { type: 'loaded', uploads: [restricted()] });
+    expect(s.uploads).toHaveLength(1);
   });
 });

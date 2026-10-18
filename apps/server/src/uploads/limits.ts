@@ -24,3 +24,33 @@ export const MAX_STORED_BYTES = 9_900_000;
 /** All the files of one provide-evidence call (demo PDFs, selected uploads, receipt): PayPal accepts up to 50 MB. */
 export const PAYPAL_MAX_SEND_BYTES = 50_000_000;
 export const MAX_TEXT_CHARS = 20_000;
+
+// ---- PDF uploads ----
+export const PDF_MAX_BYTES = 10 * 1024 * 1024;
+export const PDF_MAX_PAGES = 30;
+/** Pages of one PDF the merchant can add as evidence. */
+export const PDF_MAX_SELECTED = 5;
+/** Stored page images (legible for review and OCR). */
+export const PDF_RENDER_DPI = 170;
+/** Page thumbnails for choosing the selection. */
+export const PDF_THUMB_DPI = 36;
+/**
+ * One rendered page holds at most this many pixels (the OCR limit): a larger page is rendered at a lower dpi so it
+ * fits. Measured on Windows, an 8.3 MP render peaked at ~187 MB in the reader child, too close to its 200 MB ceiling.
+ */
+export const PDF_MAX_PAGE_PIXELS = OCR_MAX_PIXELS;
+/** Reading the PDF and rendering one page. */
+export const PDF_PAGE_TIMEOUT_MS = 20_000;
+/** Rendering one thumbnail (PDF_THUMB_DPI): a real one takes well under a second, so a slow page cannot hold the image slot for long. */
+export const PDF_THUMB_TIMEOUT_MS = 3_000;
+/**
+ * One PDF session in all (open, every render and hint), as it holds the server-wide image slot: past it the reader is
+ * killed and the job fails, so one file cannot stall every other upload, cover and confirm for minutes.
+ */
+export const PDF_SESSION_BUDGET_MS = 90_000;
+export const MAX_REDACTS_PER_PAGE = 5;
+/**
+ * The PDF reader child is killed above this resident size (Linux only, where it can be read): the hosted instance
+ * has 512 MB for the server and the child together.
+ */
+export const PDF_CHILD_MAX_RSS_BYTES = 200 * 1024 * 1024;

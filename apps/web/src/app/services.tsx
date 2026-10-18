@@ -8,7 +8,8 @@ import { HttpIntentClient, LocalIntentClient, type IntentSource } from '../domai
 import { payPalSource, type PayPalSource } from '../domain/paypalView';
 import { utcHm } from '../domain/time';
 import type { AuditEntry, DisputeSnapshot } from '../domain/types';
-import { accountRecheckMs, healthRetryDelay, type Area } from '../domain/environment';
+import { accountRecheckMs, draftScope, healthRetryDelay, type Area } from '../domain/environment';
+import { clearKeptReviews, reviewsBelongTo } from '../domain/pdfReview';
 import { initialSnapshots, processingDispute, processingOpening } from '../fixtures';
 
 export interface TrackedSnapshot extends DisputeSnapshot {
@@ -130,6 +131,12 @@ export function ServicesProvider({
       live = false;
     };
   }, [demoClient]);
+  // A PDF review kept in memory belongs to the person signed in: any change of account (sign-out, another person,
+  // an expired session) drops the reviews kept for anyone else.
+  const personId = demo?.person?.id ?? null;
+  useEffect(() => {
+    if (!inherit && accountKnown) reviewsBelongTo(draftScope('workspace', personId));
+  }, [inherit, accountKnown, personId]);
   // The session expires on the server; follow it on screen.
   useEffect(() => {
     if (!demo?.signedIn || !demo.expiresAt || !demoClient) return;
@@ -150,6 +157,7 @@ export function ServicesProvider({
     async (everywhere = false, to = '/') => {
       if (!demoClient) return;
       await demoClient.signOut(everywhere); // rejects when it fails: the caller says so and the person stays here
+      clearKeptReviews();
       window.location.assign(to);
     },
     [demoClient],

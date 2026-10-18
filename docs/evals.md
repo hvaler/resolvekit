@@ -140,7 +140,9 @@ deliberately kept out of the committed per-provider files, so every 18-case figu
 matches its raw results; the 19th case is reported only here.
 
 **Not measured yet:** redaction (a covered passage is removed before the analyst sees any text, so there is nothing to
-cite or to leak at this level); an upload that contradicts a demo document; OCR errors beyond one hand-corrected line;
+cite or to leak at this level); a PDF upload (page-scoped fragments `E<n>.p<page>.l<line>` and lines transcribed by
+the merchant: their form is pinned by the server and analyst tests, how the analyst uses them is not measured); an
+upload that contradicts a demo document; OCR errors beyond one hand-corrected line;
 and, above all, a decoy: a demo document that states the same fact as the upload (the live-browser miss, where E7 was
 not cited and a demo document was repeated). This case cannot show whether the analyst cites the upload in that
 situation.

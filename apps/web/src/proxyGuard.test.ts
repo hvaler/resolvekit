@@ -39,3 +39,18 @@ describe('the Vite proxy only forwards the app’s own /api calls', () => {
     expect(apiProxyDecision('POST', { ...own, 'content-type': 'image/svg+xml' }, '/cases/PP-D-4417/uploads')).toMatchObject({ allow: false, status: 415 });
   });
 });
+
+describe('a PDF is forwarded only as an evidence upload', () => {
+  const pdf = { ...own, 'content-type': 'application/pdf' };
+  it('allows POST /cases/:id/uploads with application/pdf', () => {
+    expect(apiProxyDecision('POST', pdf, '/cases/PP-D-4417/uploads')).toEqual({ allow: true });
+    expect(apiProxyDecision('POST', { ...own, 'content-type': 'Application/PDF; charset=x' }, '/cases/PP-D-4417/uploads')).toEqual({ allow: true });
+  });
+  it('refuses it anywhere else, on other methods and for look-alike types', () => {
+    expect(apiProxyDecision('POST', pdf)).toMatchObject({ allow: false, status: 415 });
+    expect(apiProxyDecision('POST', pdf, '/cases/PP-D-4417/uploads/upl-0123456789abcdef01234567/redact')).toMatchObject({ allow: false, status: 415 });
+    expect(apiProxyDecision('POST', pdf, '/disputes/PP-D-4417/intent')).toMatchObject({ allow: false, status: 415 });
+    expect(apiProxyDecision('PUT', pdf, '/cases/PP-D-4417/uploads')).toMatchObject({ allow: false, status: 415 });
+    expect(apiProxyDecision('POST', { ...own, 'content-type': 'application/pdfx' }, '/cases/PP-D-4417/uploads')).toMatchObject({ allow: false, status: 415 });
+  });
+});

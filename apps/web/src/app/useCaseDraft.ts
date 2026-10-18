@@ -1,6 +1,6 @@
 import { PENDING_STEPS, STAGES, toCitations } from '@resolvekit/analyst';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { actionableBlockers, checklistState, citationUse, correctionPair, deriveSentences, draftBlockers, draftCounts, notesText, type Correction, type Recheck } from '../domain/draft';
+import { actionableBlockers, checklistState, citationUse, correctionPair, deriveSentences, draftBlockers, draftCounts, lineRef, notesText, type Correction, type Recheck } from '../domain/draft';
 import { browserStorage, draftKey, loadDraft, saveDraft } from '../domain/draftStore';
 import { defaultEvidenceType, evidenceTypeOptions, selectEvidenceType } from '../domain/evidenceTypes';
 import type { ActionCode, CaseFile, ContradictionResolution, EvidenceType, SentenceView } from '../domain/types';
@@ -51,7 +51,7 @@ export interface CaseDraftOptions {
   scope: string;
   /** The real analysis behind `c` (see useAnalysis). */
   analysis: AnalysisHandle;
-  /** Corrected lines of the case's confirmed uploads, by fragment key (domain/uploads `uploadCorrections`). */
+  /** Corrected and transcribed lines of the case's confirmed uploads, by fragment key (domain/uploads `uploadCorrections`). */
   corrections?: ReadonlyMap<string, Correction>;
 }
 
@@ -208,7 +208,7 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     (sentenceId: string, k: Correction) => {
       const num = c.sentences.findIndex((x) => x.id === sentenceId) + 1;
       setConfirmed((p) => (p.includes(correctionPair(sentenceId, k.fragment)) ? p : [...p, correctionPair(sentenceId, k.fragment)]));
-      onAudit(actor, `Confirmed sentence ${num} reads line ${k.line} of ${k.evidenceId} (corrected by ${k.by}) correctly`);
+      onAudit(actor, `Confirmed sentence ${num} reads ${lineRef(k)} (${k.kind === 'transcribed' ? 'transcribed manually' : 'corrected'} by ${k.by}) correctly`);
     },
     [c, onAudit, actor],
   );

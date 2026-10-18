@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@napi-rs/canvas": "1.0.10",
     "@resolvekit/analyst": "*",
     "@resolvekit/cases": "*",
     "@resolvekit/hosting": "*",
@@ -16,6 +17,7 @@
     "@simplewebauthn/server": "13.3.3",
     "@tesseract.js-data/eng": "1.0.0",
     "jpeg-js": "0.4.4",
+    "pdfjs-dist": "6.4.299",
     "pngjs": "7.0.0",
     "tesseract.js": "7.0.0"
   },

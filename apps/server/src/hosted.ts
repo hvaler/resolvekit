@@ -28,7 +28,7 @@ import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { SellerMemory, type Connection } from './sellers.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
-import { acceptsImageBody, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
+import { acceptsFileBody, HINT_PATH, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
 
 /** What the warm-up did for one bound case. */
 export interface WarmUpOutcome {
@@ -90,7 +90,7 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
 export interface HostedLimits {
   /** Every /api request, per IP. */
   api: { limit: number; windowMs: number };
-  /** Reads that go to PayPal (GET /api/disputes/…), per IP. */
+  /** Reads that go to PayPal (GET /api/disputes/…) and PDF text hints (GET …/page/:k/hint), per IP. */
   paypalReads: { limit: number; windowMs: number };
   /** Sign-in and invite requests (POST /api/auth/*), per IP: passkey ceremonies, invite checks and joins. */
   authPerIp: { limit: number; windowMs: number };
@@ -241,6 +241,19 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const s = session(req);
       return s.ok ? s.workspace.payerId : null;
     },
+    // Each PDF page read is one unit of the address's upload limit, as a redaction is: all of them or none.
+    meterPages(req: Request, pages: number): Reservation {
+      const ip = clientIp(req, hops, trust);
+      const giveBack = (n: number) => { for (let i = 0; i < n; i++) uploadLimit.release(ip); };
+      for (let taken = 0; taken < pages; taken++) {
+        const t = uploadLimit.take(ip);
+        if (!t.ok) {
+          giveBack(taken);
+          return { ok: false, refusal: { status: 429, body: { error: 'RATE_LIMITED', detail: `Too many uploads from this address; try again in ${Math.ceil(t.retryAfterSec / 60)} min`, retryAfterSec: t.retryAfterSec } } };
+        }
+      }
+      return { ok: true, release: () => giveBack(pages) };
+    },
   };
 
   // Live runs and re-checks analyse inputs the server builds itself (app.ts), behind the seller workspace and the caps.
@@ -332,8 +345,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
         return json(403, { error: 'FORBIDDEN_ORIGIN' });
       }
       const type = req.headers.get('content-type');
-      if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(type ?? '') && !acceptsImageBody(req.method, path, type)) {
-        return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json (an evidence upload may be image/png or image/jpeg)' });
+      if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(type ?? '') && !acceptsFileBody(req.method, path, type)) {
+        return json(415, { error: 'UNSUPPORTED_MEDIA_TYPE', detail: 'POST bodies must be application/json (an evidence upload may be image/png, image/jpeg or application/pdf)' });
       }
       const ip = clientIp(req, hops, trust);
       if (!derivationLogged) {
@@ -367,6 +380,11 @@ export function createHostedApp(o: HostedOptions): HostedApp {
           if (composing) intentLimit.release(ip);
           return tooMany(r.retryAfterSec, `Too many PayPal reads; try again in ${r.retryAfterSec} s`);
         }
+      }
+      // A PDF page's text hint (a pdf.js read of the file when not cached) counts as a read: it cannot be looped.
+      if (req.method === 'GET' && HINT_PATH.test(path)) {
+        const r = readLimit.take(ip);
+        if (!r.ok) return tooMany(r.retryAfterSec, `Too many reads; try again in ${r.retryAfterSec} s`);
       }
       // Uploads and redactions (/api/cases/…, never a PayPal read): a file decoded and OCR'd here, limited per address.
       const uploading = req.method === 'POST' && (UPLOAD_PATH.test(path) || REDACT_PATH.test(path));

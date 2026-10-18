@@ -16,6 +16,11 @@ export interface DocLine {
    * reading of the file. Absent for lines as read or as recorded.
    */
   corrected?: string;
+  /**
+   * Who typed this line by hand (a PDF upload's text the recognition missed): the merchant's transcription, not text
+   * read from the document. Absent for lines as read or as recorded.
+   */
+  transcribed?: string;
 }
 
 export interface AnalysisDocument {

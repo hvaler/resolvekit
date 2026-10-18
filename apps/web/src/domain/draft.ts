@@ -23,34 +23,64 @@ export interface Recheck {
   citations?: Citation[];
 }
 
-/** A line of an uploaded file that the merchant corrected by hand (its text is their reading of the file). */
+/**
+ * A line of an uploaded file whose text is the merchant's, not the recognition's: corrected by hand (their reading of
+ * the file) or, on a PDF, transcribed by hand (a line the recognition did not read). A sentence resting on it is sent
+ * only with the merchant's confirmation, whichever it is.
+ */
 export interface Correction {
-  /** 1-based line number in the upload. */
+  kind: 'corrected' | 'transcribed';
+  /** 1-based line number in the upload; on a PDF, in its page. */
   line: number;
-  /** Its fragment key (`E7.l3`): what a confirmation names, with the sentence (`S1@E7.l3`). */
+  /** On a PDF: the page of the original document the line is on. */
+  page?: number;
+  /** Its fragment key (`E7.l3`, `E7.p8.l3`): what a confirmation names, with the sentence (`S1@E7.l3`). */
   fragment: string;
   evidenceId: string;
-  /** The corrected text. */
+  /** The corrected or transcribed text. */
   text: string;
-  /** Who corrected it. */
+  /** Who corrected or transcribed it. */
   by: string;
+}
+
+/** A PDF fragment's page of the original document and line in that page (`E7.p8.l3` → 8, 3); null for any other key. */
+export function pageOf(fragment: string): { page: number; line: number } | null {
+  const m = /^E\d+\.p(\d+)\.l(\d+)$/.exec(fragment);
+  return m ? { page: Number(m[1]), line: Number(m[2]) } : null;
+}
+
+function linesOf(docs: readonly AnalysisDocument[], kind: Correction['kind']): Map<string, Correction> {
+  const out = new Map<string, Correction>();
+  for (const d of docs) {
+    d.lines.forEach((l, i) => {
+      const by = l[kind];
+      if (!by || !l.fragment) return;
+      const p = pageOf(l.fragment);
+      out.set(l.fragment, { kind, line: p ? p.line : i + 1, ...(p ? { page: p.page } : {}), fragment: l.fragment, evidenceId: d.id, text: l.text, by });
+    });
+  }
+  return out;
 }
 
 /**
  * The corrected lines of these analyst documents, by fragment key (`E7.l3`). The server builds it from the input it
  * analysed, the web app from the uploads' documents: both from the same upload records, so they agree.
  */
-export function correctionsOf(docs: readonly AnalysisDocument[]): Map<string, Correction> {
-  const out = new Map<string, Correction>();
-  for (const d of docs) {
-    d.lines.forEach((l, i) => {
-      if (l.corrected && l.fragment) out.set(l.fragment, { line: i + 1, fragment: l.fragment, evidenceId: d.id, text: l.text, by: l.corrected });
-    });
-  }
-  return out;
-}
+export const correctionsOf = (docs: readonly AnalysisDocument[]): Map<string, Correction> => linesOf(docs, 'corrected');
 
-/** A confirmation that sentence `sentenceId` reads the corrected line `fragment` correctly: `S1@E7.l2`. */
+/** The lines transcribed by hand (on PDF uploads), by fragment key (`E7.p8.l3`), as {@link correctionsOf}. */
+export const transcriptionsOf = (docs: readonly AnalysisDocument[]): Map<string, Correction> => linesOf(docs, 'transcribed');
+
+/**
+ * Every line a sentence needs the merchant's confirmation for, corrected or transcribed, by fragment key: the one
+ * list both the server's composition and the browser's draft take as `corrections`.
+ */
+export const linesToConfirmOf = (docs: readonly AnalysisDocument[]): Map<string, Correction> => new Map([...correctionsOf(docs), ...transcriptionsOf(docs)]);
+
+/** How a reason or note names the line: `line 3 of E7`, or on a PDF `line 3 of page 8 of E7`. */
+export const lineRef = (k: Correction) => `line ${k.line} of ${k.page ? `page ${k.page} of ` : ''}${k.evidenceId}`;
+
+/** A confirmation that sentence `sentenceId` reads the corrected or transcribed line `fragment` correctly: `S1@E7.l2`. */
 export const correctionPair = (sentenceId: string, fragment: string) => `${sentenceId}@${fragment}`;
 
 /** The corrected lines a sentence's citations cover, in citation order. */
@@ -83,12 +113,13 @@ export interface DraftContext {
    */
   contradictions?: readonly Contradiction[];
   resolutions?: Readonly<Record<string, ContradictionResolution>>;
-  /** Corrected lines of the case's uploads, by fragment key ({@link correctionsOf}). Absent: none. */
+  /** Corrected and transcribed lines of the case's uploads, by fragment key ({@link linesToConfirmOf}). Absent: none. */
   corrections?: ReadonlyMap<string, Correction>;
   /**
-   * The merchant's confirmations that a sentence reads a corrected line correctly, as `sentenceId@fragment` pairs
-   * ({@link correctionPair}). A supported sentence citing corrected lines goes to review until every one of them has
-   * its pair here: the correction may flip what the file says.
+   * The merchant's confirmations that a sentence reads a corrected or transcribed line correctly, as
+   * `sentenceId@fragment` pairs ({@link correctionPair}). A supported sentence citing such lines goes to review until
+   * every one of them has its pair here: a correction may flip what the file says, and a transcription is the
+   * merchant's typing, not text read from the file.
    */
   confirmedCorrections?: ReadonlySet<string>;
 }
@@ -143,12 +174,15 @@ export function deriveSentences(base: readonly DraftSentence[], ctx: DraftContex
     const relied = state === 'supported' ? correctionsCited(citations, ctx.corrections) : [];
     const unconfirmed = relied.filter((k) => !ctx.confirmedCorrections?.has(correctionPair(s.id, k.fragment)));
     if (relied.length && !unconfirmed.length) {
-      note = [note, ...relied.map((k) => `Relies on line ${k.line} of ${k.evidenceId} as corrected by ${k.by}`)].filter(Boolean).join(' · ');
+      note = [note, ...relied.map((k) => `Relies on ${lineRef(k)} as ${k.kind === 'transcribed' ? 'transcribed manually' : 'corrected'} by ${k.by}`)].filter(Boolean).join(' · ');
     } else if (unconfirmed.length) {
       const k = unconfirmed[0]!;
       state = 'needs_review';
       awaits = unconfirmed.map((x) => x.fragment);
-      reason = `Why: it depends on your correction of line ${k.line} of ${k.evidenceId} ("${k.text}"). Confirm it reads the file correctly.`;
+      reason =
+        k.kind === 'transcribed'
+          ? `Why: it depends on ${lineRef(k)}, transcribed manually by ${k.by} ("${k.text}"). Confirm it is what the file shows.`
+          : `Why: it depends on your correction of ${lineRef(k)} ("${k.text}"). Confirm it reads the file correctly.`;
     }
 
     return { id: s.id, num: i + 1, text, state, citations, reason, note, edited: edit !== undefined, ...(s.origin === 'merchant_note' ? { fromNote: true } : {}), ...(awaits.length ? { awaitsCorrections: awaits } : {}) };

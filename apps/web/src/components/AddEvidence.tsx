@@ -1,21 +1,27 @@
 import { useState } from 'react';
-import { UploadRequestError, type ReadAnswer, type UploadRecordView, type UploadsClient } from '../domain/uploads';
+import { UploadRequestError, pendingLine, type ReadAnswer, type UploadRecordView, type UploadsClient } from '../domain/uploads';
+import { thumbsReady } from '../domain/pdfReview';
+import { PdfProgress } from './PdfProgress';
 import { Button, MiniButton, Spinner } from './ui';
 
 const message = (e: unknown) => (e instanceof UploadRequestError || e instanceof Error ? e.message : String(e));
 
-/** Choose an image (PNG, JPEG) or paste text; the server reads it and the review opens. */
-export function AddEvidencePanel({ client, onAdded, onClose }: { client: UploadsClient; onAdded: (a: ReadAnswer, pastedText: string | null) => void; onClose: () => void }) {
+const isPdf = (f: File) => f.type === 'application/pdf' || (!f.type && /\.pdf$/i.test(f.name));
+
+/** Choose an image (PNG, JPEG) or a PDF, or paste text; the server reads it and the review opens (a PDF: its pages are chosen and read first). */
+export function AddEvidencePanel({ client, onAdded, onPdf, onClose }: { client: UploadsClient; onAdded: (a: ReadAnswer, pastedText: string | null) => void; onPdf: (u: UploadRecordView) => void; onClose: () => void }) {
   const [text, setText] = useState('');
   const [name, setName] = useState('');
-  const [busy, setBusy] = useState<null | 'image' | 'text'>(null);
+  const [busy, setBusy] = useState<null | 'image' | 'pdf' | 'text'>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const run = async (what: 'image' | 'text', f: () => Promise<ReadAnswer>, pasted: string | null) => {
+  const run = async (what: 'image' | 'pdf' | 'text', f: () => Promise<ReadAnswer | { upload: UploadRecordView }>, pasted: string | null) => {
     setBusy(what);
     setError(null);
     try {
-      onAdded(await f(), pasted);
+      const a = await f();
+      if ('readLines' in a) onAdded(a, pasted);
+      else onPdf(a.upload);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -35,21 +41,21 @@ export function AddEvidencePanel({ client, onAdded, onClose }: { client: Uploads
         It is read on this server only. Nothing of it is used, sent to an AI model or to PayPal until you have covered what must not be shared and confirmed it.
       </p>
       <label className="flex flex-wrap items-center gap-2 text-[12.5px]">
-        <span className="font-medium">A screenshot (PNG or JPEG, up to 5 MB)</span>
+        <span className="font-medium">A screenshot (PNG or JPEG, up to 5 MB) or a PDF (up to 10 MB and 30 pages)</span>
         <input
           type="file"
-          accept="image/png,image/jpeg"
+          accept="image/png,image/jpeg,application/pdf"
           disabled={!!busy}
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = '';
-            if (file) void run('image', () => client.uploadImage(file), null);
+            if (file) void run(isPdf(file) ? 'pdf' : 'image', () => (isPdf(file) ? client.uploadPdf(file) : client.uploadImage(file)), null);
           }}
           className="text-[12.5px]"
         />
-        {busy === 'image' && (
+        {(busy === 'image' || busy === 'pdf') && (
           <span role="status" className="flex items-center gap-1.5 text-ink-2">
-            <Spinner size={14} /> Reading the image…
+            <Spinner size={14} /> {busy === 'pdf' ? 'Checking the PDF…' : 'Reading the image…'}
           </span>
         )}
       </label>
@@ -74,37 +80,50 @@ export function AddEvidencePanel({ client, onAdded, onClose }: { client: Uploads
   );
 }
 
-/** Uploads not confirmed yet: listed, never used, until reviewed. */
+/** Uploads not confirmed yet: listed, never used, until reviewed. A PDF also shows where its reading is, and waits for its pages to be chosen. */
 export function PendingUploads({
   uploads,
   canEdit,
   onReview,
+  onChoosePages,
   onDiscard,
 }: {
   uploads: UploadRecordView[];
-  /** Whether this person may review and discard it (domain/uploads `canEditUpload`, the server's rule). */
+  /** Whether this person may review and discard it (domain/uploads `canReviewUpload`: the server's rule, never a restricted view). */
   canEdit: (u: UploadRecordView) => boolean;
   onReview: (u: UploadRecordView) => void;
+  onChoosePages: (u: UploadRecordView) => void;
   onDiscard: (u: UploadRecordView) => void;
 }) {
   if (!uploads.length) return null;
   return (
     <ul aria-label="Uploads to review" className="m-0 flex list-none flex-col gap-2 p-0">
-      {uploads.map((u) => (
-        <li key={u.id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-2xl border border-dashed border-warn-line bg-warn-soft px-4 py-2.5">
-          <span className="rounded-sm bg-surface px-1.5 py-1 font-mono text-[11px] font-semibold leading-none text-warn">New · pending</span>
-          <span className="min-w-[10rem] flex-1 text-[13.5px] font-semibold">{u.name}</span>
-          <span className="text-[12px] text-warn">Not used yet: review it first</span>
-          {canEdit(u) ? (
-            <>
-              <MiniButton onClick={() => onReview(u)}>Review</MiniButton>
-              <MiniButton onClick={() => onDiscard(u)}>Discard</MiniButton>
-            </>
-          ) : (
-            <span className="text-[12px] text-ink-3">Uploaded by {u.uploadedBy.name}: only they, an owner or a member can review it</span>
-          )}
-        </li>
-      ))}
+      {uploads.map((u) => {
+        const job = u.pdf?.job;
+        // A restricted view (someone else's pending upload) has no content and no action: who, what, where its job is.
+        if (u.restricted || !canEdit(u)) {
+          return (
+            <li key={u.id} data-testid="pending-restricted" className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-2xl border border-dashed border-line-2 bg-surface px-4 py-2.5">
+              <span className="min-w-[10rem] flex-1 text-[13px] text-ink-2">{pendingLine(u)}</span>
+              {job && <PdfProgress job={job} />}
+            </li>
+          );
+        }
+        return (
+          <li key={u.id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-2xl border border-dashed border-warn-line bg-warn-soft px-4 py-2.5">
+            <span className="rounded-sm bg-surface px-1.5 py-1 font-mono text-[11px] font-semibold leading-none text-warn">New · pending</span>
+            <span className="min-w-[10rem] flex-1 text-[13.5px] font-semibold">{u.name}</span>
+            {job && job.state !== 'reviewing' && !thumbsReady(job) ? <PdfProgress job={job} /> : <span className="text-[12px] text-warn">Not used yet: review it first</span>}
+            {job?.state === 'selecting' && (
+              <MiniButton disabled={!thumbsReady(job)} onClick={() => onChoosePages(u)}>
+                Choose pages
+              </MiniButton>
+            )}
+            {(!job || job.state === 'reviewing') && <MiniButton onClick={() => onReview(u)}>Review</MiniButton>}
+            <MiniButton onClick={() => onDiscard(u)}>Discard</MiniButton>
+          </li>
+        );
+      })}
     </ul>
   );
 }

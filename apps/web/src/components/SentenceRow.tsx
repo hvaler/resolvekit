@@ -1,7 +1,8 @@
 import { useId, useState } from 'react';
 import { useHighlight, useHoverHighlight } from '../app/highlight';
 import type { Citation, Evidence, SentenceState, SentenceView } from '../domain/types';
-import { citedCorrections, provenanceOf } from '../domain/uploads';
+import type { Correction } from '../domain/draft';
+import { citationProvenance, confirmButtonLabel } from '../domain/uploads';
 import { cx } from './ui';
 
 export const SENTENCE_TONE: Record<SentenceState, { label: string; short: string; icon: string; fg: string; soft: string; /** Left-rule shadow token class. */ rule: string }> = {
@@ -26,10 +27,8 @@ export function CitationChip({ sentenceId, citation, evidence }: { sentenceId: s
   const active = !!hl && hl.sid === sentenceId && hl.ev === citation.evidenceId;
   const e = evidence.find((x) => x.id === citation.evidenceId);
   const title = e?.title ?? citation.evidenceId;
-  // What the document is, and who corrected a cited line: on every citation.
-  const prov = e ? provenanceOf(e) : null;
-  const corrected = e ? citedCorrections(e, citation) : [];
-  const said = [prov?.text, ...corrected.map((k) => `line ${k.line} corrected by ${k.by}`)].filter(Boolean).join(' · ');
+  // What the document is (with the pages it cites, once), and who corrected or transcribed a cited line: on every citation.
+  const said = e ? citationProvenance(e, citation) : '';
   return (
     <button
       type="button"
@@ -66,8 +65,8 @@ export interface SentenceRowProps {
   onApplySuggestion?: () => void;
   /** The response was sent: the sentence is shown as sent, not editable. */
   readOnly?: boolean;
-  /** The sentence rests on a line the merchant corrected in an upload: one click confirms it reads it correctly. */
-  confirmCorrection?: { line: number; evidenceId: string; onConfirm: () => void };
+  /** The sentence rests on a line the merchant corrected or transcribed in an upload: one click confirms it. */
+  confirmCorrection?: { correction: Correction; onConfirm: () => void };
 }
 
 export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCancel, suggestion, onApplySuggestion, readOnly = false, confirmCorrection }: SentenceRowProps) {
@@ -190,7 +189,7 @@ export function SentenceRow({ view: s, evidence, editing, onEdit, onSave, onCanc
             onClick={confirmCorrection.onConfirm}
             className="self-start rounded-sm border border-warn-line bg-surface px-2 py-0.5 text-[11.5px]"
           >
-            Confirm it reads line {confirmCorrection.line} of {confirmCorrection.evidenceId} correctly
+            {confirmButtonLabel(confirmCorrection.correction)}
           </button>
         )}
         {showNote && <div className="text-[11.5px] text-ink-3">{s.note}</div>}

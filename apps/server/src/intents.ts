@@ -96,9 +96,10 @@ export type AuditKind =
   | 'binding_checked'
   /** A verified PayPal webhook about the case's dispute; the dispute was read again from PayPal. */
   | 'paypal_notified'
-  /** Merchant evidence uploads (uploads/routes.ts): the detail is the upload id, evidence id and file name, never text. */
+  /** Merchant evidence uploads (uploads/routes.ts): the detail is the upload id and evidence id, never the file name or text. */
   | 'upload_added'
   | 'upload_redacted'
+  | 'upload_selected'
   | 'upload_confirmed'
   | 'upload_discarded'
   | 'upload_deleted';

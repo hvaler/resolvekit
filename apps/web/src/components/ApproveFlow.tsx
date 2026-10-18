@@ -17,7 +17,7 @@ import { STATUS_DISPLAY, statusExplanation } from '../domain/status';
 import { totalSize } from '../domain/submission';
 import { utcClock, utcStamp } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView, SubmissionFile } from '../domain/types';
-import { attachmentChoices, citedCorrections, provenanceOf, type AttachmentChoice, type UploadRecordView } from '../domain/uploads';
+import { attachmentChoices, citedCorrections, confirmationText, provenanceOf, type AttachmentChoice, type UploadRecordView } from '../domain/uploads';
 import { SignInPrompt } from './AccountMenu';
 import { Button, EvidenceTag, Spinner, cx } from './ui';
 
@@ -286,10 +286,10 @@ function ApproveIntent({
     const num = views.find((v) => v.id === sid)?.num;
     return k && num ? [{ pair, num, k }] : [];
   });
-  // What each cited document is, and who corrected a cited line: shown on every proof.
+  // What each cited document is (with the pages it cites, once), and who corrected or transcribed a cited line: on every proof.
   const proofSource = (ct: { evidenceId: string; fragments: string[] }) => {
     const e = c.evidence.find((x) => x.id === ct.evidenceId);
-    return e ? { prov: provenanceOf(e), corrected: citedCorrections(e, ct) } : null;
+    return e ? { prov: provenanceOf(e, ct), corrected: [...new Set(citedCorrections(e, ct).map((k) => k.label))] } : null;
   };
   const digital = !!c.fulfillment.digital;
 
@@ -437,9 +437,9 @@ function ApproveIntent({
                                   · {proofSource(ct)!.prov.text}
                                 </span>
                               )}
-                              {proofSource(ct)?.corrected.map((k) => (
-                                <span key={k.fragment} className="ml-1.5 font-sans text-[11px] text-warn">
-                                  · line {k.line} corrected by {k.by}
+                              {proofSource(ct)?.corrected.map((label) => (
+                                <span key={label} className="ml-1.5 font-sans text-[11px] text-warn">
+                                  · {label}
                                 </span>
                               ))}
                             </span>
@@ -451,7 +451,9 @@ function ApproveIntent({
                 </div>
                 {confirmations.length > 0 && (
                   <div className="flex flex-col gap-2" data-testid="confirmed-corrections">
-                    <h3 className="m-0 text-body font-semibold">What depends on your corrections · confirmed</h3>
+                    <h3 className="m-0 text-body font-semibold">
+                      What depends on your {confirmations.some((x) => x.k.kind === 'transcribed') ? (confirmations.some((x) => x.k.kind === 'corrected') ? 'corrections and transcriptions' : 'transcriptions') : 'corrections'} · confirmed
+                    </h3>
                     <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
                       {confirmations.map(({ pair, num, k }) => (
                         <li key={pair} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2 rounded-xl border border-warn-line bg-warn-soft px-3.5 py-2 text-[12.5px]">
@@ -459,8 +461,8 @@ function ApproveIntent({
                             ✓
                           </span>
                           <span>
-                            Sentence {num} relies on line {k.line} of {k.evidenceId} as corrected by {k.by} (<span className="font-mono">{k.text}</span>). You confirmed it reads the
-                            file correctly; this confirmation is part of what you approve. <span className="font-mono text-ink-3">{pair}</span>
+                            {confirmationText(num, k).relies} (<span className="font-mono">{k.text}</span>). {confirmationText(num, k).confirmed}; this confirmation is part of what you
+                            approve. <span className="font-mono text-ink-3">{pair}</span>
                           </span>
                         </li>
                       ))}

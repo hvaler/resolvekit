@@ -2,7 +2,7 @@
  * Deterministic checks. No model is involved here: a citation is valid only when its quote is an exact substring of
  * the cited document (whitespace normalised, nothing else), and a sentence without a valid citation is rejected.
  */
-import type { AnalysisDocument, CitationCheck, Quote } from './types.ts';
+import type { AnalysisDocument, CitationCheck, DocLine, Quote } from './types.ts';
 
 /** Collapse runs of whitespace to one space and trim. The only normalisation applied to quotes. */
 export const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
@@ -12,11 +12,33 @@ export function docText(d: AnalysisDocument): string {
   return d.lines.map((l) => l.text).join('\n');
 }
 
-/** Is `quote` an exact substring of document `docId` (whitespace normalised)? Empty quotes never are. */
+/** The page of the original document a PDF upload's line is on (`E7.p8.l3` → 8); null for any other line. */
+export function pageOfLine(l: DocLine): number | null {
+  const m = /^E\d+\.p(\d+)\.l\d+$/.exec(l.fragment ?? '');
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * The runs of lines a quote may span: the whole document, or for a PDF upload each page on its own. The pages kept
+ * are not adjacent in the original (pages 3 to 7 can lie between pages 2 and 8), so a quote never joins two of them.
+ */
+function runsOf(d: AnalysisDocument): DocLine[][] {
+  const runs: DocLine[][] = [];
+  let page: number | null = null;
+  for (const l of d.lines) {
+    const p = pageOfLine(l);
+    if (!runs.length || p !== page) runs.push([]);
+    runs[runs.length - 1]!.push(l);
+    page = p;
+  }
+  return runs;
+}
+
+/** Is `quote` an exact substring of document `docId` (whitespace normalised), within one page on a PDF? Empty quotes never are. */
 export function isVerbatim(docs: readonly AnalysisDocument[], docId: string, quote: string): boolean {
   const d = docs.find((x) => x.id === docId);
   const q = normalize(quote);
-  return !!d && q.length > 0 && normalize(docText(d)).includes(q);
+  return !!d && q.length > 0 && runsOf(d).some((run) => normalize(run.map((l) => l.text).join('\n')).includes(q));
 }
 
 export function checkCitations(docs: readonly AnalysisDocument[], quotes: readonly Quote[]): CitationCheck[] {
@@ -25,25 +47,28 @@ export function checkCitations(docs: readonly AnalysisDocument[], quotes: readon
 
 /**
  * Fragment keys of the lines a quote covers, so the web app can light exactly those lines. Lines are joined with
- * one space in normalised form; every line overlapping the quote's span counts.
+ * one space in normalised form (on a PDF, within one page); every line overlapping the quote's span counts. The first
+ * occurrence wins: the same text on two pages lights, and labels, the first of them only.
  */
 export function fragmentsFor(d: AnalysisDocument, quote: string): string[] {
   const q = normalize(quote);
   if (!q) return [];
-  const parts = d.lines.map((l) => normalize(l.text));
-  const joined = parts.join(' ');
-  const at = joined.indexOf(q);
-  if (at < 0) return [];
-  const end = at + q.length;
-  const out: string[] = [];
-  let pos = 0;
-  d.lines.forEach((l, i) => {
-    const start = pos;
-    const stop = pos + parts[i]!.length;
-    pos = stop + 1;
-    if (stop > at && start < end && l.fragment && !out.includes(l.fragment)) out.push(l.fragment);
-  });
-  return out;
+  for (const run of runsOf(d)) {
+    const parts = run.map((l) => normalize(l.text));
+    const at = parts.join(' ').indexOf(q);
+    if (at < 0) continue;
+    const end = at + q.length;
+    const out: string[] = [];
+    let pos = 0;
+    run.forEach((l, i) => {
+      const start = pos;
+      const stop = pos + parts[i]!.length;
+      pos = stop + 1;
+      if (stop > at && start < end && l.fragment && !out.includes(l.fragment)) out.push(l.fragment);
+    });
+    return out;
+  }
+  return [];
 }
 
 /**

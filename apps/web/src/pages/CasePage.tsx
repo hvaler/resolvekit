@@ -21,6 +21,9 @@ import { ProcessingBanner } from '../components/ProcessingBanner';
 import { ResponseComposer } from '../components/ResponseComposer';
 import { Timeline } from '../components/Timeline';
 import { UploadReview } from '../components/UploadReview';
+import { PdfReview } from '../components/PdfReview';
+import { STUCK_COPY, thumbsReady } from '../domain/pdfReview';
+import { PdfSelect } from '../components/PdfSelect';
 import { MiniButton } from '../components/ui';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
@@ -28,7 +31,7 @@ import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
-import { approvalRequest, canEditUpload, confirmedUploads, evidenceCount, uploadsForInput, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
+import { approvalRequest, canReviewUpload, confirmedUploads, evidenceCount, uploadsForInput, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
 import { caseFiles, processingDispute } from '../fixtures';
 
 /** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
@@ -111,6 +114,9 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const [review, setReview] = useState<{ upload: UploadRecordView; readLines: string[] } | null>(null);
   /** Pasted texts of this page's uploads (removals are offsets into them); never stored. */
   const pasted = useRef(new Map<string, string>());
+  /** The PDF whose pages are being chosen, and the one whose review is open. */
+  const [choosing, setChoosing] = useState<string | null>(null);
+  const [pdfReview, setPdfReview] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const uploadAction = async (f: () => Promise<void>) => {
     setUploadError(null);
@@ -240,6 +246,12 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                   setAdding(false);
                   setReview({ upload: a.upload, readLines: a.readLines });
                 }}
+                onPdf={(u) => {
+                  up.put(u.id, u);
+                  setAdding(false);
+                  // A document of more than 5 pages waits for its pages to be chosen; a shorter one is being read already.
+                  setChoosing(u.pdf?.job.state === 'selecting' ? u.id : null);
+                }}
               />
             )}
             {unread.length > 0 && (
@@ -266,10 +278,45 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             )}
             <PendingUploads
               uploads={pendingUps}
-              canEdit={(u) => canEditUpload(demoLock?.person, u)}
-              onReview={(u) => setReview({ upload: u, readLines: u.readLines })}
+              canEdit={(u) => canReviewUpload(demoLock?.person, u)}
+              onReview={(u) => (u.kind === 'pdf' ? setPdfReview(u.id) : setReview({ upload: u, readLines: u.readLines ?? [] }))}
+              onChoosePages={(u) => setChoosing(u.id)}
               onDiscard={discardUpload}
             />
+            {up.stuck && (
+              <p role="alert" data-testid="pdf-stuck" className="m-0 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
+                {STUCK_COPY}
+              </p>
+            )}
+            {pendingUps
+              .filter((u) => u.id === choosing && !u.restricted && u.pdf && thumbsReady(u.pdf.job))
+              .map((u) => (
+                <PdfSelect
+                  key={u.id}
+                  upload={u}
+                  client={uploadsClient!}
+                  onSelected={(n) => {
+                    up.put(n.id, n);
+                    setChoosing(null);
+                  }}
+                  onClose={() => setChoosing(null)}
+                />
+              ))}
+            {pendingUps
+              .filter((u) => u.id === pdfReview && !u.restricted && u.pdf?.job.state === 'reviewing')
+              .map((u) => (
+                <PdfReview
+                  key={u.id}
+                  upload={u}
+                  client={uploadsClient!}
+                  scope={draftScope(area, demoLock?.person?.id ?? null)}
+                  onChange={(n) => {
+                    up.put(u.id, n);
+                    if (!n || n.status === 'confirmed') setPdfReview(null);
+                  }}
+                  onClose={() => setPdfReview(null)}
+                />
+              ))}
             {c.notice && (
               <p
                 role="note"

@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { isFragmentLit, useHighlight, useHoverHighlight, type Highlight } from '../app/highlight';
 import type { Evidence, EvidenceLine, KeyValueRow } from '../domain/types';
-import { provenanceOf, type Provenance } from '../domain/uploads';
+import { pageOf } from '../domain/draft';
+import { pageLabel, provenanceOf, transcribedLabel, type Provenance } from '../domain/uploads';
 import { ReceiptGrid } from './ReceiptGrid';
 import { EvidenceTag, cx } from './ui';
 
@@ -21,24 +22,36 @@ function usedText(n: number, caption?: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** The lines of a document; a PDF upload's under the label of each page of the original document they are on. */
 function SourceLines({ id, lines, hl }: { id: string; lines: EvidenceLine[]; hl: Highlight | null }) {
+  const pages = lines.map((l) => (l.fragment ? pageOf(l.fragment)?.page : undefined));
   return (
     <div className="flex flex-col rounded-lg border border-line bg-surface-2 py-[5px]">
       {lines.map((l, i) => {
         const lit = isFragmentLit(hl, id, l.fragment);
+        const page = pages[i];
         return (
-          <span
-            key={i}
-            className={cx('px-2.5 py-[3px] font-mono text-mono-frag transition-[background] duration-fast', lit && 'bg-hl shadow-rule-acc')}
-          >
-            {l.text}
-            {l.corrected && (
-              <span data-testid="corrected-mark" className="ml-2 whitespace-nowrap rounded-xs border border-warn-line bg-warn-soft px-1 py-px font-sans text-[10.5px] text-warn">
-                corrected by {l.corrected}
+          <Fragment key={i}>
+            {page !== undefined && page !== pages[i - 1] && (
+              <span data-testid="page-label" className={cx('px-2.5 pb-[2px] pt-[5px] font-sans text-[11px] font-medium text-ink-3', i > 0 && 'mt-1 border-t border-line')}>
+                {pageLabel(page)}
               </span>
             )}
-            {lit && <span className="sr-only"> (cited)</span>}
-          </span>
+            <span className={cx('px-2.5 py-[3px] font-mono text-mono-frag transition-[background] duration-fast', lit && 'bg-hl shadow-rule-acc')}>
+              {l.text}
+              {l.corrected && (
+                <span data-testid="corrected-mark" className="ml-2 whitespace-nowrap rounded-xs border border-warn-line bg-warn-soft px-1 py-px font-sans text-[10.5px] text-warn">
+                  corrected by {l.corrected}
+                </span>
+              )}
+              {l.transcribed && (
+                <span data-testid="transcribed-mark" className="ml-2 whitespace-nowrap rounded-xs border border-acc-line bg-acc-soft px-1 py-px font-sans text-[10.5px] text-acc">
+                  {transcribedLabel(l.transcribed)}
+                </span>
+              )}
+              {lit && <span className="sr-only"> (cited)</span>}
+            </span>
+          </Fragment>
         );
       })}
     </div>
