@@ -157,17 +157,16 @@ test('a slow worker start does not eat the recognition budget', async () => {
   } finally { await closeOcr(); ocrTestHooks.reset(); }
 });
 
-test('a start longer than the start budget is OCR_TIMEOUT and the half-created worker is terminated when it resolves', async () => {
+test('a start longer than the start budget is OCR_TIMEOUT, and the next job reuses the starting worker (never two at once)', async () => {
   const seen = { created: 0, terminated: 0 };
   await closeOcr();
   ocrTestHooks.set({ create: slowStart(seen, 120), startTimeoutMs: 40 });
   try {
     await assert.rejects(ocrPng(solidPng(10, 10), { timeoutMs: 5_000 }), { code: 'OCR_TIMEOUT' });
-    await wait(200);
-    assert.equal(seen.terminated, 1);
-    ocrTestHooks.set({ create: slowStart(seen, 0), startTimeoutMs: 1_000 }); // recovers: the next job starts a new worker
+    ocrTestHooks.set({ create: slowStart(seen, 0), startTimeoutMs: 1_000 });
     assert.deepEqual(await ocrPng(solidPng(10, 10)), []);
-    assert.equal(seen.created, 2);
+    assert.equal(seen.created, 1);
+    assert.equal(seen.terminated, 0);
   } finally { await closeOcr(); ocrTestHooks.reset(); }
 });
 

@@ -37,11 +37,13 @@ export const ocrTestHooks = {
 };
 
 function getWorker(): Promise<Worker> {
-  worker ??= create().catch((e) => {
-    worker = null;
+  if (worker) return worker;
+  const p: Promise<Worker> = create().catch((e) => {
+    if (worker === p) worker = null; // only the start that failed, never a newer one
     throw e;
   });
-  return worker;
+  worker = p;
+  return p;
 }
 
 async function dropWorker(): Promise<void> {
@@ -132,15 +134,11 @@ function within<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> 
  */
 async function run(png: Uint8Array, timeoutMs: number, signal?: AbortSignal): Promise<OcrLine[]> {
   if (signal?.aborted) throw new UploadError('OCR_FAILED', 'OCR aborted');
+  let started = false;
   try {
     const { png: input, sx, sy } = ocrInput(png);
-    let w: Worker;
-    try {
-      w = await within(getWorker(), startMs, signal);
-    } catch (e) {
-      void dropWorker(); // not awaited: a start that never resolves must not hold the job; terminated once it does
-      throw e;
-    }
+    const w = await within(getWorker(), startMs, signal);
+    started = true;
     if (signal?.aborted) throw new UploadError('OCR_FAILED', 'OCR aborted');
     const { data } = await within(w.recognize(Buffer.from(input), {}, { blocks: true }), timeoutMs, signal);
     return (data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines)).flatMap((l) => {
@@ -152,7 +150,9 @@ async function run(png: Uint8Array, timeoutMs: number, signal?: AbortSignal): Pr
       return [{ text, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, confidence: l.confidence }];
     });
   } catch (e) {
-    await dropWorker();
+    // A start that ran out of budget is kept for the next job (a failed start clears itself in getWorker): dropping
+    // it would let the next job start a second worker while this one still loads, twice the memory.
+    if (started) await dropWorker();
     if (e instanceof UploadError) throw e;
     throw new UploadError('OCR_FAILED', 'OCR failed');
   }
