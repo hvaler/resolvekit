@@ -96,7 +96,7 @@ const MAX_NAME = 120;
 /** Control characters (tab and line feed excepted), C1 controls and bidi overrides: replaced by a space in pasted text. */
 const STRAY = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/g;
 /** Outside Latin-1 (U+0000–U+00FF): the PDF PayPal receives cannot show it, while the analyst would quote it. */
-const NOT_LATIN1 = /[^\u0000-ÿ]/u;
+const NOT_LATIN1 = /[^\u0000-\u00ff]/u;
 
 /** The refusal of pasted text with a character outside Latin-1, naming the first one (never the text around it). */
 function notLatin1(text: string): Response | null {
