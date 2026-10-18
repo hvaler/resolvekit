@@ -85,7 +85,7 @@ export function ThemeControls() {
  * dispute while the server reports PayPal connected, otherwise the in-browser simulator.
  */
 export function ModeBadge({ caseId }: { caseId?: string }) {
-  const { modeOf, health, snapshots } = useServices();
+  const { modeOf, health, snapshots, area, demo } = useServices();
   const origin = caseId ? snapshots[caseId]?.origin : undefined;
   const disputeId = origin?.kind === 'paypal' ? origin.disputeId : null;
   const bound = health?.bound.length ?? 0;
@@ -104,6 +104,9 @@ export function ModeBadge({ caseId }: { caseId?: string }) {
       );
     }
   }
+  // Demo and evaluation have their own environment indicator, which says the same; this chip describes the mix where there is none.
+  const envKind = environmentOf(area, demo).kind;
+  if (envKind === 'demo' || envKind === 'evaluation') return null;
   return (
     <span
       data-testid="mode-badge"

@@ -122,7 +122,8 @@ describe('the public demo area', () => {
   it('/demo/cases/:id opens the case file on the simulator', () => {
     const html = render('/demo/cases/PP-R-TVH-10190665');
     expect(html).toContain('Response draft');
-    expect(html).toContain('Simulated PayPal');
+    // The demo's own indicator says it; the old simulated chip is not repeated next to it.
+    expect(html).not.toContain('Simulated PayPal');
     expect(html).toContain('href="/demo/cases"');
   });
 
