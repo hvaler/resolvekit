@@ -73,6 +73,17 @@ test('a live agent case with a real session has no synthetic merchant notes, and
   assert.ok(JSON.stringify(caseView(agentCase, live({ session: s137, amount: { value: '1.37', currency: 'USD' } }))).includes('1.37'));
 });
 
+test('withMeterMcp on its own (without caseView) keeps none of the fixture’s amount, transaction or texts', () => {
+  for (const amount of [{ value: '0.40', currency: 'USD' }, null]) {
+    const c = withMeterMcp(agentCase, live({ amount }));
+    const all = JSON.stringify(c);
+    for (const v of ['1.37', '7HF40211KM3390816', 'mm-sess-20261008-01', 'four tool calls', '5.00 USD budget']) assert.ok(!all.includes(v), `${v} (amount ${JSON.stringify(amount)})`);
+    assert.equal(c.refundText, '0.40 USD');
+    assert.equal(c.actionDetails.accept_claim?.sub, 'Refund 0.40 USD');
+    assert.equal(c.summary.transactionId, 'CAPREAL1');
+  }
+});
+
 test('refund text and capture text come from the live amount and the receipt', () => {
   const c = caseView(agentCase, live());
   assert.equal(c.summary.captureText, 'Captured 0.40 of 1.00 USD');
@@ -97,7 +108,9 @@ test('with a run summary, E5 lists the goal, each step’s reason and the outcom
   const doc = e5(c)!;
   assert.equal(doc.title, 'Agent run record');
   assert.deepEqual(doc.sourceLabel, { kind: 'resolvekit', text: `From ResolveKit · run ${RUN.runId.slice(0, 16)}…`, title: `From ResolveKit · run ${RUN.runId}` });
+  assert.equal(doc.caption, 'Agent’s own account of its steps · not proof of delivery');
   assert.deepEqual(lineTexts(c), [
+    'The buying agent’s own account of its run, recorded by ResolveKit: its stated reasons and result summaries, not verification and not proof of delivery (the receipt and settlement are MeterMCP’s and PayPal’s records).',
     'Goal: Get a deep report on ACME and stay under budget',
     '1 · price_list · Check prices first · Price list: deep_report 0.40 USD',
     '2 · deep_report · The report answers the goal · Deep report on ACME',
@@ -107,7 +120,8 @@ test('with a run summary, E5 lists the goal, each step’s reason and the outcom
   // The analyst reads it like the other documents, as ResolveKit's.
   const d = buildInput(c).documents.find((x) => x.id === 'E5')!;
   assert.equal(d.source, 'ResolveKit');
-  assert.equal(d.lines.length, 5);
+  assert.equal(d.lines.length, 6);
+  assert.match(d.lines[0]!.text, /own account .* not verification and not proof of delivery/);
 
   // An uncertain step says so; a stopped or interrupted run is never called done.
   const stopped: AgentRunSummary = {
@@ -116,11 +130,15 @@ test('with a run summary, E5 lists the goal, each step’s reason and the outcom
     steps: [{ n: 1, tool: 'deep_report', state: 'uncertain', reason: 'Get the report', summary: 'Result unknown: the server restarted during this call' }],
   };
   const t = lineTexts(caseView(agentCase, live({ run: stopped })));
-  assert.equal(t[1], '1 · deep_report · Get the report · result unknown: Result unknown: the server restarted during this call');
+  assert.equal(t[2], '1 · deep_report · Get the report · result unknown: Result unknown: the server restarted during this call');
   assert.equal(t.at(-1), 'Outcome: Interrupted (stopped or server restart)');
   const limit = lineTexts(caseView(agentCase, live({ run: { ...RUN, outcome: 'stopped', stopReason: 'max_actions' } })));
   assert.equal(limit.at(-1), 'Outcome: Stopped: action limit reached');
-  for (const x of [t, limit]) assert.ok(!x.at(-1)!.includes('Done'));
+  // A stop reason this version does not know still says the run stopped, and why.
+  const unknown = lineTexts(caseView(agentCase, live({ run: { ...RUN, outcome: 'stopped', stopReason: 'new_reason' } })));
+  assert.equal(unknown.at(-1), 'Outcome: Stopped (new_reason)');
+  assert.equal(lineTexts(caseView(agentCase, live({ run: { ...RUN, outcome: 'paused' } }))).at(-1), 'Outcome: Unknown state (paused)');
+  for (const x of [t, limit, unknown]) assert.ok(!x.at(-1)!.includes('Done'));
 });
 
 test('the simulated agent case is unchanged', () => {

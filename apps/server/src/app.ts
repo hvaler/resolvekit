@@ -15,7 +15,7 @@ import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type P
 import { workspaceIdFor } from './accounts.ts';
 import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
-import type { AgentReceiptSource, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
+import type { AgentReceiptSource, AgentRunSummary, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
 import { linesToConfirmOf, type Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
 import { hasSellerEvidence, sellerEvidence } from '../../web/src/domain/recorded.ts';
@@ -417,21 +417,34 @@ export function createApi(opts: ApiOptions): Api {
 
   /**
    * The MeterMCP session behind the dispute's disputed capture. `none` (with the reason) when there is no capture,
-   * no MeterMCP, or no session for it; throws MeterMcpError when MeterMCP cannot be asked. With the ResolveKit run that
-   * opened the session, its summary (goal, steps' reasons and summaries, outcome; never the person, the approval link
-   * or the order) goes with it.
+   * no MeterMCP, or no session for it; throws MeterMcpError when MeterMCP cannot be asked. The run's summary goes with
+   * it only by {@link boundRun}.
    */
-  const agentReceipt = async (d: Dispute): Promise<AgentReceiptSource> => {
+  const agentReceipt = async (caseId: string, d: Dispute): Promise<AgentReceiptSource> => {
     const capture = d.disputed_transactions?.[0]?.seller_transaction_id;
     if (!capture) return { kind: 'none', reason: 'PayPal reports no disputed capture' };
     if (!opts.meterMcp) return { kind: 'none', reason: 'MeterMCP is not configured on this server' };
     const sessionId = await opts.meterMcp.findByCapture(capture);
     if (!sessionId) return { kind: 'none', reason: `MeterMCP has no session for capture ${capture}` };
     const session = toMeteredSession(await opts.meterMcp.receipt(sessionId));
-    const r = opts.agent?.store.bySession(sessionId);
-    if (!r) return { kind: 'metermcp', session };
+    const run = boundRun(caseId, d, sessionId);
+    return run ? { kind: 'metermcp', session, run } : { kind: 'metermcp', session };
+  };
+  /**
+   * The run record shown as the agent case's E5 (Ruling A14): only the run the case's active binding names
+   * (`run`, written by demo:prepare: the owner's act of publishing it as evidence), for this dispute, and only when
+   * its session is this capture's session (and the binding's `session`, when given). A run that merely holds the
+   * session is never shown: the case snapshot is shared by every viewer of the case. Only the goal, the steps'
+   * reasons and summaries and the outcome; never the person, the approval link or the order.
+   */
+  const boundRun = (caseId: string, d: Dispute, sessionId: string): AgentRunSummary | null => {
+    const b = bindingOf(caseId);
+    if (!b?.run || b.dispute !== d.dispute_id) return null;
+    const r = opts.agent?.store.get(b.run);
+    if (!r || r.sessionId !== sessionId || (b.session && b.session !== r.sessionId)) return null;
+    log(`agent case ${caseId}: run record ${r.id} attached (E5)`);
     const steps = r.steps.map((x) => ({ n: x.n, tool: x.tool, state: x.state, reason: x.reason, summary: x.summary }));
-    return { kind: 'metermcp', session, run: { runId: r.id, goal: r.goal, outcome: r.state, stopReason: r.stopReason, steps } };
+    return { runId: r.id, goal: r.goal, outcome: r.state, stopReason: r.stopReason, steps };
   };
   /** For the analyst: asked right before it would call the model (nothing stored for these documents, or a refresh). */
   const liveGate = (req: Request, action: CostlyAction): LiveGate | undefined => {
@@ -445,7 +458,7 @@ export function createApi(opts: ApiOptions): Api {
     if (isAgentCase(caseId)) {
       let receipt: AgentReceiptSource;
       try {
-        receipt = await agentReceipt(d);
+        receipt = await agentReceipt(caseId, d);
       } catch (e) {
         receipt = { kind: 'none', reason: e instanceof MeterMcpError ? e.message : 'MeterMCP could not be read' };
       }

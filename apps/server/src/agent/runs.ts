@@ -158,13 +158,16 @@ export class RunStore {
 
   /**
    * Delete unkept records created more than 30 days ago; the ids deleted. Never a run still going, one whose
-   * settlement is not final (the state reconcile works from) or one whose latest state is not written yet.
+   * settlement is not final (the state reconcile works from), one whose latest state is not written yet, or one whose
+   * capture is bound now (`boundCaptures`: every case's active and reserve captures, upper case; Ruling A13), since
+   * the agent case shows that run's record.
    */
-  sweep(): string[] {
+  sweep(boundCaptures: ReadonlySet<string> = new Set()): string[] {
     const before = new Date(this.now().getTime() - RUN_RETENTION_MS).toISOString();
     const gone: string[] = [];
     for (const r of this.records.values()) {
       if (r.kept || r.createdAt >= before || r.state === 'running' || r.state === 'awaiting_approval') continue;
+      if (r.captureId && boundCaptures.has(r.captureId.toUpperCase())) continue;
       if ((r.sessionId && UNSETTLED.has(r.settlement)) || this.pending.has(r.id)) continue;
       if (this.dir) {
         try {

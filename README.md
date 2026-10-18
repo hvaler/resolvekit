@@ -333,10 +333,13 @@ cards say **Demo data** and the case says why. The evidence goes as `PROOF_OF_FU
 
 With a real session the case keeps **nothing the synthetic example asserts**: no merchant notes, no buyer quote, no
 1.37 USD, no recommended action. Amounts, refund and capture text come from PayPal's read and the receipt. When the
-server holds the ResolveKit run that opened the session, its record is one more document, **E5 Agent run record**
-(*From ResolveKit · run …*): the goal, one line per step with the model's stated reason and the result summary (a
-step whose result is unknown says so), and how the run ended in plain words. The analyst reads it like the other
-documents, as content, never as instructions.
+case's binding names the ResolveKit run that made the payment (`run`, and its `session`, written into `BINDINGS_JSON`
+by `demo:prepare`: publishing a run's record is the owner's act) and the server holds that record for this very
+session, it is one more document, **E5 Agent run record** (*From ResolveKit · run …*, captioned *Agent's own account
+of its steps · not proof of delivery*): that caveat, the goal, one line per step with the model's stated reason and
+the result summary (a step whose result is unknown says so), and how the run ended in plain words. A run that merely
+holds the session is never shown: the case is seen by everyone who may open it. The analyst reads E5 like the other
+documents, as content, never as instructions. A run whose capture is bound (active or reserve) is never swept.
 
 Other MeterMCP settings: `METERMCP_PORT` (8790), `METERMCP_BUDGET` (5.00, the largest budget), `METERMCP_MIN_BUDGET`
 (0.50), `METERMCP_IDLE_MINUTES` (15), `METERMCP_PUBLIC_URL`, `METERMCP_RETURN_ORIGINS`. `METERMCP_FAIL_FIRST` is a
@@ -382,8 +385,8 @@ It prints each step as the page shows it, the model usage and the settlement fro
 1. **The synthetic example.** The simulated agent case `PP-R-MMC-10190702` as committed (four calls, one failure not
    charged, 1.37 of 5.00 USD, session `mm-sess-20261008-01`), its golden analysis and the evals EV-11/EV-12 are
    invented and labelled **Demo data**. They test the dispute analyst, not the agent's autonomy.
-2. **Real agent runs.** A run on `/agent` (or the CLI) is a real model's decisions and a real sandbox payment, with
-   whatever calls, failures and amount really happened. A run never opens a dispute by itself; `demo:prepare
+2. **Real agent runs.** A run on `/agent` (or the CLI) is a real model's decisions and, when its budget is approved,
+   a real sandbox payment, with whatever calls, failures and amount really happened. A run never opens a dispute by itself; `demo:prepare
    --agent-run <run id>` puts a finished run's capture in the agent case's reserve, and that case's documents and
    analysis are then built from that session's receipt and run record only.
 3. **The settlement state of each run**, as MeterMCP's receipt last said it: open, captured (amount and release),

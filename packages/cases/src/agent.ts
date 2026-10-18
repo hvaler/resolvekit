@@ -10,7 +10,7 @@
  *
  * Pure and React-free.
  */
-import type { PayPalSource } from './paypal.ts';
+import { withPayPal, type PayPalSource } from './paypal.ts';
 import { outcomeText, type RunState, type StopReason } from '../../../apps/web/src/domain/agentRun.ts';
 import type { AgentReceiptSource, AgentRunSummary, CaseFile, Evidence, MeteredSession, TimelineItem } from '../../../apps/web/src/domain/types.ts';
 
@@ -66,7 +66,10 @@ function asDemo(c: CaseFile, source: PayPalSource, found: AgentReceiptSource | n
   };
 }
 
-function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource, run: AgentRunSummary | undefined): CaseFile {
+function fromSession(demo: CaseFile, s: MeteredSession, source: PayPalSource, run: AgentRunSummary | undefined): CaseFile {
+  // PayPal's fields first (idempotent after caseView's own withPayPal): called on its own, the live path must not keep
+  // the fixture's amount, transaction or dates either.
+  const c = withPayPal(demo, source);
   const cur = s.currency;
   const label = { kind: 'metermcp', text: `From MeterMCP · session ${shortSession(s.sessionId)}`, title: `From MeterMCP · session ${s.sessionId}` } as const;
   const st = s.settlement;
@@ -155,7 +158,7 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource, run: 
   ];
 
   const fileName = `session-receipt-${s.sessionId}.pdf`;
-  // The disputed amount as PayPal reports it (withPayPal), else what the receipt says was captured.
+  // The disputed amount as PayPal reports it (withPayPal above), else what the receipt says was captured.
   const amount = c.summary.amount && c.summary.amount !== '—' && c.summary.currency ? `${c.summary.amount} ${c.summary.currency}` : `${captured} ${cur}`;
   const delivered = s.totals.ok > 0;
   const reasonCode = source.kind === 'live' ? source.snap.reason : null;
@@ -172,7 +175,6 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource, run: 
     },
     // The synthetic notes («All four tool calls completed successfully…») never apply to a real payment.
     merchantNotes: [],
-    requestedNote: source.kind === 'live' ? 'Requested from seller · read from PayPal' : c.requestedNote,
     evidence,
     timeline,
     timelineCaption: `${dayText(s.mandate.approvedAt)} · UTC`,
@@ -196,6 +198,9 @@ function fromSession(c: CaseFile, s: MeteredSession, source: PayPalSource, run: 
     notice: null,
   };
 }
+
+const RUN_CAVEAT_SHORT = 'Agent’s own account of its steps · not proof of delivery';
+const RUN_CAVEAT = 'The buying agent’s own account of its run, recorded by ResolveKit: its stated reasons and result summaries, not verification and not proof of delivery (the receipt and settlement are MeterMCP’s and PayPal’s records).';
 
 const RUN_STATES: readonly string[] = ['running', 'awaiting_approval', 'done', 'cannot_do', 'out_of_budget', 'stopped', 'model_unavailable', 'not_approved', 'interrupted'];
 
@@ -221,11 +226,13 @@ function runEvidence(r: AgentRunSummary): Evidence {
     id: 'E5',
     short: 'Run record',
     title: 'Agent run record',
-    caption: 'ResolveKit · the buying agent’s goal, steps and reasons',
+    caption: RUN_CAVEAT_SHORT,
     sourceLabel: { kind: 'resolvekit', text: `From ResolveKit · run ${shortSession(r.runId)}`, title: `From ResolveKit · run ${r.runId}` },
     body: {
       kind: 'lines',
       lines: [
+        // The caption is not in the analyst's input: the caveat is a line of the document itself.
+        { text: RUN_CAVEAT },
         { text: `Goal: ${oneLine(r.goal)}`, fragment: 'g1' },
         ...r.steps.map((x) => ({ text: step(x), fragment: `t${x.n}` })),
         { text: `Outcome: ${runOutcome(r)}`, fragment: 'o1' },

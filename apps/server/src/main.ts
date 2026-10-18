@@ -28,7 +28,7 @@ import { AgentService, RECONCILE_EVERY_MS } from './agent/service.ts';
 import { AccountStore } from './accounts.ts';
 import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
-import { checkBindings, parseBindingPools, type BindingPools } from './bindings.ts';
+import { boundCaptureSet, checkBindings, parseBindingPools, type BindingPools } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
 import { AGENT_RUNS_PER_PERSON, createHostedApp, type HostedApp } from './hosted.ts';
 import { PersonRunCaps } from './agent/person-caps.ts';
@@ -163,7 +163,8 @@ const agent = new AgentService({
 const agentSweep = setInterval(() => {
   agent.reconcile().catch((e) => log(`agent runs · reconcile failed · ${(e as Error).message}`));
   try {
-    const gone = runStore.sweep();
+    // A run whose capture is bound (active or reserve, read now: the bindings change in place) is never swept.
+    const gone = runStore.sweep(boundCaptureSet({ bindings, reserve }));
     if (gone.length) log(`agent runs · sweep · ${gone.length} run(s) older than 30 days removed`);
   } catch (e) {
     log(`agent runs · sweep failed · ${(e as Error).message}`);

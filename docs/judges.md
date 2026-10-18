@@ -128,8 +128,8 @@ The tool outputs are synthetic and say so.
 
 **7. The agent-purchase case.** Open **PP-R-MMC-10190702**: a buyer disputes a payment an AI agent made through
 MeterMCP. The mandate, the per-call receipt and the settlement come from MeterMCP's real ledger ("From MeterMCP ·
-session …"), and, when ResolveKit has the run that made the payment, the run record (goal, each step's reason,
-outcome: "From ResolveKit · run …"). The evidence goes to PayPal as digital delivery referenced by the session id,
+session …"), and, when the case is bound to the run that made the payment, its run record (the agent's own account of its
+goal, steps and reasons, not proof: "From ResolveKit · run …"). The evidence goes to PayPal as digital delivery referenced by the session id,
 with the receipt PDF.
 
 *Three things are kept apart.* **The synthetic example**: the agent case as it opens in the Explore demo (four calls,

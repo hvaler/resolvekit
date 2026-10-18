@@ -266,8 +266,10 @@ test('parseBindings keeps working with run and session keys on agent entries', (
   const b = bindingsJson({ agent: [{ dispute: 'PP-R-D0002', capture: CAPTURE, run: RUN, session: SESSION }, { dispute: 'PP-R-D0004', capture: 'CAP4DDDDDDDD' }] });
   assert.deepEqual(JSON.parse(b.json)[AGENT_CASE_ID], [{ dispute: 'PP-R-D0002', capture: CAPTURE, run: RUN, session: SESSION }, { dispute: 'PP-R-D0004', capture: 'CAP4DDDDDDDD' }]);
   const p = parseBindingPools(JSON.parse(b.json));
-  assert.deepEqual(p.bindings[AGENT_CASE_ID], { dispute: 'PP-R-D0002', capture: CAPTURE });
-  assert.deepEqual(parseBindings({ [AGENT_CASE_ID]: { dispute: 'PP-R-D0002', capture: CAPTURE, run: RUN, session: SESSION } })[AGENT_CASE_ID], { dispute: 'PP-R-D0002', capture: CAPTURE });
+  // The run and session are kept: the server shows a run's record (E5) only for the run its binding names.
+  assert.deepEqual(p.bindings[AGENT_CASE_ID], { dispute: 'PP-R-D0002', capture: CAPTURE, run: RUN, session: SESSION });
+  assert.deepEqual(p.reserve[AGENT_CASE_ID], [{ dispute: 'PP-R-D0004', capture: 'CAP4DDDDDDDD' }]);
+  assert.deepEqual(parseBindings({ [AGENT_CASE_ID]: { dispute: 'PP-R-D0002', capture: CAPTURE, run: RUN, session: SESSION } })[AGENT_CASE_ID], { dispute: 'PP-R-D0002', capture: CAPTURE, run: RUN, session: SESSION });
   // Any other key is still a mistake.
   assert.throws(() => parseBindings({ [AGENT_CASE_ID]: { dispute: 'PP-R-D0002', capture: CAPTURE, note: 'x' } }), /PayPal dispute id/);
   assert.throws(() => parseBindings({ [AGENT_CASE_ID]: { dispute: 'PP-R-D0002', capture: CAPTURE, run: 'not-a-run' } }), /PayPal dispute id/);

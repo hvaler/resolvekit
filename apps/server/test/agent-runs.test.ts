@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { agentModelsFromEnv, DEFAULT_LIMITS, type AgentModel, type MeterAnswer, type MeterConnection, type MeterTool, type ModelCall, type ModelTurn, type Step } from '@resolvekit/agent';
 import { MeterMcpClient } from '../src/metermcp.ts';
 import { RunStore, type RunRecord } from '../src/agent/runs.ts';
+import { boundCaptureSet } from '../src/bindings.ts';
 import { AgentService, MAX_RUNNING, MAX_RUNNING_PER_PERSON, RECOVERED_SUMMARY, type MeterAdmin } from '../src/agent/service.ts';
 
 const ADMIN_TOKEN = 'ADMINTOKEN-'.padEnd(64, 'z');
@@ -570,6 +571,25 @@ test('sweep deletes unkept records older than 30 days and keeps kept ones', (t) 
   assert.equal(store.get(old.id), null);
   assert.deepEqual(readdirSync(dir).sort(), [`${kept.id}.json`, `${recent.id}.json`].sort());
   assert.deepEqual(new RunStore({ dir }).list({ personId: BY.personId }).map((r) => r.id).sort(), [kept.id, recent.id].sort());
+});
+
+test('Ruling A13: sweep never deletes a run whose capture is bound now (active or reserve, any case)', () => {
+  let now = T0;
+  const store = new RunStore({ dir: null, now: () => new Date(now) });
+  const base = { finishedAt: null, goal: 'g', cap: '1.00', failFirst: [], state: 'done' as const, stopReason: null, answer: null, steps: [], approvalUrl: null, provider: null, model: null, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, reported: false }, sessionId: null, orderId: null, settlement: 'captured' as const, receiptSha256: null, captured: '0.40', released: '0.60', kept: false, by: BY };
+  const active = store.create({ ...base, captureId: '1AB23456CD789012E' });
+  const reserve = store.create({ ...base, captureId: '2ab23456cd789012e' });
+  const loose = store.create({ ...base, captureId: '3AB23456CD789012E' });
+  const none = store.create({ ...base, captureId: null });
+  now = T0 + 31 * 86_400_000;
+  const bound = boundCaptureSet({
+    bindings: { 'PP-R-MMC-10190702': { dispute: 'PP-R-D0001', capture: '1AB23456CD789012E', run: active.id } },
+    reserve: { 'PP-R-MMC-10190702': [{ dispute: 'PP-R-D0002', capture: '2AB23456CD789012E' }], 'PP-R-TVH-10190665': [] },
+  });
+  assert.deepEqual(store.sweep(bound).sort(), [loose.id, none.id].sort());
+  assert.ok(store.get(active.id) && store.get(reserve.id));
+  // Unbound later: swept like any other.
+  assert.deepEqual(store.sweep(new Set()).sort(), [active.id, reserve.id].sort());
 });
 
 test('no record, log line or error contains the admin token or the API keys', async (t) => {
