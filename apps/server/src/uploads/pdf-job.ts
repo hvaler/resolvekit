@@ -3,7 +3,8 @@
  * renders and reads in the background, recording its progress in the upload's `pdf.job` after each page so the web
  * app can poll `GET /uploads`.
  *
- *   selecting  thumbnails of every page (PDF_THUMB_DPI), `page`/`of` while they are made, none once all are there
+ *   selecting  thumbnails of every page (PDF_THUMB_DPI, PDF_THUMB_TIMEOUT_MS each), `page`/`of` while they are made,
+ *              none once all are there
  *   rendering  the selected pages, all in ONE pdf.js session (it holds the server-wide image slot), then closed
  *   reading    OCR of each stored render, one page at a time, never while a render runs
  *   reviewing  done: every selected page has its uncovered render (`page-<k>.orig.png`) and its read lines. No page
@@ -12,7 +13,8 @@
  *   failed     with a fixed message (never content), and everything of the upload freed (`store.failPdf`): the
  *              original, renders, thumbnails and text; the person discards it and uploads again
  *
- * One upload at a time server-wide, in the order started. A rendered page is encoded as a PNG and passed through
+ * Each pdf.js session (thumbnails, the selected pages) has PDF_SESSION_BUDGET_MS in all: past it the job fails with
+ * OVER_BUDGET, so one file cannot hold the image slot for minutes. One upload at a time server-wide, in the order started. A rendered page is encoded as a PNG and passed through
  * `sanitiseImage`, the code path of every covered image, so a stored render is always a fresh, opaque PNG. An upload
  * discarded, deleted or archived while the job runs is left alone from its next step on. Log lines carry the upload
  * id and an error code only.
@@ -20,7 +22,7 @@
 import { writeImagePdf } from '@resolvekit/pdf';
 import { PNG } from 'pngjs';
 import { UploadError, decodeImage, oneImageAtATime, sanitiseImage } from './image.ts';
-import { MAX_STORAGE_BYTES, PDF_RENDER_DPI, PDF_THUMB_DPI } from './limits.ts';
+import { MAX_STORAGE_BYTES, PDF_RENDER_DPI, PDF_SESSION_BUDGET_MS, PDF_THUMB_DPI, PDF_THUMB_TIMEOUT_MS } from './limits.ts';
 import { ocrPng, type OcrLine } from './ocr.ts';
 import { openPdfSession, type RenderedPage } from './pdf-input.ts';
 import type { PdfState, UploadRecord, UploadStore } from './store.ts';
@@ -32,6 +34,10 @@ export interface PdfJobOptions {
   maxStorageBytes?: number;
   /** Tests: another reader of a page image (default ocrPng). */
   ocr?: (png: Uint8Array) => Promise<OcrLine[]>;
+  /** Tests: one thumbnail's deadline (default PDF_THUMB_TIMEOUT_MS). */
+  thumbTimeoutMs?: number;
+  /** Tests: one pdf.js session's total budget (default PDF_SESSION_BUDGET_MS). */
+  sessionBudgetMs?: number;
 }
 
 export interface PdfJob {
@@ -87,6 +93,8 @@ export function createPdfJob(o: PdfJobOptions): PdfJob {
   const { store, log } = o;
   const maxStorage = o.maxStorageBytes ?? MAX_STORAGE_BYTES;
   const ocr = o.ocr ?? ((png: Uint8Array) => ocrPng(png));
+  const budgetMs = o.sessionBudgetMs ?? PDF_SESSION_BUDGET_MS;
+  const thumbMs = o.thumbTimeoutMs ?? PDF_THUMB_TIMEOUT_MS;
   let queue: Promise<void> = Promise.resolve();
 
   /** The upload while it is still worked on (pending or reviewing, a pdf), else null: the job stops there. */
@@ -105,7 +113,7 @@ export function createPdfJob(o: PdfJobOptions): PdfJob {
     const original = store.original(id);
     if (!r || !original) throw new Stop('GONE', GONE);
     const of = r.pdf.pageCount;
-    const session = await openPdfSession(original);
+    const session = await openPdfSession(original, { renderTimeoutMs: thumbMs, budgetMs });
     try {
       for (let n = 1; n <= of; n++) {
         const thumb = pagePng(await session.render(n, PDF_THUMB_DPI));
@@ -127,7 +135,7 @@ export function createPdfJob(o: PdfJobOptions): PdfJob {
     if (!r || !original || !r.pdf.selected) throw new Stop('GONE', GONE);
     const selected = r.pdf.selected;
     const of = selected.length;
-    const session = await openPdfSession(original);
+    const session = await openPdfSession(original, { budgetMs });
     try {
       for (let k = 1; k <= of; k++) {
         const before = current(id);

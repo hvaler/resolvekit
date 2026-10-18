@@ -41,6 +41,13 @@ export const PDF_THUMB_DPI = 36;
 export const PDF_MAX_PAGE_PIXELS = OCR_MAX_PIXELS;
 /** Reading the PDF and rendering one page. */
 export const PDF_PAGE_TIMEOUT_MS = 20_000;
+/** Rendering one thumbnail (PDF_THUMB_DPI): a real one takes well under a second, so a slow page cannot hold the image slot for long. */
+export const PDF_THUMB_TIMEOUT_MS = 3_000;
+/**
+ * One PDF session in all (open, every render and hint), as it holds the server-wide image slot: past it the reader is
+ * killed and the job fails, so one file cannot stall every other upload, cover and confirm for minutes.
+ */
+export const PDF_SESSION_BUDGET_MS = 90_000;
 export const MAX_REDACTS_PER_PAGE = 5;
 /**
  * The PDF reader child is killed above this resident size (Linux only, where it can be read): the hosted instance

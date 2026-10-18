@@ -37,7 +37,7 @@ import { uploadDocuments, uploadTitle } from './documents.ts';
 import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
 import { MAX_FILE_BYTES, MAX_REDACTS_PER_PAGE, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED, PDF_RENDER_DPI } from './limits.ts';
 import { ocrPng } from './ocr.ts';
-import { CANNOT_START, TOO_BIG, TOO_SLOW, inspectPdf, pageTextHint } from './pdf-input.ts';
+import { CANNOT_START, OVER_BUDGET, TOO_BIG, TOO_SLOW, inspectPdf, pageTextHint } from './pdf-input.ts';
 import { coveredPagesPdf, type PdfJob } from './pdf-job.ts';
 import { canDeleteUpload, canEditUpload } from './permissions.ts';
 import type { PdfPage, PdfState, UploadPatch, UploadRecord, UploadStatus, UploadStore } from './store.ts';
@@ -788,7 +788,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     } catch (e) {
       if (hints.get(key) === read) hints.delete(key);
       // Never a 500: the reader could not start or was too slow (try again), or the page could not be read.
-      if (!(e instanceof UploadError) || e.message === CANNOT_START || e.message === TOO_SLOW) return refuse(503, 'PDF_READER_UNAVAILABLE', 'The PDF reader could not read this page now. Try again later.');
+      if (!(e instanceof UploadError) || e.message === CANNOT_START || e.message === TOO_SLOW || e.message === OVER_BUDGET) return refuse(503, 'PDF_READER_UNAVAILABLE', 'The PDF reader could not read this page now. Try again later.');
       return refuse(422, 'UNREADABLE', e.message);
     }
   };

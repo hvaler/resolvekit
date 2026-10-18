@@ -7,15 +7,15 @@
  * the child with SIGKILL when one operation outlasts its deadline and, on Linux (the hosted instance), when its
  * resident memory passes PDF_CHILD_MAX_RSS_BYTES, read from /proc/<pid>/statm every 100 ms. On other platforms
  * (Windows, macOS: development only) only the deadline applies. A session holds the server-wide image slot until its
- * child has exited; a crashed or killed child never throws in the parent, and the next session starts a fresh one. The
- * OCR worker is closed before a child starts (both hold a large heap, and the hosted instance has room for one of them
- * only); it restarts on the next OCR.
+ * child has exited, PDF_SESSION_BUDGET_MS at most in all; a crashed or killed child never throws in the parent, and the
+ * next session starts a fresh one. The OCR worker is closed before a child starts (both hold a large heap, and the
+ * hosted instance has room for one of them only); it restarts on the next OCR.
  */
 import { fork, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { UploadError, oneImageAtATime } from './image.ts';
-import { PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGE_PIXELS, PDF_PAGE_TIMEOUT_MS } from './limits.ts';
+import { PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGE_PIXELS, PDF_PAGE_TIMEOUT_MS, PDF_SESSION_BUDGET_MS } from './limits.ts';
 import { closeOcr } from './ocr.ts';
 import type { ChildError, ChildReply, ChildRequest, ChildStrip } from './pdf-child.ts';
 
@@ -24,6 +24,8 @@ export const TOO_BIG = 'This PDF is larger than 10 MB or has more than 30 pages.
 const ENCRYPTED = 'This PDF is password-protected or encrypted. Upload a version without protection.';
 const UNREADABLE = 'This file could not be read as a PDF.';
 export const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';
+/** A session past PDF_SESSION_BUDGET_MS. */
+export const OVER_BUDGET = 'This PDF takes too long to read. Prepare a smaller extract and upload it again.';
 export const CANNOT_START = 'The PDF reader could not start. Try again later.';
 const TOO_HUNGRY = 'This PDF needs more memory than the demo allows. Prepare a smaller extract and upload it again.';
 
@@ -40,7 +42,7 @@ export interface PdfSession {
   render(page: number, dpi: number): Promise<RenderedPage>;
   /** The text layer of page `page` (1-based) as trimmed lines: a hint for review, never a source (it can hold invisible text). */
   hint(page: number): Promise<string[]>;
-  /** Kill the child and free the slot. Also happens on any refusal, and after PDF_PAGE_TIMEOUT_MS without a call. */
+  /** Kill the child and free the slot. Also happens on any refusal, after PDF_PAGE_TIMEOUT_MS without a call and past the budget. */
   close(): Promise<void>;
 }
 
@@ -166,14 +168,26 @@ class Reader {
   }
 }
 
+export interface PdfSessionOptions {
+  /** Each call (open, render, hint) and the idle time between calls (default PDF_PAGE_TIMEOUT_MS). */
+  timeoutMs?: number;
+  /** Each render, when shorter than `timeoutMs` (thumbnails: PDF_THUMB_TIMEOUT_MS). */
+  renderTimeoutMs?: number;
+  /** The whole session, from its child's start (default PDF_SESSION_BUDGET_MS): past it the child is killed (OVER_BUDGET). */
+  budgetMs?: number;
+}
+
 /**
  * Open a PDF in a fresh child, holding the image slot until `close()` (or a refusal, or PDF_PAGE_TIMEOUT_MS without a
- * call) so several pages are rendered from one parse. Too large, encrypted, broken or empty files are refused here.
+ * call, or the session budget) so several pages are rendered from one parse. Too large, encrypted, broken or empty
+ * files are refused here.
  */
-export function openPdfSession(bytes: Uint8Array, o: { timeoutMs?: number } = {}): Promise<PdfSession> {
+export function openPdfSession(bytes: Uint8Array, o: PdfSessionOptions = {}): Promise<PdfSession> {
   if (bytes.byteLength > PDF_MAX_BYTES) return Promise.reject(new UploadError('TOO_LARGE', TOO_BIG));
   if (!looksLikePdf(bytes)) return Promise.reject(new UploadError('UNREADABLE', UNREADABLE));
   const timeoutMs = o.timeoutMs ?? PDF_PAGE_TIMEOUT_MS;
+  const renderTimeoutMs = Math.min(timeoutMs, o.renderTimeoutMs ?? timeoutMs);
+  const budgetMs = o.budgetMs ?? PDF_SESSION_BUDGET_MS;
   return new Promise((resolveSession, rejectSession) => {
     oneImageAtATime(async () => {
       // Inside the slot no OCR runs (it takes the slot too): the worker is stopped, never resident beside the child.
@@ -186,6 +200,8 @@ export function openPdfSession(bytes: Uint8Array, o: { timeoutMs?: number } = {}
         rejectSession(new UploadError('UNREADABLE', CANNOT_START, { cause: e }));
         return;
       }
+      const budget = setTimeout(() => reader.kill(new UploadError('UNREADABLE', OVER_BUDGET)), budgetMs);
+      void reader.exited.then(() => clearTimeout(budget));
       let closed = false;
       let idle: NodeJS.Timeout | undefined;
       const close = async () => {
@@ -196,11 +212,11 @@ export function openPdfSession(bytes: Uint8Array, o: { timeoutMs?: number } = {}
       };
       /** One request at a time; a refusal or a death ends the session. */
       let queue: Promise<unknown> = Promise.resolve();
-      const run = <T>(msg: ChildRequest): Promise<T> => {
+      const run = <T>(msg: ChildRequest, callMs = timeoutMs): Promise<T> => {
         const job = queue.then(async () => {
           clearTimeout(idle);
           try {
-            return (await reader.call(msg, timeoutMs)) as T;
+            return (await reader.call(msg, callMs)) as T;
           } catch (e) {
             await close();
             throw e;
@@ -219,7 +235,7 @@ export function openPdfSession(bytes: Uint8Array, o: { timeoutMs?: number } = {}
         resolveSession({
           pages,
           render: (page, dpi) =>
-            dpi > 0 && Number.isFinite(dpi) ? run<RenderedPage>({ op: 'render', page, dpi }) : Promise.reject(new RangeError('dpi must be a positive number')),
+            dpi > 0 && Number.isFinite(dpi) ? run<RenderedPage>({ op: 'render', page, dpi }, renderTimeoutMs) : Promise.reject(new RangeError('dpi must be a positive number')),
           hint: (page) => (pdfChildTestHooks.hintReads++, run<string[]>({ op: 'hint', page })),
           close,
         });
@@ -237,7 +253,7 @@ function looksLikePdf(b: Uint8Array): boolean {
   return Buffer.from(b.buffer, b.byteOffset, Math.min(b.byteLength, 1024)).toString('latin1').includes('%PDF-');
 }
 
-async function once<T>(bytes: Uint8Array, o: { timeoutMs?: number }, work: (s: PdfSession) => Promise<T>): Promise<T> {
+async function once<T>(bytes: Uint8Array, o: PdfSessionOptions, work: (s: PdfSession) => Promise<T>): Promise<T> {
   const s = await openPdfSession(bytes, o);
   try {
     return await work(s);
@@ -247,16 +263,16 @@ async function once<T>(bytes: Uint8Array, o: { timeoutMs?: number }, work: (s: P
 }
 
 /** The number of pages, refusing what cannot be used (too large, encrypted, unreadable, empty). */
-export function inspectPdf(bytes: Uint8Array, o: { timeoutMs?: number } = {}): Promise<{ pages: number }> {
+export function inspectPdf(bytes: Uint8Array, o: PdfSessionOptions = {}): Promise<{ pages: number }> {
   return once(bytes, o, async (s) => ({ pages: s.pages }));
 }
 
 /** One page, in its own session: see `PdfSession.render`. */
-export function renderPage(bytes: Uint8Array, page: number, dpi: number, o: { timeoutMs?: number } = {}): Promise<RenderedPage> {
+export function renderPage(bytes: Uint8Array, page: number, dpi: number, o: PdfSessionOptions = {}): Promise<RenderedPage> {
   return once(bytes, o, (s) => s.render(page, dpi));
 }
 
 /** One page's text layer, in its own session: see `PdfSession.hint`. */
-export function pageTextHint(bytes: Uint8Array, page: number, o: { timeoutMs?: number } = {}): Promise<string[]> {
+export function pageTextHint(bytes: Uint8Array, page: number, o: PdfSessionOptions = {}): Promise<string[]> {
   return once(bytes, o, (s) => s.hint(page));
 }

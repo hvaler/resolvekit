@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PNG } from 'pngjs';
 import { inspectPdf, openPdfSession, pageTextHint, pdfChildTestHooks, readRss, renderPage } from '../src/uploads/pdf-input.ts';
-import { MAX_SIDE, PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_PAGE_PIXELS, PDF_MAX_SELECTED, PDF_PAGE_TIMEOUT_MS, PDF_RENDER_DPI, PDF_THUMB_DPI, MAX_REDACTS_PER_PAGE } from '../src/uploads/limits.ts';
+import { MAX_SIDE, PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_PAGE_PIXELS, PDF_MAX_SELECTED, PDF_PAGE_TIMEOUT_MS, PDF_RENDER_DPI, PDF_SESSION_BUDGET_MS, PDF_THUMB_DPI, PDF_THUMB_TIMEOUT_MS, MAX_REDACTS_PER_PAGE } from '../src/uploads/limits.ts';
 import { closeOcr, ocrPng, ocrTestHooks } from '../src/uploads/ocr.ts';
 import { A3_LANDSCAPE, HIDDEN, HUGE, bombPdf, corruptPdf, encryptedPdf, hiddenPdf, pagesPdf, resourcesPdf, textPdf, zeroPagePdf } from './fixtures/make-pdfs.ts';
 
@@ -11,6 +11,7 @@ const TOO_BIG = 'This PDF is larger than 10 MB or has more than 30 pages. Prepar
 const ENCRYPTED = 'This PDF is password-protected or encrypted. Upload a version without protection.';
 const UNREADABLE = 'This file could not be read as a PDF.';
 const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';
+const OVER_BUDGET = 'This PDF takes too long to read. Prepare a smaller extract and upload it again.';
 const TOO_HUNGRY = 'This PDF needs more memory than the demo allows. Prepare a smaller extract and upload it again.';
 const MiB = 1024 * 1024;
 
@@ -22,6 +23,8 @@ test('limits', () => {
   assert.equal(PDF_THUMB_DPI, 36);
   assert.equal(PDF_MAX_PAGE_PIXELS, 4_000_000);
   assert.equal(PDF_PAGE_TIMEOUT_MS, 20_000);
+  assert.equal(PDF_THUMB_TIMEOUT_MS, 3_000);
+  assert.equal(PDF_SESSION_BUDGET_MS, 90_000);
   assert.equal(MAX_REDACTS_PER_PAGE, 5);
   assert.equal(PDF_CHILD_MAX_RSS_BYTES, 200 * 1024 * 1024);
 });
@@ -119,6 +122,32 @@ test('a render over the timeout is refused, and the next job still runs', TIMEOU
   const next = renderPage(pagesPdf(3), 3, 36);
   await assert.rejects(slow, { code: 'UNREADABLE', message: TOO_SLOW });
   assert.ok((await next).width > 0);
+});
+
+test('a render deadline of its own (thumbnails) refuses a slow render after a normal open', TIMEOUT, async () => {
+  const s = await openPdfSession(pagesPdf(2), { renderTimeoutMs: 1 });
+  try {
+    await assert.rejects(s.render(1, 36), { code: 'UNREADABLE', message: TOO_SLOW });
+  } finally {
+    await s.close();
+  }
+  assert.deepEqual(await inspectPdf(pagesPdf(1)), { pages: 1 });
+});
+
+test('a session over its total budget is killed, mid-call or between calls, and frees the slot', TIMEOUT, async () => {
+  try {
+    pdfChildTestHooks.onOpen = 'hang';
+    const started = Date.now();
+    await assert.rejects(openPdfSession(pagesPdf(1), { timeoutMs: 10_000, budgetMs: 300 }), { code: 'UNREADABLE', message: OVER_BUDGET });
+    assert.ok(Date.now() - started < 4000, `${Date.now() - started} ms`);
+  } finally {
+    pdfChildTestHooks.onOpen = undefined;
+  }
+  const s = await openPdfSession(pagesPdf(2), { timeoutMs: 10_000, budgetMs: 5_000 });
+  await new Promise((ok) => setTimeout(ok, 5_200));
+  await assert.rejects(s.render(1, 36), { code: 'UNREADABLE', message: OVER_BUDGET });
+  await s.close();
+  assert.deepEqual(await inspectPdf(pagesPdf(1)), { pages: 1 });
 });
 
 test('the OCR worker is closed before a PDF reader starts: the two are never resident together', TIMEOUT, async () => {

@@ -389,6 +389,40 @@ test('a failed job keeps its message and frees everything: original, renders, th
   assert.equal(store.get(next)!.pdf!.job.state, 'reviewing');
 });
 
+test('a PDF session over its budget, or a thumbnail over its deadline, fails the job and frees everything', TIMEOUT, async () => {
+  const OVER_BUDGET = 'This PDF takes too long to read. Prepare a smaller extract and upload it again.';
+  const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';
+  const read = async () => [{ text: 'read', box: { x: 0, y: 0, w: 1, h: 1 }, confidence: 90 }];
+  const freed = (store: UploadStore, id: string, n: number) => {
+    assert.equal(store.original(id), null);
+    for (let k = 1; k <= n; k++) {
+      assert.equal(store.thumb(id, k), null);
+      assert.equal(store.origPage(id, k), null);
+    }
+  };
+  for (const [opts, error] of [[{ sessionBudgetMs: 1 }, OVER_BUDGET], [{ thumbTimeoutMs: 1 }, TOO_SLOW]] as const) {
+    const store = new UploadStore({ dir: null });
+    const lines: string[] = [];
+    const job = createPdfJob({ store, log: (l) => lines.push(l), ocr: read, ...opts });
+    const thumbs = pdfRecord(store, 7, null, { state: 'selecting', page: 0, of: 7 });
+    job.start(thumbs);
+    await job.idle();
+    assert.deepEqual(store.get(thumbs)!.pdf!.job, { state: 'failed', error });
+    freed(store, thumbs, 7);
+    assert.ok(lines.every((l) => l === `uploads · pdf job · ${thumbs} · failed · UNREADABLE`), JSON.stringify(lines));
+  }
+  // The selected pages' session has the same budget.
+  const store = new UploadStore({ dir: null });
+  const job = createPdfJob({ store, log: () => {}, ocr: read, sessionBudgetMs: 1 });
+  const pages = pdfRecord(store, 2, [1, 2], { state: 'rendering', page: 0, of: 2 });
+  job.start(pages);
+  await job.idle();
+  assert.deepEqual(store.get(pages)!.pdf!.job, { state: 'failed', error: OVER_BUDGET });
+  freed(store, pages, 2);
+  assert.ok(store.get(pages)!.pdf!.pages.every((p) => p.readLines.length === 0), 'nothing was read');
+  assert.equal(store.usedBytes(), 0);
+});
+
 test('a reader that dies while rendering fails the job: the uncovered renders are gone, and choosing again says why', TIMEOUT, async () => {
   const { app, people, store } = setup();
   const cookie = people.fullMember();
