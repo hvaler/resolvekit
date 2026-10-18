@@ -62,6 +62,10 @@ const ledger = (() => {
     return fail(e instanceof Error ? e.message : String(e));
   }
 })();
+const MONEY = /^\d+(\.\d{1,2})?$/;
+if (MONEY.test(minBudget) && MONEY.test(budget) && Number(minBudget) > Number(budget)) {
+  log(`WARNING: METERMCP_MIN_BUDGET ${minBudget} is above METERMCP_BUDGET ${budget}: open_budget will refuse every cap`);
+}
 const meter = (() => {
   try {
     return new Meter({ ledger, paypal, env, publicUrl, budget, minBudget, returnOrigins, log, failFirst });

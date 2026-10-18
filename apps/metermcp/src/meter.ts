@@ -167,7 +167,15 @@ export class Meter {
     };
     this.budgetCents = toCents(this.o.budget);
     this.minBudgetCents = toCents(this.o.minBudget);
-    this.returnOrigins = new Set(this.o.returnOrigins.map((o) => new URL(o).origin));
+    this.returnOrigins = new Set(
+      this.o.returnOrigins.map((o) => {
+        // "localhost:5173" parses with scheme "localhost:" and the opaque origin "null", which javascript: and data:
+        // URLs share: such an entry would let them through, so it is refused (main.ts: MeterMCP does not start).
+        const u = new URL(o);
+        if ((u.protocol !== 'https:' && u.protocol !== 'http:') || u.origin === 'null') throw new Error(`Return origin ${JSON.stringify(o)} is not an http(s) origin`);
+        return u.origin;
+      }),
+    );
   }
 
   /** The caps open_budget accepts, as decimal strings in {@link CURRENCY}. */
@@ -184,6 +192,7 @@ export class Meter {
     } catch {
       return null;
     }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
     return this.returnOrigins.has(u.origin) ? u.href : null;
   }
 
@@ -371,7 +380,7 @@ export class Meter {
     const { min, max } = this.capRange;
     const capCents = typeof req.cap === 'string' && CAP_FORMAT.test(req.cap) ? toCents(req.cap) : null;
     if (capCents == null || capCents <= 0 || capCents < this.minBudgetCents || capCents > this.budgetCents) {
-      return answer({ error: 'invalid_cap', message: `cap must be an amount in ${CURRENCY} from ${min} to ${max} (e.g. "2.50"); got ${JSON.stringify(req.cap)}. Nothing was opened.`, min, max, currency: CURRENCY }, true);
+      return answer({ error: 'invalid_cap', message: `cap must be an amount in ${CURRENCY} from ${min} to ${max} (e.g. "2.50"); got ${JSON.stringify(String(req.cap).slice(0, 20))}. Nothing was opened.`, min, max, currency: CURRENCY }, true);
     }
     const failFirst = [...new Set(req.failFirst ?? [])];
     const unknown = failFirst.find((t) => !toolByName(t));

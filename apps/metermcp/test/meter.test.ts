@@ -668,10 +668,25 @@ test('return_to on the allowlist is kept; any other origin is ignored (stored nu
   assert.equal(ledger.session(evil.session_id)!.return_to, null);
   const kept = body(await meter.openBudget('mcp-2', { cap: '1.00', returnTo: 'https://resolvekit.example/agent?run=run-1' }, {}));
   assert.equal(ledger.session(kept.session_id)!.return_to, 'https://resolvekit.example/agent?run=run-1');
-  for (const [i, returnTo] of ['not a url', '/agent', 'http://resolvekit.example/agent', 'https://resolvekit.example:8443/agent', 'https://resolvekit.example.evil.example/x', 'javascript:alert(1)'].entries()) {
+  for (const [i, returnTo] of ['not a url', '/agent', 'http://resolvekit.example/agent', 'https://resolvekit.example:8443/agent', 'https://resolvekit.example.evil.example/x', 'javascript:alert(1)', 'data:text/html,x'].entries()) {
     const r = body(await meter.openBudget(`mcp-x${i}`, { cap: '1.00', returnTo }, {}));
     assert.equal(ledger.session(r.session_id)!.return_to, null, returnTo);
   }
+  // An allowlist entry without an http(s) origin is refused at construction: "localhost:5173" parses with the opaque
+  // origin "null", which javascript: and data: URLs share, so accepting it would let them through.
+  for (const bad of ['localhost:5173', 'javascript:alert(1)', 'data:text/html,x']) {
+    assert.throws(() => setup({ returnOrigins: [bad] }), /not an http\(s\) origin/, bad);
+  }
+  const { meter: mixed, ledger: lm } = setup({ returnOrigins: ['https://resolvekit.example', 'http://127.0.0.1:5173'] });
+  for (const [i, returnTo] of ['javascript:alert(1)', 'data:text/html,x'].entries()) {
+    const r = body(await mixed.openBudget(`mcp-m${i}`, { cap: '1.00', returnTo }, {}));
+    assert.equal(lm.session(r.session_id)!.return_to, null, returnTo);
+  }
+  assert.equal(mixed.allowedReturn('http://127.0.0.1:5173/agent'), 'http://127.0.0.1:5173/agent');
+  // invalid_cap never echoes more than 20 characters of what it was given.
+  const long = body(await mixed.openBudget('mcp-long', { cap: 'x'.repeat(5000) }, {}));
+  assert.equal(long.error, 'invalid_cap');
+  assert.ok(long.message.length < 200, long.message);
   // No allowlist: nothing is kept.
   const { meter: m2, ledger: l2 } = setup();
   const r = body(await m2.openBudget('mcp-1', { cap: '1.00', returnTo: 'https://resolvekit.example/agent' }, {}));

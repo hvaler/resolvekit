@@ -126,7 +126,10 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 `;
 
-/** Columns added to `sessions` after the first deploy, in order: an older database gains them at start. */
+/**
+ * Columns added to `sessions` after the first deploy, in order: an older database gains them at start. SCHEMA runs
+ * before the migration, so an index on an added column must be created after `migrate`, never in SCHEMA.
+ */
 const ADDED_COLUMNS: ReadonlyArray<readonly [name: string, type: string]> = [
   ['fail_first', 'TEXT'],
   ['return_to', 'TEXT'],
