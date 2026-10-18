@@ -7,6 +7,10 @@ export const MAX_UPLOADS_PER_CASE = 10;
 /** Daily cap key `upload`. */
 export const DAILY_UPLOADS = 40;
 export const OCR_TIMEOUT_MS = 20_000;
+/** OCR reads at most this many pixels (larger images are downscaled for OCR only): measured on Render, an 8 MP OCR peaked ~490 MB of the 512 MB. */
+export const OCR_MAX_PIXELS = 4_000_000;
+/** The OCR worker is terminated after this long without a job: measured, its WASM heap never shrinks (~430 MB resident after an 8 MP OCR, ~275 MB after a small one, ~80 MB idle without it). */
+export const OCR_IDLE_MS = 60_000;
 export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_STORAGE_BYTES = 300 * 1024 * 1024;
 /**
