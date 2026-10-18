@@ -14,7 +14,7 @@ const INTERNAL = 'metermcp-ab12:10000';
 const TOKEN = 'a'.repeat(64);
 const CODE = 'judges-code-2026';
 
-function setup(o: { budgets?: number; badCodes?: number } = {}) {
+function setup(o: { budgets?: number; badCodes?: number; agentLimit?: number } = {}) {
   const pp = fakePayPal();
   const meter = new Meter({ ledger: new Ledger(':memory:'), paypal: pp.client, env: 'sandbox', publicUrl: PUBLIC });
   const budgets = new DailyCounters({ file: null, limits: { budget: o.budgets ?? 5 } });
@@ -24,7 +24,7 @@ function setup(o: { budgets?: number; badCodes?: number } = {}) {
     port: 10000,
     token: TOKEN,
     allowedOrigins: [],
-    hosted: { publicHosts: [HOST], https: true, demoCode: CODE, budgets, badCodesPerIp: { limit: o.badCodes ?? 5, windowMs: 900_000 } },
+    hosted: { publicHosts: [HOST], https: true, demoCode: CODE, budgets, badCodesPerIp: { limit: o.badCodes ?? 5, windowMs: 900_000 }, ...(o.agentLimit ? { agentPerRun: { limit: o.agentLimit, windowMs: 300_000 } } : {}) },
   });
   // What Render's proxy does for public traffic: Host is the public host, X-Forwarded-For carries the client.
   const publicFetch = (ip = '203.0.113.9') =>
@@ -169,4 +169,26 @@ test('hosted MeterMCP: /agent/mcp with the token and a run id lets open_budget t
   assert.equal(pp.count(/POST \/v2\/checkout\/orders$/), 1);
   assert.equal(budgets.state().caps.budget!.used, 1);
   await client.close();
+});
+
+const agentHeaders = (run: string) => ({ ...AGENT_INIT.headers, host: INTERNAL, [TOKEN_HEADER]: TOKEN, 'x-agent-run': run });
+
+test('hosted MeterMCP: an /agent/mcp session answers only to the run that opened it', async () => {
+  const { app } = setup();
+  const url = `http://${INTERNAL}/agent/mcp`;
+  const RUN_B = `run-${'fedcba9876543210'.repeat(2)}`;
+  const init = await app(new Request(url, { ...AGENT_INIT, headers: agentHeaders(RUN) }));
+  assert.equal(init.status, 200);
+  const sid = init.headers.get('mcp-session-id')!;
+  const list = (run: string) => app(new Request(url, { method: 'POST', headers: { ...agentHeaders(run), 'mcp-session-id': sid, 'mcp-protocol-version': '2025-06-18' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) }));
+  assert.equal((await list(RUN_B)).status, 404);
+  assert.equal((await list(RUN)).status, 200);
+});
+
+test('hosted MeterMCP: /agent/mcp answers 429 past its per-run request limit', async () => {
+  const { app } = setup({ agentLimit: 2 });
+  const url = `http://${INTERNAL}/agent/mcp`;
+  const statuses: number[] = [];
+  for (let i = 0; i < 3; i++) statuses.push((await app(new Request(url, { method: 'GET', headers: agentHeaders(RUN) }))).status);
+  assert.deepEqual(statuses, [400, 400, 429]);
 });

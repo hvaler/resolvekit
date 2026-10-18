@@ -48,6 +48,8 @@ export interface HostedMeterOptions {
   proxyTrust?: ProxyTrust;
   /** /mcp requests per IP. */
   mcpPerIp?: { limit: number; windowMs: number };
+  /** /agent/mcp requests per agent run. */
+  agentPerRun?: { limit: number; windowMs: number };
   /** Wrong demo codes per IP before even the right one is refused for a while. */
   badCodesPerIp?: { limit: number; windowMs: number };
   now?: () => number;
@@ -135,8 +137,8 @@ export function createApp(opts: AppOptions): Handler {
     : undefined;
   const mcp = createMcpEndpoint(meter, policy, opts.mcpLimits ?? {});
   // /agent/mcp (hosted): its own session caps and request limiter, keyed by agent run, apart from the public ones.
-  const agentMcp = h ? createMcpEndpoint(meter, policy, { ...opts.mcpLimits, maxSessions: 10, maxPerIp: 10 }) : mcp;
-  const agentLimit = new KeyedLimiter({ limit: 600, windowMs: 5 * 60_000, now });
+  const agentMcp = h ? createMcpEndpoint(meter, policy, { ...opts.mcpLimits, maxSessions: 10, maxPerIp: 10, bindSessionToKey: true }) : mcp;
+  const agentLimit = new KeyedLimiter({ limit: 600, windowMs: 5 * 60_000, ...h?.agentPerRun, now });
   const admin = (req: Request) => {
     const t = req.headers.get(TOKEN_HEADER);
     return !!opts.token && !!t && sameSecret(t, opts.token);

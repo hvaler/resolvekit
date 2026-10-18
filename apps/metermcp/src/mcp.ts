@@ -106,6 +106,8 @@ export interface McpLimits {
   maxPerIp: number;
   /** A session with no request for this long is closed (its transport freed, its payment session closed). */
   idleMs: number;
+  /** A request carrying a session id must come from the key that opened it (else 404): one run cannot drive another's session. */
+  bindSessionToKey?: boolean;
   now?: () => number;
 }
 
@@ -160,7 +162,7 @@ export function createMcpEndpoint(meter: Meter, policy?: BudgetPolicy, limits: P
     const sid = req.headers.get('mcp-session-id');
     if (sid) {
       const s = live.get(sid);
-      if (!s?.transport) return rpcError(404, 'Unknown MCP session');
+      if (!s?.transport || (L.bindSessionToKey && s.ip !== ip)) return rpcError(404, 'Unknown MCP session');
       s.lastSeen = now();
       return s.transport.handleRequest(req, opts);
     }
