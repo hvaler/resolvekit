@@ -27,8 +27,10 @@
   | `PDF_MAX_SELECTED` | `5` |
   | `PDF_RENDER_DPI` | `170` (the legibility test in Task 9 may change it, and the plan's value moves with it) |
   | `PDF_THUMB_DPI` | `36` |
-  | `PDF_MAX_PAGE_PIXELS` | `MAX_PIXELS`, phase 1's 8_294_400; above it the page is rendered at a lower dpi so it fits |
+  | `PDF_MAX_PAGE_PIXELS` | `4_000_000` (`OCR_MAX_PIXELS`, by ruling: an 8.3 MP render came too close to the child's 200 MB ceiling); above it the page is rendered at a lower dpi so it fits |
   | `PDF_PAGE_TIMEOUT_MS` | `20_000` per page render |
+  | `PDF_THUMB_TIMEOUT_MS` | `3_000` per thumbnail render (final review I-2) |
+  | `PDF_SESSION_BUDGET_MS` | `90_000` per PDF session in all; past it the job fails with «This PDF takes too long to read. Prepare a smaller extract and upload it again.» (final review I-2) |
   | `MAX_REDACTS_PER_PAGE` | `5` |
 
 - Kind and file names:

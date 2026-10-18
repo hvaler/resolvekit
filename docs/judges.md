@@ -53,9 +53,9 @@ shows** rewrites it and checks it again, live. The bar above the send button lis
 **+ Add evidence** (disabled in the demo, with its reason).
 
 - Upload a screenshot (PNG or JPEG, up to 5 MB and 3840 x 2160 pixels, about 8 MP), a PDF (up to 10 MB and 30
-  pages) or paste text, for example an email thread. Pasted text must be Latin-1 (Western European letters and accents): a character such as € or curly
+  pages, of which at most 5 are used) or paste text, for example an email thread. Pasted text must be Latin-1 (Western European letters and accents): a character such as € or curly
   quotes is refused with a message naming it, because the PDF sent to PayPal could not show it. Nothing you add leaves
-  the ResolveKit server yet: the text is read on the server itself (local OCR for images), not by Google, Groq or PayPal.
+  the ResolveKit server yet: the text is read on the server itself (local OCR, for images and for PDF pages), not by Google, Groq or PayPal.
 - **Cover what must not be shared** (an account number, a balance, an unrelated line): on an image, drag rectangles
   over it; on pasted text, **Remove what must not be shared** by selecting the passages. The covered areas are burned
   into the sanitised file and the text under them is dropped.
@@ -72,7 +72,10 @@ shows** rewrites it and checks it again, live. The bar above the send button lis
   covered pages; the original file is deleted and never leaves the server.
 - **Read again from the covered image** (on pasted text, **Remove and read again**): the page shows the text read
   from the sanitised file. You can correct a line the OCR misread (the correction is marked "corrected by you", with
-  your name). A sanitised file of 10 MB or more is refused (PayPal's limit) at this step: upload a screenshot or a smaller image.
+  your name). A sanitised image of 9.9 MB or more is refused (PayPal takes files under 10 MB) at this step: upload a
+  screenshot or a smaller image. For a PDF the limit applies to the new PDF rebuilt from all its covered pages, checked
+  on confirm: it must stay under 9.9 MB, and a noisy multi-page scan (about 2 MB per page) may not fit. Discard it,
+  upload it again and choose fewer pages.
 - **Confirm as evidence** (or **Discard**; an unconfirmed upload is deleted by itself after 24 hours). A confirmed
   upload becomes the next evidence number (E7, E8…).
 - The case file says the analysis has not read it yet: press **Re-run with AI** (30–60 s). The new analysis includes

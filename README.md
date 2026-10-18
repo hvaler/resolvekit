@@ -254,9 +254,12 @@ rules as every other document.
   hide what the code contains: the review says so. `apps/server/test/uploads-pdf-recovery.test.ts` tries to recover
   a covered line, white text, metadata, an annotation and an attachment from everything that leaves an upload.
 - **Limits**: 5 MB and 3840 x 2160 pixels (8,294,400, about 8 MP) per image, decoded one image at a time; 10 MB and
-  30 pages per PDF, 5 pages kept, rendered at 170 dpi and 4 MP per page, 20 s per page render (one PDF or image job at
-  a time server-wide; a PDF counts as one upload, and each page read counts in the per-address reading limit); under 10 MB per
-  stored (sanitised) file and 50 MB per response (PayPal's limits); 20,000 characters of pasted text, Latin-1 only (the PDF sent to PayPal cannot show other
+  30 pages per PDF, at most 5 pages kept, rendered at 170 dpi and 4 MP per page, 20 s per page render, 3 s per
+  thumbnail and 90 s per PDF reading session, past which the upload fails ("This PDF takes too long to read"); one PDF or
+  image job at a time server-wide (a PDF counts as one upload, and each page read counts in the per-address reading limit); under 10 MB per
+  stored (sanitised) file and 50 MB per response (PayPal's limits): for a PDF the 9.9 MB limit applies to the rebuilt
+  PDF of all its covered pages, checked on confirm, so a noisy multi-page scan (about 2 MB per page) may not fit and
+  the merchant uploads it again choosing fewer pages; 20,000 characters of pasted text, Latin-1 only (the PDF sent to PayPal cannot show other
   characters, so text with one is refused naming it); 10 uploads per case, 5 covering passes per upload (per page for a PDF), 40 uploads a
   day on the hosted demo, 300 MB of storage.
 - **Pending uploads last 24 hours**: one that is not confirmed or discarded in that time is discarded the first
