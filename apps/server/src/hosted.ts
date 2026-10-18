@@ -362,13 +362,13 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       return req.method === 'GET' ? json(200, await opsStatus(url.searchParams.get('probe') === 'models')) : json(405, { error: 'METHOD_NOT_ALLOWED' });
     }
     // demo:prepare --agent-run: the full run record and its receipt as MeterMCP's admin route reads it now. A read
-    // only: no engine, no MCP connection. The ops token or 401, whoever is signed in; a session cookie is not enough.
+    // only: no engine, no MCP connection. Without the ops token 404 (Ruling A12, as /api/ops/status), whoever is signed in.
     if (path.startsWith(OPS_AGENT_RUN_PREFIX)) {
       if (!o.opsToken) return json(404, { error: 'NOT_FOUND' });
       const t = authLimit.take(clientIp(req, hops, trust));
       if (!t.ok) return tooMany(t.retryAfterSec, 'Too many requests from this address');
       const bearer = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1] ?? '';
-      if (!bearer || !sameSecret(bearer, o.opsToken)) return json(401, { error: 'MISSING_OR_BAD_TOKEN' });
+      if (!bearer || !sameSecret(bearer, o.opsToken)) return json(404, { error: 'NOT_FOUND' });
       if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
       const id = path.slice(OPS_AGENT_RUN_PREFIX.length);
       if (!RUN_ID.test(id)) return json(400, { error: 'INVALID_RUN_ID', detail: 'run-<32 hex>' });

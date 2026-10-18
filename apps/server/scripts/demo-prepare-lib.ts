@@ -21,6 +21,9 @@ export const DEFAULT_AGENT_GOAL = 'Find the current quote for ACME-42 and whethe
 export const DEFAULT_AGENT_CAP = '2.00';
 const GOAL_MAX = 300;
 const CAP = /^\d{1,2}(\.\d{1,2})?$/;
+/** The demo budget range (MeterMCP's METERMCP_MIN_BUDGET / METERMCP_BUDGET defaults), in cents. */
+const CAP_MIN_CENTS = 50;
+const CAP_MAX_CENTS = 500;
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,39}$/;
 /** A PayPal merchant (payer) id, as seller.merchant_id on a dispute. */
 const MERCHANT_ID = /^[A-Z0-9]{8,20}$/;
@@ -66,7 +69,7 @@ Steps (default: all of them, in order)
   --count N                  (a) N standard payments (1-20): N disputes for the case's reserve
   --agent-count N            (b) N agent sessions (1-10), each approved by the buyer: N disputes for the agent case's reserve
   --agent-goal TEXT          (b) the agent's goal (default "${DEFAULT_AGENT_GOAL}")
-  --agent-cap X.XX           (b) the budget it asks for, in USD (default ${DEFAULT_AGENT_CAP})
+  --agent-cap X.XX           (b) the budget it asks for, 0.50 to 5.00 USD (default ${DEFAULT_AGENT_CAP})
   --agent-fail-first T,...   (b) tools whose first call fails on purpose, not charged (default none)
   --agent-run RUN_ID         a run already made on the /agent page (repeatable): its capture joins the agent case's
                              reserve with no new run or payment, if it passes every check; then its dispute is awaited.
@@ -130,7 +133,8 @@ export function parseArgs(argv: readonly string[]): PrepareOptions | { error: st
           if (!g || [...g].length > GOAL_MAX) return { error: `--agent-goal must be 1 to ${GOAL_MAX} characters` };
           o.agentGoal = g;
         } else if (a === '--agent-cap') {
-          if (!CAP.test(v) || Number(v) <= 0) return { error: '--agent-cap must be an amount in USD, e.g. 2.00' };
+          const c = CAP.test(v) ? Math.round(Number(v) * 100) : NaN;
+          if (!(c >= CAP_MIN_CENTS && c <= CAP_MAX_CENTS)) return { error: '--agent-cap must be an amount from 0.50 to 5.00 USD, e.g. 2.00' };
           o.agentCap = v;
         } else if (a === '--agent-fail-first') {
           const tools = v.split(',').map((t) => t.trim());
@@ -315,23 +319,39 @@ export function boundCaptures(raw: unknown): Set<string> {
 
 const cents = (v: string | null | undefined) => (typeof v === 'string' && /^\d+(\.\d{1,2})?$/.test(v) ? Math.round(Number(v) * 100) : 0);
 
-/** The dispute's seller is the configured one; a dispute that names no seller fails. */
+/**
+ * The one seller check, run once the capture's dispute is known (before, the entry waits for its dispute): the
+ * dispute's seller is the configured one; a dispute that names no seller fails.
+ */
 export function disputeSellerProblems(d: Pick<Dispute, 'disputed_transactions'>, expected: string): string[] {
   const seller = d.disputed_transactions?.[0]?.seller?.merchant_id ?? null;
-  return sellerProblems(seller, expected);
-}
-
-function sellerProblems(seller: string | null, expected: string): string[] {
   if (!seller) return ['PayPal reports no seller on the dispute'];
   return seller === expected ? [] : [`the dispute's seller ${seller} is not the configured seller ${expected}`];
 }
 
 /**
- * Why a run cannot join the agent case's reserve (empty: it can). Read only: the run record and the receipt that
- * MeterMCP's admin route returned for its session. `used`: every capture already bound or taken in this command.
- * `seller`: once the capture's dispute is known, its seller and the configured one; null before.
+ * Why a body is not a receipt that can be checked (empty: it can): the calls list, the settlement object, the session
+ * id and the sha256, as {@link agentReserveProblems} reads them. A receipt from the engine or a reader is checked first.
  */
-export function agentReserveProblems(run: RunRecord, receipt: Receipt, used: Set<string>, seller: { expected: string; dispute: string | null } | null): string[] {
+export function receiptShapeProblems(r: unknown): string[] {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return ['it is not an object'];
+  const o = r as Record<string, unknown>;
+  const out: string[] = [];
+  if (!Array.isArray(o.calls) || o.calls.some((c) => !c || typeof c !== 'object')) out.push('no calls list');
+  if (!o.settlement || typeof o.settlement !== 'object' || Array.isArray(o.settlement)) out.push('no settlement object');
+  const session = o.session as Record<string, unknown> | null | undefined;
+  if (!session || typeof session !== 'object' || typeof session.id !== 'string') out.push('no session id');
+  if (typeof o.receipt_sha256 !== 'string') out.push('no receipt sha256');
+  return out;
+}
+
+/**
+ * Why a run cannot join the agent case's reserve (empty: it can). Read only: the run record and the receipt that
+ * MeterMCP's admin route returned for its session (its shape checked by {@link receiptShapeProblems}). `used`: every
+ * capture already bound or taken in this command. The seller is checked later, on the dispute
+ * ({@link disputeSellerProblems}).
+ */
+export function agentReserveProblems(run: RunRecord, receipt: Receipt, used: Set<string>): string[] {
   const out: string[] = [];
   if (run.state === 'running' || run.state === 'awaiting_approval') out.push(`the run has not ended yet (${run.state})`);
   const charged = receipt.calls.filter((c) => c.status === 'OK' && cents(c.price) > 0);
@@ -343,7 +363,6 @@ export function agentReserveProblems(run: RunRecord, receipt: Receipt, used: Set
   if (run.sessionId !== receipt.session.id) out.push(`the run's MeterMCP session ${run.sessionId ?? '(none)'} is not the receipt's ${receipt.session.id}`);
   if (run.captureId !== s.capture_id) out.push(`the run's capture ${run.captureId ?? '(none)'} is not the receipt's capture ${s.capture_id ?? '(none)'}`);
   if (run.receiptSha256 !== receipt.receipt_sha256) out.push(`the run's receipt sha256 ${run.receiptSha256 ?? '(none)'} is not the receipt's ${receipt.receipt_sha256}`);
-  if (seller) out.push(...sellerProblems(seller.dispute, seller.expected));
   const capture = s.capture_id ?? run.captureId;
   if (capture && [...used].some((u) => u.toUpperCase() === capture.toUpperCase())) out.push(`capture ${capture} is already used by another reserve entry`);
   return out;
@@ -372,8 +391,7 @@ export function opsRunReader(o: { appUrl: string; token: string; fetch?: typeof 
   return async (id) => {
     if (!RUN_ID.test(id)) throw new Error(`${JSON.stringify(id.slice(0, 80))} is not a run id`);
     const r = await f(`${base}/api/ops/agent-run/${id}`, { method: 'GET', headers: { authorization: `Bearer ${o.token}` }, signal: AbortSignal.timeout(o.timeoutMs ?? 30_000) });
-    if (r.status === 401) throw new Error('ResolveKit answered 401: RESOLVEKIT_OPS_TOKEN is not the service’s');
-    if (r.status === 404) throw new Error('ResolveKit answered 404: no such run (deleted after 30 days unless kept), or the ops route is off');
+    if (r.status === 404) throw new Error('ResolveKit answered 404: no such run (deleted after 30 days unless kept), RESOLVEKIT_OPS_TOKEN is not the service’s, or the ops route is off');
     if (!r.ok) throw new Error(`ResolveKit answered ${r.status}`);
     const body = (await r.json()) as AgentRunRead;
     if (body?.run?.id !== id) throw new Error('ResolveKit answered with another run');
@@ -416,13 +434,15 @@ export interface Refusal {
 }
 
 function entryOf(run: RunRecord, receipt: Receipt): AgentEntry {
-  return { capture: receipt.settlement.capture_id!, run: run.id, session: receipt.session.id, amount: `${receipt.totals.charged} ${receipt.session.currency}`, note: agentReserveNote(run) };
+  return { capture: receipt.settlement.capture_id!, run: run.id, session: receipt.session.id, amount: `${receipt.totals?.charged ?? '?'} ${receipt.session.currency ?? 'USD'}`, note: agentReserveNote(run) };
 }
 
 /** An accepted run's capture joins `used` at once, so nothing later in the same command can take it again. */
 function take(run: RunRecord, receipt: Receipt | null, receiptError: string | null | undefined, used: Set<string>): AgentEntry | Refusal {
   if (!receipt) return { run: run.id, problems: [`the receipt could not be read (${receiptError ?? 'no receipt'})`] };
-  const problems = agentReserveProblems(run, receipt, used, null);
+  const shape = receiptShapeProblems(receipt);
+  if (shape.length) return { run: run.id, problems: [`the receipt is malformed (${shape.join(', ')})`] };
+  const problems = agentReserveProblems(run, receipt, used);
   if (problems.length) return { run: run.id, problems };
   used.add(receipt.settlement.capture_id!.toUpperCase());
   return entryOf(run, receipt);

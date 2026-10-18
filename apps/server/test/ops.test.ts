@@ -210,12 +210,12 @@ const agentRun = (id: string, o: { token?: string; cookie?: string; method?: str
     headers: { host: HOST, 'x-forwarded-for': '203.0.113.9', ...(o.token ? { authorization: `Bearer ${o.token}` } : {}), ...(o.cookie ? { cookie: o.cookie } : {}) },
   });
 
-test('ops agent-run: 401 without the ops token or with a wrong one, also for a signed-in person; nothing read', async () => {
+test('ops agent-run: 404 without a valid ops token (missing or wrong), like /api/ops/status, also for a signed-in person; nothing read', async () => {
   const s = agentSetup();
-  assert.equal((await s.app(agentRun(s.rec.id))).status, 401);
-  assert.equal((await s.app(agentRun(s.rec.id, { token: 'x'.repeat(36) }))).status, 401);
-  assert.equal((await s.app(agentRun(s.rec.id, { cookie: s.people.ownerCookie }))).status, 401);
-  assert.equal((await s.app(agentRun(s.rec.id, { cookie: s.people.member() }))).status, 401);
+  assert.equal((await s.app(agentRun(s.rec.id))).status, 404);
+  assert.equal((await s.app(agentRun(s.rec.id, { token: 'x'.repeat(36) }))).status, 404);
+  assert.equal((await s.app(agentRun(s.rec.id, { cookie: s.people.ownerCookie }))).status, 404);
+  assert.equal((await s.app(agentRun(s.rec.id, { cookie: s.people.member() }))).status, 404);
   assert.deepEqual(s.meterCalls, []);
 });
 

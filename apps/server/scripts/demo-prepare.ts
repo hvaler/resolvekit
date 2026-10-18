@@ -104,7 +104,8 @@ async function engineStep(o: PrepareOptions, models: { primary: AgentModel; fall
   writeFileSync(join(dir, `${record.id}.json`), JSON.stringify(record, null, 2));
   say(`run ${record.id} saved to ${join(dir, `${record.id}.json`)}`);
   if (result.captureId) console.log(`\n  Agent capture id: ${result.captureId}${result.sessionId ? ` (MeterMCP session ${result.sessionId})` : ''}\n`);
-  return { record, receipt: result.receipt as Receipt | null };
+  // MeterMCP's get_receipt body, unchecked here: agentEntries refuses it unless receiptShapeProblems finds nothing.
+  return { record, receipt: result.receipt as unknown as Receipt | null };
 }
 
 /** --agent-run: the hosted server's ops route, or a server on this machine (its data dir, MeterMCP's admin route). */

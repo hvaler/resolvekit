@@ -33,6 +33,9 @@ import type { RunRecord } from '../../server/src/agent/runs.ts';
 export const CLI_DEFAULT_CAP = '2.00';
 const GOAL_MAX = 300;
 const CAP = /^\d{1,2}(\.\d{1,2})?$/;
+/** The demo budget range (MeterMCP's METERMCP_MIN_BUDGET / METERMCP_BUDGET defaults), in cents. */
+const CAP_MIN_CENTS = 50;
+const CAP_MAX_CENTS = 500;
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,39}$/;
 /** MeterMCP's free tools that only code calls (the model is never offered them): not listed as the agent's tools. */
 const CODE_ONLY = new Set(['open_budget', 'close_session', 'get_receipt']);
@@ -40,7 +43,7 @@ const CODE_ONLY = new Set(['open_budget', 'close_session', 'get_receipt']);
 export const USAGE = `Usage: npm run demo-agent -- --goal "<text>" [--cap X.XX] [--fail-first tool,...] [--no-wait] [--out file.json]
 
   --goal TEXT              what the agent should find (required, at most ${GOAL_MAX} characters)
-  --cap X.XX               the budget it asks the buyer to approve, in USD (default ${CLI_DEFAULT_CAP})
+  --cap X.XX               the budget it asks the buyer to approve, 0.50 to 5.00 USD (default ${CLI_DEFAULT_CAP})
   --fail-first T,...       tools whose first call fails on purpose for this run, never charged (default none)
   --no-wait                stop after printing the approval URL; the session is closed, nothing stays authorized
   --out FILE.json          write the run as a RunRecord-shaped JSON
@@ -76,7 +79,8 @@ export function parseCliArgs(argv: readonly string[]): CliOptions | { error: str
       if (!g || [...g].length > GOAL_MAX) return bad(`--goal must be 1 to ${GOAL_MAX} characters`);
       o.goal = g;
     } else if (a === '--cap') {
-      if (!CAP.test(v) || Number(v) <= 0) return bad('--cap must be an amount in USD, e.g. 2.00');
+      const c = CAP.test(v) ? Math.round(Number(v) * 100) : NaN;
+      if (!(c >= CAP_MIN_CENTS && c <= CAP_MAX_CENTS)) return bad('--cap must be an amount from 0.50 to 5.00 USD, e.g. 2.00');
       o.cap = v;
     } else if (a === '--fail-first') {
       const tools = v.split(',').map((t) => t.trim());

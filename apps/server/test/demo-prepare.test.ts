@@ -17,6 +17,7 @@ import {
   parseArgs,
   disputeSellerProblems,
   localRunReader,
+  receiptShapeProblems,
   opsRunReader,
   parseCaptures,
   reserveFromRuns,
@@ -185,62 +186,80 @@ function runOf(over: Partial<RunRecord> = {}): RunRecord {
 }
 
 test('agentReserveProblems accepts a captured run with one OK call', () => {
-  assert.deepEqual(agentReserveProblems(runOf(), receiptOf(), new Set(), null), []);
+  assert.deepEqual(agentReserveProblems(runOf(), receiptOf(), new Set()), []);
   assert.equal(agentReserveNote(runOf()), null);
-  // With its dispute known, the dispute's seller must be the configured one.
-  assert.deepEqual(agentReserveProblems(runOf(), receiptOf(), new Set(), { expected: SELLER, dispute: SELLER }), []);
 });
 
 test('agentReserveProblems refuses a pending capture', () => {
-  const pending = agentReserveProblems(runOf({ settlement: 'capture_pending' }), receiptOf({ settlement: { status: 'capture_pending', capture_status: 'PENDING', captured: null, released: null } }), new Set(), null);
+  const pending = agentReserveProblems(runOf({ settlement: 'capture_pending' }), receiptOf({ settlement: { status: 'capture_pending', capture_status: 'PENDING', captured: null, released: null } }), new Set());
   assert.equal(pending.length, 1);
   assert.match(pending[0]!, /capture_pending.*pending capture does not count yet/);
   // Captured on the record but PayPal's capture is not COMPLETED: still refused.
-  const notCompleted = agentReserveProblems(runOf(), receiptOf({ settlement: { capture_status: 'PENDING' } }), new Set(), null);
+  const notCompleted = agentReserveProblems(runOf(), receiptOf({ settlement: { capture_status: 'PENDING' } }), new Set());
   assert.equal(notCompleted.length, 1);
   assert.match(notCompleted[0]!, /PENDING.*not COMPLETED/);
 });
 
 test('agentReserveProblems refuses mismatched session, capture or receipt hash', () => {
-  const session = agentReserveProblems(runOf(), receiptOf({ session: `mm-sess-${'e'.repeat(32)}` }), new Set(), null);
+  const session = agentReserveProblems(runOf(), receiptOf({ session: `mm-sess-${'e'.repeat(32)}` }), new Set());
   assert.equal(session.length, 1);
   assert.match(session[0]!, /session/);
-  const capture = agentReserveProblems(runOf(), receiptOf({ capture: '9ZZ12345BC678901D' }), new Set(), null);
+  const capture = agentReserveProblems(runOf(), receiptOf({ capture: '9ZZ12345BC678901D' }), new Set());
   assert.equal(capture.length, 1);
   assert.match(capture[0]!, /capture 9ZZ12345BC678901D/);
-  const sha = agentReserveProblems(runOf(), receiptOf({ sha: 'f'.repeat(64) }), new Set(), null);
+  const sha = agentReserveProblems(runOf(), receiptOf({ sha: 'f'.repeat(64) }), new Set());
   assert.equal(sha.length, 1);
   assert.match(sha[0]!, /sha256/);
 });
 
 test('agentReserveProblems refuses a capture already used by another entry', () => {
   for (const used of [new Set([CAPTURE]), new Set([CAPTURE.toLowerCase()])]) {
-    const p = agentReserveProblems(runOf(), receiptOf(), used, null);
+    const p = agentReserveProblems(runOf(), receiptOf(), used);
     assert.equal(p.length, 1);
     assert.match(p[0]!, /already used by another reserve entry/);
   }
 });
 
 test('agentReserveProblems refuses a run with no charged call', () => {
-  const p = agentReserveProblems(runOf(), receiptOf({ calls: [{ status: 'FAILED', price: '0.40' }] }), new Set(), null);
+  const p = agentReserveProblems(runOf(), receiptOf({ calls: [{ status: 'FAILED', price: '0.40' }] }), new Set());
   assert.equal(p.length, 1);
   assert.match(p[0]!, /no call completed and charged/);
   // An unfinished run is not taken either.
-  assert.match(agentReserveProblems(runOf({ state: 'awaiting_approval' }), receiptOf(), new Set(), null).join(' '), /has not ended/);
+  assert.match(agentReserveProblems(runOf({ state: 'awaiting_approval' }), receiptOf(), new Set()).join(' '), /has not ended/);
 });
 
 test('agentReserveProblems: a stopped run is accepted with the not-a-goal note', () => {
   const stopped = runOf({ state: 'stopped', stopReason: 'max_actions', answer: null });
-  assert.deepEqual(agentReserveProblems(stopped, receiptOf(), new Set(), null), []);
+  assert.deepEqual(agentReserveProblems(stopped, receiptOf(), new Set()), []);
   assert.equal(agentReserveNote(stopped), 'ended on max_actions; not a goal achieved');
   assert.equal(agentReserveNote(runOf({ state: 'interrupted' })), 'ended on interrupted; not a goal achieved');
 });
 
-test('agentReserveProblems: the dispute’s seller must be the configured seller once the dispute is known', () => {
-  assert.match(agentReserveProblems(runOf(), receiptOf(), new Set(), { expected: SELLER, dispute: 'OTHERMERCHANT9' }).join(' '), /seller OTHERMERCHANT9.*not the configured seller SELLERMERCHANT01/);
-  assert.match(agentReserveProblems(runOf(), receiptOf(), new Set(), { expected: SELLER, dispute: null }).join(' '), /no seller/);
+test('disputeSellerProblems: once the dispute is known, its seller must be the configured seller (the one seller check)', () => {
   assert.deepEqual(disputeSellerProblems({ disputed_transactions: [{ seller: { merchant_id: SELLER } }] }, SELLER), []);
-  assert.equal(disputeSellerProblems({ disputed_transactions: [{ seller: { merchant_id: 'OTHERMERCHANT9' } }] }, SELLER).length, 1);
+  const other = disputeSellerProblems({ disputed_transactions: [{ seller: { merchant_id: 'OTHERMERCHANT9' } }] }, SELLER);
+  assert.equal(other.length, 1);
+  assert.match(other[0]!, /seller OTHERMERCHANT9.*not the configured seller SELLERMERCHANT01/);
+  assert.match(disputeSellerProblems({ disputed_transactions: [{}] }, SELLER).join(' '), /no seller/);
+  assert.match(disputeSellerProblems({}, SELLER).join(' '), /no seller/);
+});
+
+test('receiptShapeProblems: a receipt without its calls, settlement or session id is refused, not trusted', () => {
+  assert.deepEqual(receiptShapeProblems(receiptOf()), []);
+  for (const bad of [null, 'x', {}, { ...receiptOf(), calls: 'none' }, { ...receiptOf(), settlement: null }, { ...receiptOf(), session: {} }, { ...receiptOf(), session: { id: 7 } }]) {
+    assert.ok(receiptShapeProblems(bad).length > 0, JSON.stringify(bad)?.slice(0, 60));
+  }
+});
+
+test('a malformed receipt from the engine or a reader is a refusal message, not a crash', async () => {
+  const malformed = { session: { id: SESSION }, settlement: 'captured' } as unknown as Receipt;
+  const eng = await agentEntries(ok(['--agent']), { runEngine: async () => ({ record: runOf(), receipt: malformed }), read: null, used: new Set(), say: () => {} });
+  assert.deepEqual(eng.entries, []);
+  assert.match(eng.refused[0]!.problems.join(' '), /receipt is malformed/);
+  const src = source({ [RUN]: { run: runOf(), receipt: { calls: [] } as unknown as Receipt } });
+  const r = await reserveFromRuns([RUN], { read: src.read, used: new Set() });
+  assert.deepEqual(r.entries, []);
+  assert.match(r.refused[0]!.problems.join(' '), /receipt is malformed/);
 });
 
 test('parseBindings keeps working with run and session keys on agent entries', () => {
@@ -263,12 +282,18 @@ test('demo:prepare --agent-run: repeatable, needs --seller, waits for its disput
   assert.equal(DEFAULT_AGENT_CAP, '2.00');
   const eng = ok(['--agent', '--agent-goal', 'Price ACME-42', '--agent-cap', '1.50', '--agent-fail-first', 'deep_report,bulk_export']);
   assert.deepEqual([eng.agentGoal, eng.agentCap, eng.agentFailFirst], ['Price ACME-42', '1.50', ['deep_report', 'bulk_export']]);
+  // The demo budget range, 0.50 to 5.00 USD, ends included.
+  assert.deepEqual(['0.50', '5.00', '5'].map((c) => ok(['--agent', '--agent-cap', c]).agentCap), ['0.50', '5.00', '5']);
+  assert.match((parseArgs(['--agent', '--agent-cap', '7.00']) as { error: string }).error, /0\.50 to 5\.00 USD/);
   for (const bad of [
     ['--agent-run', RUN],
     ['--agent-run', 'run-123', '--seller', SELLER],
     ['--agent-run', '--seller', SELLER],
     ['--agent-cap', '9.999'],
     ['--agent-cap', '100'],
+    ['--agent-cap', '0.49'],
+    ['--agent-cap', '5.01'],
+    ['--agent-cap', '10'],
     ['--agent-goal', '   '],
     ['--agent-goal', 'x'.repeat(301)],
     ['--agent-fail-first', 'Not A Tool'],

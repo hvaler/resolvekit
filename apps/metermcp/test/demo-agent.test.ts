@@ -23,6 +23,12 @@ test('demo-agent flags: --goal is required; --cap 2.00, no injected failure and 
   for (const bad of [['--goal'], ['--goal', '   '], ['--goal', 'x'.repeat(301)], ['--goal', 'g', '--cap', '2.005'], ['--goal', 'g', '--fail-first', 'Not a tool'], ['--goal', 'g', '--out'], ['--goal', 'g', '--what']]) {
     assert.ok('error' in parseCliArgs(bad), bad.join(' '));
   }
+  // The demo budget range, 0.50 to 5.00 USD, ends included.
+  assert.deepEqual(['0.50', '5.00'].map((c) => (parseCliArgs(['--goal', 'g', '--cap', c]) as { cap: string }).cap), ['0.50', '5.00']);
+  for (const c of ['0.49', '5.01', '10', '0.10']) {
+    const r = parseCliArgs(['--goal', 'g', '--cap', c]);
+    assert.ok('error' in r && /0\.50 to 5\.00 USD/.test(r.error), c);
+  }
 });
 
 const free = (name: string): MeterTool => ({ name, title: name, description: `${name} (free).`, price: null, inputSchema: { type: 'object', properties: {} } });
