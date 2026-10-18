@@ -91,7 +91,6 @@ export const agentCase: CaseFile = {
       },
     },
   ],
-  evidenceSources: '4 documents',
   timeline: [],
   timelineCaption: '',
   // The analyst's outputs come from the real analysis (packages/analyst). The merchant's notes are verified too.

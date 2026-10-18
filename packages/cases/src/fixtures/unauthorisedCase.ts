@@ -131,7 +131,6 @@ export const unauthorisedCase: CaseFile = {
     openedAt: '2026-10-05T08:15:00Z',
   },
   evidence,
-  evidenceSources: '6 documents',
   timeline: [],
   timelineCaption: '',
   // The first note says more than the check-in record (E4: photo ID not checked): the analyst removed it.

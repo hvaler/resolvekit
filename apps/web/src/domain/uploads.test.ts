@@ -19,6 +19,7 @@ import {
   confirmedUploads,
   correctionsToConfirm,
   dropPairsOf,
+  evidenceCount,
   mergeRemoval,
   notAnalysed,
   toImageRect,
@@ -292,5 +293,14 @@ describe('merchant uploads in the case', () => {
     const detail = 'The text has “€” (U+20AC), which the PDF sent to PayPal cannot show: only Latin-1 characters (Western European letters and accents) can be pasted. Replace it (for example € with EUR, curly quotes with straight ones) and paste again.';
     const refused = (async () => Response.json({ error: 'TEXT_UNSUPPORTED', detail }, { status: 422 })) as unknown as typeof fetch;
     await expect(createUploadsClient('PP-1', { fetch: refused }).uploadText('Total 5 € paid', 'email.txt')).rejects.toMatchObject({ status: 422, code: 'TEXT_UNSUPPORTED', message: detail });
+  });
+});
+
+describe('evidenceCount', () => {
+  it('counts the cards shown, confirmed uploads included', () => {
+    const shown = [...standardCase.evidence, uploadEvidence(confirmed())];
+    expect(evidenceCount(standardCase.evidence)).toBe(`${standardCase.evidence.length} documents`);
+    expect(evidenceCount(shown)).toBe(`${standardCase.evidence.length + 1} documents`);
+    expect(evidenceCount(shown.slice(0, 1))).toBe('1 document');
   });
 });

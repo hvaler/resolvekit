@@ -249,7 +249,6 @@ export interface CaseFile {
   summary: DisputeSummary;
   merchant: { name: string; initials: string };
   evidence: Evidence[];
-  evidenceSources: string;
   timeline: TimelineItem[];
   timelineCaption: string;
   sentences: DraftSentence[];

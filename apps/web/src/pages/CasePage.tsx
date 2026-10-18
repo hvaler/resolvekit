@@ -26,7 +26,7 @@ import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile } from '../domain/types';
-import { approvalRequest, canEditUpload, confirmedUploads, uploadsForInput, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
+import { approvalRequest, canEditUpload, confirmedUploads, evidenceCount, uploadsForInput, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
 import { caseFiles, processingDispute } from '../fixtures';
 
 /** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
@@ -206,7 +206,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           <section aria-label="Evidence" className="flex min-w-0 flex-1 flex-col gap-3 overflow-auto px-5 pb-8 pt-4 max-md:overflow-visible max-md:px-4">
             <div className="flex items-baseline justify-between">
               <h2 className="m-0 text-[14px] font-semibold">
-                Evidence <span className="text-[12.5px] font-normal text-ink-3">· {c.evidenceSources}</span>
+                Evidence <span className="text-[12.5px] font-normal text-ink-3">· {evidenceCount(c.evidence)}</span>
               </h2>
               {c.kind === 'agent' ? (
                 <span className="text-[12px] text-ink-3">Sources: PayPal, MeterMCP receipts</span>

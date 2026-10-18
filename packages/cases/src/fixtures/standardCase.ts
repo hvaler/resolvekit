@@ -114,7 +114,6 @@ export const standardCase: CaseFile = {
     openedAt: '2026-10-08T18:19:00Z',
   },
   evidence,
-  evidenceSources: '6 documents',
   timeline: [],
   timelineCaption: '',
   // The analyst's outputs (timeline, draft, contradictions, checklist, recommendation) come from the real analysis

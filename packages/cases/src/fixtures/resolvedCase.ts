@@ -109,7 +109,6 @@ export const resolvedCase: CaseFile = {
     openedAt: '2026-09-25T09:00:00Z',
   },
   evidence,
-  evidenceSources: '5 documents',
   timeline: [],
   timelineCaption: '',
   // A claim with nothing behind it in the case file: the analyst removed it before sending.

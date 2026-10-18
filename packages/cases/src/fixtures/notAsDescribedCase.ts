@@ -141,7 +141,6 @@ export const notAsDescribedCase: CaseFile = {
     openedAt: '2026-10-03T08:40:00Z',
   },
   evidence,
-  evidenceSources: '7 documents',
   timeline: [],
   timelineCaption: '',
   // The first note claims a packing photo the case file does not have (E4: none on file): the analyst removes it.

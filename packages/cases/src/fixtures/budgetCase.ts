@@ -146,7 +146,6 @@ export const budgetCase: CaseFile = {
       },
     },
   ],
-  evidenceSources: '6 documents',
   timeline: [],
   timelineCaption: '',
   // The first note confuses a released authorization with a refund (no refund in the case file): the analyst removes it.

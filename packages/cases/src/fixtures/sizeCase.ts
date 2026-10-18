@@ -118,7 +118,6 @@ export const sizeCase: CaseFile = {
     openedAt: '2026-10-01T12:05:00Z',
   },
   evidence,
-  evidenceSources: '6 documents',
   timeline: [],
   timelineCaption: '',
   // The first note has no return record behind it: the analyst removes it.

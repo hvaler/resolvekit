@@ -110,6 +110,11 @@ export function confirmedUploads(uploads: readonly UploadRecordView[]): UploadRe
   return uploads.filter((u) => u.status === 'confirmed' && u.document && evidenceNumber(u.evidenceId) > 0).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId));
 }
 
+/** The evidence heading's count: the cards shown, so confirmed uploads count like the case's own documents. */
+export function evidenceCount(evidence: readonly unknown[]): string {
+  return `${evidence.length} document${evidence.length === 1 ? '' : 's'}`;
+}
+
 /** A confirmed upload as an evidence card: the server's lines and fragments, who uploaded it, who corrected what. */
 export function uploadEvidence(r: UploadRecordView): Evidence {
   const doc = r.document!;
