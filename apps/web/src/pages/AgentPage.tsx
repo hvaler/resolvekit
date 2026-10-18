@@ -5,7 +5,7 @@ import { useServices } from '../app/services';
 import { AccountMenu } from '../components/AccountMenu';
 import { Logo, MERCHANT, ThemeControls } from '../components/AppBar';
 import { Code, PrimaryAction, Spinner, cx } from '../components/ui';
-import { compareRows, isLive, outcomeText, runTotals, settlementText, stepBadges, stepLine, usageText, type AgentRun, type AgentStep, type StepBadge } from '../domain/agentRun';
+import { canStart, compareRows, isLive, outcomeText, runActions, runTotals, settlementText, stepBadges, stepLine, usageText, workspaceToggle, type AgentRun, type AgentStep, type StepBadge } from '../domain/agentRun';
 import { environmentOf, signInUrl } from '../domain/environment';
 import { utcStamp } from '../domain/time';
 
@@ -39,7 +39,7 @@ function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
   return <span className={cx('whitespace-nowrap rounded-sm border px-[7px] py-px text-[11.5px] font-semibold', TONE[tone])}>{children}</span>;
 }
 
-const BADGE_TONE: Record<StepBadge, Tone> = { injected: 'info', 'not charged': 'muted', uncertain: 'warn' };
+const BADGE_TONE: Record<StepBadge, Tone> = { 'in progress': 'info', injected: 'info', 'not charged': 'muted', uncertain: 'warn' };
 
 function Card({ title, children, className }: { title?: string; children: ReactNode; className?: string }) {
   return (
@@ -87,15 +87,18 @@ function Steps({ steps }: { steps: AgentStep[] }) {
   );
 }
 
-/** The PayPal side: cap, what the steps say was charged, and the settlement MeterMCP's receipt gave. */
+/**
+ * The PayPal side: the cap, what MeterMCP's metering said per call (never presented as the settlement), and the
+ * settlement as MeterMCP's receipt gave it, with the amounts only the receipt stated (Ruling A11).
+ */
 function Budget({ run }: { run: AgentRun }) {
   const t = runTotals(run);
   const rows: [string, ReactNode][] = [
     ['Budget cap', `${run.cap} USD`],
-    ['Charged calls', `${t.okCalls} · ${t.charged} USD`],
+    ['Charged per call (MeterMCP metering)', `${t.charged} USD · ${t.okCalls} OK ${t.okCalls === 1 ? 'call' : 'calls'}`],
     ['Failed calls (not charged)', String(t.notCharged)],
     ...(t.uncertain ? ([['Calls with unknown result', String(t.uncertain)]] as [string, ReactNode][]) : []),
-    ['Settlement', settlementText(run)],
+    ['Settlement (MeterMCP receipt)', settlementText(run)],
     ...(run.captureId ? ([['PayPal capture', <Code key="c">{run.captureId}</Code>]] as [string, ReactNode][]) : []),
     ...(run.orderId ? ([['PayPal order', <Code key="o">{run.orderId}</Code>]] as [string, ReactNode][]) : []),
     ...(run.sessionId ? ([['MeterMCP session', <Code key="s">{run.sessionId}</Code>]] as [string, ReactNode][]) : []),
@@ -113,9 +116,9 @@ function Budget({ run }: { run: AgentRun }) {
   );
 }
 
-function RunDetail({ run, owner, busy, onStop, onKeep }: { run: AgentRun; owner: boolean; busy: string | null; onStop: () => void; onKeep: (kept: boolean) => void }) {
-  const author = run.viewedAs !== 'owner';
+function RunDetail({ run, who, busy, onStop, onKeep }: { run: AgentRun; who: { owner: boolean; local: boolean }; busy: string | null; onStop: () => void; onKeep: (kept: boolean) => void }) {
   const live = isLive(run.state);
+  const can = runActions(run, who);
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <Card>
@@ -125,12 +128,12 @@ function RunDetail({ run, owner, busy, onStop, onKeep }: { run: AgentRun; owner:
           {run.kept && <Pill tone="muted">Kept</Pill>}
           {live && <Spinner size={14} />}
           <span className="flex-1" />
-          {author && live && (
+          {can.stop && (
             <button type="button" disabled={busy === 'stop'} onClick={onStop} className="h-8 rounded-lg border border-line-2 bg-surface px-3 text-[12.5px] font-medium">
               Stop
             </button>
           )}
-          {owner && (
+          {can.keep && (
             <label className="flex items-center gap-1.5 text-[12.5px] text-ink-2" title="A kept run is never deleted by the 30-day retention.">
               <input type="checkbox" checked={run.kept} disabled={busy === 'keep'} onChange={(e) => onKeep(e.target.checked)} />
               Keep
@@ -142,10 +145,10 @@ function RunDetail({ run, owner, busy, onStop, onKeep }: { run: AgentRun; owner:
           {run.by.label} · {utcStamp(new Date(run.createdAt))}
           {run.failFirst.length > 0 && ` · simulated outage: ${run.failFirst.join(', ')}`}
         </span>
-        {author && run.state === 'awaiting_approval' && run.approvalUrl && (
+        {can.approvalUrl && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-info-line bg-info-soft px-3 py-2.5">
             <span className="text-body text-ink-2">The agent wants to spend up to {run.cap} USD. Approve the budget in PayPal (sandbox); nothing is charged until calls succeed.</span>
-            <a href={run.approvalUrl} target="_blank" rel="noopener noreferrer" className="flex h-9 items-center rounded-lg bg-acc px-3.5 text-[13px] font-semibold text-acc-ink no-underline">
+            <a href={can.approvalUrl} target="_blank" rel="noopener noreferrer" className="flex h-9 items-center rounded-lg bg-acc px-3.5 text-[13px] font-semibold text-acc-ink no-underline">
               Approve in PayPal
             </a>
           </div>
@@ -207,8 +210,8 @@ export function AgentPage() {
   const [params] = useSearchParams();
   const location = useLocation();
   const env = environmentOf(area, demo);
-  const owner = env.kind === 'local' || demo?.person?.role === 'owner';
-  const agent = useAgentRun({ initialRun: params.get('run'), who: demo?.person?.id ?? '' });
+  const who = { owner: demo?.person?.role === 'owner', local: env.kind === 'local' };
+  const agent = useAgentRun({ initialRun: params.get('run'), who: demo?.person?.id ?? '', enabled: accountKnown && env.kind !== 'signed-out' });
   const [goal, setGoal] = useState('');
   const [cap, setCap] = useState(DEFAULT_CAP);
   const [outage, setOutage] = useState(false);
@@ -219,7 +222,7 @@ export function AgentPage() {
   if (env.kind === 'signed-out') return <Navigate to={signInUrl(location.pathname + location.search)} replace />;
 
   const mineLive = agent.runs.some((r) => r.viewedAs !== 'owner' && isLive(r.state));
-  const canStart = !!goal.trim() && !!cap.trim() && agent.busy !== 'start' && !mineLive;
+  const startable = canStart({ goal, cap, starting: agent.busy === 'start', runs: agent.runs });
   const togglePick = (id: string) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur.slice(-1), id]));
   const pair = comparing && picked.length === 2 ? picked.map((id) => agent.runs.find((r) => r.id === id)).filter((r): r is AgentRun => !!r) : [];
   const input = 'rounded-lg border border-line-2 bg-surface px-2.5 text-body text-ink';
@@ -280,7 +283,7 @@ export function AgentPage() {
                   Simulate an outage: the first call to Deep report fails (marked as injected)
                 </label>
                 {mineLive && <span className="text-[12px] text-ink-3">One run at a time: wait for yours to end, or stop it.</span>}
-                <PrimaryAction enabled={canStart} onClick={() => void agent.start({ goal: goal.trim(), cap: cap.trim(), failFirst: outage ? [OUTAGE_TOOL] : [] })} className="w-full">
+                <PrimaryAction enabled={startable} onClick={() => void agent.start({ goal: goal.trim(), cap: cap.trim(), failFirst: outage ? [OUTAGE_TOOL] : [] })} className="w-full">
                   {agent.busy === 'start' ? 'Starting…' : 'Start the run'}
                 </PrimaryAction>
                 {agent.actionError && <Notice tone="bad">{agent.actionError}</Notice>}
@@ -290,9 +293,18 @@ export function AgentPage() {
             <Card>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="m-0 flex-1 text-heading-sm">{agent.scope === 'workspace' ? 'Workspace runs' : 'Your runs'}</h2>
-                {owner && env.kind !== 'local' && (
+                {workspaceToggle(who) && (
                   <label className="flex items-center gap-1.5 text-[12.5px] text-ink-2">
-                    <input type="checkbox" checked={agent.scope === 'workspace'} onChange={(e) => agent.setScope(e.target.checked ? 'workspace' : 'mine')} />
+                    <input
+                      type="checkbox"
+                      checked={agent.scope === 'workspace'}
+                      onChange={(e) => {
+                        // Picks belong to the list they were made in.
+                        setPicked([]);
+                        setComparing(false);
+                        agent.setScope(e.target.checked ? 'workspace' : 'mine');
+                      }}
+                    />
                     Workspace runs
                   </label>
                 )}
@@ -334,7 +346,7 @@ export function AgentPage() {
             {pair.length === 2 && <Compare a={pair[0]!} b={pair[1]!} onClose={() => setComparing(false)} />}
             {agent.runError && <Notice tone="bad">{agent.runError}</Notice>}
             {agent.selected ? (
-              <RunDetail run={agent.selected} owner={owner} busy={agent.busy} onStop={() => void agent.stop(agent.selected!)} onKeep={(k) => void agent.keep(agent.selected!, k)} />
+              <RunDetail run={agent.selected} who={who} busy={agent.busy} onStop={() => void agent.stop(agent.selected!)} onKeep={(k) => void agent.keep(agent.selected!, k)} />
             ) : (
               !agent.runError && (
                 <Card>

@@ -161,7 +161,7 @@ const finished = (store: RunStore, id: string) => until(() => !['running', 'awai
 function seeded(store: RunStore, by: NewRun['by']) {
   return store.create({
     finishedAt: new Date().toISOString(), by, goal: 'Theirs', cap: '1.00', failFirst: [], state: 'done', stopReason: null, answer: 'x', steps: [], approvalUrl: null, provider: 'gemini', model: 'gemini-test',
-    usage: { modelCalls: 1, inputTokens: 1, outputTokens: 1, reported: true }, sessionId: null, orderId: null, captureId: null, settlement: 'none', receiptSha256: null, kept: false,
+    usage: { modelCalls: 1, inputTokens: 1, outputTokens: 1, reported: true }, sessionId: null, orderId: null, captureId: null, settlement: 'none', receiptSha256: null, captured: null, released: null, kept: false,
   });
 }
 
@@ -206,6 +206,8 @@ test('a signed-in member starts a run and reads it back; another member gets 404
   assert.equal(owner.status, 200);
   assert.equal(owner.body.run.viewedAs, 'owner');
   assert.equal(owner.body.run.id, id);
+  // The receipt's amounts (Ruling A11) are part of the owner's view too; only the approval link and ids are not.
+  assert.ok('captured' in owner.body.run && 'released' in owner.body.run);
   const viewLog = s.lines.slice(before).filter((l) => l.includes(`agent run ${id}: viewed by the owner`));
   assert.equal(viewLog.length, 1);
   assert.ok(viewLog[0]!.includes('Northwind Goods'));
@@ -440,6 +442,10 @@ test('local mode: the operator starts and reads runs, with no caps', async (t) =
   assert.equal(again.status, 201);
   const list = (await (await api(new Request('http://127.0.0.1:8787/api/agent/runs'))).json()) as any;
   assert.equal(list.runs.length, 2);
+  // The operator is the owner here: it keeps a run (the page shows Keep in local mode).
+  const keep = await api(new Request(`http://127.0.0.1:8787/api/agent/runs/${run.id}/keep`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kept: true }) }));
+  assert.equal(keep.status, 200);
+  assert.deepEqual(await keep.json(), { id: run.id, kept: true });
   // No agent service: 503.
   const none = createApi({ paypal: null, env: 'sandbox', bindings: {} });
   assert.equal((await none(new Request('http://127.0.0.1:8787/api/agent/runs'))).status, 503);

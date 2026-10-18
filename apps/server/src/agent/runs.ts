@@ -37,6 +37,12 @@ export interface RunRecord {
   /** Only ever written from a MeterMCP receipt that was read; `unverified` when it could not be. */
   settlement: Settlement;
   receiptSha256: string | null;
+  /**
+   * The amounts the read receipt's settlement states (Ruling A11): copied from it, never computed from the steps;
+   * null when no receipt stated them, and cleared when the settlement becomes unverified.
+   */
+  captured: string | null;
+  released: string | null;
   /** Kept by the owner: never swept. */
   kept: boolean;
 }
@@ -216,7 +222,8 @@ export class RunStore {
       if (!RUN_ID.test(id) || name !== `${id}.json`) continue;
       try {
         const r = JSON.parse(readFileSync(join(dir, name), 'utf8')) as RunRecord;
-        if (r?.id === id && Array.isArray(r.steps) && r.by) this.records.set(id, r);
+        // A record from before the amounts existed has none (null): unknown, not zero.
+        if (r?.id === id && Array.isArray(r.steps) && r.by) this.records.set(id, { ...r, captured: r.captured ?? null, released: r.released ?? null });
       } catch {
         /* unreadable: left on disk, not served */
       }

@@ -80,7 +80,12 @@ function fakeMeterMcp(o: { autoApprove?: boolean; duringCall?: (tool: string) =>
     session: { id: s.id, status: s.status },
     mandate: { order_id: `ORDER-${s.id}`, cap: usd(s.capCents) },
     totals: { charged: usd(s.usedCents) },
-    settlement: { status: SETTLE[s.status] ?? 'failed', capture_id: s.captureId },
+    settlement: {
+      status: SETTLE[s.status] ?? 'failed',
+      capture_id: s.captureId,
+      // As MeterMCP's settlement block: the amounts only once settled or voided.
+      ...(s.status === 'settled' ? { captured: usd(s.usedCents), released: usd(s.capCents - s.usedCents) } : s.status === 'voided' ? { captured: '0.00', released: usd(s.capCents) } : {}),
+    },
     receipt_sha256: `${s.id.slice(-1)}`.repeat(64),
   });
 
@@ -212,7 +217,8 @@ function service(o: { store: RunStore; mm: ReturnType<typeof fakeMeterMcp>; mode
 /** A record on disk as a process that died left it. */
 function crashed(dir: string, patch: Partial<RunRecord>): RunRecord {
   const at = new Date(T0).toISOString();
-  const rec: RunRecord = {
+  // Without captured/released unless patched: also a record written before those fields existed (Ruling A11).
+  const rec: Omit<RunRecord, 'captured' | 'released'> & Partial<RunRecord> = {
     id: `run-${'ab'.repeat(16)}`,
     createdAt: at,
     updatedAt: at,
@@ -238,7 +244,7 @@ function crashed(dir: string, patch: Partial<RunRecord>): RunRecord {
     ...patch,
   };
   writeFileSync(join(dir, `${rec.id}.json`), JSON.stringify(rec));
-  return rec;
+  return rec as RunRecord;
 }
 
 const step = (n: number, s: Partial<Step>): Step => ({ n, at: new Date(T0).toISOString(), state: 'done', kind: 'call', tool: 'quote_lookup', arguments: { symbol: 'ACME' }, reason: 'because', summary: '', metering: null, ...s });
@@ -281,6 +287,8 @@ test('a record is written at each step, and a store reopened from disk has the s
   assert.equal(done.captureId, 'CAP0001');
   assert.equal(done.receiptSha256, '1'.repeat(64));
   assert.equal(done.orderId, 'ORDER-mm-sess-0001');
+  // Ruling A11: the amounts are the receipt's, copied, never computed from the steps.
+  assert.deepEqual([done.captured, done.released], ['0.05', '0.95']);
   assert.deepEqual([done.provider, done.model, done.usage.modelCalls, done.usage.reported], ['gemini', 'gemini-test', 3, true]);
   assert.ok(done.finishedAt);
   // The run's own connection to /agent/mcp, with its run key; the return URL names the run.
@@ -358,6 +366,7 @@ test('restart after a paid call ran but before its result was recorded: the step
   assert.equal(r.steps[1]!.metering, null);
   assert.deepEqual(mm.admin.closes, [s.id]);
   assert.deepEqual([r.settlement, r.captureId, r.receiptSha256], ['captured', s.captureId, '1'.repeat(64)]);
+  assert.deepEqual([r.captured, r.released], ['0.05', '0.95']);
   assert.deepEqual(mm.paid, []);
   assert.deepEqual(mm.connects, []);
   assert.deepEqual(onDisk(dir, run).steps[1]!.state, 'uncertain');
@@ -370,7 +379,8 @@ test('recover leaves settlement unverified when the receipt cannot be read, and 
   const mm = fakeMeterMcp();
   const run = `run-${'34'.repeat(16)}`;
   const s = mm.seed(run, 'active', 5);
-  crashed(dir, { id: run, sessionId: s.id, steps: [step(1, { state: 'pending' })] });
+  // Amounts from an earlier read stay only while the settlement is the receipt's: unverified clears them.
+  crashed(dir, { id: run, sessionId: s.id, steps: [step(1, { state: 'pending' })], settlement: 'captured', captured: '0.05', released: '0.95' });
   // A budget whose open_budget answer was never recorded: the session id is unknown, so it cannot be claimed none.
   const lost = crashed(dir, { id: `run-${'56'.repeat(16)}`, steps: [step(1, { state: 'pending' })] });
   const store = new RunStore({ dir });
@@ -378,6 +388,7 @@ test('recover leaves settlement unverified when the receipt cannot be read, and 
   mm.admin.receiptFails = true;
   await svc.recover();
   assert.deepEqual([store.get(run)!.state, store.get(run)!.settlement, store.get(run)!.captureId], ['interrupted', 'unverified', null]);
+  assert.deepEqual([store.get(run)!.captured, store.get(run)!.released], [null, null]);
   assert.equal(store.get(lost.id)!.settlement, 'unverified');
   assert.deepEqual(mm.admin.closes, [s.id]);
 
@@ -385,6 +396,7 @@ test('recover leaves settlement unverified when the receipt cannot be read, and 
   await svc.reconcile();
   const r = store.get(run)!;
   assert.deepEqual([r.settlement, r.captureId], ['captured', s.captureId]);
+  assert.deepEqual([r.captured, r.released], ['0.05', '0.95']);
   assert.equal(onDisk(dir, run).settlement, 'captured');
   // Closed again by the sweep (idempotent in MeterMCP); the run without a session id has nothing to close.
   assert.deepEqual(mm.admin.closes, [s.id, s.id]);
@@ -525,7 +537,7 @@ test('cancellation during a call: stop() while a paid call is in flight records 
 test('list filters by person, by workspace only when asked, newest first', () => {
   let now = T0;
   const store = new RunStore({ dir: null, now: () => new Date(now) });
-  const base = { finishedAt: null, goal: 'g', cap: '1.00', failFirst: [], state: 'done' as const, stopReason: null, answer: null, steps: [], approvalUrl: null, provider: null, model: null, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, reported: false }, sessionId: null, orderId: null, captureId: null, settlement: 'none' as const, receiptSha256: null, kept: false };
+  const base = { finishedAt: null, goal: 'g', cap: '1.00', failFirst: [], state: 'done' as const, stopReason: null, answer: null, steps: [], approvalUrl: null, provider: null, model: null, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, reported: false }, sessionId: null, orderId: null, captureId: null, settlement: 'none' as const, receiptSha256: null, captured: null, released: null, kept: false };
   const a1 = store.create({ ...base, by: BY });
   now += 1000;
   const b1 = store.create({ ...base, by: { ...BY, personId: 'p-bea', label: 'Bea' } });
@@ -545,7 +557,7 @@ test('sweep deletes unkept records older than 30 days and keeps kept ones', (t) 
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   let now = T0;
   const store = new RunStore({ dir, now: () => new Date(now) });
-  const base = { finishedAt: null, goal: 'g', cap: '1.00', failFirst: [], state: 'done' as const, stopReason: null, answer: null, steps: [], approvalUrl: null, provider: null, model: null, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, reported: false }, sessionId: null, orderId: null, captureId: null, settlement: 'none' as const, receiptSha256: null, by: BY };
+  const base = { finishedAt: null, goal: 'g', cap: '1.00', failFirst: [], state: 'done' as const, stopReason: null, answer: null, steps: [], approvalUrl: null, provider: null, model: null, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, reported: false }, sessionId: null, orderId: null, captureId: null, settlement: 'none' as const, receiptSha256: null, captured: null, released: null, by: BY };
   const old = store.create({ ...base, kept: false });
   const kept = store.create({ ...base, kept: false });
   store.update(kept.id, { kept: true });
@@ -649,7 +661,7 @@ test('sweep never deletes a record whose settlement is not final, nor one whose 
       writeFileSync(file, data);
     },
   });
-  const base = { finishedAt: null, goal: 'g', cap: '1.00', failFirst: [], state: 'interrupted' as const, stopReason: null, answer: null, steps: [], approvalUrl: null, provider: null, model: null, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, reported: false }, orderId: null, captureId: null, receiptSha256: null, kept: false, by: BY };
+  const base = { finishedAt: null, goal: 'g', cap: '1.00', failFirst: [], state: 'interrupted' as const, stopReason: null, answer: null, steps: [], approvalUrl: null, provider: null, model: null, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, reported: false }, orderId: null, captureId: null, receiptSha256: null, captured: null, released: null, kept: false, by: BY };
   const unsettled = ['open', 'capture_pending', 'failed', 'unverified'] as const;
   const held = unsettled.map((settlement, i) => store.create({ ...base, sessionId: `mm-sess-000${i}`, settlement }));
   const settled = store.create({ ...base, sessionId: 'mm-sess-0009', settlement: 'captured' });
@@ -757,4 +769,30 @@ test('a receipt of another session, or with an unknown settlement status, leaves
   await svc.reconcile();
   assert.equal(store.get(run)!.settlement, 'captured');
   await svc.stop();
+});
+
+test('captured and released are null without a receipt that states them (none, a receipt without amounts, an old record)', async (t) => {
+  const dir = tmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const mm = fakeMeterMcp({ autoApprove: true });
+  const store = new RunStore({ dir });
+  const { svc } = service({ store, mm, models: { primary: scripted([finish('cannot_do', 'The tools cannot do this')]), fallback: null } });
+  const r = svc.start(BY, INPUT);
+  assert.ok(r.ok);
+  assert.deepEqual([r.run.captured, r.run.released], [null, null]);
+  const none = await finished(store, r.run.id);
+  assert.deepEqual([none.settlement, none.captured, none.released], ['none', null, null]);
+
+  // A settled receipt whose settlement block carries no amounts: the settlement is set, the amounts stay unknown.
+  const run = `run-${'78'.repeat(16)}`;
+  const s = mm.seed(run, 'active', 5);
+  crashed(dir, { id: run, sessionId: s.id, steps: [step(1, { state: 'pending' })] });
+  mm.admin.receiptPatch = (rc) => ({ ...rc, settlement: { status: rc.settlement.status, capture_id: rc.settlement.capture_id } });
+  const again = new RunStore({ dir });
+  const { svc: svc2 } = service({ store: again, mm });
+  await svc2.recover();
+  const x = again.get(run)!;
+  assert.deepEqual([x.settlement, x.captured, x.released], ['captured', null, null]);
+  await svc.stop();
+  await svc2.stop();
 });

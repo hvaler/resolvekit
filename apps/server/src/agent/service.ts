@@ -116,6 +116,8 @@ export class AgentService {
         captureId: null,
         settlement: 'none',
         receiptSha256: null,
+        captured: null,
+        released: null,
         kept: false,
       });
     } catch (e) {
@@ -145,7 +147,7 @@ export class AgentService {
       // A paid call announced without a recorded session may have opened a budget nobody can name: not 'none'.
       const unknownBudget = !r.sessionId && r.steps.some((s) => s.state === 'pending' && s.kind === 'call');
       const settlement: Settlement = r.sessionId || unknownBudget ? 'unverified' : r.settlement;
-      this.write(r.id, { state: 'interrupted', steps, approvalUrl: null, finishedAt: this.now().toISOString(), settlement });
+      this.write(r.id, { state: 'interrupted', steps, approvalUrl: null, finishedAt: this.now().toISOString(), settlement, ...(settlement === 'unverified' ? NO_AMOUNTS : {}) });
       this.log(`agent run ${r.id}: interrupted by a restart (was ${r.state}${uncertain ? `, ${uncertain} call(s) with unknown result` : ''})${unknownBudget ? ' · a budget may exist without a known session: settlement unverified' : ''}`);
       if (r.sessionId) settle.push(r.id);
     }
@@ -214,7 +216,7 @@ export class AgentService {
         steps: rec.steps.map((s): Step => (s.state === 'pending' ? { ...s, state: 'uncertain', summary: RECOVERED_SUMMARY } : s)),
         finishedAt: this.now().toISOString(),
         approvalUrl: null,
-        settlement: rec.sessionId || rec.steps.some((s) => s.state === 'pending' && s.kind === 'call') ? 'unverified' : rec.settlement,
+        ...(rec.sessionId || rec.steps.some((s) => s.state === 'pending' && s.kind === 'call') ? { settlement: 'unverified' as const, ...NO_AMOUNTS } : {}),
       });
       if (rec.sessionId) await this.settleThroughAdmin(id);
       return;
@@ -235,6 +237,8 @@ export class AgentService {
       captureId: result.captureId,
       settlement: result.settlement,
       receiptSha256: result.receiptSha256,
+      // Only from the receipt the settlement came from (Ruling A11); none read, none stated.
+      ...amountsOf(result.receipt),
       finishedAt: this.now().toISOString(),
     });
     this.log(`agent run ${id}: ${result.outcome}${result.stopReason ? ` (${result.stopReason})` : ''} · settlement ${result.settlement}`);
@@ -305,11 +309,22 @@ export class AgentService {
         settlement: status as Settlement,
         captureId: typeof receipt.settlement.capture_id === 'string' ? receipt.settlement.capture_id : null,
         receiptSha256: typeof receipt.receipt_sha256 === 'string' ? receipt.receipt_sha256 : null,
+        ...amountsOf(receipt),
         ...(typeof receipt.mandate?.order_id === 'string' ? { orderId: receipt.mandate.order_id } : {}),
       });
       if (status !== r.settlement) this.log(`agent run ${id}: settlement ${status} (from the receipt)`);
-    } else if (r.settlement !== 'unverified') this.write(id, { settlement: 'unverified' });
+    } else if (r.settlement !== 'unverified') this.write(id, { settlement: 'unverified', ...NO_AMOUNTS });
   }
+}
+
+const NO_AMOUNTS = { captured: null, released: null } as const;
+const AMOUNT = /^\d{1,6}\.\d{2}$/;
+
+/** The captured and released amounts a receipt's settlement states, as it states them (Ruling A11); null when it does not. */
+function amountsOf(receipt: Record<string, any> | null): { captured: string | null; released: string | null } {
+  const st = receipt?.settlement;
+  const pick = (v: unknown) => (typeof v === 'string' && AMOUNT.test(v) ? v : null);
+  return { captured: pick(st?.captured), released: pick(st?.released) };
 }
 
 /** `text` without any of the secret values (header values), for logs. */

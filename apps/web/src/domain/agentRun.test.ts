@@ -3,14 +3,17 @@ import {
   STOP_REASONS,
   agentErrorText,
   compareRows,
+  canStart,
   outcomeText,
   pollDelay,
+  runActions,
   runTotals,
   settlementText,
   stateText,
   stepBadges,
   stepLine,
   usageText,
+  workspaceToggle,
   type AgentRun,
   type AgentStep,
 } from './agentRun';
@@ -47,6 +50,8 @@ const run = (over: Partial<AgentRun> = {}): AgentRun => ({
   captureId: 'CAP1',
   settlement: 'captured',
   receiptSha256: 'ab'.repeat(32),
+  captured: '0.45',
+  released: '4.55',
   kept: false,
   approvalUrl: null,
   orderId: 'ORDER1',
@@ -95,14 +100,15 @@ describe('outcomeText', () => {
 });
 
 describe('settlementText', () => {
-  it('captured: what the OK calls cost and what was released', () => {
-    const steps = [step(), step({ n: 2, tool: 'deep_report', metering: { status: 'FAILED', price: '0.40', charged: false, remaining: '4.95', injected: 'run' } }), step({ n: 3, tool: 'deep_report', metering: { status: 'OK', price: '0.40', charged: true, remaining: '4.55', injected: null } })];
-    expect(settlementText(run({ steps }))).toBe('Captured 0.45 USD · 4.55 released');
+  it('captured: the amounts the receipt stated, never the steps’ sum (Ruling A11)', () => {
+    expect(settlementText(run({ captured: '0.45', released: '4.55' }))).toBe('Captured 0.45 USD · 4.55 released');
+    // The steps say 0.05 was charged; the settlement still shows only what the receipt said.
+    expect(settlementText(run({ captured: '1.37', released: '3.63' }))).toBe('Captured 1.37 USD · 3.63 released');
   });
 
-  it('captured with a call of unknown result: no amount is claimed', () => {
-    const t = settlementText(run({ steps: [step(), step({ n: 2, state: 'uncertain', metering: null, summary: 'Result unknown' })] }));
-    expect(t).toBe('Captured in PayPal (amount on the MeterMCP receipt: a call’s result is unknown here)');
+  it('captured without amounts from a receipt: no amount is claimed', () => {
+    expect(settlementText(run({ captured: null, released: null }))).toBe('Captured (amount not read yet)');
+    expect(settlementText(run({ captured: null, released: null, steps: [step(), step({ n: 2, state: 'uncertain', metering: null })] }))).toBe('Captured (amount not read yet)');
   });
 
   it('names the other settlements, never implying a charge that is not known', () => {
@@ -151,7 +157,9 @@ describe('stepLine and stepBadges', () => {
   });
 
   it('pending and uncertain steps', () => {
-    expect(stepLine(step({ state: 'pending', metering: null, summary: '' }))).toBe('#1 quote_lookup · in progress…');
+    const p = step({ state: 'pending', metering: null, summary: '' });
+    expect(stepLine(p)).toBe('#1 quote_lookup · in progress…');
+    expect(stepBadges(p)).toEqual(['in progress']);
     const u = step({ state: 'uncertain', metering: null, summary: 'Result unknown: the server restarted during this call; the receipt shows whether it was charged' });
     expect(stepLine(u)).toBe('#1 quote_lookup · Result unknown: the server restarted during this call; the receipt shows whether it was charged');
     expect(stepBadges(u)).toEqual(['uncertain']);
@@ -209,15 +217,76 @@ describe('pollDelay', () => {
     expect(pollDelay({ state: 'awaiting_approval', settlement: 'open' }, 4)).toBe(30_000);
   });
 
-  it('a final run keeps being read until its settlement is final', () => {
-    expect(pollDelay({ state: 'done', settlement: 'capture_pending' }, 0)).toBe(15_000);
-    expect(pollDelay({ state: 'interrupted', settlement: 'unverified' }, 0)).toBe(15_000);
-    expect(pollDelay({ state: 'done', settlement: 'failed' }, 3)).toBe(30_000);
+  it('a final run whose settlement is not final: 15 s, 30 s, 60 s… up to 5 min', () => {
+    for (const s of ['unverified', 'open', 'capture_pending', 'failed'] as const) expect(pollDelay({ state: 'done', settlement: s }, 0)).toBe(15_000);
+    expect(pollDelay({ state: 'done', settlement: 'capture_pending' }, 1)).toBe(30_000);
+    expect(pollDelay({ state: 'interrupted', settlement: 'unverified' }, 2)).toBe(60_000);
+    expect(pollDelay({ state: 'done', settlement: 'failed' }, 5)).toBe(300_000);
+    expect(pollDelay({ state: 'done', settlement: 'failed' }, 20)).toBe(300_000);
+  });
+
+  it('…and stops after 30 min without a change', () => {
+    expect(pollDelay({ state: 'done', settlement: 'unverified' }, 3, 29 * 60_000)).toBe(120_000);
+    expect(pollDelay({ state: 'done', settlement: 'unverified' }, 3, 30 * 60_000)).toBeNull();
+    // A live run is never given up on by time alone.
+    expect(pollDelay({ state: 'awaiting_approval', settlement: 'open' }, 0, 60 * 60_000)).toBe(4000);
   });
 
   it('null when the run and its settlement are final', () => {
     for (const s of ['none', 'captured', 'capture_declined', 'voided', 'not_approved'] as const) expect(pollDelay({ state: 'done', settlement: s }, 0)).toBeNull();
     expect(pollDelay({ state: 'stopped', settlement: 'voided' }, 5)).toBeNull();
+  });
+});
+
+describe('runActions, workspaceToggle and canStart', () => {
+  const URL_OK = 'https://www.sandbox.paypal.com/checkoutnow?token=ORDER1';
+  const member = { owner: false, local: false };
+  const waiting = (over: Partial<AgentRun> = {}) => run({ state: 'awaiting_approval', finishedAt: null, approvalUrl: URL_OK, ...over });
+
+  it('the author awaiting approval gets the link and Stop; a member no Keep', () => {
+    expect(runActions(waiting(), member)).toEqual({ stop: true, keep: false, approvalUrl: URL_OK });
+  });
+
+  it('the link only while awaiting approval, and only https', () => {
+    expect(runActions(run({ state: 'running', finishedAt: null, approvalUrl: URL_OK }), member).approvalUrl).toBeNull();
+    expect(runActions(run({ state: 'done', approvalUrl: URL_OK }), member).approvalUrl).toBeNull();
+    expect(runActions(waiting({ approvalUrl: null }), member).approvalUrl).toBeNull();
+    expect(runActions(waiting({ approvalUrl: undefined }), member).approvalUrl).toBeNull();
+    expect(runActions(waiting({ approvalUrl: 'http://paypal.example/x' }), member).approvalUrl).toBeNull();
+    expect(runActions(waiting({ approvalUrl: 'javascript:alert(1)' }), member).approvalUrl).toBeNull();
+  });
+
+  it('an owner view of someone else’s run: Keep, never the link nor Stop', () => {
+    expect(runActions(waiting({ viewedAs: 'owner' }), { owner: true, local: false })).toEqual({ stop: false, keep: true, approvalUrl: null });
+    expect(runActions(run({ viewedAs: 'owner' }), { owner: true, local: false })).toEqual({ stop: false, keep: true, approvalUrl: null });
+  });
+
+  it('Stop only for the author while the run is running or awaiting approval', () => {
+    expect(runActions(run({ state: 'running', finishedAt: null }), member).stop).toBe(true);
+    for (const state of ['done', 'stopped', 'interrupted', 'not_approved'] as const) expect(runActions(run({ state }), member).stop).toBe(false);
+  });
+
+  it('Keep for owners (their own runs too) and the local operator', () => {
+    expect(runActions(run(), { owner: true, local: false }).keep).toBe(true);
+    expect(runActions(run(), { owner: false, local: true }).keep).toBe(true);
+    expect(runActions(run(), member).keep).toBe(false);
+  });
+
+  it('the workspace toggle: hosted owners only', () => {
+    expect(workspaceToggle({ owner: true, local: false })).toBe(true);
+    expect(workspaceToggle(member)).toBe(false);
+    expect(workspaceToggle({ owner: true, local: true })).toBe(false);
+  });
+
+  it('canStart: a goal and a cap, not while starting, not while one of the caller’s own runs is live', () => {
+    const idle = { goal: 'Quote ACME-42', cap: '2.00', starting: false, runs: [run()] };
+    expect(canStart(idle)).toBe(true);
+    expect(canStart({ ...idle, goal: '   ' })).toBe(false);
+    expect(canStart({ ...idle, cap: '' })).toBe(false);
+    expect(canStart({ ...idle, starting: true })).toBe(false);
+    expect(canStart({ ...idle, runs: [run({ state: 'running', finishedAt: null })] })).toBe(false);
+    // Someone else's live run, seen by the owner, does not block the owner's own.
+    expect(canStart({ ...idle, runs: [run({ state: 'running', finishedAt: null, viewedAs: 'owner' })] })).toBe(true);
   });
 });
 

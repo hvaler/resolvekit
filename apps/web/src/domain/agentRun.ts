@@ -59,6 +59,9 @@ export interface AgentRun {
   captureId: string | null;
   settlement: Settlement;
   receiptSha256: string | null;
+  /** The amounts the read receipt's settlement stated (Ruling A11); null when none stated them. */
+  captured: string | null;
+  released: string | null;
   kept: boolean;
   /** The author's only. */
   approvalUrl?: string | null;
@@ -140,8 +143,11 @@ export function runTotals(run: Pick<AgentRun, 'steps' | 'cap'>): { charged: stri
   return { charged: usd(cents), okCalls, notCharged, uncertain, cap: run.cap };
 }
 
-/** The PayPal side, as MeterMCP's receipt last said it. */
-export function settlementText(run: Pick<AgentRun, 'settlement' | 'steps' | 'cap'>): string {
+/**
+ * The PayPal side, as MeterMCP's receipt last said it. Amounts only as the receipt stated them (`captured`, `released`:
+ * Ruling A11), never added up from the steps.
+ */
+export function settlementText(run: Pick<AgentRun, 'settlement' | 'captured' | 'released'>): string {
   switch (run.settlement) {
     case 'none':
       return 'Nothing opened in PayPal';
@@ -149,11 +155,9 @@ export function settlementText(run: Pick<AgentRun, 'settlement' | 'steps' | 'cap
       return 'Not verified yet';
     case 'open':
       return 'Budget open in PayPal (not settled yet)';
-    case 'captured': {
-      const t = runTotals(run);
-      if (t.uncertain) return 'Captured in PayPal (amount on the MeterMCP receipt: a call’s result is unknown here)';
-      return `Captured ${t.charged} USD · ${usd(Math.max(0, toCents(t.cap) - toCents(t.charged)))} released`;
-    }
+    case 'captured':
+      // An older record, or a receipt that did not state them: `captured`/`released` may be missing as well as null.
+      return run.captured != null && run.released != null ? `Captured ${run.captured} USD · ${run.released} released` : 'Captured (amount not read yet)';
     case 'capture_pending':
       return 'Capture pending at PayPal (not final)';
     case 'capture_declined':
@@ -183,10 +187,14 @@ export function stepLine(step: AgentStep): string {
   return parts.filter(Boolean).join(' · ');
 }
 
-export type StepBadge = 'injected' | 'not charged' | 'uncertain';
+export type StepBadge = 'in progress' | 'injected' | 'not charged' | 'uncertain';
 
-/** The badges beside a step: an injected failure is «injected» and «not charged»; a restart mid-call «uncertain». */
+/**
+ * The badges beside a step: a call not answered yet «in progress»; an injected failure «injected» and «not charged»;
+ * a restart mid-call «uncertain».
+ */
 export function stepBadges(step: AgentStep): StepBadge[] {
+  if (step.state === 'pending') return ['in progress'];
   if (step.state === 'uncertain') return ['uncertain'];
   const m = step.metering;
   if (!m || m.status === 'OK') return [];
@@ -207,18 +215,45 @@ export function compareRows(a: Pick<AgentRun, 'steps'>, b: Pick<AgentRun, 'steps
   return ns.map((n) => ({ n, left: a.steps.find((s) => s.n === n) ?? null, right: b.steps.find((s) => s.n === n) ?? null }));
 }
 
-const POLL_MAX_MS = 30_000;
-/** A finished run whose settlement MeterMCP may still change is read again at this pace. */
+const LIVE_MAX_MS = 30_000;
+/** A finished run whose settlement MeterMCP may still change: read at 15 s, then slower, up to 5 min, for 30 min. */
 const SETTLING_MS = 15_000;
+const SETTLING_MAX_MS = 300_000;
+const SETTLING_GIVE_UP_MS = 30 * 60_000;
 
 /**
- * When to read the run again: 2 s while it runs, 4 s while it waits for PayPal, 15 s while it is over but its settlement
- * is not; doubled after each failed read in a row (`errors`), up to 30 s. Null: nothing will change any more.
+ * When to read the run again; null: nothing will change any more (or not soon enough to keep asking).
+ * - Running 2 s, awaiting approval 4 s; `attempt` = failed reads in a row, each doubling it, up to 30 s.
+ * - Over, settlement not final (MeterMCP's sweep may still settle it, every 5 min): 15 s, 30 s, 60 s… up to 5 min;
+ *   `attempt` = reads in a row without a change, `unchangedMs` = time since the last change: after 30 min, null.
  */
-export function pollDelay(run: Pick<AgentRun, 'state' | 'settlement'>, errors: number): number | null {
-  const base = run.state === 'running' ? 2000 : run.state === 'awaiting_approval' ? 4000 : UNSETTLED.has(run.settlement) ? SETTLING_MS : null;
-  if (base == null) return null;
-  return Math.min(POLL_MAX_MS, base * 2 ** Math.max(0, errors));
+export function pollDelay(run: Pick<AgentRun, 'state' | 'settlement'>, attempt: number, unchangedMs = 0): number | null {
+  const n = Math.max(0, attempt);
+  if (run.state === 'running' || run.state === 'awaiting_approval') return Math.min(LIVE_MAX_MS, (run.state === 'running' ? 2000 : 4000) * 2 ** n);
+  if (!UNSETTLED.has(run.settlement) || unchangedMs >= SETTLING_GIVE_UP_MS) return null;
+  return Math.min(SETTLING_MAX_MS, SETTLING_MS * 2 ** n);
+}
+
+/** What the page offers on a run. `owner`: the person is the workspace's owner; `local`: the operator (no accounts). */
+export function runActions(run: AgentRun, who: { owner: boolean; local: boolean }): { stop: boolean; keep: boolean; approvalUrl: string | null } {
+  const author = run.viewedAs !== 'owner';
+  const url = run.approvalUrl;
+  return {
+    // The route also lets the owner stop with ?scope=workspace; the page keeps Stop to the author (Ruling A2).
+    stop: author && isLive(run.state),
+    // The keep route is the owner's; the local operator acts as the owner.
+    keep: who.owner || who.local,
+    // Only the author, only while PayPal waits, and only a link to an https page (never a script or plain http).
+    approvalUrl: author && run.state === 'awaiting_approval' && typeof url === 'string' && /^https:\/\//i.test(url) ? url : null,
+  };
+}
+
+/** The «Workspace runs» toggle: the hosted owner only (local mode has nobody else's runs). */
+export const workspaceToggle = (who: { owner: boolean; local: boolean }): boolean => who.owner && !who.local;
+
+/** Whether «Start the run» is enabled: a goal and a cap, nothing starting, none of the caller's own runs still going. */
+export function canStart(o: { goal: string; cap: string; starting: boolean; runs: readonly AgentRun[] }): boolean {
+  return !!o.goal.trim() && !!o.cap.trim() && !o.starting && !o.runs.some((r) => r.viewedAs !== 'owner' && isLive(r.state));
 }
 
 function resetText(resetsAt: unknown): string | null {
