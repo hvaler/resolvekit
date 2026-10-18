@@ -240,13 +240,20 @@ export function withLog(log: ((line: string) => void) | undefined, api: Handler,
 }
 
 /** The /api routes without any request guard: the caller puts one in front (local {@link guard} or hosted mode). */
+/** One read of the sellers of the bound disputes: per bound case (`read` false: unreadable now), plus the derived set. */
+export interface SellerRead {
+  ids: Set<string>;
+  /** Every bound dispute was read. */
+  complete: boolean;
+  cases: Array<{ caseId: string; dispute: string; read: boolean; merchant: string | null }>;
+}
 /** The API handler, plus the analyst's input as the server builds it (hosted warm-up, tests). */
 export type Api = Handler & {
   inputFor: (caseId: string) => Promise<AnalysisInput | Response>;
   /** The PayPal merchant ids that are the seller on a bound dispute (hosted: whose workspace sees real PayPal). */
   sellerIds: () => Promise<Set<string>>;
   /** The same read, telling whether every bound dispute could be read (`complete`). */
-  sellerRead: () => Promise<{ ids: Set<string>; complete: boolean }>;
+  sellerRead: () => Promise<SellerRead>;
   /** The seller's business name on the bound disputes, by merchant id (known after sellerIds). */
   sellerName: (merchantId: string) => string | null;
   /** Forget the PayPal reads kept for building inputs and invalidate open intents (the bindings changed). */
@@ -364,7 +371,7 @@ export function createApi(opts: ApiOptions): Api {
   /** The seller's name as PayPal gives it on a bound dispute (after {@link sellerIds} read them), or null. */
   const sellerName = (merchantId: string): string | null => [...sellers.values()].find((s) => s.merchant === merchantId && s.name)?.name ?? null;
   /** The merchant ids that are the seller on a bound dispute (each dispute read once, then on every fresh read). */
-  const sellerRead = async (): Promise<{ ids: Set<string>; complete: boolean }> => {
+  const sellerRead = async (): Promise<SellerRead> => {
     const paypal = opts.paypal;
     if (paypal) {
       await Promise.all(
@@ -380,13 +387,17 @@ export function createApi(opts: ApiOptions): Api {
       );
     }
     const ids = new Set<string>();
-    for (const [caseId, s] of sellers) if (s.merchant && bindingOf(caseId)?.dispute === s.dispute) ids.add(s.merchant);
-    // Complete: every bound dispute has been read (one that names no seller counts as read).
-    const complete = Object.keys(opts.bindings).every((caseId) => {
+    const cases: SellerRead['cases'] = [];
+    for (const caseId of Object.keys(opts.bindings)) {
       const b = bindingOf(caseId);
-      return !b || sellers.get(caseId)?.dispute === b.dispute;
-    });
-    return { ids, complete };
+      if (!b) continue;
+      const s = sellers.get(caseId);
+      const read = s?.dispute === b.dispute;
+      // A dispute that names no seller counts as read.
+      cases.push({ caseId, dispute: b.dispute, read, merchant: read ? (s?.merchant ?? null) : null });
+      if (read && s?.merchant) ids.add(s.merchant);
+    }
+    return { ids, complete: cases.every((c) => c.read), cases };
   };
   const sellerIds = async (): Promise<Set<string>> => (await sellerRead()).ids;
 

@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DailyCounters } from '@resolvekit/hosting';
@@ -20,16 +20,42 @@ const HOST = 'rk.example.com';
 const CASE = standardCase.summary.id;
 const TOKEN = 'BA-9BU79859F44918800';
 
+test('a file that exists but is not a list of seller entries stops the start; a failed write is logged, not thrown', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-sellers-'));
+  try {
+    const bad = join(dir, 'bad.json');
+    writeFileSync(bad, '{not json');
+    assert.throws(() => new SellerMemory({ file: bad }));
+    writeFileSync(bad, JSON.stringify({ entries: [{ caseId: 1 }] }));
+    assert.throws(() => new SellerMemory({ file: bad }));
+    const asDir = join(dir, 'isdir');
+    mkdirSync(asDir);
+    assert.throws(() => new SellerMemory({ file: asDir })); // EISDIR is not "missing"
+    // The parent of the file is a regular file: the write fails, the value stays in memory.
+    const lines: string[] = [];
+    const blocked = new SellerMemory({ file: join(bad, 'x', 'sellers.json'), log: (l) => lines.push(l) });
+    blocked.confirm([{ caseId: 'C1', dispute: 'D1', merchant: 'M1' }]);
+    assert.equal(blocked.remembered().length, 1);
+    assert.equal(lines.length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('remembers confirmed sellers across instances (file)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'rk-sellers-'));
   try {
     const file = join(dir, 'sub', 'sellers.json');
     assert.deepEqual([...new SellerMemory({ file }).remembered()], []);
-    new SellerMemory({ file }).confirm(new Set(['M1']));
-    assert.deepEqual([...new SellerMemory({ file }).remembered()], ['M1']);
+    new SellerMemory({ file }).confirm([{ caseId: 'C1', dispute: 'D1', merchant: 'M1' }]);
+    assert.deepEqual([...new SellerMemory({ file }).remembered()], [{ caseId: 'C1', dispute: 'D1', merchant: 'M1' }]);
+    // The next confirmation prunes what is no longer bound or bound to another dispute.
+    const again = new SellerMemory({ file });
+    again.confirm([{ caseId: 'C2', dispute: 'D2', merchant: 'M2' }]);
+    assert.deepEqual([...new SellerMemory({ file }).remembered()], [{ caseId: 'C2', dispute: 'D2', merchant: 'M2' }]);
     const mem = new SellerMemory({ file: null });
-    mem.confirm(new Set(['M2']));
-    assert.deepEqual([...mem.remembered()], ['M2']);
+    mem.confirm([{ caseId: 'C3', dispute: 'D3', merchant: 'M3' }]);
+    assert.equal(mem.remembered().length, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -72,6 +98,7 @@ function platformPayPal() {
 }
 
 async function setup(o: { memory?: SellerMemory } = {}) {
+  const bindings = { [CASE]: { dispute: 'PP-R-REAL-1', capture: STD_CAPTURE } };
   const pp = sellerPayPal();
   const platform = platformPayPal();
   const { analyst } = await analystFor([]);
@@ -79,7 +106,7 @@ async function setup(o: { memory?: SellerMemory } = {}) {
     log: () => {},
     paypal: pp.client,
     env: 'sandbox',
-    bindings: { [CASE]: { dispute: 'PP-R-REAL-1', capture: STD_CAPTURE } },
+    bindings,
     analyst,
     site: null,
     counters: new DailyCounters({ file: null, limits: { 'live-analysis': 5, recheck: 50, evidence: 5 } }),
@@ -91,7 +118,7 @@ async function setup(o: { memory?: SellerMemory } = {}) {
     https: true,
     ...(o.memory ? { sellerMemory: o.memory } : {}),
   });
-  return { app, pp, platform };
+  return { app, pp, platform, bindings };
 }
 type S = Awaited<ReturnType<typeof setup>>;
 
@@ -128,7 +155,7 @@ test('an unreadable sandbox keeps Test Store in evaluation', async () => {
 
 test('a seller remembered from an earlier run stays in evaluation while the sandbox cannot be read', async () => {
   const memory = new SellerMemory({ file: null });
-  memory.confirm(new Set([SELLER_ID]));
+  memory.confirm([{ caseId: CASE, dispute: 'PP-R-REAL-1', merchant: SELLER_ID }]);
   const s = await setup({ memory });
   s.pp.state.down = true;
   const cookie = await paypalSignIn(s, SELLER_ID);
@@ -160,4 +187,29 @@ test('a reviewer invited to the seller workspace gets evaluation', async () => {
   assert.equal(join.status, 200);
   const w = await me(s, pair(join, SESSION_COOKIE));
   assert.deepEqual([w.connection, w.connected], ['evaluation', true]);
+});
+
+test('a seller remembered for another dispute of the case is not kept when the binding changed and cannot be read', async () => {
+  const s = await setup();
+  const cookie = await paypalSignIn(s, SELLER_ID);
+  assert.equal((await me(s, cookie)).connection, 'evaluation');
+  // BINDINGS now point to another dispute, which PayPal cannot be asked about: the old seller is not trusted for it.
+  s.bindings[CASE] = { dispute: 'PP-R-OTHER-9', capture: STD_CAPTURE };
+  s.pp.state.down = true;
+  await s.app.bindingsChanged();
+  const w = await me(s, cookie);
+  assert.deepEqual([w.connection, w.connected], ['checking', false]);
+});
+
+test('a complete read ignores remembered sellers that are no longer bound', async () => {
+  const memory = new SellerMemory({ file: null });
+  memory.confirm([
+    { caseId: 'GONE-CASE', dispute: 'PP-R-REAL-1', merchant: 'OLDSELLER01' },
+    { caseId: CASE, dispute: 'PP-R-OLD-0', merchant: 'OLDSELLER02' },
+  ]);
+  for (const id of ['OLDSELLER01', 'OLDSELLER02']) {
+    const s = await setup({ memory });
+    const w = await me(s, await paypalSignIn(s, id));
+    assert.deepEqual([w.connection, w.connected], ['not_connected', false]);
+  }
 });

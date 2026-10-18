@@ -153,24 +153,31 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
   // The seller merchant ids of the bound disputes (refreshed before each signed-in request): which workspace sees
-  // real PayPal. An incomplete read (a dispute unreadable) adds the remembered sellers instead of dropping them, so a
-  // slow sandbox never demotes the evaluation workspace. `api` is created below with this gate.
-  const memory = o.sellerMemory ?? new SellerMemory({ file: null });
+  // real PayPal. A bound dispute that cannot be read now keeps the seller remembered for that same binding (same case,
+  // same dispute id), so a slow sandbox never demotes the evaluation workspace; a changed binding forgets it.
+  // `api` is created below with this gate.
+  const memory = o.sellerMemory ?? new SellerMemory({ file: null, ...(o.log ? { log: o.log } : {}) });
   let sellers: ReadonlySet<string> = new Set<string>();
-  let sellersComplete = false;
   let api: ReturnType<typeof createApi>;
   const refreshSellers = async () => {
     const read = await api.sellerRead();
-    const effective = read.complete ? read.ids : new Set([...read.ids, ...memory.remembered()]);
-    if (read.complete && read.ids.size > 0) memory.confirm(read.ids);
+    const effective = new Set<string>();
+    for (const c of read.cases) {
+      if (c.read) {
+        if (c.merchant) effective.add(c.merchant);
+        continue;
+      }
+      const m = memory.remembered().find((e) => e.caseId === c.caseId && e.dispute === c.dispute);
+      if (m) effective.add(m.merchant);
+    }
+    if (read.complete) memory.confirm(read.cases.flatMap((c) => (c.merchant ? [{ caseId: c.caseId, dispute: c.dispute, merchant: c.merchant }] : [])));
     sellers = effective;
-    sellersComplete = read.complete;
-    return effective;
+    return { effective, complete: read.complete };
   };
   const connectionOf = async (payerId: string): Promise<Connection> => {
-    const effective = await refreshSellers();
+    const { effective, complete } = await refreshSellers();
     if (effective.has(payerId)) return 'evaluation';
-    return effective.size === 0 && !sellersComplete ? 'checking' : 'not_connected';
+    return effective.size === 0 && !complete ? 'checking' : 'not_connected';
   };
   const auth = createAuth({
     accounts: o.accounts,

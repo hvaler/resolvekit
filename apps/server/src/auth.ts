@@ -249,7 +249,8 @@ export function createAuth(o: AuthOptions): Auth {
     const p = state.payer;
     const name = [p.firstName, p.lastName].filter(Boolean).join(' ') || 'PayPal merchant';
     // The seller of the bound disputes: its workspace takes the business name PayPal gives on them.
-    const connected = (await o.connectionOf(p.payerId)) === 'evaluation';
+    const connection = await o.connectionOf(p.payerId);
+    const connected = connection === 'evaluation';
     const workspaceName = connected ? (o.sellerName?.(p.payerId) ?? null) : null;
     let r;
     try {
@@ -259,7 +260,7 @@ export function createAuth(o: AuthOptions): Auth {
       throw e;
     }
     if ('refused' in r) return fail('full');
-    log(`paypal sign-in · workspace ${r.workspace.id}${r.created ? ' (new)' : ''} · ${connected ? 'seller of the bound disputes' : 'not the seller of any bound dispute'}`);
+    log(`paypal sign-in · workspace ${r.workspace.id}${r.created ? ' (new)' : ''} · ${connection}`);
     return redirect('/?signed-in=paypal', [clear, signIn(r.person)]);
   };
 

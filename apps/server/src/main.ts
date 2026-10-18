@@ -184,7 +184,7 @@ if (hosted) {
   // The sellers of the bound disputes seen so far: an unreadable sandbox does not demote the evaluation workspace.
   let sellerMemory: SellerMemory;
   try {
-    sellerMemory = new SellerMemory({ file: join(dataDir, 'sellers.json') });
+    sellerMemory = new SellerMemory({ file: join(dataDir, 'sellers.json'), log });
   } catch (e) {
     sellerMemory = fail(`sellers file ${join(dataDir, 'sellers.json')}: ${(e as Error).message}`);
   }
