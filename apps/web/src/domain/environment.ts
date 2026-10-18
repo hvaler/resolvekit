@@ -40,19 +40,26 @@ export function draftScope(area: Area, personId: string | null): string {
 /** What `/cases` and `/cases/:id` show for this environment. `bound`: the case ids bound to real PayPal disputes. */
 export type WorkspaceRoute = { kind: 'inbox' } | { kind: 'case'; id: string } | { kind: 'redirect'; to: string } | { kind: 'waiting' } | { kind: 'checking' };
 
+/** The sign-in / join page, carrying where the person was going (`next`, a same-site path; `/` needs none). */
+export const signInUrl = (next: string): string => withNext('/signin', next);
+export const joinUrl = (next: string): string => withNext('/join', next);
+function withNext(page: string, next: string): string {
+  return next === '/' ? page : `${page}?next=${encodeURIComponent(next)}`;
+}
+
 export function workspaceRoute(env: Environment, path: { caseId: string | null }, bound: readonly string[]): WorkspaceRoute {
   const here = path.caseId ? `/cases/${path.caseId}` : '/cases';
   const page: WorkspaceRoute = path.caseId ? { kind: 'case', id: path.caseId } : { kind: 'inbox' };
   switch (env.kind) {
     case 'signed-out':
-      return { kind: 'redirect', to: `/signin?next=${encodeURIComponent(here)}` };
+      return { kind: 'redirect', to: signInUrl(here) };
     case 'merchant':
       return { kind: 'waiting' };
     case 'checking':
       return { kind: 'checking' };
     case 'evaluation':
       // The evaluation workspace sees only its bound cases; any other id is the fictional case of the same id.
-      return path.caseId && !bound.includes(path.caseId) ? { kind: 'redirect', to: `/demo/cases/${path.caseId}` } : page;
+      return path.caseId && !bound.includes(path.caseId) ? { kind: 'redirect', to: `/demo/cases/${encodeURIComponent(path.caseId)}` } : page;
     default:
       return page;
   }

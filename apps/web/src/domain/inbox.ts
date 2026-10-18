@@ -353,6 +353,11 @@ export function evaluationRows(all: InboxDispute[], bound: readonly string[]): I
 
 export const NO_BOUND_CASES = 'No sandbox disputes are bound right now.';
 
+/** An evaluation inbox with no bound case shows only the note, never an empty grid. */
+export function inboxView(env: 'demo' | 'evaluation' | 'local', rows: number): 'grid' | 'empty' {
+  return emptyInboxNote(env, rows) ? 'empty' : 'grid';
+}
+
 /** What an inbox with no rows says (only the evaluation inbox can be empty on purpose). */
 export function emptyInboxNote(env: 'demo' | 'evaluation' | 'local', rows: number): string | null {
   return env === 'evaluation' && rows === 0 ? NO_BOUND_CASES : null;

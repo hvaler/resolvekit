@@ -4,6 +4,7 @@ import { goldenAnalyses } from '../fixtures/golden';
 import {
   NO_BOUND_CASES,
   emptyInboxNote,
+  inboxView,
   evaluationRows,
   CHIPS,
   clockNote,
@@ -210,5 +211,11 @@ describe('the evaluation inbox', () => {
     expect(emptyInboxNote('evaluation', 1)).toBeNull();
     expect(emptyInboxNote('demo', 0)).toBeNull();
     expect(emptyInboxNote('local', 0)).toBeNull();
+  });
+  it('with no bound case there is no grid at all, only the note', () => {
+    expect(inboxView('evaluation', 0)).toBe('empty');
+    expect(inboxView('evaluation', 2)).toBe('grid');
+    expect(inboxView('demo', 0)).toBe('grid');
+    expect(inboxView('local', 0)).toBe('grid');
   });
 });

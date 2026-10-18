@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountWorkspace, DemoState } from './demoClient';
 import { draftKey } from './draftStore';
-import { casesBase, draftScope, environmentOf, workspaceRoute, type Environment } from './environment';
+import { casesBase, draftScope, environmentOf, joinUrl, signInUrl, workspaceRoute, type Environment } from './environment';
 
 function state(connection: AccountWorkspace['connection'], role: 'owner' | 'member' = 'owner'): DemoState {
   return {
@@ -75,8 +75,20 @@ describe('workspaceRoute', () => {
     expect(workspaceRoute({ kind: 'checking' }, { caseId: null }, [])).toEqual({ kind: 'checking' });
     expect(workspaceRoute({ kind: 'checking' }, { caseId: 'x' }, [])).toEqual({ kind: 'checking' });
   });
+  it('the demo redirect encodes the case id', () => {
+    expect(workspaceRoute(evaluation, { caseId: 'a/b?c' }, BOUND)).toEqual({ kind: 'redirect', to: '/demo/cases/a%2Fb%3Fc' });
+  });
   it('local mode is the inbox and the case as today, bound or not', () => {
     expect(workspaceRoute({ kind: 'local' }, { caseId: null }, [])).toEqual({ kind: 'inbox' });
     expect(workspaceRoute({ kind: 'local' }, { caseId: 'PP-R-PLN-10189901' }, [])).toEqual({ kind: 'case', id: 'PP-R-PLN-10189901' });
+  });
+});
+
+describe('sign-in and join URLs keep where the person was going', () => {
+  it('encodes next, and leaves the plain URL when there is nowhere special to go back to', () => {
+    expect(signInUrl('/cases/PP-R-TVH-10190665')).toBe('/signin?next=%2Fcases%2FPP-R-TVH-10190665');
+    expect(joinUrl('/cases/PP-R-TVH-10190665')).toBe('/join?next=%2Fcases%2FPP-R-TVH-10190665');
+    expect(signInUrl('/')).toBe('/signin');
+    expect(joinUrl('/')).toBe('/join');
   });
 });

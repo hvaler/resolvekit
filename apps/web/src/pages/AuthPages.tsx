@@ -152,6 +152,8 @@ export function SignInPage() {
 
 export function JoinPage() {
   const token = useMemo(() => window.location.hash.replace(/^#/, ''), []);
+  // Where to go after joining: a safe `next` (the case link the person was sent here from), else the start page.
+  const next = useMemo(() => safeNext(new URLSearchParams(window.location.search).get('next')), []);
   const [invite, setInvite] = useState<{ kind: 'loading' } | { kind: 'ok'; view: InviteView } | { kind: 'error'; message: string; code?: string }>({ kind: 'loading' });
   const [name, setName] = useState('');
   const [busy, setBusy] = useState<'passkey' | 'browser' | null>(null);
@@ -161,7 +163,7 @@ export function JoinPage() {
 
   useEffect(() => {
     // The token stays in the fragment (never sent to a server in a URL); clear it from the address bar.
-    if (window.location.hash) window.history.replaceState(null, '', window.location.pathname);
+    if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     if (!token) {
       setInvite({ kind: 'error', message: 'This page needs the full invite link.' });
       return;
@@ -175,7 +177,7 @@ export function JoinPage() {
     setBusy(via);
     setError(null);
     const r = via === 'passkey' ? await auth.joinWithPasskey(token, name.trim()) : await auth.joinThisBrowser(token, name.trim());
-    if (r.ok) enterApp('/');
+    if (r.ok) enterApp(next);
     else {
       setBusy(null);
       setError(r.error);
