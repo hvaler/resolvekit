@@ -475,6 +475,47 @@ test('APIMatic review: a PENDING authorization (PayPal review) keeps the session
   assert.ok(logs.some((l) => /PENDING at PayPal \(PENDING_REVIEW\); waiting/.test(l)), logs.join('\n'));
 });
 
+test('closing a session whose authorization PayPal holds PENDING voids it: no hold is left behind the cancelled session', async () => {
+  const { meter, pp, ledger, logs } = setupWithLog();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  pp.authAnswers('PENDING', 'PENDING_REVIEW');
+  assert.equal(body(await meter.balance('mcp-1')).status, 'pending_approval');
+  const authId = pp.orders.get(pr.order_id)!.authorizationId!;
+  const r = await meter.close(pr.session_id);
+  assert.equal(r.status, 'cancelled');
+  assert.equal(ledger.session(pr.session_id)!.status, 'cancelled');
+  assert.equal(pp.auths.get(authId)!.status, 'VOIDED');
+  const v = pp.calls.find((c) => c.path.endsWith('/void'))!;
+  assert.equal(v.headers['PayPal-Request-Id'], `${pr.session_id}-void`);
+  assert.ok(logs.some((l) => new RegExp(`authorization ${authId} PENDING at PayPal; voided`).test(l)), logs.join('\n'));
+  assert.equal(pp.count(/capture$/), 0);
+});
+
+test('closing a never-approved session reads the order and voids nothing (no authorization exists)', async () => {
+  const { meter, pp, ledger } = setup();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  const r = await meter.close(pr.session_id);
+  assert.equal(r.status, 'cancelled');
+  assert.equal(ledger.session(pr.session_id)!.status, 'cancelled');
+  assert.equal(pp.count(/void$/), 0);
+});
+
+test('a PENDING authorization whose void fails: the session is still cancelled and the failure is logged', async () => {
+  const { meter, pp, ledger, logs } = setupWithLog();
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  pp.authAnswers('PENDING');
+  await meter.balance('mcp-1');
+  const authId = pp.orders.get(pr.order_id)!.authorizationId!;
+  pp.failNext(/void$/);
+  const r = await meter.close(pr.session_id);
+  assert.equal(r.status, 'cancelled');
+  assert.equal(ledger.session(pr.session_id)!.status, 'cancelled');
+  assert.equal(pp.auths.get(authId)!.status, 'PENDING');
+  assert.ok(logs.some((l) => /void FAILED/.test(l) && l.includes(authId)), logs.join('\n'));
+});
+
 test('APIMatic review: a capture PayPal answers DECLINED at once is capture_declined on record, not a retry loop', async () => {
   const { meter, pp, ledger } = setup();
   const id = await openSession(meter, pp);

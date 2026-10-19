@@ -105,6 +105,22 @@ export const RUN_INJECTED_FAILURE = "UPSTREAM_UNAVAILABLE (injected for this run
 const CAP_FORMAT = /^\d{1,2}(\.\d{1,2})?$/;
 const MAX_FAIL_FIRST = 3;
 
+/**
+ * Why METERMCP_BUDGET / METERMCP_MIN_BUDGET cannot be served, or null: amounts that are not money, or a smallest cap
+ * above the largest (open_budget would refuse every cap). main.ts refuses to start on it.
+ */
+export function budgetRangeProblem(budget: string, minBudget: string): string | null {
+  let max: number;
+  let min: number;
+  try {
+    max = toCents(budget);
+    min = toCents(minBudget);
+  } catch (e) {
+    return `METERMCP_BUDGET / METERMCP_MIN_BUDGET: not an amount (${e instanceof Error ? e.message : String(e)})`;
+  }
+  return min > max ? `METERMCP_MIN_BUDGET ${minBudget} is above METERMCP_BUDGET ${budget}: open_budget would refuse every cap` : null;
+}
+
 /** The paid tools a session injects failures for: its own list when it has one, else the server switch. */
 function failFirstOf(s: SessionRow, serverSwitch: readonly string[]): { tools: readonly string[]; message: string } {
   if (s.fail_first == null) return { tools: serverSwitch, message: INJECTED_FAILURE };
@@ -154,6 +170,7 @@ export class Meter {
   private readonly reconciling = new Map<string, Promise<SessionRow | null>>();
 
   constructor(opts: MeterOptions) {
+    // The range is checked at start (main.ts, budgetRangeProblem); tests may use a budget below the default minimum.
     const now = opts.now ?? (() => new Date());
     this.o = {
       ...opts,
@@ -561,6 +578,30 @@ export class Meter {
     return p;
   }
 
+  /**
+   * A session cancelled while still pending_approval may have an authorization PayPal holds PENDING (review): it never
+   * opened the session, so nothing would ever settle it. Void it (the same PayPal-Request-Id as the late-arrival void).
+   * Best effort: a failed read or void is logged and the hold is left to expire at PayPal.
+   */
+  private async voidHeld(s: SessionRow): Promise<void> {
+    const paypal = this.o.paypal;
+    if (!paypal || !s.order_id) return;
+    let held: { id?: string; status?: string } | undefined;
+    try {
+      held = (await paypal.orders.get(s.order_id)).purchase_units?.[0]?.payments?.authorizations?.[0];
+    } catch (e) {
+      this.o.log(`session ${s.id}: cancelled; its order could not be read to release a held authorization (${why(e)})`);
+      return;
+    }
+    if (held?.status !== 'PENDING' || !held.id) return;
+    try {
+      const v = await paypal.payments.voidAuthorization(held.id, { requestId: `${s.id}-void` });
+      this.o.log(`session ${s.id}: cancelled; authorization ${held.id} PENDING at PayPal; voided (${v.status ?? 'no status'})`);
+    } catch (e) {
+      this.o.log(`session ${s.id}: cancelled; authorization ${held.id} PENDING at PayPal; void FAILED (${why(e)}), still held at PayPal`);
+    }
+  }
+
   private async settle(id: string): Promise<CloseResult> {
     // An approval in flight (the buyer just came back) may be authorizing in PayPal: wait for it, then read the
     // session again, so the authorization it creates is settled here instead of left on a cancelled session.
@@ -568,8 +609,9 @@ export class Meter {
     const s0 = this.o.ledger.session(id);
     if (!s0) return { status: 'not_found', session_id: id };
     if (s0.status === 'pending_approval') {
-      // Never approved: nothing is held in PayPal (an unapproved order just expires).
+      // Never opened: an unapproved order just expires. Cancelled first, so a later approval check cannot open it.
       this.o.ledger.cancel(id, this.iso());
+      await this.voidHeld(s0);
       return { status: 'cancelled', session_id: id, message: 'The budget was never approved; nothing to settle.' };
     }
     if (s0.status === 'settled' || s0.status === 'voided' || s0.status === 'cancelled' || s0.status === 'capture_declined') return this.closeResult(s0);
