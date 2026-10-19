@@ -1,0 +1,597 @@
+{
+  "provider": "gemini",
+  "case": "ho-c2-capture-over-invoice",
+  "run": 3,
+  "status": "ok",
+  "startedAt": "2026-10-19T11:23:24.207Z",
+  "finishedAt": "2026-10-19T11:23:47.380Z",
+  "stamp": {
+    "codeCommit": "3c19510839dce542d9c2c7c034cfb287a26633ba",
+    "freezeCommit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "returnedModels": [
+      "gemini-3.8-flash"
+    ]
+  },
+  "usage": {
+    "calls": 10,
+    "httpAttempts": 10,
+    "refused": 0,
+    "inputTokens": 7889,
+    "outputTokens": 3146,
+    "thinkingTokens": 179,
+    "observedUsd": 0.018385499999999996,
+    "unknownUsd": 0,
+    "estimatedUsd": 0,
+    "costUsdAtListPrice": 0.018385499999999996,
+    "note": "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice."
+  },
+  "analysis": {
+    "caseId": "HO-C2",
+    "key": "",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "createdAt": "2026-10-19T11:23:47.380Z",
+    "facts": [
+      {
+        "id": "F1",
+        "doc": "E1",
+        "quote": "Invoice INV-2026-0912 · issued 2026-09-14",
+        "statement": "Invoice INV-2026-0912 was issued on 2026-09-14.",
+        "at": "2026-09-14T00:00:00.000Z"
+      },
+      {
+        "id": "F2",
+        "doc": "E1",
+        "quote": "Billed to: Rosalind Thackeray",
+        "statement": "The invoice was billed to Rosalind Thackeray.",
+        "at": null
+      },
+      {
+        "id": "F3",
+        "doc": "E1",
+        "quote": "Framed giclée print 'Low Tide', 50 x 70 cm, oak frame — EUR 189.00",
+        "statement": "The framed giclée print cost EUR 189.00.",
+        "at": null
+      },
+      {
+        "id": "F4",
+        "doc": "E1",
+        "quote": "Shipping — EUR 23.40",
+        "statement": "Shipping cost EUR 23.40.",
+        "at": null
+      },
+      {
+        "id": "F5",
+        "doc": "E1",
+        "quote": "Invoice total: EUR 212.40",
+        "statement": "The invoice total was EUR 212.40.",
+        "at": null
+      },
+      {
+        "id": "F6",
+        "doc": "E2",
+        "quote": "PayPal transaction 9QW21240FR771630B",
+        "statement": "The PayPal transaction ID is 9QW21240FR771630B.",
+        "at": null
+      },
+      {
+        "id": "F7",
+        "doc": "E2",
+        "quote": "Date: 2026-09-14 10:31 UTC",
+        "statement": "The payment occurred on 2026-09-14 at 10:31 UTC.",
+        "at": "2026-09-14T10:31:00.000Z"
+      },
+      {
+        "id": "F8",
+        "doc": "E2",
+        "quote": "Gross amount: €221.40 EUR",
+        "statement": "The gross amount charged was €221.40 EUR.",
+        "at": null
+      },
+      {
+        "id": "F9",
+        "doc": "E2",
+        "quote": "Status: Completed",
+        "statement": "The transaction status is Completed.",
+        "at": null
+      },
+      {
+        "id": "F10",
+        "doc": "E2",
+        "quote": "Invoice ID: INV-2026-0912",
+        "statement": "The transaction corresponds to invoice INV-2026-0912.",
+        "at": null
+      },
+      {
+        "id": "F11",
+        "doc": "E3",
+        "quote": "Larkspur Logistics · Tracking LL 5519 2046 03",
+        "statement": "The shipment tracking number is LL 5519 2046 03 with Larkspur Logistics.",
+        "at": null
+      },
+      {
+        "id": "F12",
+        "doc": "E3",
+        "quote": "2026-09-16 09:30 Collected from sender",
+        "statement": "The shipment was collected from sender on 2026-09-16 at 09:30.",
+        "at": "2026-09-16T09:30:00.000Z"
+      },
+      {
+        "id": "F13",
+        "doc": "E3",
+        "quote": "2026-09-18 11:02 Delivered — signed by R. Thackeray",
+        "statement": "The item was delivered and signed by R. Thackeray on 2026-09-18 at 11:02.",
+        "at": "2026-09-18T11:02:00.000Z"
+      },
+      {
+        "id": "F14",
+        "doc": "E4",
+        "quote": "Message from Rosalind Thackeray · 2026-09-20 14:12 UTC",
+        "statement": "Rosalind Thackeray sent a message on 2026-09-20 at 14:12 UTC.",
+        "at": "2026-09-20T14:12:00.000Z"
+      },
+      {
+        "id": "F15",
+        "doc": "E4",
+        "quote": "The print arrived and looks lovely, but I was charged more than the invoice you sent me.",
+        "statement": "The buyer stated the print arrived but they were charged more than the invoice amount.",
+        "at": null
+      }
+    ],
+    "droppedFacts": 0,
+    "timeline": [
+      {
+        "at": "2026-09-14T00:00:00.000Z",
+        "title": "Invoice issued",
+        "sub": "Invoice INV-2026-0912 total EUR 212.40",
+        "doc": "E1",
+        "quote": "Invoice INV-2026-0912 · issued 2026-09-14",
+        "negated": false
+      },
+      {
+        "at": "2026-09-14T10:31:00.000Z",
+        "title": "Payment completed",
+        "sub": "Gross amount €221.40 EUR",
+        "doc": "E2",
+        "quote": "Date: 2026-09-14 10:31 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-09-16T09:30:00.000Z",
+        "title": "Shipment collected",
+        "sub": "Collected by Larkspur Logistics",
+        "doc": "E3",
+        "quote": "2026-09-16 09:30 Collected from sender",
+        "negated": false
+      },
+      {
+        "at": "2026-09-18T11:02:00.000Z",
+        "title": "Shipment delivered",
+        "sub": "Delivered and signed by R. Thackeray",
+        "doc": "E3",
+        "quote": "2026-09-18 11:02 Delivered — signed by R. Thackeray",
+        "negated": false
+      },
+      {
+        "at": "2026-09-20T14:12:00.000Z",
+        "title": "Buyer message sent",
+        "sub": "Buyer noted charge exceeded invoice",
+        "doc": "E4",
+        "quote": "Message from Rosalind Thackeray · 2026-09-20 14:12 UTC",
+        "negated": false
+      }
+    ],
+    "contradictions": [
+      {
+        "id": "C1",
+        "title": "Invoiced total versus amount charged",
+        "shortName": "charge amount contradiction",
+        "a": {
+          "doc": "E1",
+          "quote": "Invoice total: EUR 212.40",
+          "value": "EUR 212.40"
+        },
+        "b": {
+          "doc": "E2",
+          "quote": "Gross amount: €221.40 EUR",
+          "value": "€221.40 EUR"
+        },
+        "explanation": "Invoice INV-2026-0912 totals EUR 212.40, whereas the gross amount charged in the PayPal transaction is €221.40 EUR, representing a difference of 9.00 EUR. This may reflect an unlisted fee or transposed digits, and resolving the difference is the merchant's call.",
+        "sentenceId": "S7",
+        "rewrite": "Invoice INV-2026-0912 shows a total of EUR 212.40, while the transaction gross amount reflects €221.40 EUR."
+      }
+    ],
+    "checklist": {
+      "title": "What \"incorrect amount\" disputes need",
+      "items": [
+        {
+          "id": "approved",
+          "label": "Amount the buyer approved",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Invoice INV-2026-0912 · issued 2026-09-14"
+            },
+            {
+              "doc": "E1",
+              "quote": "Billed to: Rosalind Thackeray"
+            },
+            {
+              "doc": "E1",
+              "quote": "Framed giclée print 'Low Tide', 50 x 70 cm, oak frame — EUR 189.00"
+            },
+            {
+              "doc": "E1",
+              "quote": "Shipping — EUR 23.40"
+            },
+            {
+              "doc": "E1",
+              "quote": "Invoice total: EUR 212.40"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "charged",
+          "label": "Amount actually captured",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E2",
+              "quote": "PayPal transaction 9QW21240FR771630B"
+            },
+            {
+              "doc": "E2",
+              "quote": "Date: 2026-09-14 10:31 UTC"
+            },
+            {
+              "doc": "E2",
+              "quote": "Gross amount: €221.40 EUR"
+            },
+            {
+              "doc": "E2",
+              "quote": "Status: Completed"
+            },
+            {
+              "doc": "E2",
+              "quote": "Invoice ID: INV-2026-0912"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "breakdown",
+          "label": "Itemised breakdown of the charge",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Framed giclée print 'Low Tide', 50 x 70 cm, oak frame — EUR 189.00"
+            },
+            {
+              "doc": "E1",
+              "quote": "Shipping — EUR 23.40"
+            },
+            {
+              "doc": "E1",
+              "quote": "Invoice total: EUR 212.40"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "within",
+          "label": "Capture within the approved amount",
+          "critical": false,
+          "status": "contradicts",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Invoice total: EUR 212.40"
+            },
+            {
+              "doc": "E2",
+              "quote": "Gross amount: €221.40 EUR"
+            }
+          ],
+          "contradictionId": "C1"
+        },
+        {
+          "id": "holds",
+          "label": "Holds released, nothing taken twice",
+          "critical": false,
+          "status": "missing",
+          "evidence": [],
+          "contradictionId": null
+        }
+      ]
+    },
+    "sentences": [
+      {
+        "id": "S1",
+        "text": "We issued invoice INV-2026-0912 to Rosalind Thackeray itemising the framed giclée print at EUR 189.00 and shipping at EUR 23.40.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Invoice INV-2026-0912 · issued 2026-09-14",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Billed to: Rosalind Thackeray",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Framed giclée print 'Low Tide', 50 x 70 cm, oak frame — EUR 189.00",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Shipping — EUR 23.40",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S2",
+        "text": "The transaction 9QW21240FR771630B for invoice INV-2026-0912 was completed with a gross charge of €221.40 EUR.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E2",
+            "quote": "PayPal transaction 9QW21240FR771630B",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Date: 2026-09-14 10:31 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Gross amount: €221.40 EUR",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Status: Completed",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Invoice ID: INV-2026-0912",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: it relies on E2 (\"€221.40 EUR\"), which E1 contradicts (\"EUR 212.40\"). State both or resolve the contradiction.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S3",
+        "text": "The order was dispatched under Larkspur Logistics tracking LL 5519 2046 03 and delivered with signature on 2026-09-18.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "Larkspur Logistics · Tracking LL 5519 2046 03",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-09-16 09:30 Collected from sender",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-09-18 11:02 Delivered — signed by R. Thackeray",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S4",
+        "text": "The buyer contacted us stating that the print arrived and looks lovely, though they were charged more than the invoice.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E4",
+            "quote": "Message from Rosalind Thackeray · 2026-09-20 14:12 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "The print arrived and looks lovely, but I was charged more than the invoice you sent me.",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S5",
+        "text": "The invoice sent to the buyer shows a total of EUR 212.40.",
+        "noteId": "n1",
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Invoice total: EUR 212.40",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The cited text shows \"Invoice total: EUR 212.40\" but does not state that the invoice was sent to the buyer.",
+        "decidedBy": "model",
+        "rewrite": "The invoice shows a total of EUR 212.40."
+      },
+      {
+        "id": "S6",
+        "text": "The buyer wrote that the print arrived and looks lovely.",
+        "noteId": "n2",
+        "citations": [
+          {
+            "doc": "E4",
+            "quote": "The print arrived and looks lovely, but I was charged more than the invoice you sent me.",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S7",
+        "text": "The buyer was charged exactly the invoiced total.",
+        "noteId": "n3",
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Invoice total: EUR 212.40",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Gross amount: €221.40 EUR",
+            "valid": true
+          }
+        ],
+        "verdict": "rejected",
+        "reason": "Removed: The cited invoice shows \"Invoice total: EUR 212.40\" whereas the transaction record shows \"Gross amount: €221.40 EUR\", contradicting the claim of an exact match. It will not be sent.",
+        "decidedBy": "model",
+        "rewrite": "The invoice total was EUR 212.40, while the gross amount charged was €221.40 EUR."
+      },
+      {
+        "id": "S8",
+        "text": "The buyer agreed in writing to an extra framing charge.",
+        "noteId": "n4",
+        "citations": [],
+        "verdict": "rejected",
+        "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      }
+    ],
+    "injections": [],
+    "recommendation": null,
+    "usage": {
+      "calls": [
+        {
+          "stage": "screen",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 881,
+          "outputTokens": 4,
+          "thinkingTokens": 0,
+          "ms": 1536
+        },
+        {
+          "stage": "extract",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 1060,
+          "outputTokens": 1310,
+          "thinkingTokens": 0,
+          "ms": 8379
+        },
+        {
+          "stage": "analyze",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2018,
+          "outputTokens": 1465,
+          "thinkingTokens": 0,
+          "ms": 9620
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 620,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1875
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 626,
+          "outputTokens": 19,
+          "thinkingTokens": 0,
+          "ms": 1882
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 597,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1960
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 551,
+          "outputTokens": 19,
+          "thinkingTokens": 0,
+          "ms": 2297
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 519,
+          "outputTokens": 119,
+          "thinkingTokens": 0,
+          "ms": 2025
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 508,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 2164
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 509,
+          "outputTokens": 66,
+          "thinkingTokens": 179,
+          "ms": 3293
+        }
+      ],
+      "inputTokens": 7889,
+      "outputTokens": 3146,
+      "thinkingTokens": 179
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "promptVersion": "rk-analyst-2026-10-09.7",
+  "models": { "gemini": "gemini-3.8-flash", "groq": "openai/gpt-oss-120b" },
+  "runs": 3,
+  "budgetUsd": { "gemini": 1.0, "groq": null },
+  "listPrice": { "inputPerM": 0.75, "outputPerM": 3.75 },
+  "thinkingReserveTokens": { "gemini": 2048, "groq": 0 },
+  "negationWindowWords": 4
+}

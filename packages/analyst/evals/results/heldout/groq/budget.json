@@ -1,0 +1,26 @@
+{
+  "provider": "groq",
+  "limitUsd": null,
+  "observedUsd": 0.021664500000000003,
+  "estimatedUsd": 0,
+  "unknownUsd": 0.10784550000000002,
+  "checks": 19,
+  "refusals": 0,
+  "stopped": false,
+  "exceeded": 0,
+  "stops": [
+    {
+      "kind": "quota",
+      "reason": "a 429 survived the retries (quota or rate limit): groq answered 429 rate_limit_exceeded",
+      "case": "ho-a1-porch-delivery",
+      "run": 1,
+      "at": "2026-10-19T11:27:14.535Z"
+    }
+  ],
+  "note": "Not USD-guarded (ruling B22): the USD figures are estimated at Gemini list price, not a Groq price, kept for accounting only; the batch runs within the provider's free quota and stops on a 429 or a provider error.",
+  "freeze": {
+    "commit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "hash": "fb01f10eaf47d1d3b96871aa4d3776d79277a0e9d30c6c2d8673e071b7958d6a",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe"
+  }
+}

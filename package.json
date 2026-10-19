@@ -22,6 +22,8 @@
     "test:metermcp": "npm run test --workspace @resolvekit/metermcp",
     "test:web": "npm run test --workspace @resolvekit/web",
     "evals": "npm run evals --workspace @resolvekit/analyst --",
+    "evals:heldout": "npm run evals:heldout --workspace @resolvekit/analyst --",
+    "evals:recompute": "npm run evals:recompute --workspace @resolvekit/analyst",
     "golden": "npm run golden --workspace @resolvekit/analyst --",
     "server": "npm run start --workspace @resolvekit/server",
     "metermcp": "npm run start --workspace @resolvekit/metermcp",

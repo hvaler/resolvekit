@@ -9,6 +9,8 @@
   "scripts": {
     "test": "node --test \"test/*.test.ts\"",
     "evals": "node --env-file-if-exists=../../.env evals/run.ts",
+    "evals:heldout": "node --env-file-if-exists=../../.env evals/runs.ts",
+    "evals:recompute": "node evals/recompute.ts",
     "golden": "node --env-file-if-exists=../../.env scripts/golden.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

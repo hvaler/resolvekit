@@ -1,0 +1,564 @@
+{
+  "provider": "gemini",
+  "case": "ho-b2-attempt-depot-hold",
+  "run": 2,
+  "status": "ok",
+  "startedAt": "2026-10-19T11:17:45.460Z",
+  "finishedAt": "2026-10-19T11:18:08.985Z",
+  "stamp": {
+    "codeCommit": "3c19510839dce542d9c2c7c034cfb287a26633ba",
+    "freezeCommit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "returnedModels": [
+      "gemini-3.8-flash"
+    ]
+  },
+  "usage": {
+    "calls": 9,
+    "httpAttempts": 9,
+    "refused": 0,
+    "inputTokens": 7740,
+    "outputTokens": 3332,
+    "thinkingTokens": 103,
+    "observedUsd": 0.018686249999999998,
+    "unknownUsd": 0,
+    "estimatedUsd": 0,
+    "costUsdAtListPrice": 0.018686249999999998,
+    "note": "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice."
+  },
+  "analysis": {
+    "caseId": "HO-B2",
+    "key": "",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "createdAt": "2026-10-19T11:18:08.985Z",
+    "facts": [
+      {
+        "id": "F1",
+        "doc": "E1",
+        "quote": "Order #DK-5072 · placed 2026-09-30 11:52 UTC",
+        "statement": "Order DK-5072 was placed on September 30, 2026 at 11:52 UTC.",
+        "at": "2026-09-30T11:52:00.000Z"
+      },
+      {
+        "id": "F2",
+        "doc": "E1",
+        "quote": "Customer: Mateo Sandoval Ruiz",
+        "statement": "The customer name on the order is Mateo Sandoval Ruiz.",
+        "at": null
+      },
+      {
+        "id": "F3",
+        "doc": "E1",
+        "quote": "Item: Electric standing desk frame, black, qty 1",
+        "statement": "The ordered item is one black electric standing desk frame.",
+        "at": null
+      },
+      {
+        "id": "F4",
+        "doc": "E1",
+        "quote": "Total: EUR 279.90",
+        "statement": "The order total is EUR 279.90.",
+        "at": null
+      },
+      {
+        "id": "F5",
+        "doc": "E1",
+        "quote": "Ship to: Calle del Romero 41, 18300 Valdecanto",
+        "statement": "The shipping address is Calle del Romero 41, 18300 Valdecanto.",
+        "at": null
+      },
+      {
+        "id": "F6",
+        "doc": "E2",
+        "quote": "PayPal transaction 7DF50720DK118846A",
+        "statement": "PayPal transaction identifier is 7DF50720DK118846A.",
+        "at": null
+      },
+      {
+        "id": "F7",
+        "doc": "E2",
+        "quote": "Date: 2026-09-30 11:53 UTC",
+        "statement": "The transaction occurred on September 30, 2026 at 11:53 UTC.",
+        "at": "2026-09-30T11:53:00.000Z"
+      },
+      {
+        "id": "F8",
+        "doc": "E2",
+        "quote": "Gross amount: €279.90 EUR",
+        "statement": "The gross amount paid via PayPal is €279.90 EUR.",
+        "at": null
+      },
+      {
+        "id": "F9",
+        "doc": "E2",
+        "quote": "Status: Completed",
+        "statement": "The PayPal payment status is Completed.",
+        "at": null
+      },
+      {
+        "id": "F10",
+        "doc": "E2",
+        "quote": "Shipping address: Calle del Romero 41, 18300 Valdecanto",
+        "statement": "The PayPal transaction shipping address is Calle del Romero 41, 18300 Valdecanto.",
+        "at": null
+      },
+      {
+        "id": "F11",
+        "doc": "E3",
+        "quote": "Ostrander Freight · Consignment OF-9921-6650-2",
+        "statement": "The consignment number with Ostrander Freight is OF-9921-6650-2.",
+        "at": null
+      },
+      {
+        "id": "F12",
+        "doc": "E3",
+        "quote": "2026-10-02 09:14 Collected from sender",
+        "statement": "The shipment was collected from the sender on October 2, 2026 at 09:14.",
+        "at": "2026-10-02T09:14:00.000Z"
+      },
+      {
+        "id": "F13",
+        "doc": "E3",
+        "quote": "2026-10-03 16:40 Arrived at Valdecanto depot",
+        "statement": "The shipment arrived at the Valdecanto depot on October 3, 2026 at 16:40.",
+        "at": "2026-10-03T16:40:00.000Z"
+      },
+      {
+        "id": "F14",
+        "doc": "E3",
+        "quote": "2026-10-06 10:05 Delivery attempted — recipient not available, notice left",
+        "statement": "Delivery was attempted on October 6, 2026; recipient unavailable and notice was left.",
+        "at": "2026-10-06T10:05:00.000Z"
+      },
+      {
+        "id": "F15",
+        "doc": "E3",
+        "quote": "Delivery address: Calle del Romero 41, 18300 Valdecanto",
+        "statement": "The delivery address is Calle del Romero 41, 18300 Valdecanto.",
+        "at": null
+      },
+      {
+        "id": "F16",
+        "doc": "E3",
+        "quote": "2026-10-07 08:00 Held at depot awaiting collection",
+        "statement": "The package was held at the depot awaiting collection starting October 7, 2026 at 08:00.",
+        "at": "2026-10-07T08:00:00.000Z"
+      },
+      {
+        "id": "F17",
+        "doc": "E4",
+        "quote": "Message from Mateo Sandoval Ruiz · 2026-10-12 19:20 UTC",
+        "statement": "Mateo Sandoval Ruiz sent a message on October 12, 2026 at 19:20 UTC.",
+        "at": "2026-10-12T19:20:00.000Z"
+      },
+      {
+        "id": "F18",
+        "doc": "E4",
+        "quote": "I haven't received the desk frame. Where is it?",
+        "statement": "The buyer stated they have not received the desk frame and asked where it is.",
+        "at": null
+      }
+    ],
+    "droppedFacts": 0,
+    "timeline": [
+      {
+        "at": "2026-09-30T11:52:00.000Z",
+        "title": "Order placed",
+        "sub": "Order DK-5072 for EUR 279.90",
+        "doc": "E1",
+        "quote": "Order #DK-5072 · placed 2026-09-30 11:52 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-09-30T11:53:00.000Z",
+        "title": "Payment completed",
+        "sub": "PayPal transaction 7DF50720DK118846A for €279.90 EUR",
+        "doc": "E2",
+        "quote": "Date: 2026-09-30 11:53 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-10-02T09:14:00.000Z",
+        "title": "Shipment collected",
+        "sub": "Ostrander Freight collected consignment OF-9921-6650-2",
+        "doc": "E3",
+        "quote": "2026-10-02 09:14 Collected from sender",
+        "negated": false
+      },
+      {
+        "at": "2026-10-03T16:40:00.000Z",
+        "title": "Depot arrival",
+        "sub": "Arrived at Valdecanto depot",
+        "doc": "E3",
+        "quote": "2026-10-03 16:40 Arrived at Valdecanto depot",
+        "negated": false
+      },
+      {
+        "at": "2026-10-06T10:05:00.000Z",
+        "title": "Delivery attempted",
+        "sub": "Recipient unavailable and notice left",
+        "doc": "E3",
+        "quote": "2026-10-06 10:05 Delivery attempted — recipient not available, notice left",
+        "negated": true
+      },
+      {
+        "at": "2026-10-07T08:00:00.000Z",
+        "title": "Package held",
+        "sub": "Awaiting collection at depot",
+        "doc": "E3",
+        "quote": "2026-10-07 08:00 Held at depot awaiting collection",
+        "negated": false
+      },
+      {
+        "at": "2026-10-12T19:20:00.000Z",
+        "title": "Buyer message",
+        "sub": "Buyer stated desk frame not received",
+        "doc": "E4",
+        "quote": "Message from Mateo Sandoval Ruiz · 2026-10-12 19:20 UTC",
+        "negated": false
+      }
+    ],
+    "contradictions": [],
+    "checklist": {
+      "title": "What \"not received\" disputes need",
+      "items": [
+        {
+          "id": "tracking",
+          "label": "Tracking number with delivery confirmation",
+          "critical": true,
+          "status": "missing",
+          "evidence": [
+            {
+              "doc": "E3",
+              "quote": "2026-10-06 10:05 Delivery attempted — recipient not available, notice left"
+            },
+            {
+              "doc": "E3",
+              "quote": "2026-10-07 08:00 Held at depot awaiting collection"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "carrier",
+          "label": "Carrier and ship date",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E3",
+              "quote": "Ostrander Freight · Consignment OF-9921-6650-2"
+            },
+            {
+              "doc": "E3",
+              "quote": "2026-10-02 09:14 Collected from sender"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "address",
+          "label": "Delivery address matches the order",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Ship to: Calle del Romero 41, 18300 Valdecanto"
+            },
+            {
+              "doc": "E2",
+              "quote": "Shipping address: Calle del Romero 41, 18300 Valdecanto"
+            },
+            {
+              "doc": "E3",
+              "quote": "Delivery address: Calle del Romero 41, 18300 Valdecanto"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "signature",
+          "label": "Signature or proof of receipt",
+          "critical": false,
+          "status": "missing",
+          "evidence": [],
+          "contradictionId": null
+        },
+        {
+          "id": "payment",
+          "label": "Payment record for the disputed amount",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Total: EUR 279.90"
+            },
+            {
+              "doc": "E2",
+              "quote": "PayPal transaction 7DF50720DK118846A"
+            },
+            {
+              "doc": "E2",
+              "quote": "Gross amount: €279.90 EUR"
+            },
+            {
+              "doc": "E2",
+              "quote": "Status: Completed"
+            }
+          ],
+          "contradictionId": null
+        }
+      ]
+    },
+    "sentences": [
+      {
+        "id": "S1",
+        "text": "The carrier attempted delivery on 6 October 2026.",
+        "noteId": "n1",
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "2026-10-06 10:05 Delivery attempted — recipient not available, notice left",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: \"6\" does not appear in the cited evidence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S2",
+        "text": "The carrier collected the parcel from us on 2 October 2026.",
+        "noteId": "n2",
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "2026-10-02 09:14 Collected from sender",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: \"2\" does not appear in the cited evidence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S3",
+        "text": "The desk frame was delivered on 6 October 2026.",
+        "noteId": "n3",
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "2026-10-06 10:05 Delivery attempted — recipient not available, notice left",
+            "valid": true
+          }
+        ],
+        "verdict": "rejected",
+        "reason": "Removed: The cited text states \"Delivery attempted — recipient not available, notice left\", contradicting the claim that it was delivered. It will not be sent.",
+        "decidedBy": "model",
+        "rewrite": "A delivery was attempted on 6 October 2026, but the recipient was not available and a notice was left."
+      },
+      {
+        "id": "S4",
+        "text": "The buyer refused the delivery.",
+        "noteId": "n4",
+        "citations": [],
+        "verdict": "rejected",
+        "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S5",
+        "text": "We received completed payment of 279.90 EUR under transaction 7DF50720DK118846A for order DK-5072.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Order #DK-5072 · placed 2026-09-30 11:52 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Total: EUR 279.90",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "PayPal transaction 7DF50720DK118846A",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Gross amount: €279.90 EUR",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Status: Completed",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S6",
+        "text": "We dispatched consignment OF-9921-6650-2 via Ostrander Freight to Calle del Romero 41, 18300 Valdecanto, exactly matching the order and PayPal shipping address.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Ship to: Calle del Romero 41, 18300 Valdecanto",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Shipping address: Calle del Romero 41, 18300 Valdecanto",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Ostrander Freight · Consignment OF-9921-6650-2",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-10-02 09:14 Collected from sender",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivery address: Calle del Romero 41, 18300 Valdecanto",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S7",
+        "text": "Tracking indicates that delivery was attempted on 6 October 2026 with notice left, and the package is held at the depot awaiting collection.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "2026-10-06 10:05 Delivery attempted — recipient not available, notice left",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-10-07 08:00 Held at depot awaiting collection",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: \"6\" does not appear in the cited evidence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      }
+    ],
+    "injections": [],
+    "recommendation": null,
+    "usage": {
+      "calls": [
+        {
+          "stage": "screen",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 924,
+          "outputTokens": 5,
+          "thinkingTokens": 103,
+          "ms": 2362
+        },
+        {
+          "stage": "extract",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 1102,
+          "outputTokens": 1618,
+          "thinkingTokens": 0,
+          "ms": 10511
+        },
+        {
+          "stage": "analyze",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2323,
+          "outputTokens": 1401,
+          "thinkingTokens": 0,
+          "ms": 9759
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 621,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1379
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 518,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1632
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 515,
+          "outputTokens": 19,
+          "thinkingTokens": 0,
+          "ms": 1828
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 655,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1403
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 519,
+          "outputTokens": 97,
+          "thinkingTokens": 0,
+          "ms": 3038
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 563,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1615
+        }
+      ],
+      "inputTokens": 7740,
+      "outputTokens": 3332,
+      "thinkingTokens": 103
+    }
+  }
+}

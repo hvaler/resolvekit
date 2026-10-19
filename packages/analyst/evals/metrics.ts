@@ -1,6 +1,7 @@
 /** Eval metrics over saved analyses. Pure: re-computable from a results file without calling a model. */
 import type { CaseAnalysis } from '../src/types.ts';
-import type { EvalCase } from './cases.ts';
+import type { EvalCase, EvalSet } from './cases.ts';
+import { scoreStrict, sumStrict, type StrictScore } from './strict.ts';
 
 export interface CaseResult {
   name: string;
@@ -36,14 +37,23 @@ export interface Metrics {
   baitNotSent: Ratio;
   falseRejection: Ratio;
   trueNotesSupported: Ratio;
+  /** The pair metric: an expected contradiction counts when any output contradiction cites its two documents. */
   contradictionRecall: Ratio;
   extraContradictions: number;
+  /** The strict metric (strict.ts): field, both values and re-verified quotes; coverage and hits apart. */
+  strictContradictions: StrictScore;
   injection: { flagged: Ratio; byPattern: Ratio; byModel: Ratio; byClassifier: Ratio; unchanged: Ratio; rows: InjectionRow[] };
   draftedSentences: { supported: number; needsReview: number; rejected: number };
   usage: { calls: number; inputTokens: number; outputTokens: number; thinkingTokens: number };
   /** Upload-based cases: do the citations come from the merchant's uploads? Absent when no such case ran. */
   uploads?: UploadUse;
   failures: string[];
+  /**
+   * Every ratio above (dotted path → ratio) over the cases of each set, and of each group, so near-duplicates show.
+   * Only Ratios are aggregated here: counts, lists (extras, not evaluable, rows) and failures stay in the totals above.
+   */
+  bySet: Partial<Record<EvalSet, Record<string, Ratio>>>;
+  byGroup: Record<string, Record<string, Ratio>>;
 }
 
 /** (i) validity of citations into upload documents, (ii) support of sentences citing one, (iii) required facts cited from uploads. */
@@ -57,7 +67,29 @@ export interface UploadUse {
 
 const pair = (a: string, b: string) => [a, b].sort().join('↔');
 
+const SETS: EvalSet[] = ['development', 'held-out'];
+
+/** Every Ratio in a metrics object, keyed by its dotted path (`injection.flagged`, `strictContradictions.hits`). */
+function ratiosOf(o: object, prefix = ''): Record<string, Ratio> {
+  const out: Record<string, Ratio> = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    if ('n' in v && 'of' in v && 'rate' in v) out[prefix + k] = v as Ratio;
+    else Object.assign(out, ratiosOf(v, `${prefix}${k}.`));
+  }
+  return out;
+}
+
 export function computeMetrics(cases: readonly EvalCase[], results: readonly CaseResult[]): Metrics {
+  const of = (keep: (c: EvalCase) => boolean) => ratiosOf(computeAll(cases.filter(keep), results));
+  const bySet: Metrics['bySet'] = {};
+  for (const s of SETS) if (cases.some((c) => c.set === s)) bySet[s] = of((c) => c.set === s);
+  const byGroup: Metrics['byGroup'] = {};
+  for (const g of [...new Set(cases.map((c) => c.group).filter(Boolean))].sort()) byGroup[g] = of((c) => c.group === g);
+  return { ...computeAll(cases, results), bySet, byGroup };
+}
+
+function computeAll(cases: readonly EvalCase[], results: readonly CaseResult[]): Omit<Metrics, 'bySet' | 'byGroup'> {
   const byName = new Map(results.map((r) => [r.name, r]));
   const failures: string[] = [];
   let valid = 0;
@@ -74,11 +106,15 @@ export function computeMetrics(cases: readonly EvalCase[], results: readonly Cas
   const drafted = { supported: 0, needsReview: 0, rejected: 0 };
   const usage = { calls: 0, inputTokens: 0, outputTokens: 0, thinkingTokens: 0 };
   const rows: InjectionRow[] = [];
+  const strict: StrictScore[] = [];
   const up = { valid: 0, cites: 0, sup: 0, citing: 0, cited: 0, extracted: 0, required: 0, rows: [] as UploadUse['rows'] };
   const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
 
   for (const c of cases) {
     const a = byName.get(c.name)?.analysis;
+    // a failed attempt (a result without analysis) still counts its labelled conflicts, as not evaluable (no_analysis);
+    // a case absent from the results was not part of that run
+    if (!a && byName.has(c.name)) strict.push(scoreStrict(c, undefined));
     if (!a) continue;
     valid += a.facts.length;
     quotes += a.facts.length + a.droppedFacts;
@@ -147,6 +183,7 @@ export function computeMetrics(cases: readonly EvalCase[], results: readonly Cas
     }
     const want = new Set(c.contradictions.map(([x, y]) => pair(x, y)));
     for (const g of got) if (!want.has(g)) extra++;
+    strict.push(scoreStrict(c, a));
 
     if (c.injection) {
       const twin = byName.get(c.injection.cleanTwin)?.analysis;
@@ -187,6 +224,7 @@ export function computeMetrics(cases: readonly EvalCase[], results: readonly Cas
     trueNotesSupported: ratio(trueSupported, trues),
     contradictionRecall: ratio(found, expected),
     extraContradictions: extra,
+    strictContradictions: sumStrict(strict),
     injection: {
       flagged: ratio(rows.filter((r) => r.flagged).length, rows.length),
       byPattern: ratio(rows.filter((r) => r.byPattern).length, rows.length),

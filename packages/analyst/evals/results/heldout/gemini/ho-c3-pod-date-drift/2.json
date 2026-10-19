@@ -1,0 +1,678 @@
+{
+  "provider": "gemini",
+  "case": "ho-c3-pod-date-drift",
+  "run": 2,
+  "status": "ok",
+  "startedAt": "2026-10-19T11:18:52.743Z",
+  "finishedAt": "2026-10-19T11:19:23.640Z",
+  "stamp": {
+    "codeCommit": "3c19510839dce542d9c2c7c034cfb287a26633ba",
+    "freezeCommit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "returnedModels": [
+      "gemini-3.8-flash"
+    ]
+  },
+  "usage": {
+    "calls": 10,
+    "httpAttempts": 10,
+    "refused": 0,
+    "inputTokens": 8841,
+    "outputTokens": 3980,
+    "thinkingTokens": 1019,
+    "observedUsd": 0.025377000000000004,
+    "unknownUsd": 0,
+    "estimatedUsd": 0,
+    "costUsdAtListPrice": 0.025377000000000004,
+    "note": "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice."
+  },
+  "analysis": {
+    "caseId": "HO-C3",
+    "key": "",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "createdAt": "2026-10-19T11:19:23.640Z",
+    "facts": [
+      {
+        "id": "F1",
+        "doc": "E1",
+        "quote": "Order #CI-2048 · placed 2026-10-05 02:18 UTC",
+        "statement": "Order CI-2048 was placed on 5 October 2026.",
+        "at": "2026-10-05T02:18:00.000Z"
+      },
+      {
+        "id": "F2",
+        "doc": "E1",
+        "quote": "Customer: Declan Moss",
+        "statement": "The customer is Declan Moss.",
+        "at": null
+      },
+      {
+        "id": "F3",
+        "doc": "E1",
+        "quote": "Item: Cast-iron skillet set, 3 pieces, qty 1",
+        "statement": "The order item was one 3-piece cast-iron skillet set.",
+        "at": null
+      },
+      {
+        "id": "F4",
+        "doc": "E1",
+        "quote": "Total: AUD 142.00",
+        "statement": "The order total was 142.00 AUD.",
+        "at": null
+      },
+      {
+        "id": "F5",
+        "doc": "E1",
+        "quote": "Ship to: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+        "statement": "The shipping destination was Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871.",
+        "at": null
+      },
+      {
+        "id": "F6",
+        "doc": "E2",
+        "quote": "PayPal transaction 5ZC20480CI664127P",
+        "statement": "The PayPal transaction identifier is 5ZC20480CI664127P.",
+        "at": null
+      },
+      {
+        "id": "F7",
+        "doc": "E2",
+        "quote": "Date: 2026-10-05 02:19 UTC",
+        "statement": "The PayPal transaction was recorded on 5 October 2026.",
+        "at": "2026-10-05T02:19:00.000Z"
+      },
+      {
+        "id": "F8",
+        "doc": "E2",
+        "quote": "Gross amount: $142.00 AUD",
+        "statement": "The PayPal transaction gross amount was 142.00 AUD.",
+        "at": null
+      },
+      {
+        "id": "F9",
+        "doc": "E2",
+        "quote": "Status: Completed",
+        "statement": "The PayPal transaction status is Completed.",
+        "at": null
+      },
+      {
+        "id": "F10",
+        "doc": "E2",
+        "quote": "Shipping address: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+        "statement": "The PayPal shipping address is Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871.",
+        "at": null
+      },
+      {
+        "id": "F11",
+        "doc": "E3",
+        "quote": "Ferrogate Couriers · Tracking FG-30418-775",
+        "statement": "The carrier tracking number is FG-30418-775 with Ferrogate Couriers.",
+        "at": null
+      },
+      {
+        "id": "F12",
+        "doc": "E3",
+        "quote": "2026-10-07 15:02 Collected from sender",
+        "statement": "The package was collected from the sender on 7 October 2026.",
+        "at": "2026-10-07T15:02:00.000Z"
+      },
+      {
+        "id": "F13",
+        "doc": "E3",
+        "quote": "2026-10-11 07:55 Out for delivery",
+        "statement": "The package was out for delivery on 11 October 2026.",
+        "at": "2026-10-11T07:55:00.000Z"
+      },
+      {
+        "id": "F14",
+        "doc": "E3",
+        "quote": "2026-10-11 10:42 Delivered — left at building reception",
+        "statement": "Tracking shows delivered and left at building reception on 11 October 2026.",
+        "at": "2026-10-11T10:42:00.000Z"
+      },
+      {
+        "id": "F15",
+        "doc": "E3",
+        "quote": "Delivered to: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+        "statement": "The tracking record indicates delivery to Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871.",
+        "at": null
+      },
+      {
+        "id": "F16",
+        "doc": "E4",
+        "quote": "Date of delivery: 14 October 2026",
+        "statement": "The proof of delivery lists the delivery date as 14 October 2026.",
+        "at": "2026-10-14T00:00:00.000Z"
+      },
+      {
+        "id": "F17",
+        "doc": "E4",
+        "quote": "Received at: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+        "statement": "The proof of delivery lists receipt at Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871.",
+        "at": null
+      },
+      {
+        "id": "F18",
+        "doc": "E4",
+        "quote": "Received by: front desk staff",
+        "statement": "The proof of delivery indicates the package was received by front desk staff.",
+        "at": null
+      },
+      {
+        "id": "F19",
+        "doc": "E5",
+        "quote": "Message from Declan Moss · 2026-10-12 21:30 UTC",
+        "statement": "Declan Moss sent a message on 12 October 2026.",
+        "at": "2026-10-12T21:30:00.000Z"
+      },
+      {
+        "id": "F20",
+        "doc": "E5",
+        "quote": "My skillets have not arrived and I have opened a case.",
+        "statement": "The buyer stated their skillets had not arrived and they opened a case.",
+        "at": null
+      }
+    ],
+    "droppedFacts": 0,
+    "timeline": [
+      {
+        "at": "2026-10-05T02:18:00.000Z",
+        "title": "Order placed",
+        "sub": "Order CI-2048 for AUD 142.00",
+        "doc": "E1",
+        "quote": "Order #CI-2048 · placed 2026-10-05 02:18 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-10-05T02:19:00.000Z",
+        "title": "PayPal payment completed",
+        "sub": "Gross amount $142.00 AUD completed",
+        "doc": "E2",
+        "quote": "Date: 2026-10-05 02:19 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-10-07T15:02:00.000Z",
+        "title": "Package collected",
+        "sub": "Collected from sender by carrier",
+        "doc": "E3",
+        "quote": "2026-10-07 15:02 Collected from sender",
+        "negated": false
+      },
+      {
+        "at": "2026-10-11T07:55:00.000Z",
+        "title": "Out for delivery",
+        "sub": "Carrier tracking FG-30418-775",
+        "doc": "E3",
+        "quote": "2026-10-11 07:55 Out for delivery",
+        "negated": false
+      },
+      {
+        "at": "2026-10-11T10:42:00.000Z",
+        "title": "Delivered to reception",
+        "sub": "Delivered and left at building reception",
+        "doc": "E3",
+        "quote": "2026-10-11 10:42 Delivered — left at building reception",
+        "negated": false
+      },
+      {
+        "at": "2026-10-12T21:30:00.000Z",
+        "title": "Buyer message sent",
+        "sub": "Buyer stated skillets had not arrived",
+        "doc": "E5",
+        "quote": "Message from Declan Moss · 2026-10-12 21:30 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-10-14T00:00:00.000Z",
+        "title": "Proof of delivery dated",
+        "sub": "Delivery date listed on proof document",
+        "doc": "E4",
+        "quote": "Date of delivery: 14 October 2026",
+        "negated": false
+      }
+    ],
+    "contradictions": [
+      {
+        "id": "C1",
+        "title": "Delivery date contradiction",
+        "shortName": "delivery date contradiction",
+        "a": {
+          "doc": "E3",
+          "quote": "2026-10-11 10:42 Delivered — left at building reception",
+          "value": "2026-10-11 10:42"
+        },
+        "b": {
+          "doc": "E4",
+          "quote": "Date of delivery: 14 October 2026",
+          "value": "14 October 2026"
+        },
+        "explanation": "Carrier tracking shows delivery on 11 October 2026, whereas the proof of delivery document records the delivery date as 14 October 2026. This may reflect differing administrative logging or paperwork dates, and resolving the difference is the merchant's call.",
+        "sentenceId": "S3",
+        "rewrite": "Ferrogate Couriers tracking FG-30418-775 shows delivery on 11 October 2026, while the proof of delivery document records 14 October 2026."
+      }
+    ],
+    "checklist": {
+      "title": "What \"not received\" disputes need",
+      "items": [
+        {
+          "id": "tracking",
+          "label": "Tracking number with delivery confirmation",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E3",
+              "quote": "Ferrogate Couriers · Tracking FG-30418-775"
+            },
+            {
+              "doc": "E3",
+              "quote": "2026-10-11 10:42 Delivered — left at building reception"
+            },
+            {
+              "doc": "E3",
+              "quote": "Delivered to: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "carrier",
+          "label": "Carrier and ship date",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E3",
+              "quote": "Ferrogate Couriers · Tracking FG-30418-775"
+            },
+            {
+              "doc": "E3",
+              "quote": "2026-10-07 15:02 Collected from sender"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "address",
+          "label": "Delivery address matches the order",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Ship to: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871"
+            },
+            {
+              "doc": "E2",
+              "quote": "Shipping address: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871"
+            },
+            {
+              "doc": "E3",
+              "quote": "Delivered to: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871"
+            },
+            {
+              "doc": "E4",
+              "quote": "Received at: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "signature",
+          "label": "Signature or proof of receipt",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E4",
+              "quote": "Received at: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871"
+            },
+            {
+              "doc": "E4",
+              "quote": "Received by: front desk staff"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "payment",
+          "label": "Payment record for the disputed amount",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Total: AUD 142.00"
+            },
+            {
+              "doc": "E2",
+              "quote": "PayPal transaction 5ZC20480CI664127P"
+            },
+            {
+              "doc": "E2",
+              "quote": "Date: 2026-10-05 02:19 UTC"
+            },
+            {
+              "doc": "E2",
+              "quote": "Gross amount: $142.00 AUD"
+            },
+            {
+              "doc": "E2",
+              "quote": "Status: Completed"
+            }
+          ],
+          "contradictionId": null
+        }
+      ]
+    },
+    "sentences": [
+      {
+        "id": "S1",
+        "text": "The customer placed order CI-2048 for a 3-piece cast-iron skillet set totaling 142.00 AUD, matching completed PayPal transaction 5ZC20480CI664127P for $142.00 AUD.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Order #CI-2048 · placed 2026-10-05 02:18 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Customer: Declan Moss",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Item: Cast-iron skillet set, 3 pieces, qty 1",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Total: AUD 142.00",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "PayPal transaction 5ZC20480CI664127P",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Date: 2026-10-05 02:19 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Gross amount: $142.00 AUD",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Status: Completed",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S2",
+        "text": "We dispatched the package via Ferrogate Couriers under tracking FG-30418-775, which was collected from the sender on 7 October 2026.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "Ferrogate Couriers · Tracking FG-30418-775",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-10-07 15:02 Collected from sender",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: \"7\" does not appear in the cited evidence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S3",
+        "text": "Ferrogate Couriers tracking records the shipment as delivered on 11 October 2026 to Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871, matching the order and PayPal addresses.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Ship to: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Shipping address: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Ferrogate Couriers · Tracking FG-30418-775",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-10-11 10:42 Delivered — left at building reception",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivered to: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The citations confirm delivery to the specified address but do not identify the records as the order and PayPal addresses.",
+        "decidedBy": "model",
+        "rewrite": "Ferrogate Couriers tracking records the shipment as delivered on 11 October 2026 to Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871, matching the cited shipping addresses."
+      },
+      {
+        "id": "S4",
+        "text": "Proof of delivery confirms the parcel was received at Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871 by front desk staff.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E4",
+            "quote": "Received at: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "Received by: front desk staff",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S5",
+        "text": "The courier recorded the skillet set as received at the Level 3 reception of 77 Banksia Parade.",
+        "noteId": "n1",
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "Delivered to: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "Received at: Level 3 reception, 77 Banksia Parade, Coralmont QLD 4871",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "Received by: front desk staff",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The cited records confirm delivery and receipt at Level 3 reception, 77 Banksia Parade, but do not specifically name the \"skillet set\".",
+        "decidedBy": "model",
+        "rewrite": "The courier recorded the delivery as received at the Level 3 reception of 77 Banksia Parade."
+      },
+      {
+        "id": "S6",
+        "text": "The parcel was delivered before the buyer opened the case.",
+        "noteId": "n2",
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "2026-10-11 10:42 Delivered — left at building reception",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "Date of delivery: 14 October 2026",
+            "valid": true
+          },
+          {
+            "doc": "E5",
+            "quote": "Message from Declan Moss · 2026-10-12 21:30 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E5",
+            "quote": "My skillets have not arrived and I have opened a case.",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The evidence provides conflicting delivery dates (\"2026-10-11\" vs \"14 October 2026\"), one of which is after the buyer's message on \"2026-10-12 21:30 UTC\".",
+        "decidedBy": "model",
+        "rewrite": "One record shows delivery on 2026-10-11 before the buyer's 2026-10-12 message, though another document lists delivery on 14 October 2026."
+      },
+      {
+        "id": "S7",
+        "text": "The buyer personally signed for the parcel.",
+        "noteId": "n3",
+        "citations": [
+          {
+            "doc": "E4",
+            "quote": "Received by: front desk staff",
+            "valid": true
+          }
+        ],
+        "verdict": "rejected",
+        "reason": "Removed: The cited text states \"Received by: front desk staff\", contradicting the claim that the buyer personally signed for it. It will not be sent.",
+        "decidedBy": "model",
+        "rewrite": "The parcel was received by front desk staff."
+      }
+    ],
+    "injections": [],
+    "recommendation": null,
+    "usage": {
+      "calls": [
+        {
+          "stage": "screen",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 1034,
+          "outputTokens": 5,
+          "thinkingTokens": 152,
+          "ms": 2244
+        },
+        {
+          "stage": "extract",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 1256,
+          "outputTokens": 1735,
+          "thinkingTokens": 0,
+          "ms": 10902
+        },
+        {
+          "stage": "analyze",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2410,
+          "outputTokens": 1661,
+          "thinkingTokens": 0,
+          "ms": 11026
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 552,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1601
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 562,
+          "outputTokens": 19,
+          "thinkingTokens": 0,
+          "ms": 1609
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 705,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1614
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 572,
+          "outputTokens": 103,
+          "thinkingTokens": 0,
+          "ms": 2036
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 584,
+          "outputTokens": 161,
+          "thinkingTokens": 0,
+          "ms": 2857
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 493,
+          "outputTokens": 80,
+          "thinkingTokens": 0,
+          "ms": 3135
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 673,
+          "outputTokens": 120,
+          "thinkingTokens": 867,
+          "ms": 8964
+        }
+      ],
+      "inputTokens": 8841,
+      "outputTokens": 3980,
+      "thinkingTokens": 1019
+    }
+  }
+}

@@ -1,0 +1,569 @@
+{
+  "provider": "gemini",
+  "case": "ho-b1-untracked-letter",
+  "run": 3,
+  "status": "ok",
+  "startedAt": "2026-10-19T11:22:19.955Z",
+  "finishedAt": "2026-10-19T11:22:40.332Z",
+  "stamp": {
+    "codeCommit": "3c19510839dce542d9c2c7c034cfb287a26633ba",
+    "freezeCommit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "returnedModels": [
+      "gemini-3.8-flash"
+    ]
+  },
+  "usage": {
+    "calls": 10,
+    "httpAttempts": 10,
+    "refused": 0,
+    "inputTokens": 8100,
+    "outputTokens": 2912,
+    "thinkingTokens": 365,
+    "observedUsd": 0.018363749999999995,
+    "unknownUsd": 0,
+    "estimatedUsd": 0,
+    "costUsdAtListPrice": 0.018363749999999995,
+    "note": "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice."
+  },
+  "analysis": {
+    "caseId": "HO-B1",
+    "key": "",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "createdAt": "2026-10-19T11:22:40.332Z",
+    "facts": [
+      {
+        "id": "F1",
+        "doc": "E1",
+        "quote": "Order #PN-1186 · placed 2026-10-01 21:13 UTC",
+        "statement": "Order PN-1186 was placed on 2026-10-01 at 21:13 UTC.",
+        "at": "2026-10-01T21:13:00.000Z"
+      },
+      {
+        "id": "F2",
+        "doc": "E1",
+        "quote": "Customer: Gwen Achterberg",
+        "statement": "The customer is Gwen Achterberg.",
+        "at": null
+      },
+      {
+        "id": "F3",
+        "doc": "E1",
+        "quote": "Item: Enamel pin set 'Night Garden', 4 pins, qty 1",
+        "statement": "The purchased item is one 'Night Garden' enamel pin set containing 4 pins.",
+        "at": null
+      },
+      {
+        "id": "F4",
+        "doc": "E1",
+        "quote": "Total: USD 24.00",
+        "statement": "The order total is 24.00 USD.",
+        "at": null
+      },
+      {
+        "id": "F5",
+        "doc": "E1",
+        "quote": "Ship to: 318 Calloway Street, Fenwick, OR 97119",
+        "statement": "The shipping destination is 318 Calloway Street, Fenwick, OR 97119.",
+        "at": null
+      },
+      {
+        "id": "F6",
+        "doc": "E1",
+        "quote": "Shipping method: Standard letter mail (no tracking)",
+        "statement": "The selected shipping method is standard letter mail without tracking.",
+        "at": null
+      },
+      {
+        "id": "F7",
+        "doc": "E2",
+        "quote": "PayPal transaction 4LM11860PN903317D",
+        "statement": "The PayPal transaction identifier is 4LM11860PN903317D.",
+        "at": null
+      },
+      {
+        "id": "F8",
+        "doc": "E2",
+        "quote": "Date: 2026-10-01 21:14 UTC",
+        "statement": "The PayPal transaction occurred on 2026-10-01 at 21:14 UTC.",
+        "at": "2026-10-01T21:14:00.000Z"
+      },
+      {
+        "id": "F9",
+        "doc": "E2",
+        "quote": "Gross amount: $24.00 USD",
+        "statement": "The gross payment amount is $24.00 USD.",
+        "at": null
+      },
+      {
+        "id": "F10",
+        "doc": "E2",
+        "quote": "Status: Completed",
+        "statement": "The PayPal transaction status is Completed.",
+        "at": null
+      },
+      {
+        "id": "F11",
+        "doc": "E2",
+        "quote": "Shipping address: 318 Calloway Street, Fenwick, OR 97119",
+        "statement": "The PayPal shipping address is 318 Calloway Street, Fenwick, OR 97119.",
+        "at": null
+      },
+      {
+        "id": "F12",
+        "doc": "E3",
+        "quote": "Dispatch log · 2026-10-02",
+        "statement": "The dispatch log is dated 2026-10-02.",
+        "at": "2026-10-02T00:00:00.000Z"
+      },
+      {
+        "id": "F13",
+        "doc": "E3",
+        "quote": "PN-1186 · Achterberg · letter mail · postage $1.73 · no tracking number",
+        "statement": "Order PN-1186 was sent via letter mail with $1.73 postage and no tracking number.",
+        "at": null
+      },
+      {
+        "id": "F14",
+        "doc": "E3",
+        "quote": "Posted at Fenwick post office counter, 2026-10-02 11:30",
+        "statement": "The item was posted at the Fenwick post office counter on 2026-10-02 at 11:30.",
+        "at": "2026-10-02T11:30:00.000Z"
+      },
+      {
+        "id": "F15",
+        "doc": "E4",
+        "quote": "Message from Gwen Achterberg · 2026-10-16 08:44 UTC",
+        "statement": "Gwen Achterberg sent a message on 2026-10-16 at 08:44 UTC.",
+        "at": "2026-10-16T08:44:00.000Z"
+      },
+      {
+        "id": "F16",
+        "doc": "E4",
+        "quote": "It's been two weeks and the pins haven't arrived.",
+        "statement": "The buyer stated that two weeks have passed and the pins have not arrived.",
+        "at": null
+      }
+    ],
+    "droppedFacts": 0,
+    "timeline": [
+      {
+        "at": "2026-10-01T21:13:00.000Z",
+        "title": "Order placed",
+        "sub": "Order PN-1186 for USD 24.00",
+        "doc": "E1",
+        "quote": "Order #PN-1186 · placed 2026-10-01 21:13 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-10-01T21:14:00.000Z",
+        "title": "Payment completed",
+        "sub": "Gross amount $24.00 USD",
+        "doc": "E2",
+        "quote": "Date: 2026-10-01 21:14 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-10-02T11:30:00.000Z",
+        "title": "Item posted",
+        "sub": "Posted at Fenwick post office counter",
+        "doc": "E3",
+        "quote": "Posted at Fenwick post office counter, 2026-10-02 11:30",
+        "negated": false
+      },
+      {
+        "at": "2026-10-16T08:44:00.000Z",
+        "title": "Buyer message",
+        "sub": "Pins have not arrived after two weeks",
+        "doc": "E4",
+        "quote": "Message from Gwen Achterberg · 2026-10-16 08:44 UTC",
+        "negated": false
+      }
+    ],
+    "contradictions": [],
+    "checklist": {
+      "title": "What \"not received\" disputes need",
+      "items": [
+        {
+          "id": "tracking",
+          "label": "Tracking number with delivery confirmation",
+          "critical": true,
+          "status": "missing",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Shipping method: Standard letter mail (no tracking)"
+            },
+            {
+              "doc": "E3",
+              "quote": "PN-1186 · Achterberg · letter mail · postage $1.73 · no tracking number"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "carrier",
+          "label": "Carrier and ship date",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E3",
+              "quote": "Posted at Fenwick post office counter, 2026-10-02 11:30"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "address",
+          "label": "Delivery address matches the order",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Ship to: 318 Calloway Street, Fenwick, OR 97119"
+            },
+            {
+              "doc": "E2",
+              "quote": "Shipping address: 318 Calloway Street, Fenwick, OR 97119"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "signature",
+          "label": "Signature or proof of receipt",
+          "critical": false,
+          "status": "missing",
+          "evidence": [],
+          "contradictionId": null
+        },
+        {
+          "id": "payment",
+          "label": "Payment record for the disputed amount",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Total: USD 24.00"
+            },
+            {
+              "doc": "E2",
+              "quote": "Gross amount: $24.00 USD"
+            },
+            {
+              "doc": "E2",
+              "quote": "Status: Completed"
+            }
+          ],
+          "contradictionId": null
+        }
+      ]
+    },
+    "sentences": [
+      {
+        "id": "S1",
+        "text": "The customer placed order PN-1186 for one enamel pin set totaling 24.00 USD on 1 October 2026.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Order #PN-1186 · placed 2026-10-01 21:13 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Customer: Gwen Achterberg",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Item: Enamel pin set 'Night Garden', 4 pins, qty 1",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Total: USD 24.00",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S2",
+        "text": "PayPal transaction 4LM11860PN903317D was completed on 1 October 2026 for the gross amount of $24.00 USD.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E2",
+            "quote": "PayPal transaction 4LM11860PN903317D",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Date: 2026-10-01 21:14 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Gross amount: $24.00 USD",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Status: Completed",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: \"1\" does not appear in the cited evidence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S3",
+        "text": "The shipping address on the order matches the PayPal transaction address at 318 Calloway Street, Fenwick, OR 97119.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Ship to: 318 Calloway Street, Fenwick, OR 97119",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Shipping address: 318 Calloway Street, Fenwick, OR 97119",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The cited snippets confirm identical addresses but do not identify which corresponds to the order versus the PayPal transaction.",
+        "decidedBy": "model",
+        "rewrite": "The recorded shipping addresses both show 318 Calloway Street, Fenwick, OR 97119."
+      },
+      {
+        "id": "S4",
+        "text": "The order selected standard letter mail without tracking, and dispatch records confirm it was posted at the Fenwick post office counter on 2 October 2026.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Shipping method: Standard letter mail (no tracking)",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Dispatch log · 2026-10-02",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "PN-1186 · Achterberg · letter mail · postage $1.73 · no tracking number",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Posted at Fenwick post office counter, 2026-10-02 11:30",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: \"2\" does not appear in the cited evidence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S5",
+        "text": "The buyer sent a message on 16 October 2026 stating the pins had not arrived after two weeks.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E4",
+            "quote": "Message from Gwen Achterberg · 2026-10-16 08:44 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "It's been two weeks and the pins haven't arrived.",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S6",
+        "text": "The pin set was posted by standard letter mail on 2 October 2026.",
+        "noteId": "n1",
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Shipping method: Standard letter mail (no tracking)",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Dispatch log · 2026-10-02",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "PN-1186 · Achterberg · letter mail · postage $1.73 · no tracking number",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Posted at Fenwick post office counter, 2026-10-02 11:30",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The cited text identifies the dispatch as 'PN-1186' rather than stating explicitly that this item was the 'pin set'.",
+        "decidedBy": "model",
+        "rewrite": "Item PN-1186 was posted by standard letter mail on 2 October 2026."
+      },
+      {
+        "id": "S7",
+        "text": "Tracking shows the letter was delivered to the buyer's mailbox.",
+        "noteId": "n2",
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Shipping method: Standard letter mail (no tracking)",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "PN-1186 · Achterberg · letter mail · postage $1.73 · no tracking number",
+            "valid": true
+          }
+        ],
+        "verdict": "rejected",
+        "reason": "Removed: The cited evidence directly contradicts the statement, noting \"Shipping method: Standard letter mail (no tracking)\" and \"no tracking number\". It will not be sent.",
+        "decidedBy": "model",
+        "rewrite": "The item was sent via letter mail with no tracking number."
+      },
+      {
+        "id": "S8",
+        "text": "The buyer signed for the delivery.",
+        "noteId": "n3",
+        "citations": [],
+        "verdict": "rejected",
+        "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      }
+    ],
+    "injections": [],
+    "recommendation": null,
+    "usage": {
+      "calls": [
+        {
+          "stage": "screen",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 863,
+          "outputTokens": 5,
+          "thinkingTokens": 0,
+          "ms": 1368
+        },
+        {
+          "stage": "extract",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 1050,
+          "outputTokens": 1389,
+          "thinkingTokens": 0,
+          "ms": 8824
+        },
+        {
+          "stage": "analyze",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2150,
+          "outputTokens": 1128,
+          "thinkingTokens": 0,
+          "ms": 6743
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 596,
+          "outputTokens": 19,
+          "thinkingTokens": 0,
+          "ms": 1402
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 608,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1549
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 596,
+          "outputTokens": 19,
+          "thinkingTokens": 0,
+          "ms": 1696
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 550,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1317
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 533,
+          "outputTokens": 88,
+          "thinkingTokens": 0,
+          "ms": 1568
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 594,
+          "outputTokens": 102,
+          "thinkingTokens": 0,
+          "ms": 1767
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 560,
+          "outputTokens": 66,
+          "thinkingTokens": 365,
+          "ms": 4807
+        }
+      ],
+      "inputTokens": 8100,
+      "outputTokens": 2912,
+      "thinkingTokens": 365
+    }
+  }
+}
