@@ -11,7 +11,7 @@ import { GroqModel } from '../src/providers.ts';
 import { BudgetExceeded, LIST_PRICE, RESERVATION_EXCEEDED, budgetGuard, newLedger, reservationUsd, usageUsd } from '../evals/budget.ts';
 import type { HeldOutCase } from '../evals/heldout/schema.ts';
 import { HELD_OUT_CASES } from '../evals/heldout/cases.ts';
-import { FROZEN_PATHS, UsageError, casesHash, frozenHash, listFrozenPaths, loadConfig, parseCli, runHeldOut, type Attempt, type Git, type HeldOutConfig } from '../evals/runs.ts';
+import { FROZEN_PATHS, UsageError, casesHash, frozenHash, listFrozenPaths, loadConfig, isOutage, parseCli, runHeldOut, stopFor, type Attempt, type Git, type HeldOutConfig } from '../evals/runs.ts';
 import { fakeModel, input, standardScript } from './fake.ts';
 
 const noSleep = async () => {};
@@ -136,10 +136,10 @@ test('an attempt file is opened exclusively: an existing one is never written ov
   assert.equal(readFileSync(file, 'utf8'), 'sentinel');
 });
 
-test('the guard reserves the worst case: ceil(chars/4) × 1.25 input, max output plus the thinking reserve, at list price', () => {
+test('the guard reserves the worst case: ceil(chars/4) × 1.5 input, max output plus the thinking reserve, at list price', () => {
   const req: ModelRequest = { stage: 'x', system: 'a'.repeat(400), user: 'b'.repeat(399), schema: {}, maxOutputTokens: 1000 };
   const chars = 400 + 399 + JSON.stringify({}).length;
-  const inTok = Math.ceil(Math.ceil(chars / 4) * 1.25);
+  const inTok = Math.ceil(Math.ceil(chars / 4) * 1.5);
   const r = reservationUsd(req, 2048);
   assert.equal(r.inputTokens, inTok);
   assert.equal(r.outputTokens, 1000 + 2048);
@@ -658,4 +658,44 @@ test('B22 m1: a call that reports more input tokens than its reserved input esti
   assert.equal(ledger.exceeded, 1);
   assert.equal(ledger.stopped, true);
   assert.equal(ledger.stops[0].kind, 'budget');
+});
+
+test('B23: a reported input of 1.3 × chars/4 no longer stops the batch; 1.6 × still does', async () => {
+  const est = (req: ModelRequest) => Math.ceil((req.system.length + req.user.length + JSON.stringify(req.schema).length) / 4);
+  const ok = raw('gemini', { usage: (req) => (req.stage === 'extract' ? { inputTokens: Math.ceil(est(req) * 1.3) } : {}) });
+  const r = await base({ raw: ok.model, resultsDir: tmp(), runs: 1 });
+  assert.equal(r.stopped, null);
+  assert.equal(r.ledger.exceeded, 0);
+  const over = raw('gemini', { usage: (req) => (req.stage === 'extract' ? { inputTokens: Math.ceil(est(req) * 1.6) } : {}) });
+  const r2 = await base({ raw: over.model, resultsDir: tmp(), runs: 1 });
+  assert.equal(r2.stopped, 'budget');
+  assert.equal(r2.ledger.exceeded, 1);
+});
+
+test('B23: a 400 json_validate_failed is a per-attempt provider_error, not a batch stop; any other 400 still stops', async () => {
+  const dir = tmp();
+  const bad = new ModelError('groq answered 400 json_validate_failed', { status: 400, retryable: false });
+  const { model } = raw('groq', { fail: (req) => (req.stage === 'extract' && req.user.includes('HO-A') ? bad : null) });
+  const r = await base({ raw: model, resultsDir: dir, runs: 1 });
+  assert.equal(r.stopped, null);
+  assert.equal(attempt(dir, 'groq', 'HO-A', 1).status, 'provider_error');
+  assert.deepEqual(files(dir, 'groq', 'HO-B'), ['1.json']);
+  assert.equal(stopFor(bad), null);
+  assert.equal(stopFor(new ModelError('groq answered 400 invalid_request', { status: 400, retryable: false }))?.kind, 'provider');
+});
+
+test('B23: only outage-type provider errors (408, 5xx, timed out, unreachable) count toward the consecutive stop; model-output failures do not', async () => {
+  const outageKinds = [new ModelError('gemini answered 408', { status: 408, retryable: true }), new ModelError('gemini timed out', { retryable: true }), new ModelError('gemini unreachable', { retryable: true })];
+  for (const e of outageKinds) {
+    const r = await base({ raw: raw('gemini', { fail: () => e }).model, resultsDir: tmp() });
+    assert.equal(r.stopped, 'provider', e.message);
+  }
+  for (const e of [new ModelError('gemini returned invalid JSON'), new ModelError('gemini hit the max tokens'), new ModelError('gemini: no text (safety)')]) {
+    const dir = tmp();
+    const r = await base({ raw: raw('gemini', { fail: () => e }).model, resultsDir: dir });
+    assert.equal(r.stopped, null, e.message);
+    assert.equal(r.written.length, 6);
+    assert.equal(attempt(dir, 'gemini', 'HO-A', 1).status, 'provider_error');
+  }
+  assert.deepEqual([isOutage(new ModelError('x', { status: 500 })), isOutage(new ModelError('x', { status: 400 })), isOutage(new ModelError('invalid JSON'))], [true, false, false]);
 });

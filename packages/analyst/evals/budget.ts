@@ -27,9 +27,12 @@ export const LIST_PRICE = { inputPerM: 0.75, outputPerM: 3.75 };
 export const OUTPUT_FLOOR_TOKENS: Readonly<Record<string, number>> = { groq: 1024 };
 export const RESERVATION_EXCEEDED = 'reservation exceeded: the cost of a call could not be bounded';
 
-/** The input estimate: ceil(chars / 4) tokens, times a 25 % margin. */
+/**
+ * The input estimate: ceil(chars / 4) tokens, times a 50 % margin (ruling B23; was 25 %). It is both what is reserved
+ * and the bound a reported input is checked against, so an overrun is stopped only with at least 50 % headroom.
+ */
 export const CHARS_PER_TOKEN = 4;
-export const INPUT_MARGIN = 1.25;
+export const INPUT_MARGIN = 1.5;
 
 export const BUDGET_NOTE = "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice.";
 /** The words every Groq money figure carries (ruling B22). */

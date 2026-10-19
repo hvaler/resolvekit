@@ -175,15 +175,26 @@ export interface BatchResult {
 /**
  * Why a call that failed for good stops the batch (ruling B22), or null: a 429 that survived the retries (quota or
  * rate limit, either provider), or a non-retryable 4xx other than 429 (bad key, billing, model id: every later call
- * would fail the same way). A budget refusal is handled apart.
+ * would fail the same way). A budget refusal is handled apart. A 400 whose code is json_validate_failed (Groq strict
+ * json_schema: the model's own output failed validation) is a per-attempt provider_error, not a stop (ruling B23).
  */
 export function stopFor(e: unknown): { kind: 'quota' | 'provider'; reason: string } | null {
   if (!(e instanceof ModelError) || e instanceof BudgetExceeded || e.status === null) return null;
   if (e.status === 429) return { kind: 'quota', reason: `a 429 survived the retries (quota or rate limit): ${e.message}` };
+  if (e.status === 400 && e.message.includes('json_validate_failed')) return null;
   if (e.status >= 400 && e.status < 500 && !e.retryable) return { kind: 'provider', reason: `the provider refused a call with HTTP ${e.status} (a key, billing or model id problem; retrying cannot help): ${e.message}` };
   return null;
 }
-/** Consecutive provider_error attempts that stop the batch (ruling B22). */
+/**
+ * An outage-type failure (ruling B23): an HTTP 408 or 5xx, or a network failure (postJson's "timed out" /
+ * "unreachable"). Status-less model-output failures (invalid JSON, max tokens, safety, no text) are not.
+ */
+export function isOutage(e: unknown): boolean {
+  if (!(e instanceof ModelError) || e instanceof BudgetExceeded) return false;
+  if (e.status !== null) return e.status === 408 || e.status >= 500;
+  return /timed out|unreachable/.test(e.message);
+}
+/** Consecutive outage-type provider_error attempts that stop the batch (ruling B22, narrowed by B23). */
 export const MAX_CONSECUTIVE_PROVIDER_ERRORS = 2;
 
 /** The start conditions; throws with the reason. Returns the stamp's commits. */
@@ -399,7 +410,9 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
       log(`${c.name} run ${run}: ${status}${error ? ` · ${error}` : ''} · ${a.usage.httpAttempts} HTTP attempts · ${a.usage.costUsdAtListPrice.toFixed(4)} ${usdLabel} · ${batchUsd()}`);
       if (over.length > 0 && !usdGuarded) log(`${c.name} run ${run}: ${RESERVATION_EXCEEDED} (${over.join('; ')}); counted, not a stop (not USD-guarded)`);
       // The stops (B22): the attempt is stored first, whatever stops the batch.
-      providerErrorsInARow = status === 'provider_error' ? providerErrorsInARow + 1 : 0;
+      // Only outage-type provider errors count (B23); a provider_error from a model-output failure leaves the count
+      // as it is, and any other attempt resets it.
+      providerErrorsInARow = status === 'provider_error' ? (failures.some(isOutage) ? providerErrorsInARow + 1 : providerErrorsInARow) : 0;
       const fatal = failures.map(stopFor).find((x) => x !== null);
       if (status === 'budget_stopped') {
         stop('budget', error ?? 'budget', c.name, run);
