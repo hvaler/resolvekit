@@ -430,6 +430,8 @@ export function createApi(opts: ApiOptions): Api {
     const run = boundRun(caseId, d, sessionId);
     return run ? { kind: 'metermcp', session, run } : { kind: 'metermcp', session };
   };
+  /** The run each agent case last attached as E5 (`<dispute>|<run>`), so the log line says only what changed. */
+  const attachedRuns = new Map<string, string>();
   /**
    * The run record shown as the agent case's E5 (Ruling A14): only the run the case's active binding names
    * (`run`, written by demo:prepare: the owner's act of publishing it as evidence), for this dispute, and only when
@@ -437,8 +439,6 @@ export function createApi(opts: ApiOptions): Api {
    * session is never shown: the case snapshot is shared by every viewer of the case. Only the goal, the steps'
    * reasons and summaries and the outcome; never the person, the approval link or the order.
    */
-  /** The run each agent case last attached as E5 (`<dispute>|<run>`), so the log line says only what changed. */
-  const attachedRuns = new Map<string, string>();
   const boundRun = (caseId: string, d: Dispute, sessionId: string): AgentRunSummary | null => {
     const b = bindingOf(caseId);
     const found = b?.run && b.dispute === d.dispute_id ? opts.agent?.store.get(b.run) : undefined;
