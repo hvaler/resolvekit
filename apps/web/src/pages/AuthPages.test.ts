@@ -7,4 +7,12 @@ describe('safeNext', () => {
     expect(safeNext('/?q=1')).toBe('/?q=1');
     for (const bad of [null, '', 'https://evil.example', '//evil.example', String.raw`/\evil.example`, String.raw`/x\..\//evil.example`, '/\t/evil.example', '/\n/evil.example', '/ /evil.example', '/%2F/evil.example/../..//x', '/./../api/auth/signout', 'javascript:alert(1)', '/api/auth/signout']) expect(safeNext(bad)).toBe('/');
   });
+
+  it('at most 512 characters once percent-encoded, as the server keeps it (longer: the start page)', () => {
+    const fits = `/cases/${'a'.repeat(505)}`;
+    expect(safeNext(fits)).toBe(fits);
+    expect(safeNext(`${fits}a`)).toBe('/');
+    expect(safeNext(`/${'€'.repeat(200)}`)).toBe('/');
+    expect(safeNext(`/${'"'.repeat(200)}`)).toBe('/');
+  });
 });

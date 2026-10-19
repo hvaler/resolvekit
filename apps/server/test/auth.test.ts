@@ -330,6 +330,16 @@ test('paypal: an unsafe `next` is ignored — no other origin, scheme, protocol-
   for (const next of attempts) assert.equal(await paypalSignInFrom(s, { next }, `198.51.100.${ip++}`), '/?signed-in=paypal', JSON.stringify(next));
 });
 
+test('paypal: a `next` short as typed but long once percent-encoded falls back to the start page; the sign-in still completes', async () => {
+  const s = await setup();
+  // 201 characters typed, 1,801 encoded ('€' is %E2%82%AC); 512 quotes are 1,536 encoded.
+  assert.equal(await paypalSignInFrom(s, { next: `/${'€'.repeat(200)}` }, '198.51.100.90'), '/?signed-in=paypal');
+  assert.equal(await paypalSignInFrom(s, { next: `/${'"'.repeat(511)}` }, '198.51.100.91'), '/?signed-in=paypal');
+  // Up to the limit once encoded, it comes back as asked.
+  const fits = `/cases/${'€'.repeat(50)}`;
+  assert.equal(await paypalSignInFrom(s, { next: fits }, '198.51.100.92'), new URL(fits, 'http://x').pathname);
+});
+
 test('paypal: `next` is bound to the pending cookie — changing it in the cookie ends the sign-in', async () => {
   const s = await setup();
   const start = await s.app(req('/api/auth/paypal/start', { body: { next: `/cases/${CASE}` } }));

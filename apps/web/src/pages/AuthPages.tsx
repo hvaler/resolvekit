@@ -8,6 +8,9 @@ import { AuthClient, SIGN_IN_ERRORS, passkeysSupported, type InviteRow, type Inv
 
 const auth = new AuthClient();
 
+/** The longest path kept to come back to, once percent-encoded: the server keeps no more (auth.ts `MAX_NEXT`). */
+const MAX_NEXT = 512;
+
 /** A same-site path to go back to after signing in (never another origin, never a protocol-relative URL). */
 export function safeNext(raw: string | null): string {
   // Browsers read a backslash as a slash and drop tabs and line breaks, so "/\evil" or "/\t/evil" would become
@@ -22,7 +25,8 @@ export function safeNext(raw: string | null): string {
     return '/';
   }
   if (u.origin !== new URL(here).origin || u.pathname.startsWith('//') || u.pathname.startsWith('/api/')) return '/';
-  return u.pathname + u.search + u.hash;
+  const path = u.pathname + u.search + u.hash;
+  return path.length > MAX_NEXT ? '/' : path;
 }
 
 /** Full reload into the app: which disputes are live depends on who is signed in. */

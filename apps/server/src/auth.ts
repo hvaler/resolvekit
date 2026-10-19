@@ -94,14 +94,18 @@ export interface Auth {
 }
 
 const mac = (secret: string, payload: string) => createHmac('sha256', secret).update(`rk-pending|${payload}`).digest('base64url');
-/** The longest `next` kept for after a PayPal sign-in (a longer one falls back to the start page). */
+/**
+ * The longest `next` kept for after a PayPal sign-in, as typed and once percent-encoded (a longer one falls back to the
+ * start page): encoded, it fits the pending cookie (base64url ≤ 700 characters).
+ */
 const MAX_NEXT = 512;
 const DEFAULT_NEXT = '/?signed-in=paypal';
 
 /**
  * A same-site path to go back to after signing in, or null: only a path on this origin (never another origin, a scheme,
  * a protocol-relative `//` or a backslash, which browsers read as a slash), never an API path, never the start page
- * (the default). The same rule as the web app's `safeNext`.
+ * (the default), at most MAX_NEXT characters. The web app's `safeNext` applies the same checks before sending it;
+ * this one is what counts.
  */
 export function safeNextPath(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length > MAX_NEXT || !raw.startsWith('/') || /[\\\u0000-\u001f\u007f\s]/.test(raw)) return null;
@@ -114,7 +118,7 @@ export function safeNextPath(raw: unknown): string | null {
   }
   if (u.origin !== base || u.pathname.startsWith('//') || u.pathname === '/api' || u.pathname.startsWith('/api/')) return null;
   const path = u.pathname + u.search + u.hash;
-  return path === '/' ? null : path;
+  return path === '/' || path.length > MAX_NEXT ? null : path;
 }
 
 /** The return URL's key for a pending sign-in's nonce (43 chars). */
