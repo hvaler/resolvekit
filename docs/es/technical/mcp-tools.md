@@ -32,8 +32,8 @@ de las herramientas son datos de demo deterministas y cada resultado indica `syn
 Guardas: el modo local escucha en `127.0.0.1` y exige el Host `127.0.0.1:<port>` o `localhost:<port>`; cualquier
 Origin presente debe estar en `METERMCP_ALLOWED_ORIGINS`; POST solo acepta JSON; cuerpo HTTP ≤ 256 KiB. Alojado: las
 rutas de administración responden 404 cuando hay `X-Forwarded-For` o el Host es público, y necesitan el token de
-administración. La URL del recibo que MeterMCP devuelve desde `close_session` apunta a
-`/sessions/<id>/receipt.json`, que los clientes MCP no pueden alcanzar en el servicio alojado; usa `get_receipt`.
+administración. `close_session` no da esas rutas a los clientes MCP: su respuesta indica llamar a `get_receipt`
+(`receipt_tool: "get_receipt"`).
 
 ## Herramientas
 
@@ -51,8 +51,7 @@ administración. La URL del recibo que MeterMCP devuelve desde `close_session` a
 Los precios aparecen en el título, la descripción y `_meta["metermcp/price"]` de cada herramienta de pago. Cada
 resultado de pago lleva `limits`, lo que no contiene (por ejemplo «Qualitative findings only: no row-level figures»),
 para que quien llama pueda juzgar si merece la pena comprar otra herramienta. El campo `free` de `price_list` lista
-`price_list`, `get_balance` y `close_session`, pero no `get_receipt`, que también es gratuita (una incoherencia
-conocida del código).
+`price_list`, `get_balance`, `close_session` y `get_receipt`; ninguna se mide ni se cobra nunca.
 
 Las respuestas de las herramientas son resultados de herramientas MCP cuyo contenido de texto es JSON; los errores
 establecen `isError: true` con un código `error`:

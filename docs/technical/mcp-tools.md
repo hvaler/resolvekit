@@ -30,9 +30,8 @@ demo data and each result says `synthetic: true`.
 
 Guards: local mode listens on `127.0.0.1` and requires Host `127.0.0.1:<port>` or `localhost:<port>`; any Origin
 present must be in `METERMCP_ALLOWED_ORIGINS`; POST takes JSON only; HTTP body ≤ 256 KiB. Hosted: admin paths answer
-404 when `X-Forwarded-For` is present or the Host is public, and need the admin token. The receipt URL MeterMCP
-returns from `close_session` points at `/sessions/<id>/receipt.json`, which is not reachable by MCP clients on the
-hosted service; use `get_receipt`.
+404 when `X-Forwarded-For` is present or the Host is public, and need the admin token. `close_session` does not hand
+MCP clients those routes: its answer says to call `get_receipt` (`receipt_tool: "get_receipt"`).
 
 ## Tools
 
@@ -50,7 +49,7 @@ hosted service; use `get_receipt`.
 Prices appear in each paid tool's title, description and `_meta["metermcp/price"]`. Each paid result carries
 `limits`, the things it does not contain (for example «Qualitative findings only: no row-level figures»), so a
 caller can judge whether another tool is worth buying. `price_list`'s `free` field lists `price_list`,
-`get_balance` and `close_session` but not `get_receipt`, which is also free (a known inconsistency in the code).
+`get_balance`, `close_session` and `get_receipt`; none of them is ever metered or charged.
 
 Tool answers are MCP tool results whose text content is JSON; errors set `isError: true` with an `error` code:
 

@@ -160,6 +160,25 @@ test('full lifecycle: approve, four calls (one failed, not charged), close → c
   assert.ok(pdf.includes(s.capture_id!));
 });
 
+test('get_receipt is free (never metered or charged) and price_list says so; close_session points MCP clients to it, not to an admin URL', async () => {
+  const { meter, pp, ledger } = setup();
+  const id = await openSession(meter, pp);
+  body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'ACME' }));
+  const before = { calls: ledger.calls(id).length, charged: ledger.chargedCents(id) };
+  for (let k = 0; k < 3; k++) assert.equal(body(meter.receiptFor('mcp-1')).session.id, id);
+  assert.deepEqual({ calls: ledger.calls(id).length, charged: ledger.chargedCents(id) }, before);
+  assert.deepEqual(body(meter.priceList()).free, ['price_list', 'get_balance', 'close_session', 'get_receipt']);
+
+  const closed = body(await meter.closeFor('mcp-1'));
+  assert.equal(closed.status, 'settled');
+  assert.equal(closed.receipt_tool, 'get_receipt');
+  assert.match(closed.receipt, /^Call get_receipt \(free, no arguments\)/);
+  assert.ok(!JSON.stringify(closed).includes('/sessions/'), JSON.stringify(closed));
+  // After closing, get_receipt still answers with the settled receipt, still free.
+  assert.equal(body(meter.receiptFor('mcp-1')).settlement.status, 'captured');
+  assert.equal(ledger.chargedCents(id), before.charged);
+});
+
 test('a call over the remaining budget is refused before the tool runs, with remaining, price and a top-up hint', async () => {
   const { meter, pp, ledger } = setup({ budget: '1.00' });
   const id = await openSession(meter, pp);

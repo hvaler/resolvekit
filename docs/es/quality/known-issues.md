@@ -39,8 +39,6 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | La vinculación del caso del agente caduca hacia el 07/11/2026 | La vinculación actual del caso del agente (su disputa de sandbox, vinculada el 18/10/2026) caduca hacia el 07/11/2026; antes de la evaluación del jurado hay que volver a vincularlo con `demo:prepare --agent-run <id>`, que imprime una vinculación que nombra la ejecución. Previsto, aún no hecho: **Pendiente** | Notas de estado del propietario del 19/10/2026 (notas privadas de la entrega, no están en este repositorio) |
 | Pasos de cierre sin evidencia | No constan **Stop** en una ejecución real, la CLI `npm run demo-agent` contra el MeterMCP alojado, ni la retirada de `METERMCP_FAIL_FIRST` del servicio alojado (sí constan las dos ejecuciones en `/agent`, Compare, Keep y la vuelta) | AG; evidencia privada 19/10 |
 | Sin tests para el tope de sesiones 503 de MeterMCP ni para `/agent/mcp` en modo local | Rutas sin probar | AG |
-| `get_receipt` aparece de forma incoherente como gratuito | La lista de gratuitas de `price_list` omite `get_receipt`, mientras que otro texto lo llama gratuito | `apps/metermcp/src/tools.ts`, `apps/metermcp/src/app.ts` |
-| La URL del recibo en `close_session` no la pueden usar los clientes MCP | La URL apunta a una ruta de administración (404 en el host público, necesita el token de administración); la vía es `get_receipt` | `apps/metermcp/src/meter.ts`, `app.ts` |
 
 ## Entornos, inicio de sesión y health
 

@@ -706,7 +706,9 @@ export class Meter {
         ? { capture_id: s.capture_id, capture_status: s.capture_status, message: 'PayPal reports the capture PENDING: not a final charge yet and nothing released yet. MeterMCP re-reads it; close again to check now.' }
         : {}),
       ...(s.status === 'capture_declined' ? { capture_id: s.capture_id, capture_status: s.capture_status, captured: '0.00', settlement_error: s.settlement_error } : {}),
-      receipt: `${this.o.publicUrl}/sessions/${s.id}/receipt.json`,
+      // What an MCP client can use: the receipt routes under /sessions are admin-only (404 on the public host).
+      receipt_tool: 'get_receipt',
+      receipt: 'Call get_receipt (free, no arguments) on this MCP session for the receipt: mandate, every call with its request hash, totals and settlement.',
     };
   }
 

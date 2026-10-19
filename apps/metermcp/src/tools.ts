@@ -101,6 +101,6 @@ export function priceList() {
     currency: CURRENCY,
     unit: 'per successful call; failed calls are never charged',
     tools: PAID_TOOLS.map((t) => ({ name: t.name, title: t.title, price: t.price })),
-    free: ['price_list', 'get_balance', 'close_session'],
+    free: ['price_list', 'get_balance', 'close_session', 'get_receipt'],
   };
 }

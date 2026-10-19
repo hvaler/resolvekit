@@ -39,8 +39,6 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | Agent-case binding expires around 07/11/2026 | The agent case's current binding (its sandbox dispute, bound 18/10/2026) ages out around 07/11/2026; before judging it must be rebound with `demo:prepare --agent-run <id>`, which prints a binding that names the run. Planned, not yet done: **Pending** | Owner's status notes of 19/10/2026 (private submission notes, not in this repository) |
 | Closing steps not evidenced | **Stop** on a real run, the CLI `npm run demo-agent` against the hosted MeterMCP, and the removal of `METERMCP_FAIL_FIRST` from the hosted service are not recorded (the two `/agent` runs, Compare, Keep and the return were) | AG; private evidence 19/10 |
 | No tests for MeterMCP's 503 session cap or local-mode `/agent/mcp` | Untested paths | AG |
-| `get_receipt` listed inconsistently as free | `price_list`'s free list omits `get_receipt` while other text calls it free | `apps/metermcp/src/tools.ts`, `apps/metermcp/src/app.ts` |
-| Receipt URL in `close_session` is unusable by MCP clients | The URL points at an admin route (404 on the public host, needs the admin token); `get_receipt` is the way | `apps/metermcp/src/meter.ts`, `app.ts` |
 
 ## Environments, sign-in and health
 
