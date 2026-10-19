@@ -4,7 +4,7 @@ A held-out set prepared by a separate reviewer: 12 cases in `cases.ts` (`HELD_OU
 in contexts apart from the builder of the development set. It is the same model and the same machine as the builder,
 in a separate context, so this is separation, not absolute independence.
 
-Freeze commit: (recorded after the freeze)
+Freeze commit: `6196848c063655c12ec00cd8b90bfe07e271be00` (cases, labels, attack goals; the scorer, configuration, prompt, analyst code and batch code are frozen with it, see FROZEN_PATHS in evals/runs.ts)
 
 ## Who prepared it
 
