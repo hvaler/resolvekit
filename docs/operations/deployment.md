@@ -82,7 +82,8 @@ missing or not https; `PAYPAL_IDENTITY_CLIENT_ID` equals `PAYPAL_CLIENT_ID`; `PA
 webhook id or comes without a valid `PAYPAL_WEBHOOK_KEY`; `RESOLVEKIT_OPS_TOKEN` is not 32+ URL-safe characters;
 `BINDINGS_JSON` (or the bindings file) is invalid; `accounts.json` or `sellers.json` is unreadable; the web build is
 missing; on MeterMCP, `METERMCP_ADMIN_TOKEN` is shorter than 32 characters, the public URL is not https,
-`METERMCP_BUDGET` / `METERMCP_MIN_BUDGET` / `METERMCP_RETURN_ORIGINS` are invalid, or the ledger cannot be migrated.
+`METERMCP_BUDGET` / `METERMCP_MIN_BUDGET` / `METERMCP_RETURN_ORIGINS` are invalid (`METERMCP_MIN_BUDGET` above
+`METERMCP_BUDGET` included; the blueprint's 5.00 / 0.50 pass), or the ledger cannot be migrated.
 A missing `METERMCP_ADMIN_TOKEN` on `resolvekit`, a missing `DEMO_CODE` on MeterMCP or a short session secret only log
 a `WARNING` (agent runs stop as `meter_unavailable`; no budget can be created; sign-ins end on every restart).
 
@@ -105,7 +106,8 @@ here (**Pending**). Plan for MeterMCP being down until you roll back or fix the 
 The server's stores on `/var/data` (JSON and JSONL files, see
 [Backup and recovery](backup-and-recovery.md#what-each-service-keeps)) carry no format version. There is no migration
 step: new code reads the existing files. Some files are checked at start (`accounts.json`, `sellers.json`, bindings:
-unreadable stops the start); others are read leniently (an unreadable `intents.json` is treated as empty). Compatibility
+unreadable stops the start); others are read leniently: an unreadable `intents.json`, `analysis-inputs.json`, `recheck-verdicts.json` or
+`reserve-position.json` is moved aside as `<file>.corrupt-<time>`, logged and reported, and the store starts empty. Compatibility
 of an older version with files written by a newer one was not tested (**Pending**).
 
 ### Rolling back

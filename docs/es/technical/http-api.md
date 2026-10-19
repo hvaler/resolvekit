@@ -39,9 +39,9 @@ vinculados son casos de demo y solo viven en el navegador.
 | Método | Ruta | Modo | Autenticación | Respuesta | Errores principales |
 |---|---|---|---|---|---|
 | GET, HEAD | `/healthz` | alojado | ninguna | Comprobación de salud de Render | 405 |
-| GET | `/api/health` | ambos | ninguna (las vinculaciones solo se listan para el espacio de trabajo del vendedor) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}}` | — |
+| GET | `/api/health` | ambos | ninguna (las vinculaciones solo se listan para el espacio de trabajo del vendedor) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`: nombres de los almacenes cuyo archivo no se pudo leer al arrancar, solo cuando hay alguno) | — |
 | GET | `/api/demo` | ambos | ninguna | alojado `{hosted:true, day, resetsAt, caps, reasons}`; local `{hosted:false}` | 405 |
-| GET | `/api/ops/status[?probe=models]` | alojado | Bearer de operaciones | Estado de PayPal, webhook activado/desactivado, cada vinculación verificada con una lectura fresca (puede rotar un caso usado), precalentamiento, topes; con `probe=models`, una llamada mínima por cada modelo configurado | 404, 405, 429 |
+| GET | `/api/ops/status[?probe=models]` | alojado | Bearer de operaciones | Estado de PayPal, webhook activado/desactivado, cada vinculación verificada con una lectura fresca (puede rotar un caso usado), precalentamiento, topes, archivos de almacén ilegibles (`storage`, también en `problems`); con `probe=models`, una llamada mínima por cada modelo configurado | 404, 405, 429 |
 | GET | `/api/ops/agent-run/<run-id>` | alojado | Bearer de operaciones | Registro de la ejecución + recibo, para `demo:prepare --agent-run` | 400 `INVALID_RUN_ID`, 404 |
 | GET | `/api/paypal/notices` | ambos | alojado: solo el vendedor de las disputas | Últimos avisos de webhook verificados (≤ 50) | 405 |
 | POST | `/api/paypal/webhook/<key>` | alojado, con el entorno del webhook | clave + verificación con PayPal | 200 (evento atendido o ignorado) | 404 clave incorrecta, 405, 400 `BAD_TRANSMISSION`/`NOT_AN_EVENT`/`NOT_VERIFIED`, 408, 413, 429, 503 `BUSY`/`VERIFY_UNAVAILABLE` |

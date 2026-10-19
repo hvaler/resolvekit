@@ -30,16 +30,13 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 
 | Issue | Effect | Source |
 |---|---|---|
-| A PENDING authorization is not voided on cancel | Closing a `pending_approval` session while PayPal reports the authorization `PENDING` does not void it (sandbox authorizations expire on their own; nothing is captured) | AG; `apps/metermcp/src/meter.ts` |
 | `budget_exists` blocks while settling | A new budget on the same MCP session is refused while the previous one is `closing`, `settlement_failed` or `capture_pending` | AG; `ledger.ts`, `meter.ts` |
-| `METERMCP_MIN_BUDGET` above `METERMCP_BUDGET` only warns | MeterMCP starts and `open_budget` refuses every cap | AG; `apps/metermcp/src/main.ts` |
 | `PERSON_CAP` resets at UTC midnight | Not at local midnight | AG (by design); `agent/person-caps.ts` |
 | E5 log line on every snapshot build | Noisy log for the agent case | AG; `apps/server/src/app.ts` |
 | Buyer instructions ask for «confirmation of the service» | `demo:prepare` still prints that text for the agent case | AG; `scripts/demo-prepare-lib.ts` |
 | Agent case bound to a scripted-client session | The hosted agent case's binding (18/10) points at a session made by the earlier scripted MCP client, not by the model-driven agent; no binding names a run yet | AG; runtime configuration |
 | Agent-case binding expires around 07/11/2026 | The agent case's current binding (its sandbox dispute, bound 18/10/2026) ages out around 07/11/2026; before judging it must be rebound with `demo:prepare --agent-run <id>`, which prints a binding that names the run. Planned, not yet done: **Pending** | Owner's status notes of 19/10/2026 (private submission notes, not in this repository) |
 | Closing steps not evidenced | **Stop** on a real run, the CLI `npm run demo-agent` against the hosted MeterMCP, and the removal of `METERMCP_FAIL_FIRST` from the hosted service are not recorded (the two `/agent` runs, Compare, Keep and the return were) | AG; private evidence 19/10 |
-| No tests for MeterMCP's 503 session cap or local-mode `/agent/mcp` | Untested paths | AG |
 | `get_receipt` listed inconsistently as free | `price_list`'s free list omits `get_receipt` while other text calls it free | `apps/metermcp/src/tools.ts`, `apps/metermcp/src/app.ts` |
 | Receipt URL in `close_session` is unusable by MCP clients | The URL points at an admin route (404 on the public host, needs the admin token); `get_receipt` is the way | `apps/metermcp/src/meter.ts`, `app.ts` |
 
@@ -67,12 +64,9 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 |---|---|---|
 | Auto-deploy still `commit` for both services | Deploy order MeterMCP → ResolveKit is not guaranteed on a push; the follow-up recommends turning it off for `resolvekit` | AG; `render.yaml` |
 | Standard reserve empty | New sends on the standard case are **Pending** until the reserve is refilled (planned 25–30/11) | private evidence 19/10 |
-| Reserve position is in memory | After a restart the case walks past used entries again, one warm-up analysis per step, unless `BINDINGS_JSON` is trimmed | `app.ts` (see [Runbook](../operations/runbook.md#dispute-rotation-and-the-reserve)) |
-| Unreadable `intents.json` treated as empty | Open intents and the per-dispute "sent" memory are lost and overwritten on the next write (PayPal's fresh read still guards sends) | `apps/server/src/intents.ts` |
 | No backup, export or account deletion | See [Backup and recovery](../operations/backup-and-recovery.md), [Retention and deletion](../operations/retention-and-deletion.md) | no backup code in the repository |
-| Stores without expiry | Analysis cache, usage log, input pins, send log and MeterMCP ledger grow without limit on 1 GB disks | `packages/analyst/src/cache.ts`, `apps/server/src/main.ts`, `intents.ts`, `apps/metermcp/src/ledger.ts` |
-| `.env.example` and `render.yaml` gaps | Many hosted variables are missing from `.env.example`; `render.yaml` omits `DAILY_UPLOADS`, `RESOLVEKIT_PUBLIC_URL`, `METERMCP_PUBLIC_URL` and others (defaults apply). See [Configuration](../technical/configuration.md) | `.env.example`, `render.yaml` |
-| Code comment drift | `hosted.ts` header names `RENDER_EXTERNAL_HOSTNAME`, image-only uploads and one proxy hop; `metermcp/src/app.ts` admin list omits `reconcile`; `packages/paypal/src/webhooks.ts` says postback is what PayPal recommends (PayPal calls self-verification preferred) | code comments in the named files |
+| Audit and money records never expire | The send log (`audit-events-sends.jsonl`) and the MeterMCP ledger grow without limit on 1 GB disks (**by design**: they are the audit and money records; the analysis cache and the usage log are bounded) | `intents.ts`, `apps/metermcp/src/ledger.ts` |
+| A corrupt upload record is swept | An upload directory whose `record.json` cannot be read is removed by the hourly sweep as a leftover (its files go too); not preserved like the other stores. Durable writes make this unlikely | `uploads/store.ts` (`readRecord`, `sweepDisk`) |
 
 ## Tests and evaluations
 

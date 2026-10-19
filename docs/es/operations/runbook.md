@@ -58,7 +58,7 @@ No hay alertas en el código. Lo que existe:
 |---|---|---|
 | Memoria | Métricas del servicio en Render (512 MB por instancia) | La ruta de imagen/PDF/OCR es la pesada. Solo se ejecuta un trabajo de imagen o PDF a la vez en todo el servidor; el proceso hijo de PDF tiene un heap limitado a 160 MB y, en Linux, se mata por encima de 200 MiB de RSS; el worker de OCR se detiene tras 60 s de inactividad y nunca está residente a la vez que un hijo de PDF. Observado antes: ~250 MB residentes después de leer una imagen de 8 MP, pico de ~395 MB de 512 (seguimiento P1, 17/10/2026, `docs/superpowers/plans/2026-10-17-merchant-evidence-phase1-followups.md`). **Memoria con un PDF de 5 páginas en Render: Pendiente.** Si la memoria crece, los seguimientos sugieren probar `MALLOC_ARENA_MAX=2` (no probado) |
 | CPU | Métricas del servicio en Render (0.5 CPU) | Las miniaturas de PDF tienen 3 s cada una, los renders de página 20 s, una sesión de PDF 90 s en total; con 0.5 CPU, los PDF reales pueden alcanzar el plazo de las miniaturas (seguimiento, no medido) |
-| Almacenamiento | Uso de disco en Render (1 GB cada uno) | Las subidas tienen un tope de 300 MiB en total (`507 STORAGE_FULL` por encima). La caché de análisis, el log de uso del analista, los pins de entrada, el log de auditoría de envíos y el ledger de MeterMCP **no caducan en el código** y crecen; nada avisa del uso de disco |
+| Almacenamiento | Uso de disco en Render (1 GB cada uno) | Las subidas tienen un tope de 300 MiB en total (`507 STORAGE_FULL` por encima). La caché de análisis (sin usar 30 días, 100 MiB) y el log de uso del analista (90 días, 10 MiB) se barren al arrancar y cada hora (`ANALYSIS_CACHE_MAX_*`, `ANALYST_USAGE_MAX_*`). El log de auditoría de envíos y el ledger de MeterMCP son registros de auditoría y de dinero y **no caducan nunca**; crecen, y nada avisa del uso de disco |
 | Proveedores | Líneas de log de ResolveKit `analyst call · <stage> · <provider>/<model> · in … out … thinking … · <ms> ms` y `analyst fallback · <why>`; `<data>/analyst-usage.jsonl` (solo recuentos de tokens y tiempos); líneas de modelos de `demo:check` | El nivel gratuito de Groq responde `429` cuando se agota su cuota (observado en las evaluaciones); el analista pasa entonces al respaldo, el agente elige su proveedor con la primera respuesta y lo mantiene |
 | PayPal | Líneas de `demo:check`; el log al arrancar (`… → <dispute> · capture …`, resultados de `checkBindings`); líneas del webhook | `PayPal unconfigured`, vinculaciones que no están `verified` |
 | Ejecuciones del agente | Líneas de log `agent runs · reconcile failed`, `agent run <id>: not saved …`, `agent runs · sweep · …` | Las ejecuciones con liquidación `open`, `capture_pending`, `failed` o `unverified` se reintentan cada 5 min |
@@ -105,7 +105,7 @@ Líneas de log útiles (de ResolveKit salvo que se indique). Los logs nunca llev
 | **Reconciliación y barrido del agente** | Cada 5 min | Se escriben los registros no guardados; las ejecuciones cuya liquidación es `open`, `capture_pending`, `failed` o `unverified` se cierran o se reconcilian y su recibo se vuelve a leer; las ejecuciones de más de 30 días se borran salvo que se conserven, estén sin liquidar, sin guardar o vinculadas a un caso |
 | **Barrido de MeterMCP** | Cada 30 s | Sesiones inactivas cerradas (`METERMCP_IDLE_MINUTES`, 15) y liquidadas; las capturas `capture_pending` se releen hasta `COMPLETED` (→ `settled`) o `DECLINED`/`FAILED` (→ `capture_declined`); se liberan los transportes MCP inactivos. Las sesiones `settlement_failed` se reintentan al cerrar con el mismo `PayPal-Request-Id`. **`capture_pending` no se observó en el sandbox: Pendiente** |
 | **Trabajos de subidas de PDF** (miniaturas, renders, OCR) | En segundo plano después de que responda la ruta de subida, una subida a la vez en todo el servidor | Un trabajo cortado por un reinicio se marca como fallido con *The server restarted while reading this PDF. Discard it and upload it again.* y se descartan sus archivos |
-| **Barrido de subidas** | Al arrancar y cada hora | Las subidas pendientes/en revisión de más de 24 h se descartan (el registro se conserva, los archivos y el texto desaparecen); se eliminan los restos de escrituras interrumpidas (`*.tmp`, directorios a los que nada hace referencia) |
+| **Barrido de subidas** | Al arrancar y cada hora | Las subidas pendientes/en revisión de más de 24 h se descartan (el registro se conserva, los archivos y el texto desaparecen); se eliminan los restos de escrituras interrumpidas (`*.tmp`, directorios a los que nada hace referencia). El mismo barrido acota la caché de análisis y el log de uso del analista (líneas de log `analysis cache · sweep …`, `analyst usage log · sweep …`, solo recuentos) |
 | **Envíos de evidencia** | A petición | Un envío cortado por un reinicio (`sending`) vuelve como `failed` (*the server restarted during the send*) y se puede reintentar durante 30 min con el mismo intent y el mismo `PayPal-Request-Id`; la ruta de evidencia lee primero PayPal, y rechaza si ya hay evidencia del vendedor |
 | **Análisis de precalentamiento** | Después del arranque, de un cambio de vinculación o de una rotación | Cada caso vinculado se analiza una vez si sus documentos no tienen análisis guardado (ejecuciones del sistema, mismo límite horario y mismo tope diario) |
 | **Vigilancia del archivo de vinculaciones** | Cada 30 s, solo cuando `BINDINGS_JSON` no está definida | Un archivo no válido se registra y se ignora |
@@ -116,8 +116,8 @@ Con `SIGTERM`/`SIGINT`, ResolveKit primero da a las ejecuciones del agente hasta
 `interrupted` y liquidarse; después vuelca los intents, detiene el barrido de subidas y el worker de OCR, elimina el
 archivo de token local y cierra. MeterMCP detiene su barrido, cierra las sesiones MCP y el ledger. El estado en memoria
 se pierde al reiniciar: pistas de texto de PDF, ids de eventos de webhook recordados (una entrega repetida se vuelve a
-leer, sin daño), los últimos 50 avisos de webhook, retos WebAuthn, ventanas del limitador de frecuencia y la posición en
-la reserva (ver abajo). Sin `RESOLVEKIT_SESSION_SECRET` (32 o más caracteres), cada reinicio cierra la sesión de todo
+leer, sin daño), los últimos 50 avisos de webhook, retos WebAuthn y ventanas del limitador de frecuencia. La posición en
+la reserva y los veredictos de recomprobación se guardan en el disco (ver abajo). Sin `RESOLVEKIT_SESSION_SECRET` (32 o más caracteres), cada reinicio cierra la sesión de todo
 el mundo.
 
 ## Procesos auxiliares y archivos temporales
@@ -126,7 +126,8 @@ el mundo.
 |---|---|
 | Proceso hijo lector de PDF (`pdf-child.ts`, con fork, `--max-old-space-size=160`) | Uno por sesión de PDF. Se mata con `SIGKILL` al pasar su plazo (20 s por página, 3 s por miniatura, 90 s por sesión) y, solo en Linux, por encima de 200 MiB de RSS (leído cada 100 ms). Una caída nunca tumba el servidor; la siguiente sesión arranca un hijo nuevo. **Matar una bomba de descompresión real por RSS en Linux no se ha medido: Pendiente** |
 | Worker de OCR (tesseract.js, datos de idioma locales, sin red) | Se crea bajo demanda, un trabajo a la vez; se detiene tras 60 s de inactividad y antes de que arranque cualquier hijo de PDF; un trabajo que agota su tiempo (45 s, arranque 30 s) lo termina. `closeOcr()` no tiene límite de tiempo propio (problema conocido) |
-| Archivos `*.tmp` | Todos los almacenes escriben tmp + rename. Restos: los elimina el barrido de subidas (subidas), al arrancar (caché de análisis); el `.tmp` de un registro de ejecución se elimina cuando falla su escritura y lo sobrescribe la siguiente escritura |
+| Archivos `*.tmp` | Todos los almacenes escriben de forma duradera: `<file>.<pid>.<random>.tmp`, fsync, rename y después un fsync del directorio en la medida de lo posible (`packages/hosting/src/durable.ts`); una escritura fallida elimina su archivo temporal. Restos de una caída: los elimina el barrido de subidas (subidas), al arrancar (el propio directorio de datos de ResolveKit, la caché de análisis, las ejecuciones del agente) |
+| Archivos `*.corrupt-<time>` | Un archivo de almacén que existe pero no se puede leer al arrancar (`intents.json`, `analysis-inputs.json`, `recheck-verdicts.json`, `reserve-position.json`) se renombra a `<file>.corrupt-<hora UTC>`, se registra como `ERROR …`, se nombra en `/api/health` (`storage`) y lo lista `demo:check` (`storage · …`); el almacén empieza vacío. Revisa el archivo y después devuélvelo a su sitio (con el servicio parado) o bórralo. Si no se puede renombrar, se deja donde está y nunca se escribe encima (para `intents.json`: se rechaza todo envío) |
 | `apps/server/.runtime-token`, `apps/metermcp/.runtime-token` | Solo en modo local: se escriben al arrancar (modo 600) y se eliminan en una parada limpia |
 
 ## Rotación de disputas y reserva
@@ -143,10 +144,14 @@ análisis de precalentamiento. Un intent compuesto para la disputa anterior se r
 reserva vacía no se mueve nada: el caso se queda en su disputa usada y `demo:check` falla con `… is used … and no
 dispute is left in reserve`.
 
-**La posición en la reserva vive en memoria.** Después de un reinicio, el servidor vuelve a empezar por la primera
-entrada de `BINDINGS_JSON`. Las entradas usadas se vuelven a recorrer, un paso por lectura, cada paso con su propio
-análisis de precalentamiento (deducido del código; no observado). Cuando se use una disputa, quítala de
-`BINDINGS_JSON` (esto reinicia el servicio) para que la lista empiece por una nueva.
+**La posición en la reserva se guarda en el disco** (`<data>/reserve-position.json`, `apps/server/src/reserve.ts`): allí
+queda registrada cada disputa que un caso dejó atrás. Al arrancar, y cuando cambia un archivo de vinculaciones, el
+servidor salta esas disputas al principio de la lista del caso en `BINDINGS_JSON` y registra `reserve · case …: … used
+before (reserve-position.json) → …`. `BINDINGS_JSON` sigue siendo la fuente de verdad: solo se salta una disputa que
+sigue en la lista de ese caso, las entradas que ya no coinciden con las vinculaciones se ignoran y la última disputa de la
+lista nunca se salta. Quitar de `BINDINGS_JSON` las disputas usadas sigue siendo ordenado, pero ya no es necesario. Un
+archivo ilegible se conserva como `reserve-position.json.corrupt-<time>` y los casos recorren sus listas como antes
+(Probado en local, `apps/server/test/reserve.test.ts`; aún no observado en el servicio alojado).
 
 **Estado el 19/10/2026 (evidencia privada):** la disputa activa del caso estándar está usada y su reserva está vacía,
 así que los nuevos envíos a ese caso están **Pendientes** hasta que se rellene la reserva (previsto del 25 al 30/11).

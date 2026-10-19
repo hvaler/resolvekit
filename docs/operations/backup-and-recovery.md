@@ -14,16 +14,18 @@ already does to recover from a crash.
 
 | Path | Format, how written | If lost |
 |---|---|---|
-| `accounts.json` | JSON, tmp + rename, whole file | Every workspace, person, passkey and invite is gone: the Owner signs in again with PayPal and re-invites everyone. Unreadable at start: the service does not start |
-| `sellers.json` | JSON | Sellers seen on bound disputes are learnt again on the next PayPal read. Unreadable at start: the service does not start |
-| `intents.json` | JSON `{intents, sentDisputes}`, debounced write (200 ms), synchronous for `sending`; holds the notes text the merchant approved | Open intents are lost (people compose again). The "already sent for this dispute" memory is lost; PayPal's fresh read before every send still refuses when seller evidence exists. **Unreadable at start is treated as empty**, and the next write replaces it |
-| `audit-events.jsonl`, `audit-events-sends.jsonl` | Append-only JSONL (codes, hashes, ids; no document text). The first is compacted above 4 MiB; the sends log is never compacted | The approval and send trail. A torn last line is skipped on read |
-| `analysis-cache/<sha256>.json` | JSON, tmp + rename | Live analyses are recomputed (model calls, within the caps). Golden analyses ship with the code |
-| `analysis-inputs.json` | JSON, tmp + rename | The input a case was analysed with before the seller's evidence went in; without it a case whose evidence is in may need a new analysis |
-| `analyst-usage.jsonl` | Append JSONL, token counts and timings only (best effort) | Usage history only |
-| `uploads/<workspace>/<upload>/…` | `record.json` written last, files tmp + rename | Merchant uploads (sanitised files, records); confirmed evidence can no longer be attached |
-| `agent-runs/<run-id>.json` | JSON per run, tmp + rename | Run records; a case bound to a run can no longer show its run record (E5). The MeterMCP receipt is separate |
-| `daily-caps.json`, `agent-run-caps.json` | `{day, counts}` | Today's counts restart at zero (more quota today) |
+| `accounts.json` | JSON, durable write (tmp, fsync, rename), whole file | Every workspace, person, passkey and invite is gone: the Owner signs in again with PayPal and re-invites everyone. Unreadable at start: the service does not start |
+| `sellers.json` | JSON, durable write | Sellers seen on bound disputes are learnt again on the next PayPal read. Unreadable at start: the service does not start |
+| `intents.json` | JSON `{intents, sentDisputes}`, debounced write (200 ms), synchronous for `sending`; durable write; holds the notes text the merchant approved | Open intents are lost (people compose again). The "already sent for this dispute" memory is lost; PayPal's fresh read before every send still refuses when seller evidence exists. Unreadable at start: moved aside as `intents.json.corrupt-<time>` (never overwritten), logged and reported by `/api/health` and `demo:check`; the store starts empty |
+| `audit-events.jsonl`, `audit-events-sends.jsonl` | Append-only JSONL (codes, hashes, ids; no document text), each line fsynced. The first is compacted above 4 MiB; the sends log is never compacted or expired | The approval and send trail. A torn last line is skipped on read |
+| `analysis-cache/<sha256>.json` | JSON, durable write; bounded (an analysis unused for 30 days goes, 100 MiB in all) | Live analyses are recomputed (model calls, within the caps). Golden analyses ship with the code |
+| `analysis-inputs.json` | JSON, durable write | The input a case was analysed with before the seller's evidence went in; without it a case whose evidence is in may need a new analysis. Unreadable at start: preserved as `.corrupt-<time>` and reported |
+| `recheck-verdicts.json` | JSON, durable write; 2 000 verdicts by analysis key and text hash (no edited text) | Edits re-checked before need a new re-check (one model call each, within the caps). Unreadable at start: preserved as `.corrupt-<time>` and reported |
+| `reserve-position.json` | JSON `{v, used}`, durable write | The disputes each case moved past: without it a case walks its `BINDINGS_JSON` list again from the first, one read and one warm-up analysis per used dispute. Unreadable at start: preserved as `.corrupt-<time>` and reported |
+| `analyst-usage.jsonl` | Append JSONL, token counts and timings only (best effort); bounded (90 days, 10 MiB) | Usage history only |
+| `uploads/<workspace>/<upload>/…` | `record.json` written last, every file a durable write | Merchant uploads (sanitised files, records); confirmed evidence can no longer be attached |
+| `agent-runs/<run-id>.json` | JSON per run, durable write | Run records; a case bound to a run can no longer show its run record (E5). The MeterMCP receipt is separate |
+| `daily-caps.json`, `agent-run-caps.json` | `{day, counts}`, durable write | Today's counts restart at zero (more quota today) |
 | `bindings.json` | JSON, only used when `BINDINGS_JSON` is not set | The bindings, unless they are in `BINDINGS_JSON` |
 
 Outside the disk: `BINDINGS_JSON` and every secret live in Render's environment settings; keep the bindings you paste
@@ -39,8 +41,8 @@ operator's machine, not on Render.
 
 ## Consistent copies
 
-The code writes each JSON file atomically (tmp + rename), so a file copied on its own is either the old or the new
-version, never half. It does **not** keep files consistent with each other: a copy taken while the service runs may
+The code writes each JSON file durably (tmp, fsync, rename: `packages/hosting/src/durable.ts`), so a file copied on its
+own is either the old or the new version, never half. It does **not** keep files consistent with each other: a copy taken while the service runs may
 hold an intent without its audit event, an upload record without the analysis that quotes it, or a run record ahead
 of its MeterMCP receipt.
 
@@ -77,7 +79,7 @@ are gone from ResolveKit's view. A restore was never rehearsed (**Pending**).
 
 | Situation | Behaviour (code) |
 |---|---|
-| Crash mid-write of any JSON store | tmp + rename: the old file survives. Leftover `*.tmp` files are removed at start (analysis cache) or by the hourly upload sweep (uploads) |
+| Crash or power cut mid-write of any JSON store | Durable write: the old file survives, and a write that returned is on the disk. Leftover `*.tmp` files are removed at start (ResolveKit's data dir, analysis cache, agent runs) or by the hourly upload sweep (uploads) |
 | Crash during an evidence send | The send's `sending` state and `send_started` event were on disk before PayPal was called (else `503 AUDIT_UNAVAILABLE`, nothing sent). At start it becomes `failed` (*the server restarted during the send*), retryable for 30 min with the same intent and `PayPal-Request-Id`; PayPal is read first |
 | PayPal accepted, outcome not written | Logged `AUDIT NOT DURABLE`; the read-back from PayPal is the truth |
 | Crash during an agent run | At start the run becomes `interrupted`; an announced call without an answer becomes `uncertain`, never repeated; the session is closed and the receipt re-read (restart recovery in the sandbox: **Pending**) |
@@ -86,7 +88,7 @@ are gone from ResolveKit's view. A restore was never rehearsed (**Pending**).
 | Ledger migration fails | Rolled back in one transaction; MeterMCP does not start |
 | `daily-caps.json` unreadable | Kept as it is (not overwritten); the caps refuse everything (`503 CAPS_UNAVAILABLE`) until it is fixed or removed; it is re-read without a restart |
 | `accounts.json`, `sellers.json`, bindings unreadable | The service does not start (rather than run with no memberships) |
-| `intents.json` unreadable | Treated as empty (a known gap: see [Known issues](../quality/known-issues.md)) |
+| `intents.json`, `analysis-inputs.json`, `recheck-verdicts.json`, `reserve-position.json` unreadable | Moved aside as `<file>.corrupt-<UTC time>`, logged `ERROR …`, named in `/api/health` (`storage`) and in `demo:check` (`storage · …`); the store starts empty and writes a new file. If it cannot be moved it is left in place and never written over (`intents.json`: every send is refused). Sends stay guarded by PayPal's fresh read |
 | An upload archive write fails at rotation | The upload stays `confirmed` but bound to the old dispute (so in no input); its files keep counting toward the 300 MiB; **not retried** (known issue) |
 
 See also [Retention and deletion](retention-and-deletion.md) for what is removed on purpose and when.

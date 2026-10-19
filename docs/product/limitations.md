@@ -76,8 +76,6 @@ Known gaps:
 - The agent case's run record (evidence «From ResolveKit · run …») appears only when the case's binding names the run;
   no binding does yet, and the agent case's binding points at a session made by the earlier scripted client:
   **Pending**.
-- If a session is cancelled while its PayPal authorization is still `PENDING`, MeterMCP does not void that
-  authorization.
 - Per-person agent runs reset at UTC midnight, not 24 hours after the first run.
 - Tool outputs are synthetic; budgets are 0.50–5.00 USD in the sandbox.
 

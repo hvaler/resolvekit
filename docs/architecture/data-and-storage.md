@@ -12,14 +12,16 @@ Code at commit `fbe9621`.
 
 | Path | Format | Content | Written by |
 |---|---|---|---|
-| `analysis-cache/<sha256 key>.json` | JSON, tmp + rename | Live analyses (quotes from the documents, verdicts, draft) | `FileAnalysisStore` (`packages/analyst/src/cache.ts`) |
-| `analyst-usage.jsonl` | append JSONL | Token counts and timings per model call; no prompt or document text | `main.ts` |
-| `analysis-inputs.json` | JSON map case → input | The input a case was analysed with before seller evidence went in (`InputPins`) | `analysis.ts` |
-| `intents.json` | JSON `{intents, sentDisputes}`, tmp + rename | Submission intents, including the approved notes text | `intents.ts` |
-| `audit-events.jsonl` | append JSONL, compacted above 4 MiB | Audit events: codes, hashes, ids, who and when; no document text | `intents.ts` |
-| `audit-events-sends.jsonl` | append JSONL, never compacted | Send events (started, sent, failed) | `intents.ts` |
+| `analysis-cache/<sha256 key>.json` | JSON, durable write; unused 30 days or past 100 MiB swept | Live analyses (quotes from the documents, verdicts, draft) | `FileAnalysisStore` (`packages/analyst/src/cache.ts`) |
+| `analyst-usage.jsonl` | append JSONL; 90 days, 10 MiB | Token counts and timings per model call; no prompt or document text | `usage-log.ts` |
+| `analysis-inputs.json` | JSON map case → input, durable write | The input a case was analysed with before seller evidence went in (`InputPins`) | `analysis.ts` |
+| `recheck-verdicts.json` | JSON `{v, verdicts}`, durable write, 2 000 kept | The verifier's verdicts on edited sentences, by analysis key and SHA-256 of the text (not the text): a re-check survives a restart | `verdicts.ts` |
+| `reserve-position.json` | JSON `{v, used: {case: [dispute ids]}}`, durable write | The disputes each case moved past in its reserve, skipped again at start | `reserve.ts` |
+| `intents.json` | JSON `{intents, sentDisputes}`, durable write | Submission intents, including the approved notes text | `intents.ts` |
+| `audit-events.jsonl` | append JSONL (fsynced), compacted above 4 MiB | Audit events: codes, hashes, ids, who and when; no document text | `intents.ts` |
+| `audit-events-sends.jsonl` | append JSONL (fsynced), never compacted or expired | Send events (started, sent, failed) | `intents.ts` |
 | `uploads/<workspaceId>/<uploadId>/` | `record.json`, `original.bin`, `sanitised.png` or `sanitised.pdf`, `page-<k>.png`, `page-<k>.orig.png`, `thumb-<n>.png` | Merchant uploads; the record is written last | `uploads/store.ts` |
-| `agent-runs/<run-id>.json` | JSON per run, tmp + rename | Agent run record: goal, steps with stated reasons, usage, settlement, receipt hash | `agent/runs.ts` |
+| `agent-runs/<run-id>.json` | JSON per run, durable write | Agent run record: goal, steps with stated reasons, usage, settlement, receipt hash | `agent/runs.ts` |
 | `accounts.json` (hosted) | JSON | Workspaces, people (PayPal payer ids, display names, masked emails), passkey public keys, invite token **hashes** | `accounts.ts` |
 | `sellers.json` (hosted) | JSON | Seller merchant ids last confirmed for the bound disputes | `sellers.ts` |
 | `daily-caps.json` (hosted) | JSON `{day, counts}` | Global daily counters | `packages/hosting` |
@@ -30,7 +32,11 @@ Local only: `apps/server/.runtime-token` (per-launch API token, removed on stop)
 The operator's `demo:prepare` writes `demo-prepare-runs/<run>.json` on the machine it runs on.
 
 Unreadable `accounts.json` or `sellers.json` stops a hosted start (it would otherwise drop memberships). An
-unreadable `daily-caps.json` or a failed save makes capped actions refuse (`CAPS_UNAVAILABLE`, 503).
+unreadable `daily-caps.json` or a failed save makes capped actions refuse (`CAPS_UNAVAILABLE`, 503). An unreadable
+`intents.json`, `analysis-inputs.json`, `recheck-verdicts.json` or `reserve-position.json` is moved aside as
+`<file>.corrupt-<time>` and reported (`/api/health` `storage`, the operator's check); the store starts empty. Durable
+write: temporary file in the same directory, fsync, rename, best-effort fsync of the directory
+(`packages/hosting/src/durable.ts`).
 
 ## MeterMCP data directory
 

@@ -35,10 +35,13 @@ File names never leave the server: PayPal receives `E<n>-…` names; the model s
 | Submission intents (`intents.json`, incl. the approved notes text) | Open: 30 min TTL. Failed send: retryable 30 min. Sent: 24 h. At most 2 000 stored | Expiry, replacement, cancel, invalidation (they leave the store at once; a bounded tombstone of 2 000 keeps the last state for error messages, in memory) |
 | "Already sent for this dispute" marks | With `intents.json` | Not expired in code |
 | Audit events (`audit-events.jsonl`) | 200 per session owner, 2 000 owners; compacted above 4 MiB | Eviction of the oldest per owner |
-| Send audit log (`audit-events-sends.jsonl`) | **Append-only, never evicted or compacted** | Nothing |
+| Send audit log (`audit-events-sends.jsonl`) | **Append-only, never evicted, compacted or expired** (an audit record, by design) | Nothing |
 | Agent run records (`agent-runs/`) | 30 days | Swept every 5 min after 30 days, **unless** kept (**Keep**, owner), unsettled (`open`, `capture_pending`, `failed`, `unverified` with a session), not yet saved, or its capture is bound to a case (active or reserve) |
-| Analysis cache, analyst usage log, input pins | **No expiry in code** | Only an upload delete purges the analyses that quote that upload |
-| Re-check verdicts | 2 000 kept, in memory (lost on restart); an intent keeps the verdicts it was composed with | Oldest dropped; upload delete |
+| Analysis cache (`analysis-cache/`) | An analysis not written or read for 30 days, and 100 MiB in all (least recently used first); `ANALYSIS_CACHE_MAX_DAYS`, `ANALYSIS_CACHE_MAX_MB` | The sweep at start and hourly; an upload delete purges the analyses that quote that upload. Golden analyses ship with the code and are never swept |
+| Analyst usage log (`analyst-usage.jsonl`, token counts and timings only) | 90 days, 10 MiB (oldest lines first); `ANALYST_USAGE_MAX_DAYS`, `ANALYST_USAGE_MAX_MB` | The same sweep |
+| Input pins (`analysis-inputs.json`) | One per case (bounded by the cases) | Replaced as cases are analysed; an upload delete drops the case's pin |
+| Re-check verdicts (`recheck-verdicts.json`: analysis key, SHA-256 of the edited text, verdict and citations) | 2 000 kept, on the disk (a restart keeps them); an intent keeps the verdicts it was composed with | Oldest dropped; upload delete |
+| Reserve position (`reserve-position.json`: dispute ids per case) | Up to 200 per case | Not expired; entries that no longer match the bindings are ignored |
 | Accounts (`accounts.json`: payer ids, display names, masked emails, passkey public keys, invite token hashes) | Not expired | **No deletion.** Revoking a member or invite marks it `revokedAt` and ends its sessions; the record stays. Owners cannot be revoked |
 | Sessions (cookies) | 12 h | Expiry; **Sign out of all devices**; revocation; end of reviewer access |
 | Sellers seen (`sellers.json`) | Not expired | Updated as bindings change |
@@ -49,7 +52,7 @@ File names never leave the server: PayPal receives `E<n>-…` names; the model s
 
 | Data | Kept | Deleted by |
 |---|---|---|
-| Ledger (`metermcp.sqlite`: sessions, calls with request/response hashes, settlements) | **No expiry in code** | Nothing |
+| Ledger (`metermcp.sqlite`: sessions, calls with request/response hashes, settlements) | **Never expired** (the money record, by design) | Nothing |
 | Daily budget count | One UTC day | Replaced each day |
 | MCP transports | 15 min idle | The 30 s sweep closes them (and their payment session) |
 

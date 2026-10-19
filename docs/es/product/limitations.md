@@ -82,7 +82,6 @@ Carencias conocidas:
 - El registro de ejecución del caso de agente (evidencia «From ResolveKit · run …») solo aparece cuando la vinculación
   del caso nombra la ejecución; ninguna vinculación lo hace todavía, y la vinculación del caso de agente apunta a una
   sesión hecha por el cliente con guion (scripted) anterior: **Pendiente**.
-- Si una sesión se cancela mientras su autorización de PayPal sigue en `PENDING`, MeterMCP no anula esa autorización.
 - Las ejecuciones del agente por persona se restablecen a medianoche UTC, no 24 horas después de la primera ejecución.
 - Las salidas de las herramientas son sintéticas; los presupuestos son de 0.50–5.00 USD en el sandbox.
 

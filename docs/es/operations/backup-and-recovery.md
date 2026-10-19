@@ -14,16 +14,18 @@ qué copias son coherentes y qué hace ya el código para recuperarse de una ca�
 
 | Ruta | Formato, cómo se escribe | Si se pierde |
 |---|---|---|
-| `accounts.json` | JSON, tmp + rename, archivo completo | Desaparecen todos los espacios de trabajo, personas, passkeys e invitaciones: el Owner vuelve a iniciar sesión con PayPal y reinvita a todo el mundo. Ilegible al arrancar: el servicio no arranca |
-| `sellers.json` | JSON | Los vendedores vistos en disputas vinculadas se aprenden de nuevo en la siguiente lectura de PayPal. Ilegible al arrancar: el servicio no arranca |
-| `intents.json` | JSON `{intents, sentDisputes}`, escritura diferida (200 ms), síncrona para `sending`; guarda el texto de las notas que aprobó el comerciante | Se pierden los intents abiertos (la gente vuelve a componerlos). Se pierde la memoria de «ya enviado para esta disputa»; la lectura nueva de PayPal antes de cada envío sigue rechazando cuando existe evidencia del vendedor. **Si es ilegible al arrancar se trata como vacío**, y la siguiente escritura lo sustituye |
-| `audit-events.jsonl`, `audit-events-sends.jsonl` | JSONL de solo añadir (códigos, hashes, ids; sin texto de documentos). El primero se compacta por encima de 4 MiB; el log de envíos no se compacta nunca | El rastro de aprobaciones y envíos. Una última línea cortada se omite al leer |
-| `analysis-cache/<sha256>.json` | JSON, tmp + rename | Los análisis en directo se recalculan (llamadas a modelos, dentro de los topes). Los análisis golden vienen con el código |
-| `analysis-inputs.json` | JSON, tmp + rename | La entrada con la que se analizó un caso antes de que entrara la evidencia del vendedor; sin ella, un caso cuya evidencia ya está dentro puede necesitar un análisis nuevo |
-| `analyst-usage.jsonl` | JSONL de añadir, solo recuentos de tokens y tiempos (en la medida de lo posible) | Solo el historial de uso |
-| `uploads/<workspace>/<upload>/…` | `record.json` escrito al final, archivos tmp + rename | Las subidas del comerciante (archivos saneados, registros); la evidencia confirmada ya no se puede adjuntar |
-| `agent-runs/<run-id>.json` | JSON por ejecución, tmp + rename | Registros de ejecución; un caso vinculado a una ejecución ya no puede mostrar su registro de ejecución (E5). El recibo de MeterMCP es aparte |
-| `daily-caps.json`, `agent-run-caps.json` | `{day, counts}` | Los recuentos de hoy vuelven a cero (más cuota hoy) |
+| `accounts.json` | JSON, escritura duradera (tmp, fsync, rename), archivo completo | Desaparecen todos los espacios de trabajo, personas, passkeys e invitaciones: el Owner vuelve a iniciar sesión con PayPal y reinvita a todo el mundo. Ilegible al arrancar: el servicio no arranca |
+| `sellers.json` | JSON, escritura duradera | Los vendedores vistos en disputas vinculadas se aprenden de nuevo en la siguiente lectura de PayPal. Ilegible al arrancar: el servicio no arranca |
+| `intents.json` | JSON `{intents, sentDisputes}`, escritura diferida (200 ms), síncrona para `sending`; escritura duradera; guarda el texto de las notas que aprobó el comerciante | Se pierden los intents abiertos (la gente vuelve a componerlos). Se pierde la memoria de «ya enviado para esta disputa»; la lectura nueva de PayPal antes de cada envío sigue rechazando cuando existe evidencia del vendedor. Ilegible al arrancar: se aparta como `intents.json.corrupt-<time>` (nunca se sobrescribe), se registra y lo informan `/api/health` y `demo:check`; el almacén empieza vacío |
+| `audit-events.jsonl`, `audit-events-sends.jsonl` | JSONL de solo añadir (códigos, hashes, ids; sin texto de documentos), con fsync de cada línea. El primero se compacta por encima de 4 MiB; el log de envíos no se compacta ni caduca nunca | El rastro de aprobaciones y envíos. Una última línea cortada se omite al leer |
+| `analysis-cache/<sha256>.json` | JSON, escritura duradera; acotada (un análisis sin usar durante 30 días se elimina, 100 MiB en total) | Los análisis en directo se recalculan (llamadas a modelos, dentro de los topes). Los análisis golden vienen con el código |
+| `analysis-inputs.json` | JSON, escritura duradera | La entrada con la que se analizó un caso antes de que entrara la evidencia del vendedor; sin ella, un caso cuya evidencia ya está dentro puede necesitar un análisis nuevo. Ilegible al arrancar: se conserva como `.corrupt-<time>` y se informa |
+| `recheck-verdicts.json` | JSON, escritura duradera; 2 000 veredictos por clave de análisis y hash del texto (sin el texto editado) | Las ediciones recomprobadas antes necesitan una recomprobación nueva (una llamada al modelo cada una, dentro de los topes). Ilegible al arrancar: se conserva como `.corrupt-<time>` y se informa |
+| `reserve-position.json` | JSON `{v, used}`, escritura duradera | Las disputas que cada caso dejó atrás: sin él, un caso vuelve a recorrer su lista de `BINDINGS_JSON` desde la primera, una lectura y un análisis de precalentamiento por cada disputa usada. Ilegible al arrancar: se conserva como `.corrupt-<time>` y se informa |
+| `analyst-usage.jsonl` | JSONL de añadir, solo recuentos de tokens y tiempos (en la medida de lo posible); acotado (90 días, 10 MiB) | Solo el historial de uso |
+| `uploads/<workspace>/<upload>/…` | `record.json` escrito al final, cada archivo con escritura duradera | Las subidas del comerciante (archivos saneados, registros); la evidencia confirmada ya no se puede adjuntar |
+| `agent-runs/<run-id>.json` | JSON por ejecución, escritura duradera | Registros de ejecución; un caso vinculado a una ejecución ya no puede mostrar su registro de ejecución (E5). El recibo de MeterMCP es aparte |
+| `daily-caps.json`, `agent-run-caps.json` | `{day, counts}`, escritura duradera | Los recuentos de hoy vuelven a cero (más cuota hoy) |
 | `bindings.json` | JSON, solo se usa cuando `BINDINGS_JSON` no está definida | Las vinculaciones, salvo que estén en `BINDINGS_JSON` |
 
 Fuera del disco: `BINDINGS_JSON` y todos los secretos viven en la configuración de entorno de Render; guarda las
@@ -39,8 +41,8 @@ escribe en la máquina del operador, no en Render.
 
 ## Copias coherentes
 
-El código escribe cada archivo JSON de forma atómica (tmp + rename), así que un archivo copiado por sí solo es la
-versión antigua o la nueva, nunca una a medias. **No** mantiene los archivos coherentes entre sí: una copia tomada
+El código escribe cada archivo JSON de forma duradera (tmp, fsync, rename: `packages/hosting/src/durable.ts`), así que
+un archivo copiado por sí solo es la versión antigua o la nueva, nunca una a medias. **No** mantiene los archivos coherentes entre sí: una copia tomada
 mientras el servicio funciona puede contener un intent sin su evento de auditoría, un registro de subida sin el
 análisis que la cita, o un registro de ejecución por delante de su recibo de MeterMCP.
 
@@ -80,7 +82,7 @@ de MeterMCP posteriores a la copia desaparecen de la vista de ResolveKit. Nunca 
 
 | Situación | Comportamiento (código) |
 |---|---|
-| Caída a mitad de la escritura de cualquier almacén JSON | tmp + rename: el archivo antiguo sobrevive. Los `*.tmp` sobrantes se eliminan al arrancar (caché de análisis) o con el barrido horario de subidas (subidas) |
+| Caída o corte de corriente a mitad de la escritura de cualquier almacén JSON | Escritura duradera: el archivo antiguo sobrevive, y una escritura que terminó está en el disco. Los `*.tmp` sobrantes se eliminan al arrancar (directorio de datos de ResolveKit, caché de análisis, ejecuciones del agente) o con el barrido horario de subidas (subidas) |
 | Caída durante un envío de evidencia | El estado `sending` del envío y el evento `send_started` estaban en disco antes de llamar a PayPal (si no, `503 AUDIT_UNAVAILABLE`, no se envía nada). Al arrancar pasa a `failed` (*the server restarted during the send*), reintentable durante 30 min con el mismo intent y el mismo `PayPal-Request-Id`; primero se lee PayPal |
 | PayPal aceptó, el resultado no se escribió | Se registra `AUDIT NOT DURABLE`; la relectura de PayPal es la verdad |
 | Caída durante una ejecución del agente | Al arrancar la ejecución pasa a `interrupted`; una llamada anunciada sin respuesta pasa a `uncertain` y nunca se repite; la sesión se cierra y el recibo se vuelve a leer (recuperación tras reinicio en el sandbox: **Pendiente**) |
@@ -89,7 +91,7 @@ de MeterMCP posteriores a la copia desaparecen de la vista de ResolveKit. Nunca 
 | Falla la migración del ledger | Se revierte en una transacción; MeterMCP no arranca |
 | `daily-caps.json` ilegible | Se deja tal cual (no se sobrescribe); los topes lo rechazan todo (`503 CAPS_UNAVAILABLE`) hasta que se arregle o se elimine; se vuelve a leer sin reiniciar |
 | `accounts.json`, `sellers.json`, vinculaciones ilegibles | El servicio no arranca (en lugar de funcionar sin membresías) |
-| `intents.json` ilegible | Se trata como vacío (una carencia conocida: consulta [Problemas conocidos](../quality/known-issues.md)) |
+| `intents.json`, `analysis-inputs.json`, `recheck-verdicts.json`, `reserve-position.json` ilegibles | Se apartan como `<file>.corrupt-<hora UTC>`, se registra `ERROR …`, se nombran en `/api/health` (`storage`) y en `demo:check` (`storage · …`); el almacén empieza vacío y escribe un archivo nuevo. Si no se puede apartar, se deja donde está y nunca se escribe encima (`intents.json`: se rechaza todo envío). Los envíos siguen protegidos por la lectura nueva de PayPal |
 | Falla la escritura del archivado de una subida en la rotación | La subida sigue `confirmed` pero vinculada a la disputa antigua (así que no está en ninguna entrada); sus archivos siguen contando para los 300 MiB; **no se reintenta** (problema conocido) |
 
 Consulta también [Retención y borrado](retention-and-deletion.md) para saber qué se elimina a propósito y cuándo.

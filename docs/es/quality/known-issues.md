@@ -30,16 +30,13 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 
 | Problema | Efecto | Fuente |
 |---|---|---|
-| Una autorización PENDING no se anula al cancelar | Cerrar una sesión `pending_approval` mientras PayPal informa la autorización como `PENDING` no la anula (las autorizaciones del sandbox caducan solas; no se captura nada) | AG; `apps/metermcp/src/meter.ts` |
 | `budget_exists` bloquea mientras se liquida | Se rechaza un presupuesto nuevo en la misma sesión MCP mientras el anterior está `closing`, `settlement_failed` o `capture_pending` | AG; `ledger.ts`, `meter.ts` |
-| `METERMCP_MIN_BUDGET` por encima de `METERMCP_BUDGET` solo avisa | MeterMCP arranca y `open_budget` rechaza cualquier tope | AG; `apps/metermcp/src/main.ts` |
 | `PERSON_CAP` se reinicia a medianoche UTC | No a medianoche local | AG (por diseño); `agent/person-caps.ts` |
 | Línea de log E5 en cada construcción de snapshot | Log ruidoso para el caso del agente | AG; `apps/server/src/app.ts` |
 | Las instrucciones del comprador piden «confirmation of the service» | `demo:prepare` sigue imprimiendo ese texto para el caso del agente | AG; `scripts/demo-prepare-lib.ts` |
 | Caso del agente vinculado a una sesión del cliente con guion (scripted) | La vinculación del caso del agente alojado (18/10) apunta a una sesión creada por el anterior cliente MCP con guion, no por el agente dirigido por el modelo; ninguna vinculación nombra todavía una ejecución | AG; configuración en tiempo de ejecución |
 | La vinculación del caso del agente caduca hacia el 07/11/2026 | La vinculación actual del caso del agente (su disputa de sandbox, vinculada el 18/10/2026) caduca hacia el 07/11/2026; antes de la evaluación del jurado hay que volver a vincularlo con `demo:prepare --agent-run <id>`, que imprime una vinculación que nombra la ejecución. Previsto, aún no hecho: **Pendiente** | Notas de estado del propietario del 19/10/2026 (notas privadas de la entrega, no están en este repositorio) |
 | Pasos de cierre sin evidencia | No constan **Stop** en una ejecución real, la CLI `npm run demo-agent` contra el MeterMCP alojado, ni la retirada de `METERMCP_FAIL_FIRST` del servicio alojado (sí constan las dos ejecuciones en `/agent`, Compare, Keep y la vuelta) | AG; evidencia privada 19/10 |
-| Sin tests para el tope de sesiones 503 de MeterMCP ni para `/agent/mcp` en modo local | Rutas sin probar | AG |
 | `get_receipt` aparece de forma incoherente como gratuito | La lista de gratuitas de `price_list` omite `get_receipt`, mientras que otro texto lo llama gratuito | `apps/metermcp/src/tools.ts`, `apps/metermcp/src/app.ts` |
 | La URL del recibo en `close_session` no la pueden usar los clientes MCP | La URL apunta a una ruta de administración (404 en el host público, necesita el token de administración); la vía es `get_receipt` | `apps/metermcp/src/meter.ts`, `app.ts` |
 
@@ -67,12 +64,9 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 |---|---|---|
 | Auto-deploy sigue en `commit` para ambos servicios | El orden de despliegue MeterMCP → ResolveKit no está garantizado en un push; el seguimiento recomienda desactivarlo para `resolvekit` | AG; `render.yaml` |
 | Reserva estándar vacía | Los nuevos envíos en el caso estándar están **Pendientes** hasta que se rellene la reserva (previsto del 25 al 30/11) | evidencia privada 19/10 |
-| La posición en la reserva está en memoria | Después de un reinicio el caso vuelve a recorrer las entradas usadas, con un análisis de precalentamiento por paso, salvo que se recorte `BINDINGS_JSON` | `app.ts` (consulta [Runbook](../operations/runbook.md#rotación-de-disputas-y-reserva)) |
-| `intents.json` ilegible tratado como vacío | Los intents abiertos y la memoria de «enviado» por disputa se pierden y se sobrescriben en la siguiente escritura (la lectura nueva de PayPal sigue protegiendo los envíos) | `apps/server/src/intents.ts` |
 | Sin copias de seguridad, exportación ni borrado de cuentas | Consulta [Copias de seguridad y recuperación](../operations/backup-and-recovery.md), [Retención y borrado](../operations/retention-and-deletion.md) | no hay código de copias de seguridad en el repositorio |
-| Almacenes sin caducidad | La caché de análisis, el log de uso, los pins de entrada, el log de envíos y el ledger de MeterMCP crecen sin límite en discos de 1 GB | `packages/analyst/src/cache.ts`, `apps/server/src/main.ts`, `intents.ts`, `apps/metermcp/src/ledger.ts` |
-| Carencias de `.env.example` y `render.yaml` | Faltan muchas variables del modo alojado en `.env.example`; `render.yaml` omite `DAILY_UPLOADS`, `RESOLVEKIT_PUBLIC_URL`, `METERMCP_PUBLIC_URL` y otras (se aplican los valores por defecto). Consulta [Configuración](../technical/configuration.md) | `.env.example`, `render.yaml` |
-| Comentarios del código desfasados | La cabecera de `hosted.ts` nombra `RENDER_EXTERNAL_HOSTNAME`, subidas solo de imagen y un único salto de proxy; la lista de administración de `metermcp/src/app.ts` omite `reconcile`; `packages/paypal/src/webhooks.ts` dice que PayPal recomienda el postback (PayPal llama preferida a la autoverificación) | comentarios del código en los archivos citados |
+| Los registros de auditoría y de dinero no caducan nunca | El log de envíos (`audit-events-sends.jsonl`) y el ledger de MeterMCP crecen sin límite en discos de 1 GB (**por diseño**: son los registros de auditoría y de dinero; la caché de análisis y el log de uso están acotados) | `intents.ts`, `apps/metermcp/src/ledger.ts` |
+| Un registro de subida corrupto se barre | Un directorio de subida cuyo `record.json` no se puede leer lo elimina el barrido horario como resto (sus archivos también); no se conserva como en los demás almacenes. Las escrituras duraderas lo hacen improbable | `uploads/store.ts` (`readRecord`, `sweepDisk`) |
 
 ## Pruebas y evaluaciones
 

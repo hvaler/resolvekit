@@ -54,7 +54,7 @@ Only *supported* sentences can be sent. Rejected ones stay visible, struck throu
 **Re-check of an edited sentence.** `POST /api/cases/:id/analysis/verify {text}` (1–600 characters, no line
 breaks or control characters) sends the sentence, delimited as untrusted data, to `recheck` (3 000 output tokens):
 the model re-chooses citations from the extracted facts, then the same deterministic checks apply. Verdicts are
-stored per (analysis key, text), 2 000 kept, in memory of the server. The re-check prompt is not part of
+stored per (analysis key, text hash), 2 000 kept, on the data dir (`recheck-verdicts.json`, so a restart keeps them). The re-check prompt is not part of
 `PROMPT_VERSION`; `rk-recheck-2026-10-09.2` identifies it in logs and evals.
 
 ## Prompts and versions
@@ -76,7 +76,7 @@ upload titles («Uploaded screenshot», «Uploaded PDF», «Pasted text»), neve
 | Item | Behaviour |
 |---|---|
 | Key | `sha256` of the canonical JSON of `{input, model, promptVersion}`; the same in Node and in the browser (Web Crypto) |
-| Live cache | `<data>/analysis-cache/<key>.json`, no expiry; purged when an upload it quoted is deleted |
+| Live cache | `<data>/analysis-cache/<key>.json`; an analysis unused for 30 days goes, 100 MiB in all (least recently used first; `ANALYSIS_CACHE_MAX_*`); purged when an upload it quoted is deleted |
 | Golden analyses | `packages/analyst/golden/<case>.json`, made by `gemini-3.8-flash` and committed with model id, date, prompt version and token usage; used only when the key matches the documents on screen |
 | Label | The analysis bar says which: «Analysis by gemini-3.8-flash · <date> · cached» or «… · live» (prompt version and tokens on hover) |
 | Bound cases | Their documents include live PayPal and MeterMCP data, so golden analyses do not match; the hosted server **warms up** each bound case once after boot or a bindings change (system runs, same limits and caps) |

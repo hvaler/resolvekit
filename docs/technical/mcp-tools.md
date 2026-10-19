@@ -82,7 +82,8 @@ Tool answers are MCP tool results whose text content is JSON; errors set `isErro
    observed, not documented. On the return page or a `get_balance` poll, MeterMCP re-reads the order, authorizes
    it and opens the session **only if** PayPal reports exactly one `CREATED` authorization for exactly the cap, for
    this session's order, with a future expiry (fail closed). `INSTRUMENT_DECLINED` or `DENIED` end the session;
-   `PENDING` waits; an authorization that arrives late is voided.
+   `PENDING` waits; an authorization that arrives late is voided, and so is one still `PENDING` when the session is
+   closed before it opened.
 3. Each paid call reserves its price in one SQLite transaction before the tool runs; concurrent calls cannot both
    take the last of the budget. Success is charged (`OK`), failure released (`FAILED`). Each call records the
    `sha256` of canonical `{session, n, tool, args}` and of the response.
@@ -122,7 +123,6 @@ tool fails, is never charged and is marked injected in the result and the receip
 | Partial capture with `final_capture`, release of the remainder | Implemented · Tested locally · Verified in sandbox (09/10, 19/10). That the remainder is released is observed in sandbox, not quoted from PayPal |
 | Void of an unused authorization | Implemented · Tested locally · Verified in sandbox (08/10) |
 | `capture_pending` / `capture_declined` | Implemented · Tested locally; not observed in sandbox: Pending |
-| Admin routes, `/agent/mcp` | Implemented · Tested locally · Deployed (local-mode `/agent/mcp` untested) |
+| Admin routes, `/agent/mcp` | Implemented · Tested locally · Deployed |
 
-Known gaps: a `PENDING` authorization is not voided when a `pending_approval` session is cancelled; `budget_exists`
-also blocks while a previous budget is closing, failed or pending. See [known issues](../quality/known-issues.md).
+Known gaps: `budget_exists` also blocks while a previous budget is closing, failed or pending. See [known issues](../quality/known-issues.md).
