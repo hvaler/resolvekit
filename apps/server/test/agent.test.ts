@@ -136,14 +136,15 @@ function runStore() {
   return { store, rec, other };
 }
 
-async function readWith(binding: string | Partial<Record<'dispute' | 'capture' | 'run' | 'session', string>>, store: RunStore) {
+async function readWith(binding: string | Partial<Record<'dispute' | 'capture' | 'run' | 'session', string>>, store: RunStore, reads = 1) {
   const { meter } = fakeMeter();
   const lines: string[] = [];
-  const pp = fakePayPal([{ status: 200, body: waitingDispute() }]);
+  const pp = fakePayPal(Array.from({ length: reads }, () => ({ status: 200, body: waitingDispute() })));
   const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
   const app = createApp({ paypal, env: 'sandbox', bindings: { [CASE]: binding as never }, port: 8787, token: TOKEN, allowedOrigins: DEFAULT_ORIGINS, meterMcp: meter, agent: { store } as unknown as AgentService, log: (l) => lines.push(l) });
-  const s = await (await app(get(`/api/disputes/${CASE}`))).json();
-  return { s, lines };
+  let s;
+  for (let k = 0; k < reads; k++) s = await (await app(get(`/api/disputes/${CASE}`))).json();
+  return { s, lines, pp };
 }
 
 test('Ruling A14: the run record goes with the case only when the binding names that run: a summary, no person, approval link or order', async () => {
@@ -165,6 +166,14 @@ test('Ruling A14: the run record goes with the case only when the binding names 
   assert.deepEqual(lines.filter((l) => l.includes('attached (E5)')), [`agent case ${CASE}: run record ${rec.id} attached (E5)`]);
   // Without the binding's session the named run still matches by the receipt's session.
   assert.equal((await readWith({ dispute: REAL, capture: CAPTURE, run: rec.id }, store)).s.agentReceipt.run.runId, rec.id);
+});
+
+test('the E5 run record is logged once when it is attached, not on every read of the case', async () => {
+  const { store, rec } = runStore();
+  const { s, lines, pp } = await readWith({ dispute: REAL, capture: CAPTURE, run: rec.id, session: SID }, store, 3);
+  assert.equal(pp.apiCalls().length, 3);
+  assert.equal(s.agentReceipt.run.runId, rec.id);
+  assert.deepEqual(lines.filter((l) => l.includes('attached (E5)')), [`agent case ${CASE}: run record ${rec.id} attached (E5)`]);
 });
 
 test('Ruling A14: a run that holds the session but is not named by the binding, or named with another session, is never shown', async () => {

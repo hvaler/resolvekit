@@ -33,7 +33,6 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | `budget_exists` blocks while settling | A new budget on the same MCP session is refused while the previous one is `closing`, `settlement_failed` or `capture_pending` | AG; `ledger.ts`, `meter.ts` |
 | `METERMCP_MIN_BUDGET` above `METERMCP_BUDGET` only warns | MeterMCP starts and `open_budget` refuses every cap | AG; `apps/metermcp/src/main.ts` |
 | `PERSON_CAP` resets at UTC midnight | Not at local midnight | AG (by design); `agent/person-caps.ts` |
-| E5 log line on every snapshot build | Noisy log for the agent case | AG; `apps/server/src/app.ts` |
 | Agent case bound to a scripted-client session | The hosted agent case's binding (18/10) points at a session made by the earlier scripted MCP client, not by the model-driven agent; no binding names a run yet | AG; runtime configuration |
 | Agent-case binding expires around 07/11/2026 | The agent case's current binding (its sandbox dispute, bound 18/10/2026) ages out around 07/11/2026; before judging it must be rebound with `demo:prepare --agent-run <id>`, which prints a binding that names the run. Planned, not yet done: **Pending** | Owner's status notes of 19/10/2026 (private submission notes, not in this repository) |
 | Closing steps not evidenced | **Stop** on a real run, the CLI `npm run demo-agent` against the hosted MeterMCP, and the removal of `METERMCP_FAIL_FIRST` from the hosted service are not recorded (the two `/agent` runs, Compare, Keep and the return were) | AG; private evidence 19/10 |

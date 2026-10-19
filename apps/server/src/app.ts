@@ -437,12 +437,20 @@ export function createApi(opts: ApiOptions): Api {
    * session is never shown: the case snapshot is shared by every viewer of the case. Only the goal, the steps'
    * reasons and summaries and the outcome; never the person, the approval link or the order.
    */
+  /** The run each agent case last attached as E5 (`<dispute>|<run>`), so the log line says only what changed. */
+  const attachedRuns = new Map<string, string>();
   const boundRun = (caseId: string, d: Dispute, sessionId: string): AgentRunSummary | null => {
     const b = bindingOf(caseId);
-    if (!b?.run || b.dispute !== d.dispute_id) return null;
-    const r = opts.agent?.store.get(b.run);
-    if (!r || r.sessionId !== sessionId || (b.session && b.session !== r.sessionId)) return null;
-    log(`agent case ${caseId}: run record ${r.id} attached (E5)`);
+    const found = b?.run && b.dispute === d.dispute_id ? opts.agent?.store.get(b.run) : undefined;
+    const r = found && found.sessionId === sessionId && (!b?.session || b.session === found.sessionId) ? found : null;
+    // Every snapshot build asks: logged when what is attached changes, not on each read of the case.
+    const attached = r ? `${d.dispute_id}|${r.id}` : null;
+    if (attached !== (attachedRuns.get(caseId) ?? null)) {
+      if (attached) attachedRuns.set(caseId, attached);
+      else attachedRuns.delete(caseId);
+      if (r) log(`agent case ${caseId}: run record ${r.id} attached (E5)`);
+    }
+    if (!r) return null;
     const steps = r.steps.map((x) => ({ n: x.n, tool: x.tool, state: x.state, reason: x.reason, summary: x.summary }));
     return { runId: r.id, goal: r.goal, outcome: r.state, stopReason: r.stopReason, steps };
   };
