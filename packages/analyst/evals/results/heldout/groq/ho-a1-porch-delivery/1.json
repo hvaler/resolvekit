@@ -1,0 +1,538 @@
+{
+  "provider": "groq",
+  "case": "ho-a1-porch-delivery",
+  "run": 1,
+  "status": "provider_error",
+  "startedAt": "2026-10-19T11:26:38.826Z",
+  "finishedAt": "2026-10-19T11:27:14.533Z",
+  "error": "a call failed and the pipeline went on without it: groq answered 429 rate_limit_exceeded",
+  "stamp": {
+    "codeCommit": "3c19510839dce542d9c2c7c034cfb287a26633ba",
+    "freezeCommit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "openai/gpt-oss-120b",
+    "returnedModels": [
+      "openai/gpt-oss-120b"
+    ]
+  },
+  "usage": {
+    "calls": 6,
+    "httpAttempts": 19,
+    "refused": 0,
+    "inputTokens": 6836,
+    "outputTokens": 2481,
+    "thinkingTokens": 1929,
+    "observedUsd": 0.021664500000000003,
+    "unknownUsd": 0.10784550000000002,
+    "estimatedUsd": 0,
+    "costUsdAtListPrice": 0.12951000000000001,
+    "note": "Not USD-guarded (ruling B22): the USD figures are estimated at Gemini list price, not a Groq price, kept for accounting only; the batch runs within the provider's free quota and stops on a 429 or a provider error."
+  },
+  "degradedAnalysis": {
+    "caseId": "HO-A1",
+    "key": "",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "model": "openai/gpt-oss-120b",
+    "createdAt": "2026-10-19T11:27:14.533Z",
+    "facts": [
+      {
+        "id": "F1",
+        "doc": "E1",
+        "quote": "Order #SH-40917 · placed 2026-09-28 16:04 UTC",
+        "statement": "Order placed on 2026-09-28 at 16:04 UTC",
+        "at": "2026-09-28T16:04:00.000Z"
+      },
+      {
+        "id": "F2",
+        "doc": "E1",
+        "quote": "Customer: Priya Ramaswamy (priya.ramaswamy@inkwell-mail.test)",
+        "statement": "Customer name and email",
+        "at": null
+      },
+      {
+        "id": "F3",
+        "doc": "E1",
+        "quote": "Item: Ceramic pour-over coffee set, matte sand, qty 1",
+        "statement": "Item description and quantity",
+        "at": null
+      },
+      {
+        "id": "F4",
+        "doc": "E1",
+        "quote": "Total: GBP 46.00",
+        "statement": "Order total amount",
+        "at": null
+      },
+      {
+        "id": "F5",
+        "doc": "E1",
+        "quote": "Ship to: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+        "statement": "Shipping address",
+        "at": null
+      },
+      {
+        "id": "F6",
+        "doc": "E1",
+        "quote": "Shipping method: Hollin Post Tracked 48",
+        "statement": "Shipping method",
+        "at": null
+      },
+      {
+        "id": "F7",
+        "doc": "E1",
+        "quote": "Delivery instructions: leave in porch if no answer",
+        "statement": "Delivery instructions to leave in porch",
+        "at": null
+      },
+      {
+        "id": "F8",
+        "doc": "E2",
+        "quote": "PayPal transaction 6TR40917KX552210C",
+        "statement": "PayPal transaction ID",
+        "at": null
+      },
+      {
+        "id": "F9",
+        "doc": "E2",
+        "quote": "Date: 2026-09-28 16:05 UTC",
+        "statement": "Transaction date and time",
+        "at": "2026-09-28T16:05:00.000Z"
+      },
+      {
+        "id": "F10",
+        "doc": "E2",
+        "quote": "Gross amount: £46.00 GBP",
+        "statement": "Transaction gross amount",
+        "at": null
+      },
+      {
+        "id": "F11",
+        "doc": "E2",
+        "quote": "Status: Completed",
+        "statement": "Transaction status completed",
+        "at": null
+      },
+      {
+        "id": "F12",
+        "doc": "E2",
+        "quote": "Shipping address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+        "statement": "Shipping address on transaction",
+        "at": null
+      },
+      {
+        "id": "F13",
+        "doc": "E3",
+        "quote": "Hollin Post · Tracking HP 3304 7719 52 GB",
+        "statement": "Carrier tracking number",
+        "at": null
+      },
+      {
+        "id": "F14",
+        "doc": "E3",
+        "quote": "2026-09-29 18:22 Accepted at Brackenmoor sorting office",
+        "statement": "Package accepted at sorting office",
+        "at": "2026-09-29T18:22:00.000Z"
+      },
+      {
+        "id": "F15",
+        "doc": "E3",
+        "quote": "2026-09-30 07:10 Out for delivery",
+        "statement": "Package out for delivery",
+        "at": "2026-09-30T07:10:00.000Z"
+      },
+      {
+        "id": "F16",
+        "doc": "E3",
+        "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+        "statement": "Package delivered left in porch",
+        "at": "2026-09-30T12:36:00.000Z"
+      },
+      {
+        "id": "F17",
+        "doc": "E3",
+        "quote": "Delivery address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+        "statement": "Delivery address on tracking record",
+        "at": null
+      },
+      {
+        "id": "F18",
+        "doc": "E3",
+        "quote": "Delivery photo: available on request",
+        "statement": "Delivery photo can be requested",
+        "at": null
+      },
+      {
+        "id": "F19",
+        "doc": "E4",
+        "quote": "Message from Priya Ramaswamy · 2026-10-06 09:15 UTC",
+        "statement": "Buyer sent message on 2026-10-06 at 09:15 UTC",
+        "at": "2026-10-06T09:15:00.000Z"
+      },
+      {
+        "id": "F20",
+        "doc": "E4",
+        "quote": "My coffee set never arrived. Can you check where it is?",
+        "statement": "Buyer claims item not received",
+        "at": null
+      }
+    ],
+    "droppedFacts": 0,
+    "timeline": [
+      {
+        "at": "2026-09-28T16:04:00.000Z",
+        "title": "Order placed",
+        "sub": "Order #SH-40917",
+        "doc": "E1",
+        "quote": "Order #SH-40917 · placed 2026-09-28 16:04 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-09-28T16:05:00.000Z",
+        "title": "Payment completed",
+        "sub": "£46.00 GBP",
+        "doc": "E2",
+        "quote": "Date: 2026-09-28 16:05 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-09-29T18:22:00.000Z",
+        "title": "Package accepted",
+        "sub": "Brackenmoor sorting office",
+        "doc": "E3",
+        "quote": "2026-09-29 18:22 Accepted at Brackenmoor sorting office",
+        "negated": false
+      },
+      {
+        "at": "2026-09-30T07:10:00.000Z",
+        "title": "Out for delivery",
+        "sub": "Hollin Post",
+        "doc": "E3",
+        "quote": "2026-09-30 07:10 Out for delivery",
+        "negated": false
+      },
+      {
+        "at": "2026-09-30T12:36:00.000Z",
+        "title": "Delivered",
+        "sub": "Left in porch",
+        "doc": "E3",
+        "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+        "negated": false
+      },
+      {
+        "at": "2026-10-06T09:15:00.000Z",
+        "title": "Buyer message",
+        "sub": "Item not received claim",
+        "doc": "E4",
+        "quote": "Message from Priya Ramaswamy · 2026-10-06 09:15 UTC",
+        "negated": false
+      }
+    ],
+    "contradictions": [],
+    "checklist": {
+      "title": "What \"not received\" disputes need",
+      "items": [
+        {
+          "id": "tracking",
+          "label": "Tracking number with delivery confirmation",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E3",
+              "quote": "Hollin Post · Tracking HP 3304 7719 52 GB"
+            },
+            {
+              "doc": "E3",
+              "quote": "2026-09-30 12:36 Delivered — left in porch as requested"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "carrier",
+          "label": "Carrier and ship date",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Shipping method: Hollin Post Tracked 48"
+            },
+            {
+              "doc": "E3",
+              "quote": "2026-09-29 18:22 Accepted at Brackenmoor sorting office"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "address",
+          "label": "Delivery address matches the order",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Ship to: 5 Thistlecombe Mews, Brackenmoor BR7 3QN"
+            },
+            {
+              "doc": "E2",
+              "quote": "Shipping address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN"
+            },
+            {
+              "doc": "E3",
+              "quote": "Delivery address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "signature",
+          "label": "Signature or proof of receipt",
+          "critical": false,
+          "status": "missing",
+          "evidence": [],
+          "contradictionId": null
+        },
+        {
+          "id": "payment",
+          "label": "Payment record for the disputed amount",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E2",
+              "quote": "PayPal transaction 6TR40917KX552210C"
+            },
+            {
+              "doc": "E2",
+              "quote": "Gross amount: £46.00 GBP"
+            },
+            {
+              "doc": "E2",
+              "quote": "Status: Completed"
+            },
+            {
+              "doc": "E1",
+              "quote": "Total: GBP 46.00"
+            }
+          ],
+          "contradictionId": null
+        }
+      ]
+    },
+    "sentences": [
+      {
+        "id": "S1",
+        "text": "We shipped the order on 2026-09-28 using Hollin Post Tracked 48.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Order #SH-40917 · placed 2026-09-28 16:04 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Shipping method: Hollin Post Tracked 48",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: the support check did not answer for this sentence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S2",
+        "text": "The parcel was tracked with number HP 3304 7719 52 GB and was recorded as delivered on 2026-09-30, left in the porch as requested.",
+        "noteId": "n1",
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "Hollin Post · Tracking HP 3304 7719 52 GB",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S3",
+        "text": "The delivery address on the order, payment record, and tracking record is 5 Thistlecombe Mews, Brackenmoor BR7 3QN.",
+        "noteId": "n2",
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Ship to: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Shipping address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivery address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: Evidence shows the shipping/delivery address but does not provide the payment record or tracking record address.",
+        "decidedBy": "model",
+        "rewrite": "The shipping and delivery address on the order is 5 Thistlecombe Mews, Brackenmoor BR7 3QN."
+      },
+      {
+        "id": "S4",
+        "text": "We have no record of the buyer collecting the parcel in person from the sorting office.",
+        "noteId": "n3",
+        "citations": [],
+        "verdict": "rejected",
+        "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S5",
+        "text": "The buyer has not provided any written confirmation that the parcel arrived.",
+        "noteId": "n4",
+        "citations": [],
+        "verdict": "rejected",
+        "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S6",
+        "text": "The PayPal transaction 6TR40917KX552210C for £46.00 GBP was completed on 2026-09-28.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E2",
+            "quote": "PayPal transaction 6TR40917KX552210C",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Date: 2026-09-28 16:05 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Gross amount: £46.00 GBP",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Status: Completed",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S7",
+        "text": "The buyer reported the item as not received on 2026-10-06, after the recorded delivery date.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E4",
+            "quote": "Message from Priya Ramaswamy · 2026-10-06 09:15 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "My coffee set never arrived. Can you check where it is?",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: the support check did not answer for this sentence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      }
+    ],
+    "injections": [],
+    "recommendation": null,
+    "usage": {
+      "calls": [
+        {
+          "stage": "screen",
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 989,
+          "outputTokens": 19,
+          "thinkingTokens": 23,
+          "ms": 317
+        },
+        {
+          "stage": "extract",
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 1236,
+          "outputTokens": 1245,
+          "thinkingTokens": 688,
+          "ms": 4446
+        },
+        {
+          "stage": "analyze",
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2410,
+          "outputTokens": 1018,
+          "thinkingTokens": 1047,
+          "ms": 4974
+        },
+        {
+          "stage": "verify",
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 734,
+          "outputTokens": 51,
+          "thinkingTokens": 28,
+          "ms": 553
+        },
+        {
+          "stage": "verify",
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 746,
+          "outputTokens": 97,
+          "thinkingTokens": 104,
+          "ms": 614
+        },
+        {
+          "stage": "verify",
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 721,
+          "outputTokens": 51,
+          "thinkingTokens": 39,
+          "ms": 509
+        }
+      ],
+      "inputTokens": 6836,
+      "outputTokens": 2481,
+      "thinkingTokens": 1929
+    }
+  }
+}

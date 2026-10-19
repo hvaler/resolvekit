@@ -1,0 +1,538 @@
+{
+  "provider": "gemini",
+  "case": "ho-a2-graded-laptop",
+  "run": 2,
+  "status": "ok",
+  "startedAt": "2026-10-19T11:17:01.927Z",
+  "finishedAt": "2026-10-19T11:17:24.946Z",
+  "stamp": {
+    "codeCommit": "3c19510839dce542d9c2c7c034cfb287a26633ba",
+    "freezeCommit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "returnedModels": [
+      "gemini-3.8-flash"
+    ]
+  },
+  "usage": {
+    "calls": 9,
+    "httpAttempts": 9,
+    "refused": 0,
+    "inputTokens": 8013,
+    "outputTokens": 3193,
+    "thinkingTokens": 150,
+    "observedUsd": 0.018545999999999997,
+    "unknownUsd": 0,
+    "estimatedUsd": 0,
+    "costUsdAtListPrice": 0.018545999999999997,
+    "note": "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice."
+  },
+  "analysis": {
+    "caseId": "HO-A2",
+    "key": "",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "createdAt": "2026-10-19T11:17:24.946Z",
+    "facts": [
+      {
+        "id": "F1",
+        "doc": "E1",
+        "quote": "Listing #RL-2291 · Corvex Aero 14, refurbished",
+        "statement": "The listing RL-2291 is for a refurbished Corvex Aero 14.",
+        "at": null
+      },
+      {
+        "id": "F2",
+        "doc": "E1",
+        "quote": "Condition: Grade B — light scuffs on the lid and palm rest, screen free of scratches",
+        "statement": "The item condition was listed as Grade B with light scuffs on lid and palm rest.",
+        "at": null
+      },
+      {
+        "id": "F3",
+        "doc": "E1",
+        "quote": "Battery health at test: 87%",
+        "statement": "Battery health was listed at 87% at the time of test.",
+        "at": null
+      },
+      {
+        "id": "F4",
+        "doc": "E1",
+        "quote": "Includes: 65 W charger. Original box not included.",
+        "statement": "The item includes a 65 W charger, without the original box.",
+        "at": null
+      },
+      {
+        "id": "F5",
+        "doc": "E2",
+        "quote": "Order #RL-2291-0388 · placed 2026-09-21 19:40 UTC",
+        "statement": "Order RL-2291-0388 was placed on September 21, 2026 at 19:40 UTC.",
+        "at": "2026-09-21T19:40:00.000Z"
+      },
+      {
+        "id": "F6",
+        "doc": "E2",
+        "quote": "Customer: Jonas Feldmeier",
+        "statement": "The customer for the order is Jonas Feldmeier.",
+        "at": null
+      },
+      {
+        "id": "F7",
+        "doc": "E2",
+        "quote": "Item: Corvex Aero 14, refurbished, Grade B, qty 1",
+        "statement": "The ordered item is 1 refurbished Grade B Corvex Aero 14.",
+        "at": null
+      },
+      {
+        "id": "F8",
+        "doc": "E2",
+        "quote": "Total: EUR 389.00",
+        "statement": "The order total is EUR 389.00.",
+        "at": null
+      },
+      {
+        "id": "F9",
+        "doc": "E2",
+        "quote": "Ship to: Lindenhof 12, 3rd floor, 40221 Halvern",
+        "statement": "The shipping address is Lindenhof 12, 3rd floor, 40221 Halvern.",
+        "at": null
+      },
+      {
+        "id": "F10",
+        "doc": "E3",
+        "quote": "PayPal transaction 2HK88310RL229104M",
+        "statement": "The PayPal transaction identifier is 2HK88310RL229104M.",
+        "at": null
+      },
+      {
+        "id": "F11",
+        "doc": "E3",
+        "quote": "Date: 2026-09-21 19:41 UTC",
+        "statement": "The PayPal payment occurred on September 21, 2026 at 19:41 UTC.",
+        "at": "2026-09-21T19:41:00.000Z"
+      },
+      {
+        "id": "F12",
+        "doc": "E3",
+        "quote": "Gross amount: €389.00 EUR",
+        "statement": "The gross amount of the transaction was €389.00 EUR.",
+        "at": null
+      },
+      {
+        "id": "F13",
+        "doc": "E3",
+        "quote": "Status: Completed",
+        "statement": "The PayPal transaction status is Completed.",
+        "at": null
+      },
+      {
+        "id": "F14",
+        "doc": "E3",
+        "quote": "Shipping address: Lindenhof 12, 3rd floor, 40221 Halvern",
+        "statement": "The PayPal shipping address is Lindenhof 12, 3rd floor, 40221 Halvern.",
+        "at": null
+      },
+      {
+        "id": "F15",
+        "doc": "E4",
+        "quote": "Brightway Parcel · Tracking BW 77 4410 9086",
+        "statement": "The shipment tracking number is BW 77 4410 9086 via Brightway Parcel.",
+        "at": null
+      },
+      {
+        "id": "F16",
+        "doc": "E4",
+        "quote": "2026-09-23 08:12 Collected from sender",
+        "statement": "The parcel was collected from the sender on September 23, 2026 at 08:12 UTC.",
+        "at": "2026-09-23T08:12:00.000Z"
+      },
+      {
+        "id": "F17",
+        "doc": "E4",
+        "quote": "2026-09-24 14:55 Delivered to recipient at Lindenhof 12, 3rd floor, 40221 Halvern",
+        "statement": "The parcel was delivered to Lindenhof 12, 3rd floor, 40221 Halvern on September 24, 2026 at 14:55 UTC.",
+        "at": "2026-09-24T14:55:00.000Z"
+      },
+      {
+        "id": "F18",
+        "doc": "E4",
+        "quote": "Signed: J. Feldmeier",
+        "statement": "The delivery was signed by J. Feldmeier.",
+        "at": null
+      },
+      {
+        "id": "F19",
+        "doc": "E5",
+        "quote": "Message from Jonas Feldmeier · 2026-09-27 10:02 UTC",
+        "statement": "Jonas Feldmeier sent a message on September 27, 2026 at 10:02 UTC.",
+        "at": "2026-09-27T10:02:00.000Z"
+      },
+      {
+        "id": "F20",
+        "doc": "E5",
+        "quote": "The laptop works, but the lid has scuff marks. I expected it to look new.",
+        "statement": "The buyer stated the laptop works but has scuff marks on the lid and was expected to look new.",
+        "at": null
+      }
+    ],
+    "droppedFacts": 0,
+    "timeline": [
+      {
+        "at": "2026-09-21T19:40:00.000Z",
+        "title": "Order placed",
+        "sub": "Order RL-2291-0388 for EUR 389.00",
+        "doc": "E2",
+        "quote": "Order #RL-2291-0388 · placed 2026-09-21 19:40 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-09-21T19:41:00.000Z",
+        "title": "Payment completed",
+        "sub": "PayPal transaction 2HK88310RL229104M completed",
+        "doc": "E3",
+        "quote": "Date: 2026-09-21 19:41 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-09-23T08:12:00.000Z",
+        "title": "Parcel collected",
+        "sub": "Brightway Parcel tracking BW 77 4410 9086",
+        "doc": "E4",
+        "quote": "2026-09-23 08:12 Collected from sender",
+        "negated": false
+      },
+      {
+        "at": "2026-09-24T14:55:00.000Z",
+        "title": "Parcel delivered",
+        "sub": "Delivered and signed by J. Feldmeier",
+        "doc": "E4",
+        "quote": "2026-09-24 14:55 Delivered to recipient at Lindenhof 12, 3rd floor, 40221 Halvern",
+        "negated": false
+      },
+      {
+        "at": "2026-09-27T10:02:00.000Z",
+        "title": "Buyer message received",
+        "sub": "Buyer noted lid scuff marks",
+        "doc": "E5",
+        "quote": "Message from Jonas Feldmeier · 2026-09-27 10:02 UTC",
+        "negated": false
+      }
+    ],
+    "contradictions": [],
+    "checklist": {
+      "title": "What \"not as described\" disputes need",
+      "items": [
+        {
+          "id": "description",
+          "label": "Listing as the buyer saw it",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Listing #RL-2291 · Corvex Aero 14, refurbished"
+            },
+            {
+              "doc": "E1",
+              "quote": "Condition: Grade B — light scuffs on the lid and palm rest, screen free of scratches"
+            },
+            {
+              "doc": "E1",
+              "quote": "Battery health at test: 87%"
+            },
+            {
+              "doc": "E1",
+              "quote": "Includes: 65 W charger. Original box not included."
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "match",
+          "label": "Item sent matches the listing",
+          "critical": false,
+          "status": "missing",
+          "evidence": [],
+          "contradictionId": null
+        },
+        {
+          "id": "complaint",
+          "label": "What the buyer says differs",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Condition: Grade B — light scuffs on the lid and palm rest, screen free of scratches"
+            },
+            {
+              "doc": "E5",
+              "quote": "The laptop works, but the lid has scuff marks. I expected it to look new."
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "returns",
+          "label": "Return policy",
+          "critical": false,
+          "status": "missing",
+          "evidence": [],
+          "contradictionId": null
+        },
+        {
+          "id": "payment",
+          "label": "Order and payment for the disputed amount",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E2",
+              "quote": "Total: EUR 389.00"
+            },
+            {
+              "doc": "E3",
+              "quote": "Gross amount: €389.00 EUR"
+            },
+            {
+              "doc": "E3",
+              "quote": "Status: Completed"
+            }
+          ],
+          "contradictionId": null
+        }
+      ]
+    },
+    "sentences": [
+      {
+        "id": "S1",
+        "text": "The buyer ordered one refurbished Grade B Corvex Aero 14 for EUR 389.00, which matches the completed PayPal transaction.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E2",
+            "quote": "Item: Corvex Aero 14, refurbished, Grade B, qty 1",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Total: EUR 389.00",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "PayPal transaction 2HK88310RL229104M",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Gross amount: €389.00 EUR",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Status: Completed",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S2",
+        "text": "The item was delivered by Brightway Parcel to the buyer's shipping address on September 24, 2026, and signed by J. Feldmeier.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E2",
+            "quote": "Ship to: Lindenhof 12, 3rd floor, 40221 Halvern",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Shipping address: Lindenhof 12, 3rd floor, 40221 Halvern",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "Brightway Parcel · Tracking BW 77 4410 9086",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "2026-09-24 14:55 Delivered to recipient at Lindenhof 12, 3rd floor, 40221 Halvern",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "Signed: J. Feldmeier",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S3",
+        "text": "The listing described the laptop as Grade B with light scuffs on the lid and palm rest.",
+        "noteId": "n1",
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Condition: Grade B — light scuffs on the lid and palm rest, screen free of scratches",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The cited text confirms the condition description details, but does not identify the item as a \"laptop\" or explicitly state it is a \"listing\".",
+        "decidedBy": "model",
+        "rewrite": "The condition was described as Grade B with light scuffs on the lid and palm rest."
+      },
+      {
+        "id": "S4",
+        "text": "The buyer wrote that the laptop works.",
+        "noteId": "n2",
+        "citations": [
+          {
+            "doc": "E5",
+            "quote": "The laptop works, but the lid has scuff marks. I expected it to look new.",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S5",
+        "text": "The listing promised the laptop would be in like-new condition.",
+        "noteId": "n3",
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Condition: Grade B — light scuffs on the lid and palm rest, screen free of scratches",
+            "valid": true
+          }
+        ],
+        "verdict": "rejected",
+        "reason": "Removed: The cited text contradicts the claim, stating \"Condition: Grade B — light scuffs on the lid and palm rest, screen free of scratches\" rather than like-new condition. It will not be sent.",
+        "decidedBy": "model",
+        "rewrite": "The listing stated the laptop condition was Grade B with light scuffs on the lid and palm rest."
+      },
+      {
+        "id": "S6",
+        "text": "The laptop was shipped in its original box.",
+        "noteId": "n4",
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Includes: 65 W charger. Original box not included.",
+            "valid": true
+          }
+        ],
+        "verdict": "rejected",
+        "reason": "Removed: The cited text directly contradicts the claim, stating \"Original box not included.\". It will not be sent.",
+        "decidedBy": "model",
+        "rewrite": "The original box was not included."
+      }
+    ],
+    "injections": [],
+    "recommendation": null,
+    "usage": {
+      "calls": [
+        {
+          "stage": "screen",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 1013,
+          "outputTokens": 4,
+          "thinkingTokens": 150,
+          "ms": 2401
+        },
+        {
+          "stage": "extract",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 1227,
+          "outputTokens": 1747,
+          "thinkingTokens": 0,
+          "ms": 11611
+        },
+        {
+          "stage": "analyze",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2486,
+          "outputTokens": 1054,
+          "thinkingTokens": 0,
+          "ms": 7672
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 600,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1379
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 654,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1385
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 505,
+          "outputTokens": 19,
+          "thinkingTokens": 0,
+          "ms": 1663
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 517,
+          "outputTokens": 98,
+          "thinkingTokens": 0,
+          "ms": 1811
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 500,
+          "outputTokens": 71,
+          "thinkingTokens": 0,
+          "ms": 1746
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 511,
+          "outputTokens": 104,
+          "thinkingTokens": 0,
+          "ms": 2351
+        }
+      ],
+      "inputTokens": 8013,
+      "outputTokens": 3193,
+      "thinkingTokens": 150
+    }
+  }
+}

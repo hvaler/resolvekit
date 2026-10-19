@@ -1,0 +1,628 @@
+{
+  "provider": "gemini",
+  "case": "ho-a1-porch-delivery",
+  "run": 1,
+  "status": "ok",
+  "startedAt": "2026-10-19T11:11:16.094Z",
+  "finishedAt": "2026-10-19T11:11:43.113Z",
+  "stamp": {
+    "codeCommit": "3c19510839dce542d9c2c7c034cfb287a26633ba",
+    "freezeCommit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "returnedModels": [
+      "gemini-3.8-flash"
+    ]
+  },
+  "usage": {
+    "calls": 10,
+    "httpAttempts": 10,
+    "refused": 0,
+    "inputTokens": 8435,
+    "outputTokens": 3488,
+    "thinkingTokens": 603,
+    "observedUsd": 0.0216675,
+    "unknownUsd": 0,
+    "estimatedUsd": 0,
+    "costUsdAtListPrice": 0.0216675,
+    "note": "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice."
+  },
+  "analysis": {
+    "caseId": "HO-A1",
+    "key": "",
+    "promptVersion": "rk-analyst-2026-10-09.7",
+    "requestedModel": "gemini-3.8-flash",
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "createdAt": "2026-10-19T11:11:43.113Z",
+    "facts": [
+      {
+        "id": "F1",
+        "doc": "E1",
+        "quote": "Order #SH-40917 · placed 2026-09-28 16:04 UTC",
+        "statement": "Order SH-40917 was placed on 28 September 2026 at 16:04 UTC.",
+        "at": "2026-09-28T16:04:00.000Z"
+      },
+      {
+        "id": "F2",
+        "doc": "E1",
+        "quote": "Customer: Priya Ramaswamy (priya.ramaswamy@inkwell-mail.test)",
+        "statement": "The customer is Priya Ramaswamy.",
+        "at": null
+      },
+      {
+        "id": "F3",
+        "doc": "E1",
+        "quote": "Item: Ceramic pour-over coffee set, matte sand, qty 1",
+        "statement": "The ordered item is one ceramic pour-over coffee set in matte sand.",
+        "at": null
+      },
+      {
+        "id": "F4",
+        "doc": "E1",
+        "quote": "Total: GBP 46.00",
+        "statement": "The order total is 46.00 GBP.",
+        "at": null
+      },
+      {
+        "id": "F5",
+        "doc": "E1",
+        "quote": "Ship to: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+        "statement": "The shipping address is 5 Thistlecombe Mews, Brackenmoor BR7 3QN.",
+        "at": null
+      },
+      {
+        "id": "F6",
+        "doc": "E1",
+        "quote": "Shipping method: Hollin Post Tracked 48",
+        "statement": "The shipping method is Hollin Post Tracked 48.",
+        "at": null
+      },
+      {
+        "id": "F7",
+        "doc": "E1",
+        "quote": "Delivery instructions: leave in porch if no answer",
+        "statement": "Delivery instructions specify leaving the parcel in the porch if there is no answer.",
+        "at": null
+      },
+      {
+        "id": "F8",
+        "doc": "E2",
+        "quote": "PayPal transaction 6TR40917KX552210C",
+        "statement": "The PayPal transaction identifier is 6TR40917KX552210C.",
+        "at": null
+      },
+      {
+        "id": "F9",
+        "doc": "E2",
+        "quote": "Date: 2026-09-28 16:05 UTC",
+        "statement": "The payment occurred on 28 September 2026 at 16:05 UTC.",
+        "at": "2026-09-28T16:05:00.000Z"
+      },
+      {
+        "id": "F10",
+        "doc": "E2",
+        "quote": "Gross amount: £46.00 GBP",
+        "statement": "The payment gross amount is 46.00 GBP.",
+        "at": null
+      },
+      {
+        "id": "F11",
+        "doc": "E2",
+        "quote": "Status: Completed",
+        "statement": "The payment status is Completed.",
+        "at": null
+      },
+      {
+        "id": "F12",
+        "doc": "E2",
+        "quote": "Shipping address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+        "statement": "The PayPal shipping address is 5 Thistlecombe Mews, Brackenmoor BR7 3QN.",
+        "at": null
+      },
+      {
+        "id": "F13",
+        "doc": "E3",
+        "quote": "Hollin Post · Tracking HP 3304 7719 52 GB",
+        "statement": "The tracking number with Hollin Post is HP 3304 7719 52 GB.",
+        "at": null
+      },
+      {
+        "id": "F14",
+        "doc": "E3",
+        "quote": "2026-09-29 18:22 Accepted at Brackenmoor sorting office",
+        "statement": "The package was accepted at Brackenmoor sorting office on 29 September 2026.",
+        "at": "2026-09-29T18:22:00.000Z"
+      },
+      {
+        "id": "F15",
+        "doc": "E3",
+        "quote": "2026-09-30 07:10 Out for delivery",
+        "statement": "The shipment went out for delivery on 30 September 2026.",
+        "at": "2026-09-30T07:10:00.000Z"
+      },
+      {
+        "id": "F16",
+        "doc": "E3",
+        "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+        "statement": "The carrier marked the parcel delivered to the porch on 30 September 2026.",
+        "at": "2026-09-30T12:36:00.000Z"
+      },
+      {
+        "id": "F17",
+        "doc": "E3",
+        "quote": "Delivery address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+        "statement": "The delivery address is 5 Thistlecombe Mews, Brackenmoor BR7 3QN.",
+        "at": null
+      },
+      {
+        "id": "F18",
+        "doc": "E3",
+        "quote": "Delivery photo: available on request",
+        "statement": "A delivery photo is noted as available upon request.",
+        "at": null
+      },
+      {
+        "id": "F19",
+        "doc": "E4",
+        "quote": "Message from Priya Ramaswamy · 2026-10-06 09:15 UTC",
+        "statement": "Priya Ramaswamy sent a message on 6 October 2026 at 09:15 UTC.",
+        "at": "2026-10-06T09:15:00.000Z"
+      },
+      {
+        "id": "F20",
+        "doc": "E4",
+        "quote": "My coffee set never arrived. Can you check where it is?",
+        "statement": "The buyer stated that the coffee set never arrived and asked for its location.",
+        "at": null
+      }
+    ],
+    "droppedFacts": 0,
+    "timeline": [
+      {
+        "at": "2026-09-28T16:04:00.000Z",
+        "title": "Order placed",
+        "sub": "Order SH-40917 for 46.00 GBP",
+        "doc": "E1",
+        "quote": "Order #SH-40917 · placed 2026-09-28 16:04 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-09-28T16:05:00.000Z",
+        "title": "Payment completed",
+        "sub": "Transaction 6TR40917KX552210C completed for 46.00 GBP",
+        "doc": "E2",
+        "quote": "Date: 2026-09-28 16:05 UTC",
+        "negated": false
+      },
+      {
+        "at": "2026-09-29T18:22:00.000Z",
+        "title": "Package accepted",
+        "sub": "Accepted at Brackenmoor sorting office",
+        "doc": "E3",
+        "quote": "2026-09-29 18:22 Accepted at Brackenmoor sorting office",
+        "negated": false
+      },
+      {
+        "at": "2026-09-30T07:10:00.000Z",
+        "title": "Out for delivery",
+        "sub": "Shipment out for delivery",
+        "doc": "E3",
+        "quote": "2026-09-30 07:10 Out for delivery",
+        "negated": false
+      },
+      {
+        "at": "2026-09-30T12:36:00.000Z",
+        "title": "Delivered to porch",
+        "sub": "Delivered left in porch as requested",
+        "doc": "E3",
+        "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+        "negated": false
+      },
+      {
+        "at": "2026-10-06T09:15:00.000Z",
+        "title": "Buyer message received",
+        "sub": "Buyer reported item never arrived",
+        "doc": "E4",
+        "quote": "Message from Priya Ramaswamy · 2026-10-06 09:15 UTC",
+        "negated": false
+      }
+    ],
+    "contradictions": [],
+    "checklist": {
+      "title": "What \"not received\" disputes need",
+      "items": [
+        {
+          "id": "tracking",
+          "label": "Tracking number with delivery confirmation",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E3",
+              "quote": "Hollin Post · Tracking HP 3304 7719 52 GB"
+            },
+            {
+              "doc": "E3",
+              "quote": "2026-09-30 12:36 Delivered — left in porch as requested"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "carrier",
+          "label": "Carrier and ship date",
+          "critical": true,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Shipping method: Hollin Post Tracked 48"
+            },
+            {
+              "doc": "E3",
+              "quote": "Hollin Post · Tracking HP 3304 7719 52 GB"
+            },
+            {
+              "doc": "E3",
+              "quote": "2026-09-29 18:22 Accepted at Brackenmoor sorting office"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "address",
+          "label": "Delivery address matches the order",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Ship to: 5 Thistlecombe Mews, Brackenmoor BR7 3QN"
+            },
+            {
+              "doc": "E2",
+              "quote": "Shipping address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN"
+            },
+            {
+              "doc": "E3",
+              "quote": "Delivery address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "signature",
+          "label": "Signature or proof of receipt",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E3",
+              "quote": "2026-09-30 12:36 Delivered — left in porch as requested"
+            },
+            {
+              "doc": "E3",
+              "quote": "Delivery photo: available on request"
+            }
+          ],
+          "contradictionId": null
+        },
+        {
+          "id": "payment",
+          "label": "Payment record for the disputed amount",
+          "critical": false,
+          "status": "present",
+          "evidence": [
+            {
+              "doc": "E1",
+              "quote": "Total: GBP 46.00"
+            },
+            {
+              "doc": "E2",
+              "quote": "PayPal transaction 6TR40917KX552210C"
+            },
+            {
+              "doc": "E2",
+              "quote": "Gross amount: £46.00 GBP"
+            },
+            {
+              "doc": "E2",
+              "quote": "Status: Completed"
+            }
+          ],
+          "contradictionId": null
+        }
+      ]
+    },
+    "sentences": [
+      {
+        "id": "S1",
+        "text": "We received order SH-40917 for 46.00 GBP, matching the completed PayPal payment 6TR40917KX552210C for 46.00 GBP.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Order #SH-40917 · placed 2026-09-28 16:04 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E1",
+            "quote": "Total: GBP 46.00",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "PayPal transaction 6TR40917KX552210C",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Gross amount: £46.00 GBP",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Status: Completed",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S2",
+        "text": "The package was dispatched via Hollin Post under tracking number HP 3304 7719 52 GB, accepted at the sorting office on 29 September 2026.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Shipping method: Hollin Post Tracked 48",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Hollin Post · Tracking HP 3304 7719 52 GB",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-09-29 18:22 Accepted at Brackenmoor sorting office",
+            "valid": true
+          }
+        ],
+        "verdict": "supported",
+        "reason": null,
+        "decidedBy": "model",
+        "rewrite": null
+      },
+      {
+        "id": "S3",
+        "text": "Hollin Post delivered the shipment on 30 September 2026 to 5 Thistlecombe Mews, Brackenmoor BR7 3QN, matching the order and PayPal shipping address, with a delivery photo available on request.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E1",
+            "quote": "Ship to: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+            "valid": true
+          },
+          {
+            "doc": "E2",
+            "quote": "Shipping address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivery address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivery photo: available on request",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The cited text confirms the delivery details, date, address, and photo availability, but does not identify the carrier name \"Hollin Post\".",
+        "decidedBy": "model",
+        "rewrite": "The shipment was delivered on 30 September 2026 to 5 Thistlecombe Mews, Brackenmoor BR7 3QN, matching the order and PayPal shipping address, with a delivery photo available on request."
+      },
+      {
+        "id": "S4",
+        "text": "The buyer contacted us on 6 October 2026 stating the coffee set never arrived, which was six days after carrier delivery.",
+        "noteId": null,
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "Message from Priya Ramaswamy · 2026-10-06 09:15 UTC",
+            "valid": true
+          },
+          {
+            "doc": "E4",
+            "quote": "My coffee set never arrived. Can you check where it is?",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: \"6\" does not appear in the cited evidence.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S5",
+        "text": "Hollin Post recorded the parcel as delivered on 30 September 2026 and left in the porch.",
+        "noteId": "n1",
+        "citations": [
+          {
+            "doc": "E3",
+            "quote": "2026-09-30 12:36 Delivered — left in porch as requested",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The cited text confirms delivery on 2026-09-30 left in porch, but does not name \"Hollin Post\".",
+        "decidedBy": "model",
+        "rewrite": "The tracking record shows the parcel was delivered on 30 September 2026 and left in the porch."
+      },
+      {
+        "id": "S6",
+        "text": "The parcel was sent to the shipping address shown on the PayPal transaction.",
+        "noteId": "n2",
+        "citations": [
+          {
+            "doc": "E2",
+            "quote": "Shipping address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+            "valid": true
+          },
+          {
+            "doc": "E3",
+            "quote": "Delivery address: 5 Thistlecombe Mews, Brackenmoor BR7 3QN",
+            "valid": true
+          }
+        ],
+        "verdict": "needs_review",
+        "reason": "Why: The cited text provides matching shipping and delivery addresses but does not explicitly identify either record as the PayPal transaction.",
+        "decidedBy": "model",
+        "rewrite": "The parcel's delivery address matches the shipping address of 5 Thistlecombe Mews, Brackenmoor BR7 3QN."
+      },
+      {
+        "id": "S7",
+        "text": "The buyer collected the parcel in person from the sorting office.",
+        "noteId": "n3",
+        "citations": [],
+        "verdict": "rejected",
+        "reason": "Removed: no evidence in the case file is cited for this. It will not be sent.",
+        "decidedBy": "deterministic",
+        "rewrite": null
+      },
+      {
+        "id": "S8",
+        "text": "The buyer has confirmed in writing that the parcel arrived.",
+        "noteId": "n4",
+        "citations": [
+          {
+            "doc": "E4",
+            "quote": "My coffee set never arrived. Can you check where it is?",
+            "valid": true
+          }
+        ],
+        "verdict": "rejected",
+        "reason": "Removed: The cited text directly contradicts the claim, stating \"My coffee set never arrived.\" instead of confirming receipt. It will not be sent.",
+        "decidedBy": "model",
+        "rewrite": "The buyer stated in writing that the coffee set never arrived."
+      }
+    ],
+    "injections": [],
+    "recommendation": null,
+    "usage": {
+      "calls": [
+        {
+          "stage": "screen",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 955,
+          "outputTokens": 4,
+          "thinkingTokens": 0,
+          "ms": 1459
+        },
+        {
+          "stage": "extract",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 1132,
+          "outputTokens": 1688,
+          "thinkingTokens": 0,
+          "ms": 11193
+        },
+        {
+          "stage": "analyze",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2334,
+          "outputTokens": 1356,
+          "thinkingTokens": 0,
+          "ms": 9915
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 629,
+          "outputTokens": 19,
+          "thinkingTokens": 0,
+          "ms": 1262
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 583,
+          "outputTokens": 48,
+          "thinkingTokens": 0,
+          "ms": 1867
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 644,
+          "outputTokens": 127,
+          "thinkingTokens": 0,
+          "ms": 1902
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 527,
+          "outputTokens": 106,
+          "thinkingTokens": 0,
+          "ms": 1872
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 592,
+          "outputTokens": 19,
+          "thinkingTokens": 264,
+          "ms": 3476
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 502,
+          "outputTokens": 52,
+          "thinkingTokens": 0,
+          "ms": 1790
+        },
+        {
+          "stage": "verify",
+          "provider": "gemini",
+          "model": "gemini-3.8-flash",
+          "inputTokens": 537,
+          "outputTokens": 69,
+          "thinkingTokens": 339,
+          "ms": 4027
+        }
+      ],
+      "inputTokens": 8435,
+      "outputTokens": 3488,
+      "thinkingTokens": 603
+    }
+  }
+}

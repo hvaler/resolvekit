@@ -1,0 +1,18 @@
+{
+  "provider": "gemini",
+  "limitUsd": 1,
+  "observedUsd": 0.7151842500000007,
+  "estimatedUsd": 0,
+  "unknownUsd": 0,
+  "checks": 329,
+  "refusals": 0,
+  "stopped": false,
+  "exceeded": 0,
+  "stops": [],
+  "note": "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice.",
+  "freeze": {
+    "commit": "cefd1711b10d4acb54191c8e8a806c2528b6d67d",
+    "hash": "fb01f10eaf47d1d3b96871aa4d3776d79277a0e9d30c6c2d8673e071b7958d6a",
+    "casesHash": "248163b036e545804b0390dbd2b6092eeca1c43a74d770a70a6f5674654957fe"
+  }
+}
