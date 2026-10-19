@@ -982,6 +982,14 @@ export function createApi(opts: ApiOptions): Api {
       return json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${i0.disputeId ?? 'the simulator'}; the case is bound to ${boundId} now` });
     }
 
+    // Evidence after a stage change (e.g. after escalation) has no recorded contract, so it is not available ([A2]):
+    // evidence this server sent in any stage still blocks the whole dispute, before anything is reserved, where
+    // beginSend refused it before stages (after its own state checks). The store keeps the memory by stage; the
+    // per-stage check after the fresh read below is the one that stays when that variant becomes available.
+    const sentHere = intents.sentFor(boundId);
+    if (sentHere && sentHere.intentId !== intentId && (i0.status === 'approved' || i0.status === 'failed') && !intents.isUncertain(boundId)) {
+      return json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent', intent: publicIntent(i0) });
+    }
     // One send at a time: of two concurrent confirmations, exactly one gets past this synchronous transition.
     const claim = intents.beginSend(intentId, caseId, who.actor);
     if (!claim.ok) return json(claim.status, { error: claim.error, detail: claim.detail, ...(claim.intent ? { intent: publicIntent(claim.intent) } : {}) });
@@ -1017,6 +1025,12 @@ export function createApi(opts: ApiOptions): Api {
       if (st.snap && hasSellerEvidence(st.snap)) {
         return refuse(json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent' }), 'PayPal already has seller evidence', true);
       }
+      // This server's own memory, in the stage just read (an entry without a stage blocks the whole dispute): PayPal's
+      // read may lag behind an evidence submission it accepted.
+      const stage = st.snap?.stage ?? null;
+      if (intents.evidenceSentIn(boundId, stage)) {
+        return refuse(json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent' }), 'evidence already sent in this stage', true);
+      }
       if (sha256(documentsSignature(st.input)) !== intent.documentsHash) {
         // Most often a colleague confirmed an upload since this was composed: name it.
         const added = intent.inputUploads ? st.uploads.filter((r) => !intent.inputUploads!.includes(r.id)).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId)) : [];
@@ -1051,7 +1065,7 @@ export function createApi(opts: ApiOptions): Api {
 
       // The send_started line must be on disk before PayPal is called: an evidence submission is never missing from
       // the trail.
-      const started = intents.recordChecked({ caseId, kind: 'send_started', actor: who.actor, disputeId: boundId, intentId, contentHash: intent.contentHash, requestId: intent.requestId });
+      const started = intents.recordChecked({ caseId, kind: 'send_started', actor: who.actor, disputeId: boundId, intentId, contentHash: intent.contentHash, requestId: intent.requestId, stage });
       if (!started.durable) {
         log(`AUDIT UNAVAILABLE: send_started not written · case ${caseId} · intent ${intentId}; nothing sent`);
         return refuse(json(503, { error: 'AUDIT_UNAVAILABLE', detail: 'The send could not be recorded durably, so nothing was sent; try again later' }), 'audit log unavailable', false);
@@ -1073,7 +1087,7 @@ export function createApi(opts: ApiOptions): Api {
         intents.failed(intentId, who.actor, failureText(e));
         return fromPayPalError(e);
       }
-      if (!intents.sent(intentId, who.actor, 'accepted by PayPal (read back to confirm)')) {
+      if (!intents.sent(intentId, who.actor, 'accepted by PayPal (read back to confirm)', stage)) {
         // PayPal has the evidence; only our record of the outcome is not durable. send_started is on disk, so after a
         // restart the intent reads PayPal back (seller evidence present) instead of sending again.
         log(`AUDIT NOT DURABLE: outcome of intent ${intentId} (case ${caseId} -> ${boundId}) not written; PayPal accepted it`);

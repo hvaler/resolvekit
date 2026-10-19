@@ -37,13 +37,13 @@
  * approved, which is composed from the case's documents), the analysis hashes and the audit events (codes, hashes,
  * ids; no document text). No secrets.
  */
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { appendFileDurable, preserveCorrupt, readStoreFile, writeFileDurable } from '@resolvekit/hosting';
 import type { CaseAnalysis } from '@resolvekit/analyst';
 import type { IntentRequest, IntentStatus, SubmissionIntent } from '../../web/src/domain/intent.ts';
-import type { ActionRequest } from '../../web/src/domain/actions.ts';
+import { duplicateKey, intentAction, type ActionRequest, type IntentAction, type Money } from '../../web/src/domain/actions.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
 
 /** Safety nets only: the operative limits are per session and per client address. */
@@ -90,6 +90,12 @@ export interface StoredIntent extends SubmissionIntent {
    * the uploads confirmed since. Absent on intents stored before uploads.
    */
   inputUploads?: string[];
+  /** What the last read-back of an action send proved ([A4]); absent: not read back (evidence: read back by the web app). */
+  readBack?: 'recorded' | 'absent' | 'pending' | null;
+  /** The owner's second confirmation ([A3], Task 7): bound to this intent's content, action, amount and consequence. */
+  confirmation?: { code: string; amount: Money | null; at: string; by: string } | null;
+  /** The buyer messages in the thread when the intent was approved (their keys, never their text) ([A5]). */
+  threadKeysAtApproval?: string[];
 }
 
 export type AuditKind =
@@ -101,6 +107,10 @@ export type AuditKind =
   | 'send_refused'
   | 'sent'
   | 'send_failed'
+  /** An action send whose outcome is not proven (ambiguous error, timeout, restart): the dispute is held ([A1]). */
+  | 'send_uncertain'
+  /** What a read-back of an action send proved: `detail` is recorded | absent | pending ([A4]). */
+  | 'read_back'
   | 'edit_rechecked'
   | 'binding_checked'
   /** A verified PayPal webhook about the case's dispute; the dispute was read again from PayPal. */
@@ -129,6 +139,16 @@ export interface AuditEvent {
   requestId?: string;
   /** PayPal's answer or the reason, in a few words (codes, never document text). */
   detail?: string;
+  /** Send events: the intent's action (absent on events written before actions: evidence). */
+  action?: IntentAction;
+  /** Send events: the dispute's stage the send is for (absent: unknown, an evidence entry then blocks the whole dispute). */
+  stage?: string | null;
+  /** Send events: which lock the send takes: the evidence memory, or the action locks (uncertain, duplicates). */
+  scope?: 'evidence' | 'action';
+  /** Messages: sha256 of the approved text. The text itself is never written to a log ([A5]). */
+  textSha256?: string;
+  /** read_back recorded: sha256 of the duplicate key ({@link duplicateKey}), so the guard is seeded without the text. */
+  keySha256?: string;
 }
 
 export interface Refused {
@@ -143,7 +163,22 @@ export interface Refused {
 export type Transition = { ok: true; intent: StoredIntent; previous: IntentStatus } | Refused;
 
 const OPEN: readonly IntentStatus[] = ['proposed', 'approved', 'failed'];
-const SEND_KINDS: readonly AuditKind[] = ['send_started', 'sent', 'send_failed'];
+const SEND_KINDS: readonly AuditKind[] = ['send_started', 'sent', 'send_failed', 'send_uncertain', 'read_back'];
+const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
+/** The evidence memory's key: per (dispute, stage); without a known stage, the whole dispute (as before stages). */
+const evidenceKey = (disputeId: string, stage: string | null | undefined) => (typeof stage === 'string' && stage ? `${disputeId}|${stage}` : disputeId);
+const isActionIntent = (i: StoredIntent) => intentAction(i) !== 'provide_evidence';
+/** The lock scope of a send-log event: written ones say it; one written before actions is evidence. */
+const eventScope = (e: AuditEvent): 'evidence' | 'action' =>
+  e.scope ?? (e.kind === 'send_uncertain' || e.kind === 'read_back' ? 'action' : !e.action || e.action === 'provide_evidence' ? 'evidence' : 'action');
+type Hold = { intentId: string; since: string; caseId: string };
+
+/** The lock fields of a send event about this intent (the event's own fields win). */
+function sendFields(i: StoredIntent): Pick<AuditEvent, 'action' | 'scope' | 'stage' | 'textSha256'> {
+  const action = intentAction(i);
+  if (action === 'provide_evidence') return { action, scope: 'evidence' };
+  return { action, scope: 'action', stage: i.pin?.stage ?? null, ...(i.payload?.kind === 'send_message' ? { textSha256: sha256(i.payload.text) } : {}) };
+}
 const NOT_FOUND: Refused = { ok: false, status: 404, error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case and session' };
 
 export function newIntentId(): string {
@@ -156,10 +191,20 @@ export class IntentStore {
   private readonly intents = new Map<string, StoredIntent>();
   /** The last state of intents that left the store (their owner still gets "invalidated", not "unknown"). */
   private readonly tombstones = new Map<string, StoredIntent>();
-  /** PayPal dispute → the intent PayPal accepted for it (persisted): no other intent is sent there. */
+  /**
+   * The evidence memory: `dispute|stage` → the evidence intent PayPal accepted there (persisted); no other evidence is
+   * sent in that stage. A key without `|` (written before stages, or with no known stage) blocks the whole dispute.
+   */
   private readonly sentDisputes = new Map<string, { intentId: string; at: string }>();
-  /** PayPal dispute → the intent being sent to it right now. */
+  /** PayPal dispute → the intent being sent to it right now (any action). */
   private readonly inFlight = new Map<string, string>();
+  /**
+   * PayPal dispute → the action send whose outcome is not proven ([A1]): no write of any kind goes there until a
+   * read-back proves it recorded, or absent. Never turned into «closed». Persisted, and seeded from the send log.
+   */
+  private readonly uncertain = new Map<string, Hold>();
+  /** PayPal dispute → sha256 of the duplicate keys of the actions PayPal recorded there (the duplicate guard). */
+  private readonly recordedKeys = new Map<string, Set<string>>();
   /** Exact analyses intents were composed from, by hash (memory only; a restart falls back to the stored one). */
   private readonly pins = new Map<string, CaseAnalysis>();
   /** Recent creation times per owner (rate limit independent of the client address). */
@@ -206,10 +251,49 @@ export class IntentStore {
     // The send log first: it is durable and append-only, so even when intents.json is lost or unreadable every dispute
     // PayPal accepted an intent for is known again (no other intent is sent there).
     load(this.sendsFile, (e) => this.sendLog.push(e));
-    if (this.file) this.loadIntents(this.file);
-    for (const e of this.sendLog) {
-      if (e.kind === 'sent' && e.disputeId && e.intentId && !this.sentDisputes.has(e.disputeId)) this.sentDisputes.set(e.disputeId, { intentId: e.intentId, at: e.at });
+    const interrupted = this.file ? this.loadIntents(this.file) : [];
+    this.seedFromSendLog();
+    // An action cut short by a restart may have reached PayPal: the dispute is held until a read-back says.
+    for (const i of interrupted) {
+      if (!i.disputeId || this.uncertain.has(i.disputeId)) continue;
+      i.readBack = 'pending';
+      this.uncertain.set(i.disputeId, { intentId: i.id, since: this.iso(), caseId: i.caseId });
+      this.recordChecked({ caseId: i.caseId, kind: 'send_uncertain', actor: 'ResolveKit', owner: i.createdBy, disputeId: i.disputeId, intentId: i.id, contentHash: i.contentHash, requestId: i.requestId, detail: 'the server restarted during the send' });
     }
+  }
+
+  /**
+   * Every lock from the durable, append-only send log alone (intents.json may be lost or unreadable): the evidence
+   * memory from `sent` evidence events (by stage when the event has one; an event written before actions is evidence
+   * for the whole dispute), the uncertain disputes from action sends started and never proven recorded or absent by a
+   * read-back, and the duplicate guard from read-backs that proved an action recorded. Adds to what intents.json had.
+   */
+  private seedFromSendLog() {
+    const open = new Map<string, Hold & { disputeId: string }>();
+    for (const e of this.sendLog) {
+      if (!e.disputeId || !e.intentId) continue;
+      if (eventScope(e) === 'evidence') {
+        const k = evidenceKey(e.disputeId, e.stage);
+        if (e.kind === 'sent' && !this.sentDisputes.has(k)) this.sentDisputes.set(k, { intentId: e.intentId, at: e.at });
+        continue;
+      }
+      const proven = e.kind === 'read_back' && (e.detail === 'recorded' || e.detail === 'absent');
+      if (proven) {
+        open.delete(e.intentId);
+        if (e.detail === 'recorded' && e.keySha256) this.addKey(e.disputeId, e.keySha256);
+      } else if (e.kind !== 'send_failed' && !open.has(e.intentId)) {
+        // send_started, sent (accepted, not proven), send_uncertain, read_back pending. A send_failed after them
+        // does not clear it: after a restart only a read-back does.
+        open.set(e.intentId, { intentId: e.intentId, since: e.at, caseId: e.caseId, disputeId: e.disputeId });
+      }
+    }
+    for (const h of open.values()) if (!this.uncertain.has(h.disputeId)) this.uncertain.set(h.disputeId, { intentId: h.intentId, since: h.since, caseId: h.caseId });
+  }
+
+  private addKey(disputeId: string, keySha: string) {
+    let set = this.recordedKeys.get(disputeId);
+    if (!set) this.recordedKeys.set(disputeId, (set = new Set()));
+    set.add(keySha);
   }
 
   private iso() {
@@ -218,31 +302,60 @@ export class IntentStore {
 
   // ---------------------------------------------------------------------------------------------------- persistence
 
-  /** Read the saved intents. A missing file is an empty store; one that cannot be read is preserved, never overwritten. */
-  private loadIntents(file: string) {
+  /**
+   * Read the saved intents. A missing file is an empty store; one that cannot be read is preserved, never overwritten.
+   * Returns the action intents a restart cut short (they hold their dispute as uncertain).
+   */
+  private loadIntents(file: string): StoredIntent[] {
     const read = readStoreFile(file);
-    if (read.kind === 'missing') return; // no intents yet
-    if (read.kind === 'error') return this.unreadable(file, read.code, false);
+    if (read.kind === 'missing') return []; // no intents yet
+    if (read.kind === 'error') {
+      this.unreadable(file, read.code, false);
+      return [];
+    }
     const raw = read.text;
     const intents = new Map<string, StoredIntent>();
     const sent = new Map<string, { intentId: string; at: string }>();
+    const holds = new Map<string, Hold>();
+    const keys = new Map<string, string[]>();
+    const interrupted: StoredIntent[] = [];
     try {
-      const saved = JSON.parse(raw) as StoredIntent[] | { intents: StoredIntent[]; sentDisputes?: Record<string, { intentId: string; at: string }> };
+      const saved = JSON.parse(raw) as
+        | StoredIntent[]
+        | { intents: StoredIntent[]; sentDisputes?: Record<string, { intentId: string; at: string }>; uncertain?: Record<string, Hold>; recordedKeys?: Record<string, string[]> };
       const list = Array.isArray(saved) ? saved : saved?.intents;
       if (!Array.isArray(list)) throw new Error('no list of intents');
       for (const i of list.slice(-MAX_INTENTS)) {
         if (!i || typeof i.id !== 'string' || typeof i.status !== 'string') throw new Error('an entry is not an intent');
         // A send cut short by a restart is unknown, not sent: it may be retried with the same PayPal-Request-Id,
         // and the evidence route reads PayPal first (provide_evidence disappears once evidence is in).
-        if (i.status === 'sending') Object.assign(i, { status: 'failed', reason: 'the server restarted during the send', failedAt: this.iso() });
+        if (i.status === 'sending') {
+          Object.assign(i, { status: 'failed', reason: 'the server restarted during the send', failedAt: this.iso() });
+          // An action may have reached PayPal: held as uncertain (evidence reads PayPal first, as before).
+          if (isActionIntent(i)) interrupted.push(i);
+        }
         if (OPEN.includes(i.status) || i.status === 'sent') intents.set(i.id, i);
       }
-      if (!Array.isArray(saved)) for (const [d, v] of Object.entries(saved.sentDisputes ?? {})) sent.set(d, v);
+      if (!Array.isArray(saved)) {
+        for (const [d, v] of Object.entries(saved.sentDisputes ?? {})) sent.set(d, v);
+        for (const [d, v] of Object.entries(saved.uncertain ?? {})) {
+          if (!v || typeof v.intentId !== 'string' || typeof v.since !== 'string') throw new Error('an uncertain entry is not one');
+          holds.set(d, v);
+        }
+        for (const [d, v] of Object.entries(saved.recordedKeys ?? {})) {
+          if (!Array.isArray(v)) throw new Error('a recorded-keys entry is not a list');
+          keys.set(d, v.filter((x): x is string => typeof x === 'string'));
+        }
+      }
     } catch (e) {
-      return this.unreadable(file, e instanceof SyntaxError ? 'not JSON' : (e as Error).message, true);
+      this.unreadable(file, e instanceof SyntaxError ? 'not JSON' : (e as Error).message, true);
+      return [];
     }
     for (const [k, v] of intents) this.intents.set(k, v);
     for (const [k, v] of sent) this.sentDisputes.set(k, v);
+    for (const [k, v] of holds) this.uncertain.set(k, v);
+    for (const [d, list] of keys) for (const k of list) this.addKey(d, k);
+    return interrupted;
   }
 
   /**
@@ -274,7 +387,15 @@ export class IntentStore {
     if (this.blocked) return false;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      writeFileDurable(this.file, JSON.stringify({ intents: [...this.intents.values()], sentDisputes: Object.fromEntries(this.sentDisputes) }));
+      writeFileDurable(
+        this.file,
+        JSON.stringify({
+          intents: [...this.intents.values()],
+          sentDisputes: Object.fromEntries(this.sentDisputes),
+          uncertain: Object.fromEntries(this.uncertain),
+          recordedKeys: Object.fromEntries([...this.recordedKeys].map(([d, set]) => [d, [...set]])),
+        }),
+      );
       return true;
     } catch {
       // Ordinary transitions: best effort, the in-memory state still holds. Sends check the result.
@@ -321,7 +442,9 @@ export class IntentStore {
     // An event about an intent belongs to the intent's workspace trail too.
     const about = e.intentId ? (this.intents.get(e.intentId) ?? this.tombstones.get(e.intentId)) : undefined;
     const team = e.team ?? about?.team ?? undefined;
-    const ev: AuditEvent = { at: e.at ?? this.iso(), ...e, ...(team ? { team } : {}) } as AuditEvent;
+    // Send events say which action, stage and lock they are about; a message only by its text's hash, never the text.
+    const lock = SEND_KINDS.includes(e.kind) && about ? sendFields(about) : {};
+    const ev: AuditEvent = { at: e.at ?? this.iso(), ...lock, ...e, ...(team ? { team } : {}) } as AuditEvent;
     if (SEND_KINDS.includes(ev.kind)) {
       // Sends: append-only, never evicted (bounded by the daily send cap).
       this.sendLog.push(ev);
@@ -408,6 +531,8 @@ export class IntentStore {
 
   /** When an intent stops counting by itself (TTL, retry window, retention), as epoch ms; null when it is in flight. */
   private endsAt(x: StoredIntent): number | null {
+    // An intent whose send is uncertain stays until a read-back settles it (it is what «Check again» reads back).
+    if (this.holds(x)) return null;
     if (x.status === 'proposed' || x.status === 'approved') return Date.parse(x.expiresAt);
     if (x.status === 'failed') return Date.parse(x.failedAt ?? x.createdAt) + FAILED_RETRY_MS;
     if (x.status === 'sent') return Date.parse(x.sentAt ?? x.createdAt) + SENT_RETENTION_MS;
@@ -475,9 +600,42 @@ export class IntentStore {
     return hash ? (this.pins.get(hash) ?? null) : null;
   }
 
-  /** The intent PayPal accepted for this dispute, if any. */
-  sentFor(disputeId: string): { intentId: string; at: string } | null {
-    return this.sentDisputes.get(disputeId) ?? null;
+  /**
+   * The evidence intent PayPal accepted that blocks evidence on this dispute in `stage`: an entry without a stage
+   * (whole dispute), or the stage's own. Without a known stage (omitted or null), any entry for the dispute.
+   */
+  sentFor(disputeId: string, stage?: string | null): { intentId: string; at: string } | null {
+    const whole = this.sentDisputes.get(disputeId);
+    if (whole) return whole;
+    if (typeof stage === 'string' && stage) return this.sentDisputes.get(`${disputeId}|${stage}`) ?? null;
+    for (const [k, v] of this.sentDisputes) if (k.startsWith(`${disputeId}|`)) return v;
+    return null;
+  }
+
+  /** Whether seller evidence was sent through this server for this dispute in this stage (or for the whole dispute). */
+  evidenceSentIn(disputeId: string, stage: string | null): boolean {
+    return this.sentFor(disputeId, stage) !== null;
+  }
+
+  /** The dispute's unproven action send, if any: no write goes there until a read-back settles it. */
+  isUncertain(disputeId: string): { intentId: string; since: string } | null {
+    const h = this.uncertain.get(disputeId);
+    return h ? { intentId: h.intentId, since: h.since } : null;
+  }
+
+  /** Whether the dispute is in flight or uncertain (rotation never moves a case off it). */
+  held(disputeId: string): boolean {
+    return this.inFlight.has(disputeId) || this.uncertain.has(disputeId);
+  }
+
+  /** Whether PayPal recorded an action with this {@link duplicateKey} on this dispute (read back, proven). */
+  recordedDuplicate(disputeId: string, key: string): boolean {
+    return this.recordedKeys.get(disputeId)?.has(sha256(key)) ?? false;
+  }
+
+  /** Whether this intent is the one holding its dispute as uncertain. */
+  private holds(i: StoredIntent): boolean {
+    return !!i.disputeId && this.uncertain.get(i.disputeId)?.intentId === i.id;
   }
 
   /**
@@ -606,7 +764,13 @@ export class IntentStore {
       return { ok: false, status: 409, error: `INTENT_${i.status.toUpperCase()}`, detail, intent: i };
     }
     if (i.disputeId) {
-      const done = this.sentDisputes.get(i.disputeId);
+      // An unproven send blocks every write on the dispute, its own retry included (never resent blindly).
+      if (this.uncertain.has(i.disputeId)) {
+        return { ok: false, status: 409, error: 'DISPUTE_UNCERTAIN', detail: 'The last send to this dispute is not confirmed by PayPal yet; check it again before anything else is sent', intent: i };
+      }
+      // Evidence: the whole-dispute memory (entries without a stage). The per-stage check is the route's, on the
+      // stage it has just read from PayPal (evidenceSentIn). Actions: PayPal's fresh read decides.
+      const done = isActionIntent(i) ? undefined : this.sentDisputes.get(i.disputeId);
       if (done && done.intentId !== id) {
         return { ok: false, status: 409, error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent', intent: i };
       }
@@ -654,17 +818,98 @@ export class IntentStore {
     this.save(true);
   }
 
-  /** sending → sent. False when the outcome did not reach the disk (PayPal has it anyway: the caller reports it). */
-  sent(id: string, actor: string, detail: string): boolean {
+  /**
+   * sending → sent: PayPal accepted the request. False when the outcome did not reach the disk (PayPal has it anyway:
+   * the caller reports it). Evidence goes into the evidence memory for `stage` (the stage just read from PayPal;
+   * omitted or null: the whole dispute). An action is accepted, not proven: its dispute stays held (uncertain) until
+   * {@link recordReadBack} says recorded or absent.
+   */
+  sent(id: string, actor: string, detail: string, stage?: string | null): boolean {
     const i = this.intents.get(id);
     if (!i) return false;
     this.unlock(i);
     i.status = 'sent';
     i.sentAt = this.iso();
     i.reason = null;
-    if (i.disputeId) this.sentDisputes.set(i.disputeId, { intentId: id, at: i.sentAt });
+    const action = isActionIntent(i);
+    if (action) i.readBack = 'pending';
+    if (i.disputeId) {
+      if (action) {
+        if (!this.uncertain.has(i.disputeId)) this.uncertain.set(i.disputeId, { intentId: id, since: i.sentAt, caseId: i.caseId });
+      }
+      else this.sentDisputes.set(evidenceKey(i.disputeId, stage), { intentId: id, at: i.sentAt });
+    }
     const saved = this.save(true);
-    const logged = this.recordChecked({ caseId: i.caseId, kind: 'sent', actor, owner: i.createdBy, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId, detail }).durable;
+    const logged = this.recordChecked({
+      caseId: i.caseId, kind: 'sent', actor, owner: i.createdBy, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId, detail,
+      ...(stage !== undefined ? { stage } : {}),
+    }).durable;
+    return saved && logged;
+  }
+
+  /**
+   * The outcome of an action send is not proven (ambiguous error, timeout, a read-back without proof): the dispute is
+   * held until a read-back settles it, durably (send log `send_uncertain`). The intent, if it was sending, is failed
+   * but cannot be retried while held. False when it did not reach the disk (the hold still applies in memory).
+   */
+  markUncertain(id: string, why: string): boolean {
+    const i = this.intents.get(id) ?? this.tombstones.get(id);
+    if (!i?.disputeId) return false;
+    this.unlock(i);
+    const at = this.iso();
+    if (i.status === 'sending') Object.assign(i, { status: 'failed', reason: why, failedAt: at });
+    i.readBack = 'pending';
+    // Another intent's hold is never replaced (it is settled by its own read-back).
+    if (!this.uncertain.has(i.disputeId)) this.uncertain.set(i.disputeId, { intentId: id, since: at, caseId: i.caseId });
+    const saved = this.save(true);
+    const logged = this.recordChecked({ caseId: i.caseId, kind: 'send_uncertain', actor: 'ResolveKit', scope: 'action', owner: i.createdBy, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId, detail: why }).durable;
+    return saved && logged;
+  }
+
+  /**
+   * What a read-back of an action send proved ([A4]), durably (send log `read_back`, detail = the state):
+   * - `recorded`: the intent is sent and recorded, its duplicate key remembered, the dispute free again;
+   * - `absent`: the intent failed and may be retried with the same PayPal-Request-Id, the dispute free again;
+   * - `pending`: no proof either way, the dispute stays (or becomes) held. Never «closed».
+   * Works from the hold alone when the intent itself is gone (seeded from the send log). False when unknown, or when
+   * it did not reach the disk.
+   */
+  recordReadBack(id: string, r: { state: 'recorded' | 'absent' | 'pending'; detail: string }): boolean {
+    const i = this.intents.get(id) ?? this.tombstones.get(id) ?? null;
+    const disputeId = i?.disputeId ?? [...this.uncertain].find(([, h]) => h.intentId === id)?.[0] ?? null;
+    if (!disputeId) return false;
+    const hold = this.uncertain.get(disputeId);
+    const caseId = i?.caseId ?? hold?.caseId;
+    if (!caseId) return false;
+    const ours = hold?.intentId === id;
+    const at = this.iso();
+    let keySha256: string | undefined;
+    if (i) {
+      this.unlock(i);
+      i.readBack = r.state;
+    }
+    if (r.state === 'recorded') {
+      if (i) {
+        if (i.status !== 'sent') Object.assign(i, { status: 'sent', sentAt: i.sentAt ?? at });
+        i.reason = null;
+        const key = duplicateKey(i);
+        if (key) this.addKey(disputeId, (keySha256 = sha256(key)));
+      }
+      if (ours) this.uncertain.delete(disputeId);
+    } else if (r.state === 'absent') {
+      if (ours) this.uncertain.delete(disputeId);
+      if (i && this.intents.has(id) && (i.status === 'sent' || i.status === 'sending' || i.status === 'failed')) {
+        Object.assign(i, { status: 'failed', reason: `PayPal does not show it: ${r.detail}`, failedAt: at, sentAt: null });
+      }
+    } else if (!hold) {
+      this.uncertain.set(disputeId, { intentId: id, since: at, caseId });
+    }
+    const saved = this.save(true);
+    const logged = this.recordChecked({
+      caseId, kind: 'read_back', actor: 'ResolveKit', scope: 'action', ...(i ? { owner: i.createdBy, contentHash: i.contentHash, requestId: i.requestId } : {}), disputeId, intentId: id, detail: r.state,
+      ...(keySha256 ? { keySha256 } : {}),
+    }).durable;
+    if (r.state === 'absent' && i?.voidReason && i.status === 'failed') this.invalidate(id, i.voidReason, i.createdBy);
     return saved && logged;
   }
 
@@ -730,6 +975,6 @@ export class IntentStore {
 
 /** The intent as the API shows it: the content and its state, not the server's bookkeeping. */
 export function publicIntent(i: StoredIntent): SubmissionIntent {
-  const { request: _r, rechecks: _c, createdBy: _b, createdFrom: _f, analysisHash: _h, failedAt: _a, voidReason: _v, inputUploads: _u, ...pub } = i;
+  const { request: _r, rechecks: _c, createdBy: _b, createdFrom: _f, analysisHash: _h, failedAt: _a, voidReason: _v, inputUploads: _u, threadKeysAtApproval: _k, ...pub } = i;
   return pub;
 }

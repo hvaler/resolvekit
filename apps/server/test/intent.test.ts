@@ -44,9 +44,11 @@ function routedPayPal(o: { dispute?: () => Dispute; sendStatus?: () => number; s
 
 const boundInput = (d: Dispute = standardDispute()) => caseInput(standardCase, { kind: 'live', snap: toSnapshot(d, CASE, 'sandbox', NOW), failed: null });
 
-async function setup(o: Parameters<typeof routedPayPal>[0] & { bound?: boolean; binding?: string | Binding; recheck?: Record<string, unknown>; intents?: IntentStore; verdicts?: RecheckVerdicts } = {}) {
-  const pp = routedPayPal(o);
-  const { analyst, model } = await analystFor([[CASE, boundInput()], [CASE, caseInput(standardCase, { kind: 'simulated' })]], o.recheck);
+async function setup(o: Parameters<typeof routedPayPal>[0] & { bound?: boolean; binding?: string | Binding; recheck?: Record<string, unknown>; intents?: IntentStore; verdicts?: RecheckVerdicts; stage?: string } = {}) {
+  // A dispute in a given stage (PayPal's dispute_life_cycle_stage), read and analysed as such.
+  const staged = o.stage ? (): Dispute => ({ ...standardDispute(), dispute_life_cycle_stage: o.stage }) : null;
+  const pp = routedPayPal(staged ? { ...o, dispute: staged } : o);
+  const { analyst, model } = await analystFor([[CASE, boundInput(staged ? staged() : undefined)], [CASE, caseInput(standardCase, { kind: 'simulated' })]], o.recheck);
   const lines: string[] = [];
   const app = createApp({
     paypal: pp.client,
@@ -421,4 +423,28 @@ test('ordering: a creation that fails (PayPal unreadable, blocked draft) retires
   assert.equal(((await (await app(get(`${intentPath}/${i.id}`))).json()) as Intent).status, 'approved');
   assert.equal((await app(post(evidencePath, { intentId: i.id }))).status, 202);
   assert.equal(pp.sends.length, 1);
+});
+
+test('[A1] evidence memory by stage: the send log records the stage read at send time; a second evidence in that stage is refused after the fresh read', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-intent-stage-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const files = { file: join(dir, 'intents.json'), eventsFile: join(dir, 'audit-events.jsonl') };
+  const { app, pp } = await setup({ stage: 'INQUIRY', intents: new IntentStore({ ...files, now: () => NOW }) });
+  const i = await propose(app);
+  assert.equal((await approve(app, i)).status, 200);
+  assert.equal((await app(post(evidencePath, { intentId: i.id }))).status, 202);
+  const sends = readFileSync(join(dir, 'audit-events-sends.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
+  assert.deepEqual(sends.map((e) => [e.kind, e.action, e.scope, e.stage]), [['send_started', 'provide_evidence', 'evidence', 'INQUIRY'], ['sent', 'provide_evidence', 'evidence', 'INQUIRY']]);
+  // PayPal's read does not show the evidence yet: this server's memory for the stage refuses a second one.
+  const j = await propose(app);
+  assert.equal((await approve(app, j)).status, 200);
+  const r = await app(post(evidencePath, { intentId: j.id }));
+  assert.equal(r.status, 409);
+  assert.equal(((await r.json()) as { error: string }).error, 'SELLER_EVIDENCE_EXISTS');
+  assert.equal(pp.sends.length, 1);
+  // From the send log alone: the memory is per stage.
+  rmSync(files.file);
+  const seeded = new IntentStore(files);
+  assert.equal(seeded.evidenceSentIn(REAL, 'INQUIRY'), true);
+  assert.equal(seeded.evidenceSentIn(REAL, 'CHARGEBACK'), false);
 });

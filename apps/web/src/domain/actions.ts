@@ -3,6 +3,7 @@
  * intent that is hashed for it (an {@link ActionPayload}) and the dispute as it was when the intent was composed (a
  * {@link DisputePin}). Types stay strings here; the contract registry decides which variants are available.
  */
+import { canonicalJson } from '@resolvekit/analyst';
 import { parseAmount } from './amounts.ts';
 import type { ComposeProblem, IntentContent, IntentRequest } from './intent.ts';
 
@@ -65,6 +66,27 @@ export const isSimpleAction = (a: unknown): a is SimpleAction => typeof a === 's
 export const intentAction = (c: IntentContent): IntentAction => c.action ?? 'provide_evidence';
 
 export const isActionRequest = (r: IntentRequest | ActionRequest): r is ActionRequest => isSimpleAction(r.action);
+
+/** What the owner's second confirmation names for each action ([A3]): a changed code means a new intent. */
+export const CONSEQUENCE: Readonly<Record<Exclude<IntentAction, 'provide_evidence'>, string>> = {
+  send_message: 'BUYER_SEES_MESSAGE',
+  accept_claim: 'REFUNDS_BUYER',
+  escalate: 'MOVES_TO_CLAIM',
+  make_offer: 'OFFERS_SETTLEMENT',
+  appeal: 'APPEALS_DECISION',
+};
+/** The consequence code of a message whose exact text PayPal already recorded on this dispute and stage. */
+export const REPEATS_MESSAGE = 'REPEATS_MESSAGE';
+
+/**
+ * The duplicate guard's key ([A1]): the same simple action with the same content on the same stage (the dispute is the
+ * store's key). Null for evidence and appeal, which have their own guards.
+ */
+export function duplicateKey(c: IntentContent): string | null {
+  const action = intentAction(c);
+  if (!isSimpleAction(action) || !c.payload) return null;
+  return `${action}|${c.pin?.stage ?? null}|${canonicalJson(c.payload)}`;
+}
 
 /** The server's CONTROL_CHARS (apps/server/src/app.ts): control and bidi characters; line breaks and tabs are allowed. */
 const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/;
