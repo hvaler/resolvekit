@@ -22,7 +22,8 @@ import { hasSellerEvidence, sellerEvidence } from '../../web/src/domain/recorded
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
 import { toBinding, verifyBinding, type Binding, type BindingState } from './bindings.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
-import { IntentStore, publicIntent, type StoredIntent } from './intents.ts';
+import { IntentStore, publicIntent, requestAttachments, type StoredIntent } from './intents.ts';
+import { isActionRequest } from '../../web/src/domain/actions.ts';
 import type { ReserveMemory } from './reserve.ts';
 import { RecheckVerdicts } from './verdicts.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
@@ -1007,6 +1008,8 @@ export function createApi(opts: ApiOptions): Api {
       if (intent.files.some((f) => !f.sha256)) {
         return refuse(json(409, { error: 'INTENT_STALE', detail: 'This response was approved before ResolveKit recorded each file’s SHA-256; review it again' }), 'no file hashes', true);
       }
+      // This route sends evidence; an action intent is never composed again as evidence.
+      if (isActionRequest(intent.request)) return refuse(json(409, { error: 'NOT_EVIDENCE', detail: 'This intent is not an evidence response' }), 'not an evidence intent', false);
       const again = await compose(caseId, st, intent.request, intent.rechecks, intents.analysisPin(intent.analysisHash));
       if (again instanceof Response) {
         const b = (await again.clone().json().catch(() => ({}))) as { error?: string };
@@ -1147,7 +1150,7 @@ export function createApi(opts: ApiOptions): Api {
       invalidate: (rec, actor) => {
         for (const i of intents.usingUpload(rec.id)) {
           if (i.status === 'sending') continue;
-          const how = i.request.attachments?.includes(rec.id) ? 'it attaches' : 'it was composed with';
+          const how = requestAttachments(i.request).includes(rec.id) ? 'it attaches' : 'it was composed with';
           intents.invalidate(i.id, `evidence ${rec.evidenceId ?? rec.id} ${how} was deleted`, actor);
         }
       },

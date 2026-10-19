@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { standardCase } from '@resolvekit/cases';
 import { correctionsOf } from './draft';
-import { composeSubmission, contentHash, intentContent, intentSubmission, isComposeProblem, parseIntentRequest, type ComposeInput } from './intent';
+import { composeSubmission, contentHash, intentContent, intentSubmission, isComposeProblem, parseIntentRequest, type ComposeInput, type IntentContent } from './intent';
 import { LocalIntentClient } from './intentClient';
+import { ACTION_EVIDENCE_BLANK, type DisputePin } from './actions';
 import type { CaseFile, Contradiction } from './types';
 
 const k: Contradiction = {
@@ -177,5 +178,54 @@ describe('M3: the audit log shows the server’s events', () => {
     // A server that cannot answer: no server log (the flow falls back to this browser's, labelled as such).
     const down = (async () => new Response('{}', { status: 403 })) as unknown as typeof globalThis.fetch;
     expect(await new HttpIntentClient({ fetch: down }).events('X')).toBeNull();
+  });
+});
+
+describe('hash compatibility (B0)', () => {
+  // GOLDEN content, unchanged since dcd74c6: intents approved before dispute actions must keep their hashes.
+  const GOLDEN: IntentContent = {
+    caseId: 'PP-R-TVH-10190665',
+    disputeId: 'PP-R-GOLDEN-1',
+    documentsHash: 'a'.repeat(64),
+    analysisKey: 'b'.repeat(64),
+    evidenceType: 'PROOF_OF_FULFILLMENT',
+    carrier: 'UPS',
+    tracking: '1Z999AA10123456784',
+    notes: 'Delivered on 8 Oct 2026.',
+    files: [{ name: 'E3-ups-tracking.pdf', size: '2 KB', sha256: 'c'.repeat(64), source: 'demo' }],
+    sentences: [{ id: 'S1', text: 'Delivered on 8 Oct 2026.', edited: false }],
+    resolutionNotes: [{ contradictionId: 'C1', note: 'Same building.' }],
+  };
+
+  it('existing provide-evidence hashes are unchanged (golden)', async () => {
+    expect(await contentHash(GOLDEN)).toBe('63fe9916f41178e78070ee0d030a3e7d7791adeb9a61e925ecb352daab83b9c8');
+    expect(await contentHash({ ...GOLDEN, confirmedCorrections: ['S1@E7.l2'] })).toBe('ee7919f7a34f78f2d314d1f400d6b856226c51167bdc952c4e5048bd58d12dec');
+    expect(await contentHash({ ...GOLDEN, refundIds: [] })).toBe('63fe9916f41178e78070ee0d030a3e7d7791adeb9a61e925ecb352daab83b9c8');
+  });
+
+  const pin: DisputePin = { disputeId: 'PP-R-GOLDEN-1', seller: 'SELLER1', stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', amount: { value: '35.00', currency: 'USD' } };
+  const action = (a: Pick<IntentContent, 'action' | 'payload'>): IntentContent => ({ ...ACTION_EVIDENCE_BLANK, caseId: GOLDEN.caseId, disputeId: GOLDEN.disputeId, files: [], pin, ...a });
+
+  it('each action hashes its action, payload and pin; one action never hashes as another', async () => {
+    const message = action({ action: 'send_message', payload: { kind: 'send_message', text: 'Delivered.' } });
+    const escalate = action({ action: 'escalate', payload: { kind: 'escalate', note: 'Delivered.' } });
+    expect(intentContent(message)).toMatchObject({ action: 'send_message', payload: { kind: 'send_message', text: 'Delivered.' }, pin });
+    expect(await contentHash(message)).not.toBe(await contentHash(escalate));
+    expect(await contentHash(message)).not.toBe(await contentHash({ ...message, action: undefined, payload: undefined, pin: undefined }));
+    expect(await contentHash({ ...message, pin: { ...pin, status: 'UNDER_REVIEW' } })).not.toBe(await contentHash(message));
+    expect(await contentHash({ ...message, pin: { ...pin, stage: 'CHARGEBACK' } })).not.toBe(await contentHash(message));
+    expect(await contentHash({ ...message, pin: { ...pin, amount: { value: '35.00', currency: 'EUR' } } })).not.toBe(await contentHash(message));
+    expect(await contentHash({ ...message, payload: { kind: 'send_message', text: 'Delivered!' } })).not.toBe(await contentHash(message));
+    const offer = action({ action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'Half.', amount: { value: '17.50', currency: 'USD' } } });
+    expect(await contentHash({ ...offer, payload: { kind: 'make_offer', offerType: 'REFUND', note: 'Half.', amount: { value: '17.51', currency: 'USD' } } })).not.toBe(await contentHash(offer));
+    expect(await contentHash(action({ action: 'appeal' }))).not.toBe(await contentHash({ ...GOLDEN, ...ACTION_EVIDENCE_BLANK, files: [] }));
+    // Only the hashed fields: anything else on the object is not part of the content.
+    expect(intentContent({ ...message, payload: { kind: 'send_message', text: 'Delivered.', extra: 1 } as never, pin: { ...pin, extra: 1 } as never })).toEqual(intentContent(message));
+    // Without an action (or with provide_evidence) none of it is hashed: an evidence intent hashes as it did.
+    expect(await contentHash({ ...GOLDEN, payload: message.payload, pin })).toBe('63fe9916f41178e78070ee0d030a3e7d7791adeb9a61e925ecb352daab83b9c8');
+    expect(await contentHash({ ...GOLDEN, action: 'provide_evidence', pin })).toBe('63fe9916f41178e78070ee0d030a3e7d7791adeb9a61e925ecb352daab83b9c8');
+    // Refunds are part of the content when there are some.
+    expect(await contentHash({ ...GOLDEN, refundIds: ['1AB23456CD789012E'] })).not.toBe('63fe9916f41178e78070ee0d030a3e7d7791adeb9a61e925ecb352daab83b9c8');
+    expect(intentContent({ ...GOLDEN, refundIds: ['1AB23456CD789012E'] }).refundIds).toEqual(['1AB23456CD789012E']);
   });
 });

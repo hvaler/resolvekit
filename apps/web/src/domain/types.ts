@@ -17,7 +17,7 @@ export type DisputeReason =
   | 'UNAUTHORISED'
   | 'INCORRECT_AMOUNT';
 
-export type ActionCode = 'provide_evidence' | 'send_message' | 'make_offer' | 'accept_claim' | 'escalate';
+export type ActionCode = 'provide_evidence' | 'send_message' | 'make_offer' | 'accept_claim' | 'escalate' | 'appeal';
 
 export type EvidenceType =
   | 'PROOF_OF_FULFILLMENT'

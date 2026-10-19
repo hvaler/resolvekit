@@ -24,6 +24,7 @@ export const ACTION_LABEL: Readonly<Record<ActionCode, string>> = {
   make_offer: 'Make an offer',
   accept_claim: 'Accept claim',
   escalate: 'Escalate',
+  appeal: 'Appeal',
 };
 
 

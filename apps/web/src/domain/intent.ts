@@ -9,6 +9,7 @@
 import { canonicalJson, sha256Hex } from '@resolvekit/analyst';
 import { deriveSentences, draftBlockers, notesText, type Correction, type Recheck } from './draft.ts';
 import { evidenceTypeOptions } from './evidenceTypes.ts';
+import { isSimpleAction, parseActionRequest, type ActionPayload, type ActionRequest, type DisputePin, type IntentAction, type Money } from './actions.ts';
 import type { ActionCode, CaseFile, ContradictionResolution, EvidenceSubmission, EvidenceType, SentenceView, SubmissionFile } from './types';
 
 /** What the merchant asks for: the evidence type, their edited sentences and how each contradiction was resolved. */
@@ -29,6 +30,10 @@ export interface IntentRequest {
    * sanitised files next to the case's documents, and nothing else. Sorted, unique.
    */
   attachments: string[];
+  /** An appeal of PayPal's decision, composed from the analysis like evidence. Absent: provide evidence. */
+  action?: 'appeal';
+  /** PROOF_OF_REFUND: the PayPal refunds (ids) the evidence shows, read from PayPal and never created. Sorted, unique, 1–5. */
+  refundIds?: string[];
 }
 
 /** A sentence that goes into the notes, in order. */
@@ -57,6 +62,14 @@ export interface IntentContent {
   resolutionNotes: { contradictionId: string; note: string }[];
   /** The request's confirmed corrections (sorted `sentenceId@fragment` pairs): part of what the merchant approves. Absent: none. */
   confirmedCorrections?: string[];
+  /** The action other than evidence. Absent: provide_evidence (an evidence intent hashes as it did before actions). */
+  action?: IntentAction;
+  /** What a simple action sends (absent for evidence and appeal). */
+  payload?: ActionPayload;
+  /** The dispute as read at compose time: an action is never replayed on a dispute that changed. */
+  pin?: DisputePin;
+  /** The PayPal refunds the evidence shows (PROOF_OF_REFUND). Absent: none. */
+  refundIds?: string[];
 }
 
 export type IntentStatus =
@@ -108,8 +121,28 @@ export function intentContent(i: IntentContent): IntentContent {
     resolutionNotes: i.resolutionNotes.map((r) => ({ contradictionId: r.contradictionId, note: r.note })),
     // Only when there are some: an intent without confirmations hashes as it did before they existed.
     ...(i.confirmedCorrections?.length ? { confirmedCorrections: [...i.confirmedCorrections] } : {}),
+    // Only for an action other than evidence: an evidence intent hashes as it did before actions existed.
+    ...(i.action && i.action !== 'provide_evidence' ? { action: i.action, payload: i.payload && payloadContent(i.payload), pin: i.pin && pinContent(i.pin) } : {}),
+    ...(i.refundIds?.length ? { refundIds: [...i.refundIds] } : {}),
   };
 }
+
+const moneyContent = (m: Money | null): Money | null => m && { value: m.value, currency: m.currency };
+
+function payloadContent(p: ActionPayload): ActionPayload {
+  switch (p.kind) {
+    case 'send_message':
+      return { kind: p.kind, text: p.text };
+    case 'escalate':
+      return { kind: p.kind, note: p.note };
+    case 'accept_claim':
+      return { kind: p.kind, acceptType: p.acceptType, note: p.note, amount: moneyContent(p.amount) };
+    case 'make_offer':
+      return { kind: p.kind, offerType: p.offerType, note: p.note, amount: moneyContent(p.amount) };
+  }
+}
+
+const pinContent = (p: DisputePin): DisputePin => ({ disputeId: p.disputeId, seller: p.seller, stage: p.stage, status: p.status, amount: moneyContent(p.amount) });
 
 export function contentHash(i: IntentContent): Promise<string> {
   return sha256Hex(canonicalJson(intentContent(i)));
@@ -147,6 +180,8 @@ const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f‪-‮⁦-⁩]/;
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const PAIR = /^[\w.-]{1,40}@[\w.-]{1,40}$/;
 const UPLOAD_ID = /^upl-[0-9a-f]{24}$/;
+const REFUND_ID = /^[A-Z0-9]{8,32}$/;
+const MAX_REFUNDS = 5;
 /** At most this many uploads attached (a case takes at most 10, server/uploads/limits.ts). */
 const MAX_ATTACHMENTS = 10;
 
@@ -154,9 +189,10 @@ const MAX_ATTACHMENTS = 10;
 export function parseIntentRequest(body: unknown): IntentRequest | ComposeProblem {
   const bad = (detail: string): ComposeProblem => ({ status: 400, error: 'INVALID_INTENT_REQUEST', detail });
   if (!isRecord(body)) return bad('Body must be a JSON object');
-  const extra = Object.keys(body).filter((k) => !['evidenceType', 'edits', 'resolutions', 'confirmedCorrections', 'attachments'].includes(k));
+  const extra = Object.keys(body).filter((k) => !['evidenceType', 'edits', 'resolutions', 'confirmedCorrections', 'attachments', 'action', 'refundIds'].includes(k));
   if (extra.length) return bad(`Unexpected field(s) ${extra.join(', ')}: notes, files and tracking are composed on the server`);
   if (typeof body.evidenceType !== 'string' || !/^[A-Z_]{1,60}$/.test(body.evidenceType)) return bad('evidenceType must be a PayPal evidence type');
+  if (body.action !== undefined && body.action !== 'provide_evidence' && body.action !== 'appeal') return bad('action must be provide_evidence or appeal');
   const edits: Record<string, string> = {};
   if (body.edits !== undefined) {
     if (!isRecord(body.edits)) return bad('edits must be an object { sentenceId: text }');
@@ -204,7 +240,30 @@ export function parseIntentRequest(body: unknown): IntentRequest | ComposeProble
       attachments.add(id);
     }
   }
-  return { evidenceType: body.evidenceType as EvidenceType, edits, resolutions, confirmedCorrections: [...confirmed].sort(), attachments: [...attachments].sort() };
+  const refunds = new Set<string>();
+  if (body.refundIds !== undefined) {
+    const v = body.refundIds;
+    if (!Array.isArray(v) || v.length < 1 || v.length > MAX_REFUNDS) return bad(`refundIds must be a list of 1 to ${MAX_REFUNDS} PayPal refund ids`);
+    for (const id of v) {
+      if (typeof id !== 'string' || !REFUND_ID.test(id)) return bad('refundIds: invalid PayPal refund id');
+      refunds.add(id);
+    }
+  }
+  return {
+    evidenceType: body.evidenceType as EvidenceType,
+    edits,
+    resolutions,
+    confirmedCorrections: [...confirmed].sort(),
+    attachments: [...attachments].sort(),
+    // Only when set: an evidence request is what it was before appeals and refunds.
+    ...(body.action === 'appeal' ? { action: 'appeal' as const } : {}),
+    ...(refunds.size ? { refundIds: [...refunds].sort() } : {}),
+  };
+}
+
+/** Parse a request body by its action: a simple action ({@link parseActionRequest}), or evidence and appeal. */
+export function parseAnyIntentRequest(body: unknown): IntentRequest | ActionRequest | ComposeProblem {
+  return isRecord(body) && isSimpleAction(body.action) ? parseActionRequest(body) : parseIntentRequest(body);
 }
 
 export const isComposeProblem = (x: unknown): x is ComposeProblem => isRecord(x) && typeof x.error === 'string' && typeof x.status === 'number';

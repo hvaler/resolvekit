@@ -43,6 +43,7 @@ import { basename, dirname } from 'node:path';
 import { appendFileDurable, preserveCorrupt, readStoreFile, writeFileDurable } from '@resolvekit/hosting';
 import type { CaseAnalysis } from '@resolvekit/analyst';
 import type { IntentRequest, IntentStatus, SubmissionIntent } from '../../web/src/domain/intent.ts';
+import type { ActionRequest } from '../../web/src/domain/actions.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
 
 /** Safety nets only: the operative limits are per session and per client address. */
@@ -64,9 +65,12 @@ export const MAX_EVENT_OWNERS = 2000;
 export const MAX_EVENTS_FILE_BYTES = 4 * 1024 * 1024;
 export const INTENT_ID = /^int-[0-9a-f]{32}$/;
 
+/** The uploads a stored request attaches (none on intents stored before uploads). */
+export const requestAttachments = (r: IntentRequest | ActionRequest): readonly string[] => r.attachments ?? [];
+
 /** What the server keeps about an intent besides what it shows: how to compose it again, and whose it is. */
 export interface StoredIntent extends SubmissionIntent {
-  request: IntentRequest;
+  request: IntentRequest | ActionRequest;
   /** The verifier's verdicts on the edits, valid for {@link SubmissionIntent.analysisKey}. */
   rechecks: Record<string, Recheck>;
   /** The owner: the session that created it. Only it can read, approve, send or cancel the intent. */
@@ -463,7 +467,7 @@ export class IntentStore {
    */
   dropPinsUsing(uploadId: string) {
     for (const i of [...this.intents.values(), ...this.tombstones.values()]) {
-      if (i.analysisHash && (i.request.attachments?.includes(uploadId) || i.inputUploads?.includes(uploadId))) this.pins.delete(i.analysisHash);
+      if (i.analysisHash && (requestAttachments(i.request).includes(uploadId) || i.inputUploads?.includes(uploadId))) this.pins.delete(i.analysisHash);
     }
   }
 
@@ -706,7 +710,7 @@ export class IntentStore {
    */
   usingUpload(uploadId: string): StoredIntent[] {
     return [...this.intents.values()].filter(
-      (i) => (i.request.attachments?.includes(uploadId) || i.inputUploads?.includes(uploadId)) && this.intents.has(this.fresh(i).id) && (OPEN.includes(i.status) || i.status === 'sending'),
+      (i) => (requestAttachments(i.request).includes(uploadId) || i.inputUploads?.includes(uploadId)) && this.intents.has(this.fresh(i).id) && (OPEN.includes(i.status) || i.status === 'sending'),
     );
   }
 
