@@ -7,6 +7,10 @@ import { parseBindingPools } from '../src/bindings.ts';
 import { createHostedApp } from '../src/hosted.ts';
 import { UploadError } from '../src/uploads/image.ts';
 import { UploadStore } from '../src/uploads/store.ts';
+import { ReserveMemory } from '../src/reserve.ts';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
@@ -57,8 +61,10 @@ function poolDispute(b: { dispute: string; capture: string }, state: { evidenceA
   };
 }
 
-function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW, delayMs = 0) {
+function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW, delayMs = 0, reserveMemory?: ReserveMemory) {
   const p = parseBindingPools(raw);
+  // What main.ts does at start: skip the disputes remembered as used.
+  const skipped = reserveMemory?.apply(p) ?? [];
   const reads: string[] = [];
   const lines: string[] = [];
   const fetch = (async (url: string | URL) => {
@@ -90,8 +96,9 @@ function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW,
     opsToken: OPS,
     uploads: store,
     now,
+    ...(reserveMemory ? { reserveMemory } : {}),
   });
-  return { app, reads, lines, people, store };
+  return { app, reads, lines, people, store, pools: p, skipped };
 }
 
 type Status = { ok: boolean; problems: string[]; bindings: Record<string, { dispute: string; status: string; used: boolean; reserve: number }> };
@@ -282,4 +289,74 @@ test('an upload pending before a rotation cannot be confirmed afterwards (409 UP
   const again = await api(app, `${UP}/${up.id}/redact`, judge, { removals: [] });
   assert.equal(again.status, 409);
   assert.equal(again.body.error, 'UPLOAD_ARCHIVED');
+});
+
+// ------------------------------------------------------------------------------------------------ position across restarts
+
+test('restart: the reserve position is on the data dir, so a new process starts past the disputes already used', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-reserve-'));
+  try {
+    const file = join(dir, 'reserve-position.json');
+    const old = new Date(NOW.getTime() - 60 * MIN).toISOString();
+    const disputes = { [A.dispute]: poolDispute(A, { resolved: true }), [B.dispute]: poolDispute(B, { evidenceAt: old }), [C.dispute]: poolDispute(C) };
+    const first = setup({ [CASE]: [A, B, C] }, disputes, () => NOW, 0, new ReserveMemory({ file }));
+    await status(first.app);
+    await status(first.app);
+    assert.equal((await status(first.app)).bindings[CASE]!.dispute, C.dispute);
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { v: 1, used: { [CASE]: [A.dispute, B.dispute] } });
+    // The same BINDINGS_JSON after a restart: C is active at once, A and B are never read again.
+    const lines: string[] = [];
+    const second = setup({ [CASE]: [A, B, C] }, disputes, () => NOW, 0, new ReserveMemory({ file, log: (l) => lines.push(l) }));
+    assert.deepEqual(second.skipped, [{ caseId: CASE, skipped: [A.dispute, B.dispute], active: C.dispute }]);
+    const s = await status(second.app);
+    assert.equal(s.bindings[CASE]!.dispute, C.dispute);
+    assert.equal(s.bindings[CASE]!.reserve, 0);
+    assert.ok(!second.reads.includes(A.dispute) && !second.reads.includes(B.dispute), second.reads.join(','));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a position that no longer matches the bindings is ignored safely: other disputes, other cases, never the last one', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-reserve-'));
+  try {
+    const file = join(dir, 'reserve-position.json');
+    writeFileSync(file, JSON.stringify({ v: 1, used: { [CASE]: ['PP-R-GONE-9', B.dispute, C.dispute], 'other-case': [A.dispute] } }));
+    const m = new ReserveMemory({ file });
+    // A is first and not used: nothing moves (B is used but behind an unused one).
+    let p = parseBindingPools({ [CASE]: [A, B, C] });
+    assert.deepEqual(m.apply(p), []);
+    assert.deepEqual(p.bindings[CASE], A);
+    // Trimmed to [B, C]: B is skipped; C, the last configured, stays active even though it is remembered as used.
+    p = parseBindingPools({ [CASE]: [B, C] });
+    assert.deepEqual(m.apply(p), [{ caseId: CASE, skipped: [B.dispute], active: C.dispute }]);
+    assert.deepEqual(p.bindings[CASE], C);
+    assert.deepEqual(p.reserve[CASE], []);
+    // A single binding (no reserve) is never moved.
+    p = parseBindingPools({ [CASE]: C });
+    assert.deepEqual(m.apply(p), []);
+    assert.deepEqual(p.bindings[CASE], C);
+    assert.equal(m.storageProblem(), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an unreadable reserve-position.json is preserved and reported; every case walks its list as before', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-reserve-'));
+  try {
+    const file = join(dir, 'reserve-position.json');
+    writeFileSync(file, '{"v":1,"used":');
+    const lines: string[] = [];
+    const m = new ReserveMemory({ file, now: () => NOW, log: (l) => lines.push(l) });
+    assert.match(m.storageProblem()!, /could not be read; preserved as/);
+    assert.ok(readdirSync(dir).some((f) => f.startsWith('reserve-position.json.corrupt-')));
+    assert.ok(lines.some((l) => /ERROR reserve/.test(l)));
+    const p = parseBindingPools({ [CASE]: [A, B] });
+    assert.deepEqual(m.apply(p), []);
+    m.markUsed(CASE, A.dispute);
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { v: 1, used: { [CASE]: [A.dispute] } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

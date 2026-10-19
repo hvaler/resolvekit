@@ -23,6 +23,8 @@ import { InputPins, type AnalystService, type LiveGate, type Reservation } from 
 import { toBinding, verifyBinding, type Binding, type BindingState } from './bindings.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
 import { IntentStore, publicIntent, type StoredIntent } from './intents.ts';
+import type { ReserveMemory } from './reserve.ts';
+import { RecheckVerdicts } from './verdicts.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
 import { checkAgainstDispute } from './validate.ts';
@@ -107,8 +109,12 @@ export interface ApiOptions {
    * takes a seller's evidence once per dispute: when the active one is used, the case moves to the next (in place).
    */
   reserve?: Record<string, Binding[]> | null;
+  /** Remembers the disputes a case moved past, so a restart does not walk past them again (reserve.ts). Default: none. */
+  reserveMemory?: ReserveMemory | null;
   /** How long a dispute whose seller evidence just went in stays active, so whoever sent it sees PayPal's read-back (15 min). */
   rotateAfterMs?: number;
+  /** The verifier's verdicts on edited sentences (verdicts.ts; persisted on the data dir by main.ts). Default: in memory. */
+  verdicts?: RecheckVerdicts | null;
   /** A case moved to the next dispute of its reserve (hosted mode analyses it again). */
   onRebound?: (caseId: string) => void;
   now?: () => Date;
@@ -279,6 +285,8 @@ export type Api = Handler & {
 export interface OpsReport {
   paypal: PayPalEnv | 'unconfigured';
   error?: string;
+  /** Stores whose file could not be read at start (preserved aside, see intents.ts), with why. Empty: none. */
+  storage: string[];
   bindings: Record<
     string,
     {
@@ -329,21 +337,16 @@ export function createApi(opts: ApiOptions): Api {
   const log = opts.log ?? (() => {});
   const isAgentCase = (caseId: string) => CASE_FILES[caseId]?.kind === 'agent';
   const intents = opts.intents ?? new IntentStore({ now });
-  /** The verifier's verdicts on edited sentences, by `${analysisKey}\n${text}`: only these edits can be sent. */
-  const verified = new Map<string, Recheck>();
-  /** Bounded: the oldest verdicts go first (an intent keeps the verdicts it was composed with). */
-  const MAX_VERIFIED = 2000;
-  const rememberVerdict = (k: string, r: Recheck) => {
-    verified.delete(k);
-    verified.set(k, r);
-    if (verified.size > MAX_VERIFIED) verified.delete(verified.keys().next().value!);
-  };
+  /**
+   * The verifier's verdicts on edited sentences, by analysis key and text: only these edits can be sent. Bounded, the
+   * oldest first (an intent keeps the verdicts it was composed with); persisted when main.ts gives a file.
+   */
+  const verified = opts.verdicts ?? new RecheckVerdicts();
 
   /** Forget the analyses with these keys and everything that hangs from them (job, progress, stored file, re-check verdicts). */
   const forgetAnalyses = (keys: string[]) => {
     opts.analyst?.forget(keys);
-    for (const k of [...verified.keys()]) if (keys.some((key) => k.startsWith(`${key}
-`))) verified.delete(k);
+    verified.forget(keys);
   };
   const staleUpload = () => json(409, { error: 'UPLOAD_CHANGED', detail: 'An upload this analysis read was deleted while it was being made; the analysis was dropped. Try again.' });
 
@@ -493,6 +496,14 @@ export function createApi(opts: ApiOptions): Api {
    */
   const pins = opts.pins ?? new InputPins();
   const uploads = opts.uploads ?? new UploadStore({ dir: null, now });
+  /** The stores whose file could not be read at start (each preserved aside, with why): /api/health and the ops check. */
+  const storageProblems = (): Array<{ store: string; problem: string }> =>
+    [
+      { store: 'intents', problem: intents.storageProblem() },
+      { store: 'analysis-inputs', problem: pins.storageProblem() },
+      { store: 'recheck-verdicts', problem: verified.storageProblem() },
+      { store: 'reserve-position', problem: opts.reserveMemory?.storageProblem() ?? null },
+    ].filter((p): p is { store: string; problem: string } => !!p.problem);
   /**
    * The confirmed uploads the requesting person's workspace made for this case and dispute: none without a request
    * (warm-up, the operator's checks) or without a signed-in person of the seller's workspace. Pending, archived and
@@ -618,6 +629,8 @@ export function createApi(opts: ApiOptions): Api {
     if (since == null || !queue?.length || now().getTime() - since < ROTATE_AFTER_MS) return;
     const next = queue.shift()!;
     (opts.bindings as Record<string, string | Binding>)[caseId] = next;
+    // Remembered on the data dir: after a restart the case starts past it (reserve.ts), not at the first entry again.
+    opts.reserveMemory?.markUsed(caseId, binding.dispute);
     reads.delete(caseId);
     sellers.delete(caseId);
     bindingStatus.delete(caseId);
@@ -663,7 +676,7 @@ export function createApi(opts: ApiOptions): Api {
       req,
       verified: (text) => {
         const id = Object.keys(req.edits).find((k) => req.edits[k] === text);
-        const r = rechecks ? (id ? rechecks[id] : undefined) : verified.get(`${a.key}\n${text}`);
+        const r = rechecks ? (id ? rechecks[id] : undefined) : verified.get(a.key, text);
         if (r && id) used[id] = r;
         return r ?? null;
       },
@@ -826,7 +839,7 @@ export function createApi(opts: ApiOptions): Api {
           return staleUpload();
         }
         const label = v.verdict === 'supported' ? 'supported' : v.verdict === 'rejected' ? 'removed' : 'needs review';
-        rememberVerdict(`${key}\n${text}`, { state: v.verdict, reason: v.reason, note: `Edited · re-checked by ${v.model}: ${label}`, citations: toCitations(input, v.citations) });
+        verified.set(key, text, { state: v.verdict, reason: v.reason, note: `Edited · re-checked by ${v.model}: ${label}`, citations: toCitations(input, v.citations) });
         const who = actorOf(req, false);
         intents.record({ caseId, kind: 'edit_rechecked', actor: who.ok ? who.actor : 'visitor', ...(who.ok && who.team ? { team: who.team } : {}), detail: `${v.model}: ${label} · text sha256 ${sha256(text).slice(0, 12)}` });
       }
@@ -1160,7 +1173,9 @@ export function createApi(opts: ApiOptions): Api {
       // Hosted: the real disputes are listed only to the seller's workspace; everyone else runs them on the simulator.
       const live = await viewerLive(req);
       const bound = h.paypal === 'unconfigured' || !live ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
-      return json(200, { ...h, bound, bindings: Object.fromEntries(bound.map((k) => [k, bindingState(k)])) });
+      // A store file that could not be read: its name only here (the reason and where it was kept: the ops check, the log).
+      const storage = storageProblems().map((p) => p.store);
+      return json(200, { ...h, bound, bindings: Object.fromEntries(bound.map((k) => [k, bindingState(k)])), ...(storage.length ? { storage } : {}) });
     }
     const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
@@ -1264,7 +1279,7 @@ export function createApi(opts: ApiOptions): Api {
         reserve: opts.reserve?.[caseId]?.length ?? 0,
       };
     }
-    return { ...h, bindings };
+    return { ...h, bindings, storage: storageProblems().map((p) => p.problem) };
   }
 }
 

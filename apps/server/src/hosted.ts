@@ -331,6 +331,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     if (!webhook) problems.push('the PayPal webhook is off (PAYPAL_WEBHOOK_ID / PAYPAL_WEBHOOK_KEY)');
     const caps = o.counters.storageProblem();
     if (caps) problems.push(`${caps} (evidence sends, live AI runs, re-checks, uploads and agent runs are refused)`);
+    for (const s of r.storage) problems.push(`storage · ${s}`);
     const cases = Object.keys(r.bindings);
     if (cases.length === 0) problems.push('no case is bound to a real PayPal dispute (BINDINGS_JSON)');
     for (const [caseId, b] of Object.entries(r.bindings)) {

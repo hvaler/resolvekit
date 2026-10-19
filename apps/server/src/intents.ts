@@ -29,13 +29,18 @@
  * Persisted on the data dir when given files. A send is durable or does not happen: the "sending" state (with the
  * approval it rests on) and the send_started event must reach the disk before anything goes to PayPal, or the send is
  * refused (503); other writes stay best effort, and a write that fails after PayPal accepted is reported to the caller.
+ * Writes are durable (packages/hosting durable.ts: the intents file by tmp, fsync and rename; the audit and send logs
+ * appended and fsynced). An intents file that exists but cannot be read is never treated as empty and overwritten: it
+ * is moved aside as `intents.json.corrupt-<time>`, logged as an error and reported by {@link IntentStore.storageProblem}
+ * (/api/health, the operator's check); if it cannot be moved, nothing is written over it and sends are refused.
  * What is written: the intents (including the notes text the merchant
  * approved, which is composed from the case's documents), the analysis hashes and the audit events (codes, hashes,
  * ids; no document text). No secrets.
  */
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
+import { appendFileDurable, preserveCorrupt, writeFileDurable } from '@resolvekit/hosting';
 import type { CaseAnalysis } from '@resolvekit/analyst';
 import type { IntentRequest, IntentStatus, SubmissionIntent } from '../../web/src/domain/intent.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
@@ -164,28 +169,20 @@ export class IntentStore {
   private readonly ttlMs: number;
   private eventsBytes = 0;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly log: (line: string) => void;
+  /** Why the intents file could not be read at start (null: it could, or there was none). */
+  private problem: string | null = null;
+  /** The unreadable intents file could not be moved aside: nothing is written over it. */
+  private blocked = false;
 
-  constructor(o: { file?: string | null; eventsFile?: string | null; sendsFile?: string | null; now?: () => Date; ttlMs?: number } = {}) {
+  constructor(o: { file?: string | null; eventsFile?: string | null; sendsFile?: string | null; now?: () => Date; ttlMs?: number; log?: (line: string) => void } = {}) {
     this.file = o.file ?? null;
     this.eventsFile = o.eventsFile ?? null;
     this.sendsFile = o.sendsFile ?? (this.eventsFile ? this.eventsFile.replace(/(\.jsonl)?$/, '-sends.jsonl') : null);
     this.now = o.now ?? (() => new Date());
     this.ttlMs = o.ttlMs ?? INTENT_TTL_MS;
-    if (this.file) {
-      try {
-        const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StoredIntent[] | { intents: StoredIntent[]; sentDisputes?: Record<string, { intentId: string; at: string }> };
-        const list = Array.isArray(saved) ? saved : saved.intents;
-        for (const i of list.slice(-MAX_INTENTS)) {
-          // A send cut short by a restart is unknown, not sent: it may be retried with the same PayPal-Request-Id,
-          // and the evidence route reads PayPal first (provide_evidence disappears once evidence is in).
-          if (i.status === 'sending') Object.assign(i, { status: 'failed', reason: 'the server restarted during the send', failedAt: this.iso() });
-          if (OPEN.includes(i.status) || i.status === 'sent') this.intents.set(i.id, i);
-        }
-        if (!Array.isArray(saved)) for (const [d, v] of Object.entries(saved.sentDisputes ?? {})) this.sentDisputes.set(d, v);
-      } catch {
-        /* no intents yet */
-      }
-    }
+    this.log = o.log ?? (() => {});
+    if (this.file) this.loadIntents(this.file);
     const load = (file: string | null, into: (e: AuditEvent) => void) => {
       if (!file) return 0;
       try {
@@ -212,16 +209,63 @@ export class IntentStore {
 
   // ---------------------------------------------------------------------------------------------------- persistence
 
+  /** Read the saved intents. A missing file is an empty store; one that cannot be read is preserved, never overwritten. */
+  private loadIntents(file: string) {
+    let raw: string;
+    try {
+      raw = readFileSync(file, 'utf8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return; // no intents yet
+      return this.unreadable(file, (e as NodeJS.ErrnoException).code ?? (e as Error).message);
+    }
+    const intents = new Map<string, StoredIntent>();
+    const sent = new Map<string, { intentId: string; at: string }>();
+    try {
+      const saved = JSON.parse(raw) as StoredIntent[] | { intents: StoredIntent[]; sentDisputes?: Record<string, { intentId: string; at: string }> };
+      const list = Array.isArray(saved) ? saved : saved?.intents;
+      if (!Array.isArray(list)) throw new Error('no list of intents');
+      for (const i of list.slice(-MAX_INTENTS)) {
+        if (!i || typeof i.id !== 'string' || typeof i.status !== 'string') throw new Error('an entry is not an intent');
+        // A send cut short by a restart is unknown, not sent: it may be retried with the same PayPal-Request-Id,
+        // and the evidence route reads PayPal first (provide_evidence disappears once evidence is in).
+        if (i.status === 'sending') Object.assign(i, { status: 'failed', reason: 'the server restarted during the send', failedAt: this.iso() });
+        if (OPEN.includes(i.status) || i.status === 'sent') intents.set(i.id, i);
+      }
+      if (!Array.isArray(saved)) for (const [d, v] of Object.entries(saved.sentDisputes ?? {})) sent.set(d, v);
+    } catch (e) {
+      return this.unreadable(file, e instanceof SyntaxError ? 'not JSON' : (e as Error).message);
+    }
+    for (const [k, v] of intents) this.intents.set(k, v);
+    for (const [k, v] of sent) this.sentDisputes.set(k, v);
+  }
+
+  /** Move the unreadable intents file aside (or, if that fails, never write over it), log it and remember why. */
+  private unreadable(file: string, why: string) {
+    const to = preserveCorrupt(file, this.now());
+    const name = basename(file);
+    if (to) {
+      this.problem = `${name} could not be read (${why}); preserved as ${to}. Open intents and the per-dispute "sent" memory started empty (sends are still guarded by PayPal's fresh read)`;
+    } else {
+      this.blocked = true;
+      this.problem = `${name} could not be read (${why}) and could not be moved aside; left in place and never written over: every send is refused until it is fixed or removed`;
+    }
+    this.log(`ERROR intents · ${this.problem}`);
+  }
+
+  /** Why the saved intents could not be read at start, or null (shown by /api/health and the operator's check). */
+  storageProblem(): string | null {
+    return this.problem;
+  }
+
   /** Whether the state reached the disk (true without a file: nothing to persist). */
   private writeNow(): boolean {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
     if (!this.file) return true;
+    if (this.blocked) return false;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ intents: [...this.intents.values()], sentDisputes: Object.fromEntries(this.sentDisputes) }));
-      renameSync(tmp, this.file);
+      writeFileDurable(this.file, JSON.stringify({ intents: [...this.intents.values()], sentDisputes: Object.fromEntries(this.sentDisputes) }));
       return true;
     } catch {
       // Ordinary transitions: best effort, the in-memory state still holds. Sends check the result.
@@ -275,7 +319,7 @@ export class IntentStore {
       if (this.sendsFile) {
         try {
           mkdirSync(dirname(this.sendsFile), { recursive: true });
-          appendFileSync(this.sendsFile, JSON.stringify(ev) + '\n');
+          appendFileDurable(this.sendsFile, JSON.stringify(ev) + '\n');
         } catch {
           // The in-memory log still has it; the caller decides whether that is enough.
           return { event: ev, durable: false };
@@ -292,7 +336,7 @@ export class IntentStore {
         const bytes = Buffer.byteLength(line);
         if (this.eventsBytes + bytes > MAX_EVENTS_FILE_BYTES) this.compact();
         else {
-          appendFileSync(this.eventsFile, line);
+          appendFileDurable(this.eventsFile, line);
           this.eventsBytes += bytes;
         }
       } catch {
@@ -326,9 +370,7 @@ export class IntentStore {
       }
     }
     const text = kept.sort((a, b) => a.at.localeCompare(b.at)).map((k) => k.line).join('');
-    const tmp = `${this.eventsFile}.tmp`;
-    writeFileSync(tmp, text);
-    renameSync(tmp, this.eventsFile!);
+    writeFileDurable(this.eventsFile!, text);
     this.eventsBytes = Buffer.byteLength(text);
   }
 
