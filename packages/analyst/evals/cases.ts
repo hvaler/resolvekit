@@ -6,6 +6,7 @@
 import { agentCase } from '../../cases/src/fixtures/agentCase.ts';
 import { buildInput } from '../src/input.ts';
 import type { AnalysisDocument, AnalysisInput } from '../src/types.ts';
+import { DEV_CONFLICTS } from './dev-labels.ts';
 
 /** Development: the cases the prompt was tuned on. Held-out: written apart and frozen before any run. */
 export type EvalSet = 'development' | 'held-out';
@@ -128,7 +129,7 @@ const upload = (id: string, title: string, kind: 'image' | 'text', lines: Array<
   lines: lines.map((l, i) => (typeof l === 'string' ? { text: l, fragment: `${id}.l${i + 1}` } : { text: l.text, fragment: `${id}.l${i + 1}`, corrected: l.corrected })),
 });
 
-export const CASES: EvalCase[] = [
+const DEV_CASES: Omit<EvalCase, 'conflicts'>[] = [
   {
     name: 'nr-delivered',
     set: 'development',
@@ -374,3 +375,6 @@ export const CASES: EvalCase[] = [
     ],
   },
 ];
+
+/** The cases with their strict labels (dev-labels.ts). A case with no entry stays unlabelled rather than reading as "no conflicts". */
+export const CASES: EvalCase[] = DEV_CASES.map((c) => (c.name in DEV_CONFLICTS ? { ...c, conflicts: DEV_CONFLICTS[c.name] } : c));

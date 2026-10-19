@@ -7,7 +7,8 @@ import { computeMetrics, type CaseResult } from '../evals/metrics.ts';
 import { fieldOf, normalise, scoreStrict } from '../evals/strict.ts';
 
 // nr-address-mismatch with a strict label: the order (E1) says Flat 2, the carrier (E3) delivered to Flat 2B.
-const base = CASES.find((c) => c.name === 'nr-address-mismatch')!;
+// the case as it was before labelling: no conflicts field (CASES now carries the labels of dev-labels.ts)
+const base: EvalCase = (({ conflicts: _c, ...rest }) => rest)(CASES.find((c) => c.name === 'nr-address-mismatch')!);
 const labelled: EvalCase = { ...base, conflicts: [{ field: 'address', a: { doc: 'E1', value: 'Flat 2' }, b: { doc: 'E3', value: 'Flat 2B' } }] };
 const ORDER_LINE = 'Ship to: 7 Sample Road, Flat 2, Testford TF3 1AA';
 const CARRIER_LINE = 'Delivered to: 7 Sample Road, Flat 2B, Testford TF3 1AA';
@@ -209,9 +210,8 @@ test('the old pair metric is unchanged', () => {
   assert.equal(m.extraContradictions, 0);
   // every figure the stored file carries is recomputed identically
   for (const [key, value] of Object.entries(file.metrics)) assert.deepEqual((m as unknown as Record<string, unknown>)[key], value, key);
-  // the development cases carry no strict labels yet: nothing is scored, every case is reported unlabelled
-  assert.deepEqual([m.strictContradictions.expected, m.strictContradictions.found], [0, 0]);
-  assert.equal(m.strictContradictions.unlabelled.length, 18);
+  // every development case is labelled (dev-labels.ts): none is reported unlabelled
+  assert.equal(m.strictContradictions.unlabelled.length, 0);
 });
 
 test('every development case has set \'development\' and a group; the 10 injection cases share the group of nr-address-mismatch', () => {
@@ -285,4 +285,28 @@ test('B8: a labelled case whose attempt failed adds its conflicts to expected as
   // an unlabelled failed case adds nothing; a case not in the results file at all was not part of that run
   assert.equal(computeMetrics([base], [{ name: 'nr-address-mismatch', error: 'x' }]).strictContradictions.expected, 0);
   assert.equal(computeMetrics([labelled], []).strictContradictions.expected, 0);
+});
+
+test('every development case with contradiction pairs has exactly one strict label per pair, naming the same two documents', () => {
+  for (const c of CASES) {
+    assert.ok(c.conflicts, `${c.name} is labelled`);
+    assert.equal(c.conflicts.length, c.contradictions.length, c.name);
+    c.contradictions.forEach(([x, y], i) => {
+      const e = c.conflicts![i]!;
+      assert.deepEqual([e.a.doc, e.b.doc].sort(), [x, y].sort(), c.name);
+      assert.ok(e.a.value && e.b.value, c.name);
+    });
+  }
+  assert.equal(CASES.reduce((n, c) => n + c.conflicts!.length, 0), 13);
+});
+
+test('scoring the stored gemini .7 results with the strict labels runs without error and reports coverage and hits separately', () => {
+  const file = JSON.parse(readFileSync(new URL('../evals/results/gemini-rk-analyst-2026-10-09.7.json', import.meta.url), 'utf8'));
+  const s = computeMetrics(CASES, file.results).strictContradictions;
+  assert.equal(s.expected, 13);
+  assert.equal(s.coverage.of, 13);
+  assert.equal(s.coverage.n, s.evaluable);
+  assert.equal(s.hits.of, s.evaluable);
+  assert.equal(s.hits.n, s.found);
+  assert.equal(s.evaluable, s.found + s.missed);
 });
