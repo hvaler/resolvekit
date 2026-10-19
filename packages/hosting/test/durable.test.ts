@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { appendFileDurable, durableTestHooks, fsyncDir, preserveCorrupt, writeFileDurable } from '../src/durable.ts';
+import { appendFileDurable, durableTestHooks, fsyncDir, preserveCorrupt, readStoreFile, sweepDurableTmp, writeFileDurable } from '../src/durable.ts';
 
 function dir() {
   const d = mkdtempSync(join(tmpdir(), 'durable-'));
@@ -105,6 +105,74 @@ test('preserveCorrupt moves the file aside with its content and a timestamped na
     assert.equal(readFileSync(to!, 'utf8'), '{not json');
     assert.deepEqual(readdirSync(d), ['intents.json.corrupt-2026-10-19T12-34-56.789Z']);
     assert.equal(preserveCorrupt(f), null);
+  } finally {
+    done();
+  }
+});
+
+test('appendFileDurable after a torn last line starts a new line, so the next event is not swallowed', () => {
+  const { d, done } = dir();
+  try {
+    const f = join(d, 'sends.jsonl');
+    writeFileSync(f, '{"ok":1}\n{"torn":');
+    appendFileDurable(f, '{"ok":2}\n');
+    const lines = readFileSync(f, 'utf8').split('\n').filter(Boolean);
+    assert.deepEqual(lines, ['{"ok":1}', '{"torn":', '{"ok":2}']);
+    appendFileDurable(f, '{"ok":3}\n');
+    assert.equal(readFileSync(f, 'utf8').endsWith('{"ok":2}\n{"ok":3}\n'), true);
+  } finally {
+    done();
+  }
+});
+
+test('a rename that is busy (EBUSY/EPERM) is retried: two busy tries still write; three fail and keep the old file', () => {
+  const { d, done } = dir();
+  try {
+    const f = join(d, 'state.json');
+    writeFileDurable(f, 'old');
+    durableTestHooks.renameBusy = 2;
+    writeFileDurable(f, 'new');
+    assert.equal(readFileSync(f, 'utf8'), 'new');
+    durableTestHooks.renameBusy = 3;
+    assert.throws(() => writeFileDurable(f, 'never'), { code: 'EBUSY' });
+    assert.equal(readFileSync(f, 'utf8'), 'new');
+    assert.deepEqual(readdirSync(d), ['state.json']);
+  } finally {
+    durableTestHooks.renameBusy = 0;
+    done();
+  }
+});
+
+test('readStoreFile: missing, text, or a read error (never mistaken for corrupt)', () => {
+  const { d, done } = dir();
+  try {
+    const f = join(d, 'x.json');
+    assert.deepEqual(readStoreFile(f), { kind: 'missing' });
+    writeFileSync(f, '{}');
+    assert.deepEqual(readStoreFile(f), { kind: 'text', text: '{}' });
+    durableTestHooks.readError = { match: /x\.json$/, code: 'EBUSY' };
+    assert.deepEqual(readStoreFile(f), { kind: 'error', code: 'EBUSY' });
+    assert.deepEqual(readStoreFile(f), { kind: 'text', text: '{}' });
+  } finally {
+    durableTestHooks.readError = null;
+    done();
+  }
+});
+
+test('sweepDurableTmp removes only old files with the durable temporary name', () => {
+  const { d, done } = dir();
+  try {
+    const now = Date.now();
+    const old = (name: string) => {
+      writeFileSync(join(d, name), 'x');
+      utimesSync(join(d, name), new Date(now - 11 * 60_000), new Date(now - 11 * 60_000));
+    };
+    old('intents.json.1234.0a1b2c3d.tmp');
+    old('notes.tmp');
+    writeFileSync(join(d, 'intents.json.99.deadbeef.tmp'), 'in progress');
+    assert.equal(sweepDurableTmp(d, 10 * 60_000, now), 1);
+    assert.deepEqual(readdirSync(d).sort(), ['intents.json.99.deadbeef.tmp', 'notes.tmp']);
+    assert.equal(sweepDurableTmp(join(d, 'missing')), 0);
   } finally {
     done();
   }
