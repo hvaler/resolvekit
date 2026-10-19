@@ -56,7 +56,6 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 
 | Problema | Efecto | Fuente |
 |---|---|---|
-| Límite de las notas atribuido a PayPal | El aviso del borrador dice «the notes exceed PayPal's 2,000-character limit», pero los 2,000 caracteres son el tope propio de ResolveKit; no se encontró en la documentación de PayPal ningún límite de longitud para las notas | `apps/web/src/domain/draft.ts:290` (`NOTES_LIMIT`, `draft.ts:15`) |
 | Límite por archivo guardado mostrado como «9.4 MB» | El límite de 9,900,000 bytes por archivo guardado se formatea en megabytes binarios (`maxStored / 1024 / 1024`, un decimal), así que el mensaje dice «9.4 MB» mientras que en otros sitios el límite se describe como 9.9 MB | `apps/server/src/uploads/routes.ts:318`; `uploads/limits.ts:23` |
 
 ## Operaciones

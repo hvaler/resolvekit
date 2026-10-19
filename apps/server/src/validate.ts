@@ -5,6 +5,7 @@
 import { chooseEvidenceType, requestedEvidence, sellerActions, type Dispute } from '@resolvekit/paypal';
 import type { EvidenceSubmission } from '../../web/src/domain/types.ts';
 
+/** ResolveKit's own cap on the notes (the web app's `NOTES_LIMIT`); PayPal documents no length limit for them. */
 export const NOTES_LIMIT = 2000;
 
 export interface Problem {
@@ -24,7 +25,7 @@ export function checkAgainstDispute(s: EvidenceSubmission, d: Dispute): Problem 
     return { status: 422, error: 'EVIDENCE_TYPE_NOT_REQUESTED', detail: `PayPal requests ${requested.join(', ')}; got ${s.evidenceType}. Send ${expected}.` };
   }
   if (s.notes.trim().length === 0) return { status: 422, error: 'NOTES_REQUIRED', detail: 'Notes must not be empty' };
-  if (s.notes.length > NOTES_LIMIT) return { status: 422, error: 'NOTES_TOO_LONG', detail: `Notes are ${s.notes.length} characters; PayPal takes at most ${NOTES_LIMIT}` };
+  if (s.notes.length > NOTES_LIMIT) return { status: 422, error: 'NOTES_TOO_LONG', detail: `Notes are ${s.notes.length} characters; ResolveKit sends at most ${NOTES_LIMIT}` };
   if (s.evidenceType === 'PROOF_OF_FULFILLMENT' && (!s.tracking || !s.carrier)) {
     return { status: 422, error: 'TRACKING_REQUIRED', detail: 'Proof of fulfillment needs a carrier and a tracking number or reference' };
   }

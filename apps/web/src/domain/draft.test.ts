@@ -136,10 +136,11 @@ describe('draftBlockers', () => {
     expect(draftBlockers(base({ sentences: v })).some((x) => x.kind === 'checking')).toBe(true);
   });
 
-  it('blocks when the notes exceed the PayPal limit', () => {
+  it('blocks when the notes exceed the limit, named as ResolveKit’s own cap (PayPal documents none)', () => {
     const long: DraftSentence[] = [{ id: 'L', text: 'a'.repeat(NOTES_LIMIT + 1), verdict: 'supported', citations: [] }];
     const b = draftBlockers(base({ sentences: deriveSentences(long, done), contradictions: [] }));
     expect(b.map((x) => x.kind)).toEqual(['notes_limit']);
+    expect(b[0]!.text).toBe("the notes exceed ResolveKit's 2,000-character limit");
   });
 
   it('blocks a disallowed or unmet evidence type', () => {

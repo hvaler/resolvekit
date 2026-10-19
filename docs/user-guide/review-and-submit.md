@@ -19,9 +19,8 @@ decides later).
 **Review what will be sent →** stays disabled until nothing is open. The bar above it lists what is left, for
 example: «sentence 3 needs review», «the address contradiction is open», «PayPal does not allow this action right
 now», «only "Provide evidence" can be sent from this screen for now», «PayPal won't accept "<type>" here», «the case
-file lacks what "<type>" needs», «the notes exceed PayPal's 2,000-character limit» (despite this wording, the 2,000-character cap is ResolveKit's
-own; we found no PayPal documentation of a notes limit), «evidence was already submitted to
-PayPal». When it is clear: «All claims are supported or removed. You review everything before it is sent.»
+file lacks what "<type>" needs», «the notes exceed ResolveKit's 2,000-character limit» (a cap of ResolveKit's own; we
+found no PayPal documentation of a notes limit), «evidence was already submitted to PayPal». When it is clear: «All claims are supported or removed. You review everything before it is sent.»
 
 - Choose the **Evidence type** («PayPal is asking for: …» shows what PayPal requested; a type PayPal will not accept
   for this reason is refused).

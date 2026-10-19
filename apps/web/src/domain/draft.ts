@@ -11,7 +11,10 @@ import type {
   SentenceView,
 } from './types';
 
-/** PayPal limits the provide-evidence `notes` field to 2,000 characters. */
+/**
+ * ResolveKit's own cap on the provide-evidence `notes` (2,000 characters), kept to short, reviewable notes: PayPal's
+ * documentation gives no length limit for this field.
+ */
 export const NOTES_LIMIT = 2000;
 
 /** Result of re-verifying an edited sentence (the analyst's live check, or why it could not run). */
@@ -287,7 +290,7 @@ export function draftBlockers(input: BlockerInput): Blocker[] {
     else if (!input.evidenceType.satisfied) out.push({ kind: 'evidence_type', text: `the case file lacks what "${input.evidenceType.label}" needs` });
   }
   const notes = notesText(input.sentences);
-  if (notes.length > NOTES_LIMIT) out.push({ kind: 'notes_limit', text: `the notes exceed PayPal's ${formatCount(NOTES_LIMIT)}-character limit` });
+  if (notes.length > NOTES_LIMIT) out.push({ kind: 'notes_limit', text: `the notes exceed ResolveKit's ${formatCount(NOTES_LIMIT)}-character limit` });
   return out;
 }
 
