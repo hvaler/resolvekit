@@ -182,7 +182,7 @@ logrado). Un registro de ejecución guardado en el servidor se barre a los 30 d�
 o esté vinculado: conserva las ejecuciones que pienses usar.
 
 El script imprime lo que el comprador pulsa para abrir cada disputa, con la sesión iniciada en la cuenta **personal
-(comprador)** del sandbox. Para el caso del agente la reclamación es la que responde su evidencia: tipo de artículo
+(buyer)** del sandbox. Para el caso del agente la reclamación es la que responde su evidencia: tipo de artículo
 «Service», «My AI agent paid for MeterMCP tool calls and I didn't receive their results» (el recibo lista cada llamada
 entregada; las fallidas no se cobraron).
 
