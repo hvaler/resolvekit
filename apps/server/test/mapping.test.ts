@@ -7,6 +7,9 @@ import { evidenceInDispute, fakePayPal, waitingDispute } from './fixtures.ts';
 import { checkBindings } from '../src/bindings.ts';
 import { PayPalClient } from '@resolvekit/paypal';
 import type { DisputeSnapshot } from '../../web/src/domain/types.ts';
+import { readFileSync } from 'node:fs';
+import { caseInput, standardCase, type PayPalSource } from '@resolvekit/cases';
+import type { Dispute } from '@resolvekit/paypal';
 
 const at = new Date(Date.UTC(2026, 9, 9, 8, 0, 0));
 
@@ -140,4 +143,40 @@ test('every attachment of every case resolves to a document with text', () => {
       assert.ok(ev && evidenceLines(ev).length > 0, `${c.summary.id} ${a.name}`);
     }
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// B0: the thread, offers and response options, from the recorded sandbox reads (packages/paypal/contracts/reads/).
+
+const readContract = (f: string): Dispute => JSON.parse(readFileSync(new URL(`../../../packages/paypal/contracts/${f}`, import.meta.url), 'utf8')) as Dispute;
+const live = (snap: DisputeSnapshot): PayPalSource => ({ kind: 'live', snap, failed: null });
+const CASE = standardCase.summary.id;
+const NOW = at;
+
+test('the thread, offers, options and outcome are mapped from a recorded read; the analyst input does not change', () => {
+  const d = readContract('reads/inquiry-waiting-seller-KHH.json');
+  const s = toSnapshot(d, CASE, 'sandbox', NOW);
+  assert.ok(Array.isArray(s.messages));
+  assert.deepEqual(s.messages, [{ postedBy: 'BUYER', time: '2026-10-18T08:04:20.960Z', content: '<buyer message, 49 chars>', files: [] }]);
+  assert.deepEqual(s.offerHistory, []);
+  assert.deepEqual(s.responseOptions, { acceptClaimTypes: ['PARTIAL_REFUND', 'REFUND'], offerTypes: ['REFUND'] });
+  assert.equal(s.outcome, null);
+  assert.equal(s.proofEntries, undefined);
+  assert.deepEqual(caseInput(standardCase, live(s)), caseInput(standardCase, live({ ...s, messages: [], offerHistory: [], responseOptions: undefined, allowedActions: s.allowedActions.filter((a) => a !== 'appeal') })));
+  // Appeal, once PayPal links it, never reaches the analyst either: the analysis keys stay stable.
+  assert.deepEqual(caseInput(standardCase, live({ ...s, allowedActions: [...s.allowedActions, 'appeal'] })), caseInput(standardCase, live(s)));
+  // Nor does the thread's text.
+  assert.ok(!JSON.stringify(caseInput(standardCase, live(s))).includes('<buyer message'));
+});
+
+test('a seller message, the options after evidence and a resolved outcome are mapped from recorded reads', () => {
+  const tvh = toSnapshot(readContract('reads/inquiry-after-evidence-TVH.json'), 'C', 'sandbox', NOW);
+  assert.deepEqual(tvh.messages?.map((m) => [m.postedBy, m.time]), [['BUYER', '2026-10-08T18:19:33.715Z'], ['SELLER', '2026-10-08T18:25:08.597Z']]);
+  assert.equal(tvh.messages?.[1]?.content, 'Prueba de puerta: el pedido salió el 7/10; adjuntamos el seguimiento.');
+  assert.deepEqual(tvh.responseOptions, { acceptClaimTypes: ['REFUND'], offerTypes: [] });
+  const gfc = toSnapshot(readContract('reads/resolved-GFC.json'), 'C', 'sandbox', NOW);
+  assert.equal(gfc.status, 'RESOLVED');
+  assert.deepEqual(gfc.outcome, { code: 'RESOLVED_BUYER_FAVOUR', closedAt: '2026-10-08T18:27:03.605Z' });
+  assert.deepEqual(gfc.responseOptions, { acceptClaimTypes: [], offerTypes: [] });
+  assert.deepEqual(gfc.allowedActions, []);
 });

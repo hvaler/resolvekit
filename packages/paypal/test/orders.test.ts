@@ -63,3 +63,16 @@ test('creates a CAPTURE order (physical goods ship to the buyer’s address) and
   assert.equal(orderCapture(done)?.id, 'CAP2');
   assert.equal(orderCapture({ id: 'O3' }), null);
 });
+
+test('getRefund is a GET to /v2/payments/refunds/{id}', async () => {
+  const { readFileSync } = await import('node:fs');
+  const recorded = JSON.parse(readFileSync(new URL('../contracts/reads/refund-3H730369N6162525E.json', import.meta.url), 'utf8'));
+  const { client, calls } = fake(recorded);
+  const r = await client.payments.getRefund('3H730369N6162525E');
+  assert.match(calls[1]!.url, /\/v2\/payments\/refunds\/3H730369N6162525E$/);
+  assert.equal(calls[1]!.init.method, 'GET');
+  assert.equal(calls[1]!.init.body, undefined);
+  assert.equal(r.status, 'COMPLETED');
+  assert.deepEqual(r.amount, { currency_code: 'USD', value: '8.00' });
+  assert.equal(r.links?.find((l) => l.rel === 'up')?.href, 'https://api.sandbox.paypal.com/v2/payments/captures/3B183641GA9842414');
+});

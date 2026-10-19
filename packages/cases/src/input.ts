@@ -21,7 +21,8 @@ export const documentsFinal = (source: PayPalSource) => source.kind === 'simulat
  * actions); the server passes none and gets the demo case's initial ones, which is what the simulator starts with.
  */
 export function caseInput(demo: CaseFile, source: PayPalSource, simulated?: DisputeSnapshot): AnalysisInput {
-  const allowed: readonly ActionCode[] = caseAllowedActions(source, simulated, demo.allowedActions);
+  // Appeal is not an analyst recommendation: filtered out so the analysis keys stay stable when PayPal offers it.
+  const allowed: readonly ActionCode[] = caseAllowedActions(source, simulated, demo.allowedActions).filter((a) => a !== 'appeal');
   return buildInput(caseView(demo, source), { allowedActions: allowed });
 }
 

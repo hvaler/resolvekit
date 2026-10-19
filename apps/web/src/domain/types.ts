@@ -402,6 +402,25 @@ export interface RecordedEvidence {
 /** Where a snapshot comes from: the real PayPal API (through the ResolveKit server) or the in-browser simulator. */
 export type SnapshotOrigin = { kind: 'simulator' } | { kind: 'paypal'; env: 'sandbox' | 'live'; disputeId: string };
 
+/** A message of the PayPal dispute thread. Shown to the seller's workspace only: never persisted, never given to the analyst. */
+export interface DisputeMessage {
+  /** PayPal's `posted_by`, verbatim (BUYER, SELLER). */
+  postedBy: string;
+  time: string | null;
+  content: string;
+  /** Names of attached documents, when PayPal gives them. */
+  files: string[];
+}
+
+/** An event of PayPal's offer history (`offer.history[]`), codes verbatim. */
+export interface OfferEvent {
+  time: string | null;
+  actor: string;
+  event: string;
+  type: string | null;
+  amount: { value: string; currency: string } | null;
+}
+
 export interface DisputeSnapshot {
   id: string;
   status: DisputeStatus;
@@ -429,6 +448,17 @@ export interface DisputeSnapshot {
   /** The disputed transaction as PayPal reports it: the seller-side id (the capture), its time, gross amount and status. */
   /** PayPal's `dispute_outcome` once the dispute is resolved (e.g. RESOLVED_SELLER_FAVOUR), with the time it closed. */
   outcome?: { code: string; closedAt: string | null } | null;
+  /** The thread as last read (seller's workspace only: never persisted, never given to the analyst). */
+  messages?: DisputeMessage[];
+  /** PayPal's offer history as last read. */
+  offerHistory?: OfferEvent[];
+  /** PayPal's `allowed_response_options`: the accept and offer types it allows now. */
+  responseOptions?: { acceptClaimTypes: string[]; offerTypes: string[] };
+  /**
+   * The raw entries of a contract's proof list (`CONTRACTS[…].proof.list`) when that list is not one of the mapped ones
+   * (messages, offer history, evidences). Shaped only from the contract; absent when no contract names such a list.
+   */
+  proofEntries?: unknown[];
   /** Agent cases only: the MeterMCP session of the disputed capture (absent for other cases and the simulator). */
   agentReceipt?: AgentReceiptSource | null;
   transaction?: {

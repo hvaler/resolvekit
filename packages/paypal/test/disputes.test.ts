@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PayPalClient } from '../src/client.ts';
-import { chooseEvidenceType, requestedEvidence, sellerActions } from '../src/disputes.ts';
+import { readFileSync } from 'node:fs';
+import { chooseEvidenceType, requestedEvidence, SELLER_ACTIONS, sellerActions, type Dispute } from '../src/disputes.ts';
 
 type Call = { url: string; init: RequestInit };
 
@@ -127,4 +128,79 @@ test('identity: a malformed token id is refused before any request', async () =>
   const { fn, calls } = fakeFetch([]);
   await assert.rejects(client(fn).identity.read('BA-1/../../v1/x'), /not an agreement token id/);
   assert.equal(calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Dispute actions (B0): fakes are the recorded sandbox reads in contracts/reads/.
+
+const readContract = (f: string): Dispute => JSON.parse(readFileSync(new URL(`../contracts/${f}`, import.meta.url), 'utf8')) as Dispute;
+const KHH = readContract('reads/inquiry-waiting-seller-KHH.json');
+const OK = { status: 200, body: { links: KHH.links } };
+
+test('send-message honours the contract’s format and the intent’s Request-Id', async () => {
+  const { fn, calls } = fakeFetch([OK, OK, OK]);
+  const c = client(fn);
+  await c.disputes.sendMessage('PP-R-KHH-10193360', 'Hello', null, { requestId: 'rk-int-1', format: 'json' });
+  const j = calls[1]!;
+  assert.match(j.url, /\/v1\/customer\/disputes\/PP-R-KHH-10193360\/send-message$/);
+  assert.equal(j.init.method, 'POST');
+  assert.equal(j.init.body, '{"message":"Hello"}');
+  assert.equal(new Headers(j.init.headers).get('content-type'), 'application/json');
+  assert.equal(new Headers(j.init.headers).get('paypal-request-id'), 'rk-int-1');
+
+  await c.disputes.sendMessage('PP-R-KHH-10193360', 'Hello', null, { requestId: 'rk-int-1', format: 'multipart' });
+  const m = calls[2]!;
+  const form = m.init.body as FormData;
+  assert.ok(form instanceof FormData);
+  assert.deepEqual(JSON.parse(await (form.get('input') as Blob).text()), { message: 'Hello' });
+  assert.equal(form.get('message_document'), null);
+  assert.equal(new Headers(m.init.headers).get('content-type'), null);
+  assert.equal(new Headers(m.init.headers).get('paypal-request-id'), 'rk-int-1');
+
+  // A file goes only as multipart, in the part the schema names (message_document).
+  await c.disputes.sendMessage('PP-R-KHH-10193360', 'See the label', { name: 'label.pdf', type: 'application/pdf', data: new Uint8Array([37, 80, 68, 70]) }, { requestId: 'rk-int-2', format: 'multipart' });
+  assert.equal(((calls[3]!.init.body as FormData).get('message_document') as File).name, 'label.pdf');
+  await assert.rejects(
+    c.disputes.sendMessage('PP-R-KHH-10193360', 'x', { name: 'a.pdf', type: 'application/pdf', data: new Uint8Array([1]) }, { requestId: 'rk-int-3', format: 'json' }),
+    /multipart/,
+  );
+  assert.equal(calls.length, 4);
+});
+
+test('accept/offer/escalate/appeal post to their routes with the bodies given', async () => {
+  const { fn, calls } = fakeFetch([OK, OK, OK, OK, OK]);
+  const c = client(fn).disputes;
+  const id = 'PP-R-KHH-10193360';
+  const accept = { note: 'Refunding in full.', accept_claim_type: 'REFUND' };
+  const offer = { note: 'Partial refund offered.', offer_type: 'REFUND', offer_amount: { currency_code: 'USD', value: '1.00' } };
+  await c.acceptClaim(id, accept, { requestId: 'rk-a', format: 'json' });
+  await c.makeOffer(id, offer, { requestId: 'rk-o', format: 'json' });
+  await c.escalate(id, 'Escalating to PayPal.', { requestId: 'rk-e', format: 'json' });
+  await c.appeal(id, { evidence_type: 'PROOF_OF_FULFILLMENT', notes: 'Delivered.' }, [{ name: 'pod.pdf', type: 'application/pdf', data: new Uint8Array([37]) }], { requestId: 'rk-p', format: 'multipart' });
+  await c.acceptClaim(id, accept, { requestId: 'rk-a2', format: 'multipart' });
+
+  const api = calls.slice(1);
+  assert.deepEqual(api.map((x) => [new URL(x.url).pathname, x.init.method, new Headers(x.init.headers).get('paypal-request-id')]), [
+    [`/v1/customer/disputes/${id}/accept-claim`, 'POST', 'rk-a'],
+    [`/v1/customer/disputes/${id}/make-offer`, 'POST', 'rk-o'],
+    [`/v1/customer/disputes/${id}/escalate`, 'POST', 'rk-e'],
+    [`/v1/customer/disputes/${id}/appeal`, 'POST', 'rk-p'],
+    [`/v1/customer/disputes/${id}/accept-claim`, 'POST', 'rk-a2'],
+  ]);
+  assert.deepEqual(JSON.parse(String(api[0]!.init.body)), accept);
+  assert.deepEqual(JSON.parse(String(api[1]!.init.body)), offer);
+  assert.deepEqual(JSON.parse(String(api[2]!.init.body)), { note: 'Escalating to PayPal.' });
+  const appeal = api[3]!.init.body as FormData;
+  assert.deepEqual(JSON.parse(await (appeal.get('input') as Blob).text()), { evidences: [{ evidence_type: 'PROOF_OF_FULFILLMENT', notes: 'Delivered.' }] });
+  assert.equal((appeal.get('evidence-file') as File).name, 'pod.pdf');
+  assert.deepEqual(JSON.parse(await ((api[4]!.init.body as FormData).get('input') as Blob).text()), accept);
+  // Appeal has no JSON contract (the guide's example is multipart only): refused before any request.
+  await assert.rejects(c.appeal(id, { evidence_type: 'OTHER', notes: 'x' }, [], { requestId: 'rk-p2', format: 'json' }), /multipart/);
+  assert.equal(calls.length, 6);
+});
+
+test('appeal is a seller action when PayPal links it; the recorded reads link it nowhere yet', () => {
+  assert.ok(SELLER_ACTIONS.includes('appeal'));
+  assert.ok(!sellerActions(KHH).includes('appeal'));
+  assert.deepEqual(sellerActions({ links: [{ rel: 'appeal' }] }), ['appeal']);
 });
