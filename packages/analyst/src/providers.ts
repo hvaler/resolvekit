@@ -149,7 +149,8 @@ export class GroqModel implements AnalystModel {
       usage: {
         stage: req.stage,
         provider: this.provider,
-        model: this.model,
+        // The model the response names (as Gemini's modelVersion), so a silent model swap shows in the usage record.
+        model: typeof json?.model === 'string' && json.model ? json.model : this.model,
         inputTokens: u.prompt_tokens ?? 0,
         outputTokens: Math.max(0, (u.completion_tokens ?? 0) - reasoning),
         thinkingTokens: reasoning,
