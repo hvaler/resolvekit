@@ -269,8 +269,17 @@ test('NEEDS_REVIEW: a new buyer message after approval holds a message; acknowle
   assert.equal(messages.length, 1);
   assert.equal(messages[0]!.content, 'Where is my parcel?');
   assert.equal(pp.posts.length, 0);
-  // The person read it and sends the same content: one step, against a new read.
-  const ack = await acknowledge(app, i);
+  // Another buyer message arrives after NEEDS_REVIEW showed the first: acknowledging only what was shown is not enough.
+  const shown = s.body.messageKeys as string[];
+  assert.equal(shown.length, 1);
+  state.dispute = withMessage(state.dispute, 'BUYER', state.t + 1_000, 'Hello? Anyone?');
+  state.t += 2_000;
+  const again = await acknowledge(app, i, shown);
+  assert.equal(again.status, 409, JSON.stringify(again.body));
+  assert.equal(again.body.error, 'NEEDS_REVIEW');
+  assert.deepEqual((again.body.messages as Array<{ content: string }>).map((m) => m.content), ['Hello? Anyone?']);
+  // The person read it too and sends the same content: one step, against a new read.
+  const ack = await acknowledge(app, i, [...shown, ...(again.body.messageKeys as string[])]);
   assert.equal(ack.status, 200, JSON.stringify(ack.body));
   // The merchant's own message (sent elsewhere) is not a reason to hold it.
   state.dispute = withMessage(state.dispute, 'SELLER', state.t + 1_000, 'Sent from PayPal.');
@@ -406,4 +415,112 @@ test('the production registry still refuses every action (the route tests inject
     assert.equal(r.body.error, 'VARIANT_NOT_AVAILABLE');
   }
   assert.equal(pp.posts.length, 0);
+});
+
+// ------------------------------------------------------------------------------------------------ review fixes (Task 7)
+
+test('a repeated message needs REPEATS_MESSAGE: unconfirmed → 409 CONFIRMATION_REQUIRED, confirmed → 202', async () => {
+  const { app, pp, state, intents } = await setupActions();
+  const first = await compose(app);
+  await approve(app, first);
+  assert.equal((await send(app, first)).status, 202);
+  state.dispute = withMessage(state.dispute, 'SELLER', state.t + 1_000, TEXT);
+  state.t += 2_000;
+  assert.equal(((await readBack(app, first)).body.readBack as { state: string }).state, 'recorded');
+  assert.equal(intents.isUncertain(REAL), null);
+  // The same text again, on purpose: a repeat.
+  const again = await compose(app);
+  assert.equal(again.repeat, true);
+  const a = await approve(app, again);
+  const terms = a.body.confirmation as { consequence: string };
+  assert.equal(terms.consequence, 'REPEATS_MESSAGE');
+  const unconfirmed = await send(app, again);
+  assert.equal(unconfirmed.status, 409, JSON.stringify(unconfirmed.body));
+  assert.equal(unconfirmed.body.error, 'CONFIRMATION_REQUIRED');
+  assert.equal((unconfirmed.body.terms as { consequence: string }).consequence, 'REPEATS_MESSAGE');
+  assert.equal(pp.posts.length, 1);
+  assert.equal((await confirm(app, again, terms)).status, 200);
+  const s = await send(app, again);
+  assert.equal(s.status, 202, JSON.stringify(s.body));
+  assert.equal(pp.posts.length, 2);
+});
+
+test('DUPLICATE_ACTION stays for the other actions: the same accept PayPal already recorded is refused', async () => {
+  const { app, pp, state, intents } = await setupActions();
+  const sendAccept = async () => {
+    const i = await compose(app, { action: 'accept_claim', acceptType: 'REFUND' });
+    const a = await approve(app, i);
+    assert.equal((await confirm(app, i, a.body.confirmation)).status, 200);
+    return { i, s: await send(app, i) };
+  };
+  const one = await sendAccept();
+  assert.equal(one.s.status, 202, JSON.stringify(one.s.body));
+  // A read-back proved it recorded. Set through the store: the snapshot does not map the accept proof's
+  // `action_info.response_option` yet (Task 9), so no route read-back can prove an accept today.
+  state.t += 2_000;
+  assert.equal(intents.recordReadBack(one.i.id, { state: 'recorded', detail: 'Recorded by PayPal' }), true);
+  assert.equal(intents.isUncertain(REAL), null);
+  const two = await sendAccept();
+  assert.equal(two.s.status, 409, JSON.stringify(two.s.body));
+  assert.equal(two.s.body.error, 'DUPLICATE_ACTION');
+  assert.equal(pp.posts.length, 1);
+});
+
+test('a 429 is ambiguous even with an issue code: the dispute is held, not freed', async () => {
+  assert.equal(isAmbiguous(new PayPalError(429, { name: 'RATE_LIMIT_REACHED', details: [{ issue: 'X' }] }, null)), true);
+  assert.equal(isAmbiguous(new PayPalError(408, { name: 'REQUEST_TIMEOUT', details: [{ issue: 'X' }] }, null)), true);
+  const { app, intents } = await setupActions({ actionReply: () => ({ status: 429, body: { name: 'RATE_LIMIT_REACHED', details: [{ issue: 'X' }] } }) });
+  const i = await compose(app);
+  await approve(app, i);
+  const s = await send(app, i);
+  assert.equal(s.status, 202, JSON.stringify(s.body));
+  assert.equal(s.body.sent, 'unknown');
+  assert.equal(intents.isUncertain(REAL)?.intentId, i.id);
+});
+
+test('restart: before send_started no POST was made (failed, retryable, not held); after it, held', async () => {
+  for (const started of [false, true]) {
+    const dir = mkdtempSync(join(tmpdir(), 'rk-actions-'));
+    try {
+      const files = { file: join(dir, 'intents.json'), eventsFile: join(dir, 'audit-events.jsonl') };
+      const intents = new IntentStore({ ...files, now: () => new Date(T0) });
+      const { app } = await setupActions({ intents });
+      const i = await compose(app);
+      await approve(app, i);
+      const owner = intents.peek(i.id)!.createdBy;
+      // The send claims the intent (sending, on disk)…
+      assert.equal(intents.beginSend(i.id, CASE, owner).ok, true);
+      // …and the process dies before the read-back base (or right after send_started).
+      if (started) intents.recordChecked({ caseId: CASE, kind: 'send_started', actor: owner, disputeId: REAL, intentId: i.id, contentHash: i.contentHash, requestId: i.requestId, stage: 'INQUIRY' });
+      const after = new IntentStore({ ...files, now: () => new Date(T0 + 1_000) });
+      assert.equal(after.peek(i.id)!.status, 'failed');
+      if (started) {
+        assert.equal(after.isUncertain(REAL)?.intentId, i.id);
+      } else {
+        assert.equal(after.isUncertain(REAL), null);
+        assert.equal(after.beginSend(i.id, CASE, owner).ok, true);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('a read-back base that cannot be written alone: 503, no POST, no send_started', async () => {
+  class NoBase extends IntentStore {
+    override setReadBackBase(): boolean {
+      return false;
+    }
+  }
+  const intents = new NoBase({ now: () => new Date(T0) });
+  const { app, pp } = await setupActions({ intents });
+  const i = await compose(app);
+  await approve(app, i);
+  const s = await send(app, i);
+  assert.equal(s.status, 503, JSON.stringify(s.body));
+  assert.equal(s.body.error, 'AUDIT_UNAVAILABLE');
+  assert.equal(pp.posts.length, 0);
+  assert.equal(intents.events(CASE).filter((e) => e.kind === 'send_started').length, 0);
+  assert.equal(intents.isUncertain(REAL), null);
+  assert.equal(intents.peek(i.id)!.status, 'approved');
 });

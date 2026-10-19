@@ -100,8 +100,9 @@ export function sendProblem(c: IntentContent, files: readonly EvidenceFile[], co
   return null;
 }
 
-/** PayPal's issue code from `details[].issue`, if it gave one. */
-function issueOf(e: PayPalError): string | null {
+/** PayPal's issue code from `details[].issue`, if it gave one (null for anything that is not a PayPalError). */
+export function issueOf(e: unknown): string | null {
+  if (!(e instanceof PayPalError)) return null;
   const b = e.body as { details?: Array<{ issue?: unknown }> } | null;
   const d = Array.isArray(b?.details) ? b.details.find((x) => typeof x?.issue === 'string' && x.issue) : undefined;
   return (d?.issue as string | undefined) ?? null;
@@ -109,13 +110,16 @@ function issueOf(e: PayPalError): string | null {
 
 /**
  * Whether a failed action POST leaves its outcome unknown (the dispute is then held as uncertain, [A1]): timeouts,
- * network errors, 5xx, a body that is not JSON, and a 4xx without a PayPal issue code. Only a 4xx with an issue code
+ * network errors, 5xx, 408 and 429 (whatever their body), a body that is not JSON, and a 4xx without a PayPal issue
+ * code. Only a 4xx with an issue code
  * (`details[].issue`) proves PayPal refused it without acting. Anything else, {@link NotSendable} included, is
  * ambiguous: the route checks {@link sendProblem} before send_started, so a NotSendable never gets this far.
  */
 export function isAmbiguous(e: unknown): boolean {
   if (!(e instanceof PayPalError)) return true;
   if (e.status < 400 || e.status >= 500) return true;
+  // Rate limited or timed out at PayPal's edge: whatever the body says, the request may still be acted on.
+  if (e.status === 429 || e.status === 408) return true;
   if ((e.body as { name?: unknown } | null)?.name === 'NON_JSON_RESPONSE') return true;
   return issueOf(e) === null;
 }

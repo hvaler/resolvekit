@@ -17,7 +17,6 @@ import { CONTRACTS } from '../../../web/src/domain/actionContracts.ts';
 import {
   ACTION_RULES,
   OWNER_ACTIONS,
-  REPEATS_MESSAGE,
   composeActionWith,
   confirmationTerms,
   duplicateKey,
@@ -36,10 +35,10 @@ import {
 } from '../../../web/src/domain/actions.ts';
 import { proveSend, readBackBase, type ReadBackBase } from '../../../web/src/domain/actionReadback.ts';
 import { contentHash, isComposeProblem } from '../../../web/src/domain/intent.ts';
-import type { DisputeSnapshot, SubmissionFile } from '../../../web/src/domain/types.ts';
+import type { DisputeMessage, DisputeSnapshot, SubmissionFile } from '../../../web/src/domain/types.ts';
 import type { ActingPerson, Actor, CaseState, CostlyAction, Reservation } from '../app.ts';
 import { publicIntent, type IntentStore, type StoredIntent } from '../intents.ts';
-import { callPayPal, capOf, contractOf, isAmbiguous, sendProblem } from './calls.ts';
+import { callPayPal, capOf, contractOf, isAmbiguous, issueOf, sendProblem } from './calls.ts';
 
 export interface ActionRouteDeps {
   intents: IntentStore;
@@ -49,6 +48,8 @@ export interface ActionRouteDeps {
   sellerRefusal: (req: Request, st: Pick<CaseState, 'dispute'>) => Response | null;
   actorOf: (req: Request, unlocked: boolean) => Actor;
   personOf: (req: Request) => ActingPerson | null;
+  /** Whether these upload records are still confirmed and unchanged (synchronous, checked right before creating). */
+  uploadsUnchanged: (recs: CaseState['uploads']) => boolean;
   /** The bytes of confirmed uploads of the case's active dispute, by id (a message's attachment). */
   uploadFiles: (caseId: string, st: CaseState, ids: readonly string[]) => Promise<Array<{ file: SubmissionFile; data: EvidenceFile }> | Response>;
   /** An appeal composed again from the analysis, as evidence is before its send (Task 12). */
@@ -78,12 +79,6 @@ const sellerOf = (d: Dispute | null): string | null => d?.disputed_transactions?
 const buyerKeys = (s: DisputeSnapshot): string[] => (s.messages ?? []).filter((m) => m.postedBy === 'BUYER').map(messageKey);
 const isActionIntent = (i: StoredIntent) => intentAction(i) !== 'provide_evidence';
 
-/** PayPal's issue code (details[].issue), if it gave one. */
-function issueOf(e: unknown): string | undefined {
-  if (!(e instanceof PayPalError)) return undefined;
-  const b = e.body as { details?: Array<{ issue?: string }> } | null;
-  return b?.details?.find((d) => d.issue)?.issue ?? undefined;
-}
 const isTimeout = (e: unknown) => e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
 /** A short reason for the trail: codes and PayPal's debug_id, never message text. */
 function failureText(e: unknown): string {
@@ -173,6 +168,11 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
     const content = composeActionWith({ caseId, req: ar, snap: st.snap, disputeId: st.disputeId, seller: sellerOf(st.dispute), files: built.map((b) => b.file) }, contracts, rules);
     if (isComposeProblem(content)) return json(content.status, { error: content.error, detail: content.detail });
     const hash = await contentHash(content);
+    // In the same synchronous step as creating it, as for evidence: an upload deleted or changed while composing never
+    // ends up in an intent.
+    if (!deps.uploadsUnchanged(st.uploads)) {
+      return json(409, { error: 'UPLOAD_CHANGED', detail: 'An upload of this case was deleted or changed while this was being composed; nothing was created. Compose it again.' });
+    }
     const intent = intents.create({
       ...content,
       contentHash: hash,
@@ -208,12 +208,21 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
     return json(200, { ...publicIntent(t.intent), confirmation: terms });
   };
 
-  /** POST …/acknowledge {contentHash}: the new buyer messages were seen; the same content goes on, against a new read. */
+  /**
+   * POST …/acknowledge {contentHash, shownMessageKeys}: the person saw the new buyer messages NEEDS_REVIEW showed (their
+   * keys, as it gave them); the same content goes on. Against a new read: a relevant buyer message that was not shown
+   * answers NEEDS_REVIEW again, with it.
+   */
   const acknowledge = async (req: Request, caseId: string, intentId: string): Promise<Response> => {
     const parsed = await readJson(req);
     if (!parsed.ok) return parsed.res;
-    const hash = only(parsed.body, 'contentHash') ? parsed.body.contentHash : undefined;
-    if (typeof hash !== 'string' || !HASH.test(hash)) return json(400, { error: 'INVALID_ACKNOWLEDGEMENT', detail: 'The body must be { "contentHash": "<the content you reviewed>" }' });
+    const b = parsed.body;
+    const bad = json(400, { error: 'INVALID_ACKNOWLEDGEMENT', detail: 'The body must be { "contentHash": "<the content you reviewed>", "shownMessageKeys": [<the keys NEEDS_REVIEW gave>] }' });
+    if (!isRecord(b) || Object.keys(b).some((k) => k !== 'contentHash' && k !== 'shownMessageKeys')) return bad;
+    const hash = b.contentHash;
+    const shown = b.shownMessageKeys;
+    if (typeof hash !== 'string' || !HASH.test(hash)) return bad;
+    if (!Array.isArray(shown) || shown.length > 200 || !shown.every((k) => typeof k === 'string' && k.length <= 200)) return bad;
     const who = deps.actorOf(req, true);
     if (!who.ok) return json(who.refusal.status, who.refusal.body);
     const i = ownAction(who.actor, caseId, intentId);
@@ -227,6 +236,8 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
     if (!st.snap || st.disputeId !== i.disputeId) return json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${i.disputeId ?? 'the simulator'}; the case is bound to ${st.disputeId ?? 'the simulator'} now` });
     const notSeller = deps.sellerRefusal(req, st);
     if (notSeller) return notSeller;
+    const unshown = relevantNewBuyerMessages(intentAction(i), [...(i.threadKeysAtApproval ?? []), ...(shown as string[])], st.snap);
+    if (unshown.length) return needsReview(unshown);
     const t = intents.acknowledge(intentId, caseId, who.actor, buyerKeys(st.snap));
     if (!t.ok) return json(t.status, { error: t.error, detail: t.detail });
     return json(200, { ...publicIntent(t.intent), snapshot: st.snap });
@@ -291,6 +302,8 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
       if (st.disputeId !== boundId) {
         return refuse(json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${boundId}; the case is bound to ${st.disputeId} now` }), 'the case moved to another dispute', true);
       }
+      // Deliberate: the intent is invalidated, not kept. The seller on the fresh read is not the person's merchant, so
+      // the intent's pinned seller no longer holds and it must be composed again (by whoever acts for the seller).
       const notSeller = deps.sellerRefusal(req, st);
       if (notSeller) return refuse(notSeller, 'not the seller on this dispute', true);
       const snap = st.snap;
@@ -343,16 +356,15 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
         files = built.map((b) => b.data);
       }
 
-      // 6. The same action, content and stage PayPal already recorded: only a message confirmed as a repeat goes.
+      // 6. The same action, content and stage PayPal already recorded is refused. A message is the exception: a repeat
+      // needs the second confirmation REPEATS_MESSAGE instead (step 8: termsOf gives those terms for a repeat).
       const key = duplicateKey(intent);
-      if (key && intents.recordedDuplicate(boundId, key) && intent.confirmation?.code !== REPEATS_MESSAGE) {
+      if (action !== 'send_message' && key && intents.recordedDuplicate(boundId, key)) {
         return refuse(json(409, { error: 'DUPLICATE_ACTION', detail: 'PayPal already recorded this exact action on this dispute; confirm it as a repeat or compose another' }), 'duplicate of a recorded action', false);
       }
       // 7. A buyer message after approval: the merchant may be answering an outdated message ([A5]).
       const fresh = relevantNewBuyerMessages(action, intent.threadKeysAtApproval ?? [], snap);
-      if (fresh.length) {
-        return refuse(json(409, { error: 'NEEDS_REVIEW', detail: 'The buyer wrote since you approved this; read it, then send the same content or edit it', messages: fresh }), 'new buyer message', false);
-      }
+      if (fresh.length) return refuse(needsReview(fresh), 'new buyer message', false);
       // 8. The owner's second confirmation, bound to this intent ([A3]).
       const terms = termsOf(intent);
       if (terms && !confirmedFor(intent, terms)) {
@@ -383,7 +395,7 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
         if (!isAmbiguous(e)) {
           intents.failed(intentId, who.actor, failureText(e), 'refused');
           const pe = e as PayPalError;
-          return json(422, { error: 'PAYPAL_REFUSED', detail: pe.message, paypalIssue: issueOf(e), paypalStatus: pe.status, debugId: pe.debugId ?? undefined });
+          return json(422, { error: 'PAYPAL_REFUSED', detail: pe.message, paypalIssue: issueOf(e) ?? undefined, paypalStatus: pe.status, debugId: pe.debugId ?? undefined });
         }
         intents.failed(intentId, who.actor, failureText(e), 'ambiguous');
         log(`action outcome unknown · case ${caseId} → ${boundId} · ${action} · intent ${intentId} · request ${intent.requestId} · ${failureText(e)}`);
@@ -455,6 +467,11 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
   };
 
   return { compose, confirm, acknowledge, send, readBack, ownerRefusal, termsOf };
+}
+
+/** 409 NEEDS_REVIEW with the new buyer messages from the fresh read and their keys (what acknowledge echoes). */
+function needsReview(messages: DisputeMessage[]): Response {
+  return json(409, { error: 'NEEDS_REVIEW', detail: 'The buyer wrote since you approved this; read it, then send the same content or edit it', messages, messageKeys: messages.map(messageKey) });
 }
 
 function stale(): Response {

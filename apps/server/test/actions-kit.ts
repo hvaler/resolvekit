@@ -152,7 +152,8 @@ export async function compose(app: App, body: Record<string, unknown> = { action
 }
 export const approve = async (app: App, i: Intent, hash = i.contentHash) => answer(await app(post(`${intentPath}/${i.id}/approve`, { contentHash: hash })));
 export const confirm = async (app: App, i: Intent, terms: unknown) => answer(await app(post(`${intentPath}/${i.id}/confirm`, { terms })));
-export const acknowledge = async (app: App, i: Intent, hash = i.contentHash) => answer(await app(post(`${intentPath}/${i.id}/acknowledge`, { contentHash: hash })));
+export const acknowledge = async (app: App, i: Intent, shownMessageKeys: string[] = [], hash = i.contentHash) =>
+  answer(await app(post(`${intentPath}/${i.id}/acknowledge`, { contentHash: hash, shownMessageKeys })));
 export const send = async (app: App, i: Intent) => answer(await app(post(sendPath, { intentId: i.id })));
 export const readBack = async (app: App, i: Intent) => answer(await app(get(`${intentPath}/${i.id}/readback`)));
 export const postRaw = post;

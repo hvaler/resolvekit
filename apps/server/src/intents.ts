@@ -266,9 +266,16 @@ export class IntentStore {
     load(this.sendsFile, (e) => this.sendLog.push(e));
     const interrupted = this.file ? this.loadIntents(this.file) : [];
     this.seedFromSendLog();
-    // An action cut short by a restart may have reached PayPal: the dispute is held until a read-back says.
+    // An action cut short by a restart may have reached PayPal: the dispute is held until a read-back says. Only if
+    // this attempt got as far as send_started (on disk before any POST): otherwise no POST was made, and the intent is
+    // only failed (retryable), with no hold. Without a send log on disk (no file configured) that cannot be told, so it
+    // is held (fail-closed).
     for (const i of interrupted) {
       if (!i.disputeId || this.uncertain.has(i.disputeId)) continue;
+      if (this.sendsFile && !this.startedSinceLastOutcome(i.id)) {
+        this.log(`intents · ${i.id}: the server restarted before its send started; failed (retryable), nothing was sent`);
+        continue;
+      }
       i.readBack = 'pending';
       this.uncertain.set(i.disputeId, { intentId: i.id, since: this.iso(), caseId: i.caseId });
       this.recordChecked({ caseId: i.caseId, kind: 'send_uncertain', actor: 'ResolveKit', owner: i.createdBy, disputeId: i.disputeId, intentId: i.id, contentHash: i.contentHash, requestId: i.requestId, detail: 'the server restarted during the send' });
@@ -301,6 +308,17 @@ export class IntentStore {
       }
     }
     for (const h of open.values()) if (!this.uncertain.has(h.disputeId)) this.uncertain.set(h.disputeId, { intentId: h.intentId, since: h.since, caseId: h.caseId });
+  }
+
+  /** Whether the send log has a send_started for this intent after its last outcome (sent, failed, read back). */
+  private startedSinceLastOutcome(intentId: string): boolean {
+    let started = false;
+    for (const e of this.sendLog) {
+      if (e.intentId !== intentId) continue;
+      if (e.kind === 'send_started') started = true;
+      else if (e.kind === 'sent' || e.kind === 'send_failed' || e.kind === 'read_back') started = false;
+    }
+    return started;
   }
 
   private addKey(disputeId: string, keySha: string) {

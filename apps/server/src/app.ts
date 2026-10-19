@@ -1240,6 +1240,7 @@ export function createApi(opts: ApiOptions): Api {
     sellerRefusal,
     actorOf,
     personOf,
+    uploadsUnchanged,
     uploadFiles: async (caseId, st, ids) => {
       for (const id of ids) {
         if (!st.uploads.some((r) => r.id === id)) return json(422, { error: 'UNKNOWN_UPLOAD', detail: `Upload ${id} is not a confirmed upload of this case’s current dispute` });
