@@ -39,8 +39,10 @@ deadline applies. Linux test runs and a memory measurement on Render with a 5-pa
 
 1. `POST /api/cases/:id/uploads` with the raw bytes and `x-upload-name`. The type is told by magic bytes only; the
    size is read from the header and checked before any pixel is decoded.
-2. Decoded one image at a time server-wide. A sanitised file is encoded from the decoded pixels: no metadata, no
-   ancillary chunks or segments, none of the original bytes.
+2. Decoded one image at a time server-wide. A JPEG is first turned upright by its EXIF Orientation, as the browser
+   shows it, so covers and OCR boxes land where the person saw them (a portrait phone photo is stored landscape). A
+   sanitised file is encoded from the decoded pixels: no metadata, no ancillary chunks or segments, none of the
+   original bytes.
 3. OCR reads the sanitised image (downscaled for OCR only above 4 MP).
 4. The merchant covers rectangles (`POST …/redact`, at most 5 passes); covers are burned in as opaque black and the
    image is read again.

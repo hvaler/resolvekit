@@ -346,3 +346,82 @@ test('a covered PNG stays a PNG (lossless, as a screenshot needs): the same file
   assert.equal(out.mime, 'image/png');
   assert.deepEqual(out.file, sanitiseImage(src, rects).png);
 });
+
+// ------------------------------------------------------------------------------------------------ EXIF orientation
+
+/** An EXIF APP1 segment whose IFD0 holds only Orientation (tag 0x0112, SHORT), big- or little-endian. */
+function exifOrientation(o: number, little = false): Buffer {
+  const tiff = Buffer.alloc(8 + 2 + 12 + 4);
+  const u16 = (v: number, at: number) => (little ? tiff.writeUInt16LE(v, at) : tiff.writeUInt16BE(v, at));
+  const u32 = (v: number, at: number) => (little ? tiff.writeUInt32LE(v, at) : tiff.writeUInt32BE(v, at));
+  tiff.write(little ? 'II' : 'MM', 0, 'latin1');
+  u16(42, 2);
+  u32(8, 4);
+  u16(1, 8);
+  u16(0x0112, 10);
+  u16(3, 12);
+  u32(1, 14);
+  u16(o, 18);
+  u32(0, 22);
+  const body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff]);
+  const head = Buffer.from([0xff, 0xe1, 0, 0]);
+  head.writeUInt16BE(body.length + 2, 2);
+  return Buffer.concat([head, body]);
+}
+
+/**
+ * A camera JPEG stored landscape, 64 x 32, light grey with a red 16 x 16 marker in its stored top-left corner, carrying
+ * EXIF Orientation `o` (how a viewer must turn it to show it upright).
+ */
+function orientedJpeg(o: number, little = false): Uint8Array {
+  const w = 64, h = 32;
+  const data = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) data.set(x < 16 && y < 16 ? [230, 20, 20, 255] : [200, 200, 200, 255], (y * w + x) * 4);
+  const j = Buffer.from(jpeg.encode({ data, width: w, height: h }, 100).data);
+  return Buffer.concat([j.subarray(0, 2), exifOrientation(o, little), j.subarray(2)]);
+}
+
+const isRed = (p: number[]) => p[0]! > 180 && p[1]! < 80 && p[2]! < 80;
+
+test('a JPEG is turned upright by its EXIF Orientation before anything is covered: the output is what the browser showed', () => {
+  // Where the stored top-left marker shows once upright, and the upright size.
+  const cases = [
+    { o: 1, size: [64, 32], marker: [2, 2] },
+    { o: 3, size: [64, 32], marker: [61, 29] },
+    { o: 6, size: [32, 64], marker: [29, 2] },
+    { o: 8, size: [32, 64], marker: [2, 61] },
+  ] as const;
+  for (const c of cases) for (const little of [false, true]) {
+    const d = decodeImage(orientedJpeg(c.o, little));
+    assert.deepEqual([d.width, d.height], c.size, `orientation ${c.o}`);
+    assert.ok(isRed(px(d.rgba, d.width, c.marker[0], c.marker[1])), `orientation ${c.o}: marker at ${c.marker}`);
+    // A rectangle drawn on the upright view covers exactly those pixels of the stored (and sent) file.
+    const rect = { x: 3, y: 5, w: 11, h: 7 };
+    const out = sanitiseImage(orientedJpeg(c.o, little), [rect]);
+    assert.deepEqual([out.width, out.height], c.size);
+    const got = decodeImage(out.png).rgba;
+    for (let y = 0; y < out.height; y++) for (let x = 0; x < out.width; x++) {
+      const inside = x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
+      const p = px(got, out.width, x, y);
+      if (inside) assert.deepEqual(p, [0, 0, 0, 255], `o${c.o} ${x},${y}`);
+      else assert.ok(p.slice(0, 3).some((v) => v > 150), `o${c.o} ${x},${y}: ${p}`);
+    }
+    // The covered photo is stored upright too, with no EXIF left to turn it again.
+    const photo = coverImage(orientedJpeg(c.o, little), [rect]);
+    assert.deepEqual([photo.width, photo.height], c.size);
+    assert.ok(!Buffer.from(photo.file).includes('Exif'));
+  }
+});
+
+test('a missing, unknown or malformed EXIF Orientation leaves the pixels as stored', () => {
+  for (const o of [0, 9, 0xffff]) {
+    const d = decodeImage(orientedJpeg(o));
+    assert.deepEqual([d.width, d.height], [64, 32]);
+    assert.ok(isRed(px(d.rgba, 64, 2, 2)));
+  }
+  // A truncated APP1 (declared longer than the TIFF data it holds) is ignored, not read past.
+  const j = Buffer.from(orientedJpeg(1));
+  const app1 = Buffer.concat([Buffer.from([0xff, 0xe1, 0x00, 0x0c]), Buffer.from('Exif\0\0MM\0*', 'latin1')]);
+  const src = Buffer.concat([j.subarray(0, 2), app1, j.subarray(2)]);
+  assert.deepEqual([decodeImage(src).width, decodeImage(src).height], [64, 32]);
+});

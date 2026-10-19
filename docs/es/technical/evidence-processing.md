@@ -41,8 +41,10 @@ del proceso hijo de PDF por memoria lee `/proc/<pid>/statm` y, por tanto, solo f
 
 1. `POST /api/cases/:id/uploads` con los bytes en bruto y `x-upload-name`. El tipo se determina solo por los bytes
    mágicos; el tamaño se lee de la cabecera y se comprueba antes de decodificar ningún píxel.
-2. Se decodifica una imagen a la vez en todo el servidor. A partir de los píxeles decodificados se codifica un archivo
-   saneado: sin metadatos, sin chunks ni segmentos auxiliares, sin ninguno de los bytes originales.
+2. Se decodifica una imagen a la vez en todo el servidor. Un JPEG se pone primero derecho según su EXIF Orientation,
+   como lo muestra el navegador, para que las tapas y las cajas del OCR caigan donde la persona las vio (una foto vertical
+   de móvil se guarda en horizontal). A partir de los píxeles decodificados se codifica un archivo saneado: sin
+   metadatos, sin chunks ni segmentos auxiliares, sin ninguno de los bytes originales.
 3. El OCR lee la imagen saneada (reducida solo para el OCR por encima de 4 MP).
 4. El comerciante tapa rectángulos (`POST …/redact`, como mucho 5 pasadas); las tapas se incrustan en negro opaco y
    la imagen se vuelve a leer.

@@ -99,6 +99,78 @@ function jpegSize(b: Uint8Array): [number, number] {
   throw new UploadError('UNREADABLE', 'Not a readable JPEG');
 }
 
+/**
+ * The EXIF Orientation (1–8) of a JPEG's first Exif APP1 segment, or 1 when there is none or it cannot be read. Every
+ * read is bounds-checked against the segment, never past it.
+ */
+export function jpegOrientation(b: Uint8Array): number {
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let o = 2;
+  while (o + 4 <= b.length && b[o] === 0xff) {
+    const m = b[o + 1]!;
+    if (m === 0xff) { o++; continue; }
+    if (m === 0x01 || (m >= 0xd0 && m <= 0xd8)) { o += 2; continue; }
+    if (m === 0xd9 || m === 0xda) break;
+    const len = v.getUint16(o + 2);
+    const end = Math.min(b.length, o + 2 + len);
+    if (m === 0xe1 && end - (o + 4) >= 14 && String.fromCharCode(...b.subarray(o + 4, o + 10)) === 'Exif\0\0') {
+      const t = o + 10;
+      const little = b[t] === 0x49 && b[t + 1] === 0x49;
+      if (!little && !(b[t] === 0x4d && b[t + 1] === 0x4d)) return 1;
+      const u16 = (at: number) => (at + 2 <= end ? v.getUint16(at, little) : -1);
+      const u32 = (at: number) => (at + 4 <= end ? v.getUint32(at, little) : -1);
+      if (u16(t + 2) !== 42) return 1;
+      const ifd = u32(t + 4);
+      if (ifd < 8) return 1;
+      const n = u16(t + ifd);
+      for (let i = 0; i < n; i++) {
+        const e = t + ifd + 2 + i * 12;
+        if (e + 12 > end) return 1;
+        if (u16(e) === 0x0112) {
+          const value = u16(e + 2) === 3 && u32(e + 4) === 1 ? u16(e + 8) : -1;
+          return value >= 1 && value <= 8 ? value : 1;
+        }
+      }
+      return 1;
+    }
+    o += 2 + len;
+  }
+  return 1;
+}
+
+/**
+ * The pixels turned upright as EXIF Orientation `o` says a viewer must show them (browsers do, so this is the grid the
+ * person drew on): 2–4 mirror or turn in place, 5–8 also swap width and height.
+ */
+function upright(rgba: Uint8Array, w: number, h: number, o: number): { width: number; height: number; rgba: Uint8Array } {
+  if (o < 2 || o > 8) return { width: w, height: h, rgba };
+  const swap = o >= 5;
+  const W = swap ? h : w, H = swap ? w : h;
+  const out = new Uint8Array(rgba.length);
+  // One pixel per 32-bit word (copied first if the decoder's buffer is not 4-byte aligned).
+  const src32 = rgba.byteOffset % 4 === 0 ? new Uint32Array(rgba.buffer, rgba.byteOffset, w * h) : new Uint32Array(rgba.slice().buffer);
+  const dst32 = new Uint32Array(out.buffer, 0, W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      // The stored pixel shown at (x, y).
+      const [sx, sy] =
+        o === 2 ? [w - 1 - x, y]
+        : o === 3 ? [w - 1 - x, h - 1 - y]
+        : o === 4 ? [x, h - 1 - y]
+        : o === 5 ? [y, x]
+        : o === 6 ? [y, h - 1 - x]
+        : o === 7 ? [w - 1 - y, h - 1 - x]
+        : [w - 1 - y, x];
+      dst32[y * W + x] = src32[sy * w + sx]!;
+    }
+  }
+  return { width: W, height: H, rgba: out };
+}
+
+/**
+ * Decoded pixels, upright: a JPEG is turned by its EXIF Orientation (a portrait phone photo is stored landscape), so
+ * every rectangle and OCR box is in the grid the browser shows.
+ */
 export function decodeImage(bytes: Uint8Array): { kind: 'png' | 'jpeg'; width: number; height: number; rgba: Uint8Array } {
   const kind = isPng(bytes) ? 'png' : isJpeg(bytes) ? 'jpeg' : null;
   if (!kind) throw new UploadError('UNSUPPORTED_TYPE', 'Only PNG and JPEG images are accepted');
@@ -114,7 +186,7 @@ export function decodeImage(bytes: Uint8Array): { kind: 'png' | 'jpeg'; width: n
     }
     const j = jpeg.decode(bytes, { useTArray: true, maxResolutionInMP: Math.ceil(MAX_PIXELS / 1e6), maxMemoryUsageInMB: 256 });
     if (j.width !== w || j.height !== h) throw new Error('size differs from the validated header');
-    return { kind, width: j.width, height: j.height, rgba: j.data };
+    return { kind, ...upright(j.data, j.width, j.height, jpegOrientation(bytes)) };
   } catch (e) {
     if (e instanceof UploadError) throw e;
     throw new UploadError('UNREADABLE', 'The image could not be decoded', { cause: e });
