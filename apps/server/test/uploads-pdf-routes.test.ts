@@ -20,7 +20,7 @@ import { CASE, P, TIMEOUT, call, req, setup, type App } from './uploads-kit.ts';
 
 after(() => closeOcr());
 
-const TOO_BIG = 'This PDF is larger than 10 MB or has more than 30 pages. Prepare a smaller extract and upload it again.';
+const TOO_BIG = 'This PDF is larger than 10 MiB or has more than 30 pages. Prepare a smaller extract and upload it again.';
 const ENCRYPTED = 'This PDF is password-protected or encrypted. Upload a version without protection.';
 const UNREADABLE = 'This file could not be read as a PDF.';
 

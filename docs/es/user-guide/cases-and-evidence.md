@@ -75,7 +75,7 @@ sesión iniciada en el espacio del vendedor puede añadir evidencia.
 
 1. En **Evidence**, elige **+ Add evidence**. El panel dice: «It is read on this server only. Nothing of it is used,
    sent to an AI model or to PayPal until you have covered what must not be shared and confirmed it.»
-2. Elige un archivo («A screenshot (PNG or JPEG, up to 5 MB) or a PDF (up to 10 MB and 30 pages)»), o pega texto en
+2. Elige un archivo («A screenshot (PNG or JPEG, up to 5 MiB) or a PDF (up to 10 MiB and 30 pages)»), o pega texto en
    «Or paste text (an email thread, a chat)», dale un nombre (p. ej. «buyer email 9 Oct») y pulsa **Add pasted text**.
    Un PDF continúa en [Revisión de PDF](pdf-review.md).
 3. Se abre la ventana **Review new evidence** sobre el original. Todavía no se usa nada.
@@ -130,7 +130,7 @@ te importen: el lado de PayPal es un sandbox y la app es una demo.
 
 | Mensaje (extracto) | Qué hacer |
 |---|---|
-| «Files up to 5 MB» / «The image is larger than 4096 px on a side or 8,294,400 pixels» | Usa una captura más pequeña |
+| «Files up to 5 MiB» / «The image is larger than 4096 px on a side or 8,294,400 pixels» | Usa una captura más pequeña |
 | «The text has "€" …only Latin-1 characters…» | Sustituye el carácter (p. ej. € por EUR, las comillas tipográficas por rectas) |
 | «Pasted text up to 20000 characters» | Acórtalo |
 | «A case takes at most 10 uploads; discard or delete one first» | Descarta o borra una |

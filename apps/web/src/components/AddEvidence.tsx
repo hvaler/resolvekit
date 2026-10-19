@@ -41,7 +41,7 @@ export function AddEvidencePanel({ client, onAdded, onPdf, onClose }: { client: 
         It is read on this server only. Nothing of it is used, sent to an AI model or to PayPal until you have covered what must not be shared and confirmed it.
       </p>
       <label className="flex flex-wrap items-center gap-2 text-[12.5px]">
-        <span className="font-medium">A screenshot (PNG or JPEG, up to 5 MB) or a PDF (up to 10 MB and 30 pages)</span>
+        <span className="font-medium">A screenshot (PNG or JPEG, up to 5 MiB) or a PDF (up to 10 MiB and 30 pages)</span>
         <input
           type="file"
           accept="image/png,image/jpeg,application/pdf"

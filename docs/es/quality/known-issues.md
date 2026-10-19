@@ -52,12 +52,6 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | `joinUrl` solo lo usa su test | Función auxiliar muerta | ENV; `environment.ts` |
 | Conexión de comerciantes no construida | No hay código de PayPal Platform / Partner Referrals; los comerciantes nuevos ven la pantalla de espera (**Pendiente**) | ENV; no hay código `partner-referrals` ni `PayPal-Auth-Assertion` en `apps/` ni en `packages/` |
 
-## Texto del producto
-
-| Problema | Efecto | Fuente |
-|---|---|---|
-| Límite por archivo guardado mostrado como «9.4 MB» | El límite de 9,900,000 bytes por archivo guardado se formatea en megabytes binarios (`maxStored / 1024 / 1024`, un decimal), así que el mensaje dice «9.4 MB» mientras que en otros sitios el límite se describe como 9.9 MB | `apps/server/src/uploads/routes.ts:318`; `uploads/limits.ts:23` |
-
 ## Operaciones
 
 | Problema | Efecto | Fuente |

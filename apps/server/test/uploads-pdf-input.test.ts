@@ -7,7 +7,7 @@ import { closeOcr, ocrPng, ocrTestHooks } from '../src/uploads/ocr.ts';
 import { A3_LANDSCAPE, HIDDEN, HUGE, bombPdf, corruptPdf, encryptedPdf, hiddenPdf, pagesPdf, resourcesPdf, textPdf, zeroPagePdf } from './fixtures/make-pdfs.ts';
 
 const TIMEOUT = { timeout: 60_000 };
-const TOO_BIG = 'This PDF is larger than 10 MB or has more than 30 pages. Prepare a smaller extract and upload it again.';
+const TOO_BIG = 'This PDF is larger than 10 MiB or has more than 30 pages. Prepare a smaller extract and upload it again.';
 const ENCRYPTED = 'This PDF is password-protected or encrypted. Upload a version without protection.';
 const UNREADABLE = 'This file could not be read as a PDF.';
 const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';

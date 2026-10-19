@@ -54,7 +54,7 @@ en el límite de 9.9 MB).
 
 ### PDF
 
-1. Subida ≤ 10 MiB y ≤ 30 páginas (si no, «This PDF is larger than 10 MB or has more than 30 pages. Prepare a
+1. Subida ≤ 10 MiB y ≤ 30 páginas (si no, «This PDF is larger than 10 MiB or has more than 30 pages. Prepare a
    smaller extract and upload it again.»). Se rechazan los PDF protegidos con contraseña o cifrados.
 2. Un trabajo en segundo plano (consultado mediante `GET /uploads`) se ejecuta por etapas: `selecting` (miniaturas a
    36 dpi, 3 s cada una, para PDF de más de 5 páginas), `rendering` (las páginas seleccionadas), `reading` (OCR de

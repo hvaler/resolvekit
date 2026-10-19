@@ -77,7 +77,7 @@ timeout). It never appears on a case running on real PayPal.
 ## C. Add and sanitise your own evidence
 
 1. In a Test Store case press **+ Add evidence**. The panel says *It is read on this server only…*.
-2. Pick a file in *A screenshot (PNG or JPEG, up to 5 MB) or a PDF (up to 10 MB and 30 pages)*, or paste into **Or
+2. Pick a file in *A screenshot (PNG or JPEG, up to 5 MiB) or a PDF (up to 10 MiB and 30 pages)*, or paste into **Or
    paste text (an email thread, a chat)**, give it a name and press **Add pasted text**.
 3. **Image**: *Drag over what must not be shared*, then **Read again from the covered image**. The text panel switches
    to *Text read from the covered file*. Correct a line if the reading got it wrong.

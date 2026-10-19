@@ -15,12 +15,12 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { UploadError, oneImageAtATime } from './image.ts';
-import { PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGE_PIXELS, PDF_PAGE_TIMEOUT_MS, PDF_SESSION_BUDGET_MS } from './limits.ts';
+import { PDF_CHILD_MAX_RSS_BYTES, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_PAGE_PIXELS, PDF_PAGE_TIMEOUT_MS, PDF_SESSION_BUDGET_MS, sizeLimitText } from './limits.ts';
 import { closeOcr } from './ocr.ts';
 import type { ChildError, ChildReply, ChildRequest, ChildStrip } from './pdf-child.ts';
 
 /** The refusal of a PDF over PDF_MAX_BYTES or PDF_MAX_PAGES (also given by the upload route on the declared size). */
-export const TOO_BIG = 'This PDF is larger than 10 MB or has more than 30 pages. Prepare a smaller extract and upload it again.';
+export const TOO_BIG = `This PDF is larger than ${sizeLimitText(PDF_MAX_BYTES)} or has more than ${PDF_MAX_PAGES} pages. Prepare a smaller extract and upload it again.`;
 const ENCRYPTED = 'This PDF is password-protected or encrypted. Upload a version without protection.';
 const UNREADABLE = 'This file could not be read as a PDF.';
 export const TOO_SLOW = 'Reading this PDF page took too long. Prepare a smaller extract and upload it again.';

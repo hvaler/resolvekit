@@ -35,7 +35,7 @@ import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
 import { uploadDocuments, uploadTitle } from './documents.ts';
 import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
-import { MAX_FILE_BYTES, MAX_REDACTS_PER_PAGE, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED, PDF_RENDER_DPI } from './limits.ts';
+import { MAX_FILE_BYTES, MAX_REDACTS_PER_PAGE, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED, PDF_RENDER_DPI, sizeLimitText } from './limits.ts';
 import { ocrPng } from './ocr.ts';
 import { CANNOT_START, OVER_BUDGET, TOO_BIG, TOO_SLOW, inspectPdf, pageTextHint } from './pdf-input.ts';
 import { coveredPagesPdf, type PdfJob } from './pdf-job.ts';
@@ -315,7 +315,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
   const tooMany = () => refuse(409, 'TOO_MANY_UPLOADS', `A case takes at most ${MAX_UPLOADS_PER_CASE} uploads; discard or delete one first`);
   const storageFull = () => refuse(507, 'STORAGE_FULL', 'The demo has no room for more uploads right now');
   const hasRoom = (bytes: number) => store.usedBytes() + bytes <= maxStorage;
-  const megabytes = `${+(maxStored / 1024 / 1024).toFixed(1)} MB`;
+  const megabytes = sizeLimitText(maxStored);
   /** A sanitised file over the per-file limit: 413 with what the person can do. */
   const tooBig = (kind: UploadRecord['kind']) =>
     refuse(413, 'TOO_LARGE', kind === 'image'
@@ -398,14 +398,14 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
       if (Number.isFinite(declared) && declared > PDF_MAX_BYTES) return refuse(413, 'TOO_LARGE', TOO_BIG);
       return addPdf(req, s);
     }
-    if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) return refuse(413, 'TOO_LARGE', `Files up to ${MAX_FILE_BYTES / 1024 / 1024} MB`);
+    if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) return refuse(413, 'TOO_LARGE', `Files up to ${sizeLimitText(MAX_FILE_BYTES)}`);
     let kind: UploadRecord['kind'];
     let original: Uint8Array;
     let name: string;
     let text: string | null = null;
     if (isImageType(type)) {
       original = new Uint8Array(await req.arrayBuffer());
-      if (original.length > MAX_FILE_BYTES) return refuse(413, 'TOO_LARGE', `Files up to ${MAX_FILE_BYTES / 1024 / 1024} MB`);
+      if (original.length > MAX_FILE_BYTES) return refuse(413, 'TOO_LARGE', `Files up to ${sizeLimitText(MAX_FILE_BYTES)}`);
       kind = 'image';
       name = cleanName(req.headers.get('x-upload-name'), type === 'image/png' ? 'image.png' : 'image.jpg');
     } else if (type === 'application/json') {

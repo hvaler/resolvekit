@@ -83,7 +83,7 @@ revisión, tiempo agotado). Nunca aparece en un caso que funcione sobre PayPal r
 ## C. Añadir y sanear tu propia evidencia
 
 1. En un caso de Test Store pulsa **+ Add evidence**. El panel dice *It is read on this server only…*.
-2. Elige un archivo en *A screenshot (PNG or JPEG, up to 5 MB) or a PDF (up to 10 MB and 30 pages)*, o pega en **Or
+2. Elige un archivo en *A screenshot (PNG or JPEG, up to 5 MiB) or a PDF (up to 10 MiB and 30 pages)*, o pega en **Or
    paste text (an email thread, a chat)**, ponle un nombre y pulsa **Add pasted text**.
 3. **Imagen**: *Drag over what must not be shared*, después **Read again from the covered image**. El panel de texto
    cambia a *Text read from the covered file*. Corrige una línea si la lectura se equivocó.

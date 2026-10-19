@@ -1,4 +1,16 @@
 /** Limits for merchant evidence uploads, in one place. */
+const MiB = 1024 * 1024;
+
+/**
+ * A size limit as messages name it, the way it is defined here: a binary limit (whole MiB) in MiB, a decimal one in MB
+ * (9,900,000 bytes is «9.9 MB»), a small one in bytes. The web app and the docs use the same readings.
+ */
+export function sizeLimitText(bytes: number): string {
+  if (bytes >= MiB && bytes % MiB === 0) return `${bytes / MiB} MiB`;
+  if (bytes >= 1_000_000) return `${+(bytes / 1_000_000).toFixed(2)} MB`;
+  return `${bytes.toLocaleString('en-US')} bytes`;
+}
+
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_SIDE = 4096;
 /** 3840 x 2160: a 4K screenshot. Decoding is held to this so one image fits the hosted instance's memory. */

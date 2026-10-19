@@ -71,7 +71,7 @@ in to the seller workspace can add evidence.
 
 1. In **Evidence**, choose **+ Add evidence**. The panel says: «It is read on this server only. Nothing of it is used,
    sent to an AI model or to PayPal until you have covered what must not be shared and confirmed it.»
-2. Either choose a file («A screenshot (PNG or JPEG, up to 5 MB) or a PDF (up to 10 MB and 30 pages)»), or paste text
+2. Either choose a file («A screenshot (PNG or JPEG, up to 5 MiB) or a PDF (up to 10 MiB and 30 pages)»), or paste text
    under «Or paste text (an email thread, a chat)», give it a name (e.g. «buyer email 9 Oct») and **Add pasted text**.
    A PDF continues in [PDF review](pdf-review.md).
 3. The **Review new evidence** window opens on the original. Nothing is used yet.
@@ -126,7 +126,7 @@ about: the PayPal side is a sandbox and the app is a demo.
 
 | Message (excerpt) | What to do |
 |---|---|
-| «Files up to 5 MB» / «The image is larger than 4096 px on a side or 8,294,400 pixels» | Use a smaller screenshot |
+| «Files up to 5 MiB» / «The image is larger than 4096 px on a side or 8,294,400 pixels» | Use a smaller screenshot |
 | «The text has "€" …only Latin-1 characters…» | Replace the character (e.g. € with EUR, curly quotes with straight ones) |
 | «Pasted text up to 20000 characters» | Shorten it |
 | «A case takes at most 10 uploads; discard or delete one first» | Discard or delete one |

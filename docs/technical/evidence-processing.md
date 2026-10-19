@@ -51,7 +51,7 @@ Covered images are always stored as PNG (a JPEG photo becomes a larger PNG; it m
 
 ### PDF
 
-1. Upload ≤ 10 MiB and ≤ 30 pages (otherwise «This PDF is larger than 10 MB or has more than 30 pages. Prepare a
+1. Upload ≤ 10 MiB and ≤ 30 pages (otherwise «This PDF is larger than 10 MiB or has more than 30 pages. Prepare a
    smaller extract and upload it again.»). Password-protected or encrypted PDFs are refused.
 2. A background job (polled through `GET /uploads`) runs in stages: `selecting` (thumbnails at 36 dpi, 3 s each, for
    PDFs over 5 pages), `rendering` (the selected pages), `reading` (OCR of each render), `reviewing`, or `failed`

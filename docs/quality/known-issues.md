@@ -52,12 +52,6 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | `joinUrl` used only by its test | Dead helper | ENV; `environment.ts` |
 | Merchant connection not built | No PayPal Platform / Partner Referrals code; new merchants see the waiting screen (**Pending**) | ENV; no `partner-referrals` or `PayPal-Auth-Assertion` code in `apps/` or `packages/` |
 
-## Product text
-
-| Issue | Effect | Source |
-|---|---|---|
-| Stored-file limit shown as «9.4 MB» | The 9,900,000-byte stored-file limit is formatted in binary megabytes (`maxStored / 1024 / 1024`, one decimal), so the message says «9.4 MB» while the limit is described elsewhere as 9.9 MB | `apps/server/src/uploads/routes.ts:318`; `uploads/limits.ts:23` |
-
 ## Operations
 
 | Issue | Effect | Source |
