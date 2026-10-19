@@ -18,7 +18,11 @@
  *
  * Usage per source: development files from the usage stored in their analyses (observed; a failed result stored no
  * usage, counted as unrecorded), at the list price for Gemini; Groq ran on its free tier, so no cost is given for it.
- * Held-out attempts and ledgers carry the runner's own observed / estimated / unknown split, reported as stored.
+ * Held-out attempts and ledgers carry the runner's own observed / estimated / unknown split, reported as stored; for
+ * Groq those figures are at Gemini list price (B22), so its rows in the usage table show tokens only and the held-out
+ * section labels them «estimated at Gemini list price, not a Groq price». An ok attempt whose analysis lacks what the
+ * scorer reads (sentences, checklist.items, contradictions) is unreadable; one stamped with a cases hash other than
+ * the one its ledger pins is foreignStamp.
  *
  * Held-out scoring (labels, forbidden outcomes, twin pairing, per-run rows and spread) is heldout/score.ts, with the
  * frozen config's runs and negation window and the judgements in heldout/manual-judgements.json (malformed or
@@ -33,7 +37,7 @@ import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROMPT_VERSION } from '../src/prompts.ts';
 import type { CaseAnalysis } from '../src/types.ts';
-import { BUDGET_NOTE, LIST_PRICE, type Ledger } from './budget.ts';
+import { BUDGET_NOTE, LIST_PRICE, NOT_A_GROQ_PRICE, type Ledger } from './budget.ts';
 import { CASES, type EvalCase } from './cases.ts';
 import { HELD_OUT_CASES } from './heldout/cases.ts';
 import type { HeldOutCase } from './heldout/schema.ts';
@@ -106,6 +110,8 @@ export interface HeldOutRow {
   unknownCaseAttempts: { files: number; cases: string[]; attempts: StatusCounts; usage: HeldOutUsage };
   stamps: { codeCommits: string[]; freezeCommits: string[]; promptVersions: string[]; requestedModels: string[]; returnedModels: string[] };
   usage: HeldOutUsage;
+  /** What the USD figures in `usage` are: list price (Gemini), or, for Groq, estimated at Gemini list price, not a Groq price (B22). */
+  usageBasis: string;
   ledger: Ledger | null;
   /** Labels, forbidden outcomes, twin pairing, per-run rows and spread (heldout/score.ts); null with no attempts. */
   scoring: HeldOutScoring | null;
@@ -305,6 +311,9 @@ function readAttempt(text: string, m: RegExpExecArray): Attempt {
   const u = a.usage;
   need(isObj(u) && ['calls', 'httpAttempts', 'refused', 'inputTokens', 'outputTokens', 'thinkingTokens', 'observedUsd', 'unknownUsd', 'estimatedUsd', 'costUsdAtListPrice'].every((k) => isNum(u[k])), 'usage');
   need(a.status !== 'ok' || isObj(a.analysis), 'analysis (status ok)');
+  // What the scorer reads of an ok analysis: missing, it would crash the recompute instead of being listed (B22).
+  const an = a.analysis as Record<string, unknown> | undefined;
+  need(a.status !== 'ok' || (Array.isArray(an!.sentences) && isObj(an!.checklist) && Array.isArray(an!.checklist.items) && Array.isArray(an!.contradictions)), 'analysis (status ok): sentences, checklist.items, contradictions');
   if (a.provider !== m[1] || a.case !== m[2] || a.run !== Number(m[3])) throw new Unreadable(`its content (${a.provider}/${a.case}/${a.run}) disagrees with its path`);
   return a as unknown as Attempt;
 }
@@ -314,7 +323,8 @@ function readLedger(text: string, provider: string): Ledger {
   need(isObj(j), 'not an object');
   const l = j as Record<string, unknown>;
   need(l.provider === provider, `provider (the path says ${provider})`);
-  need(['limitUsd', 'observedUsd', 'estimatedUsd', 'unknownUsd', 'checks', 'refusals'].every((k) => isNum(l[k])), 'limitUsd, observedUsd, estimatedUsd, unknownUsd, checks, refusals');
+  // limitUsd null: not USD-guarded (Groq, B22)
+  need((l.limitUsd === null || isNum(l.limitUsd)) && ['observedUsd', 'estimatedUsd', 'unknownUsd', 'checks', 'refusals'].every((k) => isNum(l[k])), 'limitUsd, observedUsd, estimatedUsd, unknownUsd, checks, refusals');
   return l as unknown as Ledger;
 }
 
@@ -330,6 +340,9 @@ function statusCounts(attempts: readonly Attempt[]): StatusCounts {
   for (const a of attempts) counts[a.status]++;
   return counts;
 }
+
+/** The runner's USD figures: list price for Gemini; for Groq, recorded at Gemini list price, so never a Groq cost (B22). */
+const usdBasis = (p: Provider) => (p === 'groq' ? `USD ${NOT_A_GROQ_PRICE}` : 'USD at list price');
 
 /** `attempts`: of the held-out set's cases only; `unknown`: attempts for any other case, accounted apart. */
 function heldOutRow(attempts: Attempt[], unknown: Attempt[], excluded: number, ledger: Ledger | null, cases: readonly HeldOutCase[], score: { provider: Provider; runs: number; negationWindowWords: number; judgements: readonly ManualJudgement[] }): HeldOutRow {
@@ -349,6 +362,7 @@ function heldOutRow(attempts: Attempt[], unknown: Attempt[], excluded: number, l
       returnedModels: uniq(attempts.flatMap((a) => a.stamp.returnedModels ?? [])),
     },
     usage: sumUsage(attempts),
+    usageBasis: usdBasis(score.provider),
     ledger,
     scoring: scoreHeldOut(cases, attempts, { ...score, runs: Math.max(score.runs, ...attempts.map((a) => a.run)) }),
   };
@@ -514,6 +528,8 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
     // the only one among the attempts (several, and none pinned: none can be told right, so all are left out).
     let rest = attempts[p].filter((x) => !excluded.has(x.file));
     const pinned = ledgers[p]?.freeze?.commit;
+    // The built cases the ledger pins (B22): an attempt made on other inputs or labels is not this set's.
+    const pinnedCases = ledgers[p]?.freeze?.casesHash;
     const freezes = uniq(rest.map((x) => x.a.stamp.freezeCommit));
     for (const { file, a } of rest) {
       const why =
@@ -521,9 +537,11 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
           ? `prompt version ${a.stamp.promptVersion}, not ${PROMPT_VERSION}`
           : pinned !== undefined && a.stamp.freezeCommit !== pinned
             ? `freeze commit ${a.stamp.freezeCommit}; the ledger pins ${pinned}`
-            : pinned === undefined && freezes.length > 1
-              ? `${freezes.length} freeze commits among the ${p} attempts (${freezes.join(', ')}) and no ledger pins one`
-              : null;
+            : pinnedCases !== undefined && a.stamp.casesHash !== pinnedCases
+              ? `cases hash ${a.stamp.casesHash}; the ledger pins ${pinnedCases}`
+              : pinned === undefined && freezes.length > 1
+                ? `${freezes.length} freeze commits among the ${p} attempts (${freezes.join(', ')}) and no ledger pins one`
+                : null;
       if (why) {
         foreignStamp.push({ file, reason: why });
         excluded.add(file);
@@ -535,6 +553,9 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
     const unknown = rest.filter((x) => !known.has(x.a.case)).map((x) => x.a);
     const out = [...excluded].filter((f) => ATTEMPT_FILE.exec(f)?.[1] === p).length;
     heldOut[p] = heldOutRow(kept[p], unknown, out, ledgers[p], heldOutCases, { provider: p, runs: o.runs ?? config.runs, negationWindowWords: config.negationWindowWords, judgements: judgements.entries });
+    // Groq (B22): no cost is ever stated; the runner's figures are at Gemini list price, so the table shows tokens only.
+    const priced = p !== 'groq';
+    const groqBasis = `tokens only; the USD the runner recorded for Groq is ${NOT_A_GROQ_PRICE}, not shown as a cost (see the held-out section)`;
     const attemptUsage = (source: string, kind: UsageRow['kind'], u: HeldOutUsage, what: string): UsageRow => ({
       source,
       kind,
@@ -543,18 +564,32 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
       inputTokens: u.inputTokens,
       outputTokens: u.outputTokens,
       thinkingTokens: u.thinkingTokens,
-      observedUsd: u.observedUsd,
-      estimatedUsd: u.estimatedUsd,
-      unknownUsd: u.unknownUsd,
-      costUsdAtListPrice: u.costUsdAtListPrice,
+      observedUsd: priced ? u.observedUsd : null,
+      estimatedUsd: priced ? u.estimatedUsd : null,
+      unknownUsd: priced ? u.unknownUsd : null,
+      costUsdAtListPrice: priced ? u.costUsdAtListPrice : null,
       unrecordedAttempts: 0,
-      basis: `the runner's per-attempt record${what} at list price (observed + unknown). ${BUDGET_NOTE}`,
+      basis: priced ? `the runner's per-attempt record${what} at list price (observed + unknown). ${BUDGET_NOTE}` : `the runner's per-attempt record${what}: ${groqBasis}`,
     });
     if (kept[p].length) usage.push(attemptUsage(`heldout/${p} attempts`, 'held-out attempts', heldOut[p].usage, ''));
     if (unknown.length) usage.push(attemptUsage(`heldout/${p} attempts for cases not in the held-out set`, 'held-out attempts, unknown cases', heldOut[p].unknownCaseAttempts.usage, ' (cases not in the held-out set, never scored)'));
     const l = ledgers[p];
     if (l)
-      usage.push({ source: `heldout/${p}/budget.json`, kind: 'held-out ledger', provider: p, calls: l.checks - l.refusals, inputTokens: 0, outputTokens: 0, thinkingTokens: 0, observedUsd: l.observedUsd, estimatedUsd: l.estimatedUsd, unknownUsd: l.unknownUsd, costUsdAtListPrice: l.observedUsd + l.estimatedUsd + l.unknownUsd, unrecordedAttempts: 0, basis: `the batch ledger: HTTP attempts checked by the guard (calls = checks − refusals), tokens not kept there. ${BUDGET_NOTE}` });
+      usage.push({
+        source: `heldout/${p}/budget.json`,
+        kind: 'held-out ledger',
+        provider: p,
+        calls: l.checks - l.refusals,
+        inputTokens: 0,
+        outputTokens: 0,
+        thinkingTokens: 0,
+        observedUsd: priced ? l.observedUsd : null,
+        estimatedUsd: priced ? l.estimatedUsd : null,
+        unknownUsd: priced ? l.unknownUsd : null,
+        costUsdAtListPrice: priced ? l.observedUsd + l.estimatedUsd + l.unknownUsd : null,
+        unrecordedAttempts: 0,
+        basis: priced ? `the batch ledger: HTTP attempts checked by the guard (calls = checks − refusals), tokens not kept there. ${BUDGET_NOTE}` : `the batch ledger: HTTP attempts checked by the guard (calls = checks − refusals), ${groqBasis}`,
+      });
   }
   heldOut.commonSubset = commonSubset(kept, heldOutCases);
 
@@ -679,9 +714,13 @@ export function summaryMarkdown(s: Summary): string {
     if (h.byRun.length) out.push('| Run | Attempts |', '|---|---|', ...h.byRun.map((r) => `| ${r.run} | ${counts(r.attempts)} |`), '');
     const u = h.unknownCaseAttempts;
     if (u.files) out.push(`Attempts for cases not in the held-out set, counted apart and never scored: ${u.files} (${u.cases.join(', ')}) · ${counts(u.attempts)}`, '');
-    if (h.files) out.push(`Usage from the attempts: ${h.usage.calls} calls (${h.usage.httpAttempts} HTTP attempts, ${h.usage.refused} refused) · observed ${money(h.usage.observedUsd)} · estimated ${money(h.usage.estimatedUsd)} · unknown ${money(h.usage.unknownUsd)} USD at list price`, '');
+    if (h.files) out.push(`Usage from the attempts: ${h.usage.calls} calls (${h.usage.httpAttempts} HTTP attempts, ${h.usage.refused} refused) · tokens in ${h.usage.inputTokens} / out ${h.usage.outputTokens} / thinking ${h.usage.thinkingTokens} · observed ${money(h.usage.observedUsd)} · estimated ${money(h.usage.estimatedUsd)} · unknown ${money(h.usage.unknownUsd)} ${h.usageBasis}`, '');
     if (h.scoring) out.push(...scoringMarkdown(h.scoring));
-    if (h.ledger) out.push(`Ledger: limit ${money(h.ledger.limitUsd)} · observed ${money(h.ledger.observedUsd)} · estimated ${money(h.ledger.estimatedUsd)} · unknown ${money(h.ledger.unknownUsd)} USD · ${h.ledger.checks} checks, ${h.ledger.refusals} refused, ${h.ledger.exceeded ?? 0} exceeded · stopped ${h.ledger.stopped ? 'yes' : 'no'}`, '');
+    if (h.ledger) {
+      const l = h.ledger;
+      const last = Array.isArray(l.stops) ? l.stops[l.stops.length - 1] : undefined;
+      out.push(`Ledger: limit ${l.limitUsd === null ? 'none (not USD-guarded)' : `${money(l.limitUsd)} USD`} · observed ${money(l.observedUsd)} · estimated ${money(l.estimatedUsd)} · unknown ${money(l.unknownUsd)} ${h.usageBasis} · ${l.checks} checks, ${l.refusals} refused, ${l.exceeded ?? 0} exceeded · stopped ${l.stopped ? 'yes' : 'no'}${last ? ` · stops ${l.stops.length}, last stop: ${last.kind}, ${last.case} run ${last.run}: ${last.reason}` : ''}`, '');
+    }
   }
   const inv = s.manualJudgements.invalid;
   if (inv.length) out.push(`Manual judgements not used (${inv.length}):`, '', ...inv.map((x) => `- ${x.reason}: \`${JSON.stringify(x.entry)}\``), '');

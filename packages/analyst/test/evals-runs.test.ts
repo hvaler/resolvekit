@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -9,7 +10,8 @@ import { PROMPT_VERSION } from '../src/prompts.ts';
 import { GroqModel } from '../src/providers.ts';
 import { BudgetExceeded, LIST_PRICE, RESERVATION_EXCEEDED, budgetGuard, newLedger, reservationUsd, usageUsd } from '../evals/budget.ts';
 import type { HeldOutCase } from '../evals/heldout/schema.ts';
-import { FROZEN_PATHS, UsageError, frozenHash, listFrozenPaths, loadConfig, parseCli, runHeldOut, type Attempt, type Git, type HeldOutConfig } from '../evals/runs.ts';
+import { HELD_OUT_CASES } from '../evals/heldout/cases.ts';
+import { FROZEN_PATHS, UsageError, casesHash, frozenHash, listFrozenPaths, loadConfig, parseCli, runHeldOut, type Attempt, type Git, type HeldOutConfig } from '../evals/runs.ts';
 import { fakeModel, input, standardScript } from './fake.ts';
 
 const noSleep = async () => {};
@@ -67,14 +69,14 @@ const tmp = () => mkdtempSync(join(tmpdir(), 'rk-heldout-'));
 const attempt = (dir: string, provider: string, c: string, run: number): Attempt => JSON.parse(readFileSync(join(dir, provider, c, `${run}.json`), 'utf8'));
 const files = (dir: string, provider: string, c: string) => (existsSync(join(dir, provider, c)) ? readdirSync(join(dir, provider, c)).sort() : []);
 const base = (o: Partial<Parameters<typeof runHeldOut>[0]> & { raw: AnalystModel }) =>
-  runHeldOut({ provider: o.raw.provider as 'gemini' | 'groq', cases: CASES, config, runs: 3, budgetUsd: 1, resultsDir: tmp(), git: fakeGit(), retry: { sleep: noSleep }, log: () => {}, ...o });
+  runHeldOut({ provider: o.raw.provider as 'gemini' | 'groq', cases: CASES, config, runs: 3, budgetUsd: config.budgetUsd[o.raw.provider as 'gemini' | 'groq'], resultsDir: tmp(), git: fakeGit(), retry: { sleep: noSleep }, log: () => {}, ...o });
 
 test('config: the frozen values (models, runs, budget, list price, thinking reserve, negation window, prompt version)', () => {
   assert.deepEqual(config, {
     promptVersion: 'rk-analyst-2026-10-09.7',
     models: { gemini: 'gemini-3.8-flash', groq: 'openai/gpt-oss-120b' },
     runs: 3,
-    budgetUsd: 1.0,
+    budgetUsd: { gemini: 1.0, groq: null },
     listPrice: { inputPerM: 0.75, outputPerM: 3.75 },
     thinkingReserveTokens: { gemini: 2048, groq: 0 },
     negationWindowWords: 4,
@@ -225,16 +227,25 @@ test('an unsettled reservation stays estimated in the ledger (a call still in fl
 
 const always429 = (target: string) => (req: ModelRequest) => (req.user.includes(target) ? new ModelError('answered 429 RESOURCE_EXHAUSTED', { status: 429, retryable: true }) : null);
 
-test('a 429 that the retries cannot clear is a provider_error and the batch continues (gemini)', async () => {
+test('B22 I-1: a 429 that the retries cannot clear is a provider_error and stops the batch (gemini too)', async () => {
   const dir = tmp();
+  const lines: string[] = [];
   const { model } = raw('gemini', { fail: always429('HO-A') });
-  const r = await base({ raw: model, resultsDir: dir, runs: 1 });
-  assert.equal(r.stopped, null);
+  const r = await base({ raw: model, resultsDir: dir, runs: 1, log: (l) => lines.push(l) });
+  assert.equal(r.stopped, 'quota');
+  assert.match(r.stopReason ?? '', /429 survived the retries/);
   const a = attempt(dir, 'gemini', 'HO-A', 1);
   assert.equal(a.status, 'provider_error');
   assert.match(a.error ?? '', /429/);
   assert.ok(a.usage.unknownUsd > 0);
-  assert.equal(attempt(dir, 'gemini', 'HO-B', 1).status, 'ok');
+  assert.deepEqual(files(dir, 'gemini', 'HO-B'), []);
+  const ledger = JSON.parse(readFileSync(join(dir, 'gemini', 'budget.json'), 'utf8'));
+  assert.equal(ledger.stops.length, 1);
+  assert.deepEqual([ledger.stops[0].kind, ledger.stops[0].case, ledger.stops[0].run], ['quota', 'HO-A', 1]);
+  assert.match(ledger.stops[0].reason, /429 survived the retries/);
+  // a quota stop is not a budget stop: a later batch may resume once the quota is back
+  assert.equal(ledger.stopped, false);
+  assert.ok(lines.some((l) => /stopped \(quota\): .*429 survived the retries/.test(l)), lines.join('\n'));
 });
 
 test('a 429 that the retries cannot clear is a provider_error and the batch stops (groq quota)', async () => {
@@ -242,6 +253,7 @@ test('a 429 that the retries cannot clear is a provider_error and the batch stop
   const { model } = raw('groq', { fail: always429('HO-A') });
   const r = await base({ raw: model, resultsDir: dir, runs: 1 });
   assert.equal(r.stopped, 'quota');
+  assert.match(r.stopReason ?? '', /429 survived the retries/);
   assert.equal(attempt(dir, 'groq', 'HO-A', 1).status, 'provider_error');
   assert.deepEqual(files(dir, 'groq', 'HO-B'), []);
 });
@@ -293,6 +305,9 @@ test('the runner refuses to start with uncommitted changes under packages/analys
   const status = git.seen.find((a) => a[0] === 'status')!;
   assert.ok(status.includes('packages/analyst'));
   assert.ok(status.some((a) => a.includes('exclude') && a.includes('packages/analyst/evals/results/heldout')));
+  // B22 I-3: the server files the held-out inputs are built with are checked too
+  assert.ok(status.includes('apps/server/src/uploads/documents.ts'));
+  assert.ok(status.includes('apps/server/src/uploads/store.ts'));
 });
 
 test('the runner refuses to start when a frozen file differs from the freeze commit', async () => {
@@ -302,7 +317,7 @@ test('the runner refuses to start when a frozen file differs from the freeze com
   assert.equal(calls.length, 0);
   const diff = git.seen.find((a) => a[0] === 'diff')!;
   assert.deepEqual(diff, ['diff', '--quiet', 'f00', 'HEAD', '--', ...FROZEN_PATHS]);
-  assert.deepEqual(FROZEN_PATHS.slice(0, 7), [
+  assert.deepEqual(FROZEN_PATHS.slice(0, 9), [
     'packages/analyst/evals/heldout/cases.ts',
     'packages/analyst/evals/heldout/schema.ts',
     'packages/analyst/evals/heldout/config.json',
@@ -310,6 +325,9 @@ test('the runner refuses to start when a frozen file differs from the freeze com
     'packages/analyst/evals/metrics.ts',
     'packages/analyst/evals/heldout/score.ts',
     'packages/analyst/evals/heldout/manual-judgements.json',
+    // B22 I-3: the held-out inputs are built with the server's uploadDocuments (and its UploadRecord type)
+    'apps/server/src/uploads/documents.ts',
+    'apps/server/src/uploads/store.ts',
   ]);
   // B15: the freeze commit is the last commit touching any frozen file, not only the heldout folder
   assert.deepEqual(git.seen.find((a) => a[0] === 'log'), ['log', '-1', '--format=%H', '--', ...FROZEN_PATHS]);
@@ -320,6 +338,7 @@ test('the runner refuses to start on a prompt version, model or budget other tha
   await assert.rejects(base({ raw: model, config: { ...config, promptVersion: 'rk-analyst-other' } }), /PROMPT_VERSION/);
   await assert.rejects(base({ raw: { ...model, model: 'gemini-other', generate: model.generate } }), /pinned model/);
   await assert.rejects(base({ raw: model, budgetUsd: 1.5 }), /budget/);
+  await assert.rejects(base({ raw: model, budgetUsd: null }), /budget/);
   await assert.rejects(base({ raw: model, runs: 4 }), /runs/);
   await assert.rejects(base({ raw: model, cases: [] }), /no held-out cases/);
   assert.equal(calls.length, 0);
@@ -418,7 +437,7 @@ test('the first batch pins the freeze commit and the frozen files hash in budget
   const dir = tmp();
   await base({ raw: raw('gemini').model, resultsDir: dir, runs: 1, cases: [CASES[0]!] });
   const ledger = JSON.parse(readFileSync(join(dir, 'gemini', 'budget.json'), 'utf8'));
-  assert.deepEqual(ledger.freeze, { commit: 'f00', hash: frozenHash() });
+  assert.deepEqual(ledger.freeze, { commit: 'f00', hash: frozenHash(), casesHash: casesHash([CASES[0]!]) });
   assert.match(ledger.freeze.hash, /^[0-9a-f]{64}$/);
 });
 
@@ -444,7 +463,8 @@ test('a later batch refuses when a stored attempt carries another freeze, or att
   const file = join(dir, 'gemini', 'HO-A', '1.json');
   const a = JSON.parse(readFileSync(file, 'utf8'));
   writeFileSync(file, JSON.stringify({ ...a, stamp: { ...a.stamp, freezeCommit: 'zzz' } }));
-  await assert.rejects(base({ raw: raw('gemini').model, resultsDir: dir }), /stamped with freeze zzz; the current freeze is f00/);
+  // the same case set as the first batch (another set is refused on its cases hash, B22)
+  await assert.rejects(base({ raw: raw('gemini').model, resultsDir: dir, cases: [CASES[0]!] }), /stamped with freeze zzz; the current freeze is f00/);
   const ledgerFile = join(dir, 'gemini', 'budget.json');
   const { freeze: _f, ...unpinned } = JSON.parse(readFileSync(ledgerFile, 'utf8'));
   writeFileSync(ledgerFile, JSON.stringify(unpinned));
@@ -460,9 +480,10 @@ test('--from-run outside 1..runs, or not an integer, refuses the start', async (
 });
 
 test('the command line: flags without a value, unknown flags, bad numbers and a bad --from-run are usage errors', () => {
-  assert.deepEqual(parseCli(['--provider', 'groq', '--from-run', '2'], config), { provider: 'groq', runs: 3, budgetUsd: 1, fromRun: 2 });
+  assert.deepEqual(parseCli(['--provider', 'groq', '--from-run', '2'], config), { provider: 'groq', runs: 3, budgetUsd: null, fromRun: 2 });
+  assert.deepEqual(parseCli(['--provider', 'gemini'], config), { provider: 'gemini', runs: 3, budgetUsd: 1 });
   assert.deepEqual(parseCli(['--case', 'HO-A', '--budget', '0.5'], config), { provider: 'gemini', runs: 3, budgetUsd: 0.5, only: 'HO-A' });
-  for (const args of [['--provider'], ['--provider', '--runs', '3'], ['--from-run'], ['--nope', 'x'], ['--budget', 'lots'], ['--from-run', '0'], ['--from-run', '4'], ['--from-run', '1.5'], ['--provider', 'openai']])
+  for (const args of [['--provider'], ['--provider', '--runs', '3'], ['--from-run'], ['--nope', 'x'], ['--budget', 'lots'], ['--from-run', '0'], ['--from-run', '4'], ['--from-run', '1.5'], ['--provider', 'openai'], ['--provider', 'groq', '--budget', '1']])
     assert.throws(() => parseCli(args, config), UsageError, args.join(' '));
 });
 
@@ -492,4 +513,149 @@ test('B20: a new or changed src file changes the frozen set and frozenHash', () 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// ---- final fix wave (ruling B22): stops that keep held-out slots, per-provider budget, the cases hash, input bound
+
+const rejectAt = (status: number, stage = 'extract', target = 'HO-A') => (req: ModelRequest) =>
+  req.stage === stage && req.user.includes(target) ? new ModelError(`answered ${status}`, { status, retryable: false }) : null;
+
+test('B22 I-1: a non-retryable 4xx other than 429 (400, 401, 403, 404) is stored as provider_error and stops the batch at once', async () => {
+  for (const provider of ['gemini', 'groq'] as const) {
+    for (const status of [400, 401, 403, 404]) {
+      const dir = tmp();
+      const lines: string[] = [];
+      const { model, calls } = raw(provider, { fail: rejectAt(status) });
+      const r = await base({ raw: model, resultsDir: dir, log: (l) => lines.push(l) });
+      assert.equal(r.stopped, 'provider', `${provider} ${status}`);
+      assert.match(r.stopReason ?? '', new RegExp(`HTTP ${status}`));
+      const a = attempt(dir, provider, 'HO-A', 1);
+      assert.equal(a.status, 'provider_error');
+      // not retried: one extract call for the case
+      assert.equal(calls.filter((c) => c.stage === 'extract').length, 1);
+      assert.deepEqual(files(dir, provider, 'HO-B'), []);
+      assert.deepEqual(files(dir, provider, 'HO-A'), ['1.json']);
+      const ledger = JSON.parse(readFileSync(join(dir, provider, 'budget.json'), 'utf8'));
+      assert.deepEqual(ledger.stops.map((s: { kind: string }) => s.kind), ['provider']);
+      assert.match(ledger.stops[0].reason, new RegExp(`HTTP ${status}.*key, billing or model id`));
+      assert.ok(lines.some((l) => new RegExp(`stopped \\(provider\\): .*HTTP ${status}`).test(l)), lines.join('\n'));
+    }
+  }
+});
+
+test('B22 I-1: a 403 on a call the pipeline absorbs (the screen) still stops the batch', async () => {
+  const dir = tmp();
+  const { model } = raw('gemini', { fail: (req) => (req.stage === 'screen' ? new ModelError('gemini answered 403', { status: 403, retryable: false }) : null) });
+  const r = await base({ raw: model, resultsDir: dir });
+  assert.equal(r.stopped, 'provider');
+  const a = attempt(dir, 'gemini', 'HO-A', 1);
+  assert.equal(a.status, 'provider_error');
+  assert.ok(a.degradedAnalysis);
+  assert.deepEqual(files(dir, 'gemini', 'HO-B'), []);
+});
+
+test('B22 I-1: two consecutive provider_error attempts stop the batch; provider errors with an ok attempt between do not', async () => {
+  const dir = tmp();
+  const outage = () => new ModelError('gemini answered 503', { status: 503, retryable: true });
+  const r = await base({ raw: raw('gemini', { fail: outage }).model, resultsDir: dir });
+  assert.equal(r.stopped, 'provider');
+  assert.match(r.stopReason ?? '', /2 consecutive attempts ended in provider_error/);
+  assert.equal(attempt(dir, 'gemini', 'HO-A', 1).status, 'provider_error');
+  assert.equal(attempt(dir, 'gemini', 'HO-B', 1).status, 'provider_error');
+  assert.equal(r.written.length, 2);
+  const ledger = JSON.parse(readFileSync(join(dir, 'gemini', 'budget.json'), 'utf8'));
+  assert.deepEqual([ledger.stops[0].kind, ledger.stops[0].case, ledger.stops[0].run], ['provider', 'HO-B', 1]);
+
+  // HO-A fails in every run, HO-B answers: never two in a row, so every attempt is made
+  const dir2 = tmp();
+  const only = (req: ModelRequest) => (req.user.includes('HO-A') ? outage() : null);
+  const r2 = await base({ raw: raw('gemini', { fail: only }).model, resultsDir: dir2 });
+  assert.equal(r2.stopped, null);
+  assert.equal(r2.written.length, 6);
+});
+
+test('B22 I-2: groq is not USD-guarded: no limit, a batch past 1.00 USD at Gemini list price goes on, every figure labelled not a Groq price', async () => {
+  const dir = tmp();
+  await base({ raw: raw('groq').model, resultsDir: dir, runs: 1 });
+  const ledgerFile = join(dir, 'groq', 'budget.json');
+  const l = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+  assert.equal(l.limitUsd, null);
+  assert.match(l.note, /estimated at Gemini list price, not a Groq price/);
+  writeFileSync(ledgerFile, JSON.stringify({ ...l, observedUsd: 50 }));
+  const lines: string[] = [];
+  const r = await base({ raw: raw('groq').model, resultsDir: dir, log: (x) => lines.push(x) });
+  assert.equal(r.stopped, null);
+  assert.equal(r.written.length, 4);
+  const a = attempt(dir, 'groq', 'HO-A', 3);
+  assert.equal(a.status, 'ok');
+  assert.match(a.usage.note, /estimated at Gemini list price, not a Groq price/);
+  // still recorded for accounting
+  const after = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+  assert.ok(after.observedUsd > 50);
+  assert.equal(after.refusals, 0);
+  assert.ok(lines.every((x) => !/ of 1\.00 USD/.test(x)), lines.join('\n'));
+  assert.ok(lines.some((x) => /not a Groq price/.test(x)));
+
+  // gemini keeps its hard guard: the same ledger state refuses the next call
+  const g = tmp();
+  await base({ raw: raw('gemini').model, resultsDir: g, runs: 1 });
+  const gl = join(g, 'gemini', 'budget.json');
+  writeFileSync(gl, JSON.stringify({ ...JSON.parse(readFileSync(gl, 'utf8')), observedUsd: 50 }));
+  const rg = await base({ raw: raw('gemini').model, resultsDir: g });
+  assert.equal(rg.stopped, 'budget');
+  assert.equal(attempt(g, 'gemini', 'HO-A', 2).status, 'budget_stopped');
+});
+
+test('B22 I-2: a groq budget is refused (preflight and CLI), and a groq call over its reservation is recorded without stopping', async () => {
+  const { model, calls } = raw('groq');
+  await assert.rejects(base({ raw: model, budgetUsd: 1 }), /groq is not USD-guarded/);
+  assert.equal(calls.length, 0);
+  assert.throws(() => parseCli(['--provider', 'groq', '--budget', '1'], config), /not USD-guarded/);
+  const dir = tmp();
+  const r = await base({ raw: raw('groq', { usage: (req) => (req.stage === 'extract' ? { outputTokens: 20_000 } : {}) }).model, resultsDir: dir, runs: 1 });
+  assert.equal(r.stopped, null);
+  assert.equal(attempt(dir, 'groq', 'HO-A', 1).status, 'ok');
+  const ledger = JSON.parse(readFileSync(join(dir, 'groq', 'budget.json'), 'utf8'));
+  assert.equal(ledger.exceeded, 2);
+  assert.equal(ledger.stopped, false);
+});
+
+test('B22 I-3: casesHash is sha256 of JSON.stringify of the built cases, pinned in the ledger and in every attempt stamp', async () => {
+  assert.equal(casesHash(), createHash('sha256').update(JSON.stringify(HELD_OUT_CASES)).digest('hex'));
+  assert.equal(casesHash(), casesHash(HELD_OUT_CASES));
+  assert.notEqual(casesHash(CASES), casesHash([CASES[1]!, CASES[0]!]));
+  const dir = tmp();
+  await base({ raw: raw('gemini').model, resultsDir: dir, runs: 1 });
+  const ledger = JSON.parse(readFileSync(join(dir, 'gemini', 'budget.json'), 'utf8'));
+  assert.equal(ledger.freeze.casesHash, casesHash(CASES));
+  assert.equal(attempt(dir, 'gemini', 'HO-A', 1).stamp.casesHash, casesHash(CASES));
+});
+
+test('B22 I-3: a later batch refuses when the built cases differ from the pinned ones, or a stored attempt carries another cases hash', async () => {
+  const dir = tmp();
+  await base({ raw: raw('gemini').model, resultsDir: dir, runs: 1 });
+  const changed = [{ ...CASES[0]!, trueNotes: ['n1'] }, CASES[1]!];
+  const again = raw('gemini');
+  await assert.rejects(base({ raw: again.model, resultsDir: dir, cases: changed }), /held-out cases hash .* differs from the one this batch began on/);
+  assert.equal(again.calls.length, 0);
+  const file = join(dir, 'gemini', 'HO-B', '1.json');
+  const a = JSON.parse(readFileSync(file, 'utf8'));
+  writeFileSync(file, JSON.stringify({ ...a, stamp: { ...a.stamp, casesHash: 'other' } }));
+  await assert.rejects(base({ raw: raw('gemini').model, resultsDir: dir }), /stamped with cases hash other/);
+});
+
+test('B22 m1: a call that reports more input tokens than its reserved input estimate stops the batch like B12', async () => {
+  const dir = tmp();
+  const { model } = raw('gemini', { usage: (req) => (req.stage === 'extract' ? { inputTokens: 5_000_000 } : {}) });
+  const r = await base({ raw: model, resultsDir: dir });
+  assert.equal(r.stopped, 'budget');
+  const a = attempt(dir, 'gemini', 'HO-A', 1);
+  assert.equal(a.status, 'budget_stopped');
+  assert.ok(a.error?.includes(RESERVATION_EXCEEDED));
+  assert.match(a.error ?? '', /5000000 > \d+ input tokens/);
+  assert.deepEqual(files(dir, 'gemini', 'HO-B'), []);
+  const ledger = JSON.parse(readFileSync(join(dir, 'gemini', 'budget.json'), 'utf8'));
+  assert.equal(ledger.exceeded, 1);
+  assert.equal(ledger.stopped, true);
+  assert.equal(ledger.stops[0].kind, 'budget');
 });

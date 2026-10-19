@@ -8,9 +8,13 @@
  *   released (a failure cannot tell whether anything was billed);
  * - estimated: a reservation not settled yet (a call in flight, or a process that died mid-call).
  *
- * All three count against the limit. A call that reports more output + thinking than it reserved (ruling B12)
- * stops the batch: its cost could not be bounded, so no further call is started. The limit is a local guard on list-price estimates, not a guarantee of the
- * provider's invoice.
+ * All three count against the limit. A call that reports more input than its input estimate, or more output +
+ * thinking than it reserved (rulings B12, B22), stops the batch: its cost could not be bounded, so no further call is
+ * started. The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice.
+ *
+ * A ledger with no limit (limitUsd null: Groq, ruling B22) is not USD-guarded: nothing is refused for money and an
+ * exceeded reservation is counted without stopping; reservations and settlements are still recorded, for accounting,
+ * at the same (Gemini) list price, which is not a Groq price. Such a batch stops on its quota or provider errors only.
  */
 import { ModelError, type AnalystModel, type ModelRequest } from '../src/model.ts';
 import type { CallUsage } from '../src/types.ts';
@@ -28,10 +32,25 @@ export const CHARS_PER_TOKEN = 4;
 export const INPUT_MARGIN = 1.25;
 
 export const BUDGET_NOTE = "The limit is a local guard on list-price estimates, not a guarantee of the provider's invoice.";
+/** The words every Groq money figure carries (ruling B22). */
+export const NOT_A_GROQ_PRICE = 'estimated at Gemini list price, not a Groq price';
+export const UNGUARDED_NOTE = `Not USD-guarded (ruling B22): the USD figures are ${NOT_A_GROQ_PRICE}, kept for accounting only; the batch runs within the provider's free quota and stops on a 429 or a provider error.`;
+/** The note a ledger and its attempts carry: the guard's, or, with no limit, the unguarded one. */
+export const budgetNote = (limitUsd: number | null) => (limitUsd === null ? UNGUARDED_NOTE : BUDGET_NOTE);
+
+/** Why a batch stopped (ruling B22): every stop is recorded in the ledger with its reason. */
+export interface StopRecord {
+  kind: 'budget' | 'quota' | 'provider';
+  reason: string;
+  case: string;
+  run: number;
+  at: string;
+}
 
 export interface Ledger {
   provider: string;
-  limitUsd: number;
+  /** Null: not USD-guarded (Groq, ruling B22). */
+  limitUsd: number | null;
   observedUsd: number;
   estimatedUsd: number;
   unknownUsd: number;
@@ -40,14 +59,16 @@ export interface Ledger {
   refusals: number;
   /** Set by the first refusal (or exceeded reservation): every later call is refused too, so a refusal the pipeline swallows still stops the batch. */
   stopped: boolean;
-  /** Calls that reported more output + thinking than their reservation (each one stops the batch). */
+  /** Calls that reported more input, or more output + thinking, than their reservation (each one stops a guarded batch). */
   exceeded: number;
-  /** The freeze the first batch ran on (ruling B14): every later batch must run on the same one. */
-  freeze?: { commit: string; hash: string };
+  /** The freeze the first batch ran on (rulings B14, B22): every later batch must run on the same one. */
+  freeze?: { commit: string; hash: string; casesHash: string };
+  /** Every time a batch stopped, with its reason (ruling B22). */
+  stops: StopRecord[];
   note: string;
 }
 
-export const newLedger = (provider: string, limitUsd: number): Ledger => ({ provider, limitUsd, observedUsd: 0, estimatedUsd: 0, unknownUsd: 0, checks: 0, refusals: 0, stopped: false, exceeded: 0, note: BUDGET_NOTE });
+export const newLedger = (provider: string, limitUsd: number | null): Ledger => ({ provider, limitUsd, observedUsd: 0, estimatedUsd: 0, unknownUsd: 0, checks: 0, refusals: 0, stopped: false, exceeded: 0, stops: [], note: budgetNote(limitUsd) });
 
 /** Everything counted against the limit. */
 export const committedUsd = (l: Ledger) => l.observedUsd + l.estimatedUsd + l.unknownUsd;
@@ -81,7 +102,7 @@ export type GuardEvent =
   | { kind: 'observed'; usage: CallUsage; usd: number }
   | { kind: 'unknown'; usd: number; error: unknown }
   | { kind: 'refused'; needUsd: number; remainingUsd: number }
-  | { kind: 'exceeded'; reservedOutputTokens: number; reportedOutputTokens: number };
+  | { kind: 'exceeded'; reservedOutputTokens: number; reportedOutputTokens: number; reservedInputTokens: number; reportedInputTokens: number };
 
 /** Wraps the RAW provider model (below withRetries), so each HTTP attempt is guarded and counted. */
 export function budgetGuard(model: AnalystModel, o: { ledger: Ledger; thinkingReserveTokens: number; onEvent?: (e: GuardEvent) => void; onChange?: (l: Ledger) => void }): AnalystModel {
@@ -93,7 +114,8 @@ export function budgetGuard(model: AnalystModel, o: { ledger: Ledger; thinkingRe
       // Reserve synchronously, before the first await: calls the pipeline makes in parallel see each other.
       const reserved = reservationUsd(req, o.thinkingReserveTokens, OUTPUT_FLOOR_TOKENS[model.provider] ?? 0);
       const need = reserved.usd;
-      const remaining = l.limitUsd - committedUsd(l);
+      // No limit (B22): nothing is refused for money; a stopped ledger still refuses.
+      const remaining = l.limitUsd === null ? Infinity : l.limitUsd - committedUsd(l);
       l.checks++;
       if (l.stopped || need > remaining) {
         l.refusals++;
@@ -111,11 +133,12 @@ export function budgetGuard(model: AnalystModel, o: { ledger: Ledger; thinkingRe
         l.observedUsd += cost;
         o.onEvent?.({ kind: 'observed', usage: r.usage, usd: cost });
         const reported = r.usage.outputTokens + r.usage.thinkingTokens;
-        if (reported > reserved.outputTokens) {
+        if (reported > reserved.outputTokens || r.usage.inputTokens > reserved.inputTokens) {
           // The bound did not hold: start nothing more (the answer itself is returned and counted as observed).
+          // Without a limit it is only counted (B22).
           l.exceeded++;
-          l.stopped = true;
-          o.onEvent?.({ kind: 'exceeded', reservedOutputTokens: reserved.outputTokens, reportedOutputTokens: reported });
+          if (l.limitUsd !== null) l.stopped = true;
+          o.onEvent?.({ kind: 'exceeded', reservedOutputTokens: reserved.outputTokens, reportedOutputTokens: reported, reservedInputTokens: reserved.inputTokens, reportedInputTokens: r.usage.inputTokens });
         }
         return r;
       } catch (e) {

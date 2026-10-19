@@ -4,17 +4,22 @@
  * replaced, never picked. Runs are run-major (every case for run 1, then run 2, …); a later batch skips the attempt
  * files that exist, so a stopped batch resumes where it stopped. Each attempt calls analyzeCase afresh.
  *
- *   npm run evals:heldout -- --provider gemini|groq [--runs 3] [--budget 1.00] [--case name] [--from-run n]
+ *   npm run evals:heldout -- --provider gemini|groq [--runs 3] [--budget 1.00, gemini only] [--case name] [--from-run n]
  *
- * It refuses to start unless the tree under packages/analyst is committed, the frozen files are those of the freeze
- * commit, and PROMPT_VERSION, the model and the limits are the frozen config's (heldout/config.json). The budget
- * guard (budget.ts) checks every HTTP attempt; its ledger is results/heldout/<provider>/budget.json. Gemini: a
- * provider error is stored and the batch goes on. Groq: a 429 the retries cannot clear is stored and the batch stops
- * (its free quota is spent). Either: a refused call, or a call that reported more than its reservation, stops the
- * batch. An analysis made while any model call failed for good (the pipeline absorbs screen, verify and explain
- * failures) is never `ok`: it is kept as `degradedAnalysis`. The first batch pins the freeze commit and a hash of the
- * frozen files in budget.json; a later batch on another freeze, other bytes, or attempts stamped otherwise refuses.
- * Exit codes: 3 the batch stopped (budget or quota), 2 a usage error, 1 a refusal to start or another failure.
+ * It refuses to start unless the tree under packages/analyst (and the server files the held-out inputs are built
+ * with) is committed, the frozen files are those of the freeze commit, and PROMPT_VERSION, the model and the limits
+ * are the frozen config's (heldout/config.json). The budget guard (budget.ts) checks every HTTP attempt; its ledger
+ * is results/heldout/<provider>/budget.json. The limit is per provider (ruling B22): Gemini has a hard USD limit;
+ * Groq has none (its figures are recorded at Gemini list price, labelled not a Groq price) and runs within its free
+ * quota. Every failed attempt is stored; the batch then stops (B22), so no held-out slot is burnt on a fault that
+ * would fail every later one, when: a call ends in a non-retryable 4xx other than 429 (a key, billing or model id
+ * problem); a 429 survives the retries (either provider); 2 attempts in a row end in provider_error; the guard
+ * refuses a call; or a call reported more than its reservation (Gemini). Every stop is recorded with its reason in
+ * the ledger's `stops` and printed. An analysis made while any model call failed for good (the pipeline absorbs
+ * screen, verify and explain failures) is never `ok`: it is kept as `degradedAnalysis`. The first batch pins the
+ * freeze commit, a hash of the frozen files and a hash of the built held-out cases in budget.json; a later batch on
+ * another freeze, other bytes, other cases, or attempts stamped otherwise refuses.
+ * Exit codes: 3 the batch stopped (budget, quota or provider), 2 a usage error, 1 a refusal to start or another failure.
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -26,7 +31,7 @@ import { analyzeCase } from '../src/pipeline.ts';
 import { PROMPT_VERSION } from '../src/prompts.ts';
 import { GeminiModel, GroqModel } from '../src/providers.ts';
 import type { CaseAnalysis } from '../src/types.ts';
-import { BUDGET_NOTE, BudgetExceeded, LIST_PRICE, RESERVATION_EXCEEDED, budgetGuard, committedUsd, newLedger, type GuardEvent, type Ledger } from './budget.ts';
+import { BudgetExceeded, LIST_PRICE, NOT_A_GROQ_PRICE, RESERVATION_EXCEEDED, budgetGuard, budgetNote, committedUsd, newLedger, type GuardEvent, type Ledger, type StopRecord } from './budget.ts';
 import { HELD_OUT_CASES } from './heldout/cases.ts';
 import type { HeldOutCase } from './heldout/schema.ts';
 
@@ -36,7 +41,8 @@ export interface HeldOutConfig {
   promptVersion: string;
   models: Record<Provider, string>;
   runs: number;
-  budgetUsd: number;
+  /** Per provider (ruling B22): a hard USD limit, or null for no USD guard (Groq: free quota only). */
+  budgetUsd: Record<Provider, number | null>;
   listPrice: { inputPerM: number; outputPerM: number };
   thinkingReserveTokens: Record<Provider, number>;
   negationWindowWords: number;
@@ -54,7 +60,12 @@ const FROZEN_STATIC = [
   'packages/analyst/evals/metrics.ts',
   'packages/analyst/evals/heldout/score.ts',
   'packages/analyst/evals/heldout/manual-judgements.json',
+  // The held-out upload inputs are built with the server's uploadDocuments and typed by its UploadRecord (B22).
+  'apps/server/src/uploads/documents.ts',
+  'apps/server/src/uploads/store.ts',
 ];
+/** Outside packages/analyst, checked for uncommitted changes with it. */
+const FROZEN_OUTSIDE = FROZEN_STATIC.filter((p) => !p.startsWith('packages/analyst/'));
 const FROZEN_SRC_DIR = 'packages/analyst/src';
 /** The batch code is part of what is measured too (ruling B20), next to the system under test in src. */
 const FROZEN_BATCH = ['packages/analyst/evals/runs.ts', 'packages/analyst/evals/budget.ts'];
@@ -63,8 +74,8 @@ const FROZEN_BATCH = ['packages/analyst/evals/runs.ts', 'packages/analyst/evals/
  * Repo-relative: the files that must be byte-identical to the freeze commit for the batch to start, and whose hash the
  * first batch pins in budget.json (ruling B14). The freeze commit is the last commit touching any of them (B15). The
  * system under test is frozen with the set (B20): every .ts file under packages/analyst/src, found by listing the
- * directory (sorted, so a new src file is frozen too), plus the batch code runs.ts and budget.ts. A listed file that
- * does not exist refuses the start.
+ * directory (sorted, so a new src file is frozen too), plus the batch code runs.ts and budget.ts. The server files the
+ * held-out upload inputs are built with are frozen too (B22). A listed file that does not exist refuses the start.
  */
 export function listFrozenPaths(root = REPO): string[] {
   const src = readdirSync(join(root, FROZEN_SRC_DIR), { recursive: true, encoding: 'utf8' })
@@ -93,6 +104,12 @@ export function frozenHash(paths: readonly string[] = FROZEN_PATHS, root = REPO)
   return h.digest('hex');
 }
 
+/**
+ * sha256 of JSON.stringify of the built held-out cases (inputs as built, uploads included, labels, forbidden outcomes):
+ * what the batch actually sends and scores against, pinned with the freeze (ruling B22).
+ */
+export const casesHash = (cases: readonly HeldOutCase[] = HELD_OUT_CASES): string => createHash('sha256').update(JSON.stringify(cases)).digest('hex');
+
 export interface Attempt {
   provider: Provider;
   case: string;
@@ -101,11 +118,12 @@ export interface Attempt {
   startedAt: string;
   finishedAt: string;
   error?: string;
-  stamp: { codeCommit: string; freezeCommit: string; promptVersion: string; requestedModel: string; returnedModels: string[] };
+  stamp: { codeCommit: string; freezeCommit: string; casesHash: string; promptVersion: string; requestedModel: string; returnedModels: string[] };
   /**
    * This attempt's HTTP attempts (retries included) at list price, apart: observed (reported usage), unknown (failed
    * after being sent, no usage: the whole reservation) and estimated (never settled; 0 once the attempt ends).
    * `calls` counts the answered ones, `httpAttempts` every one sent, `refused` the guard's refusals (never sent).
+   * For Groq the USD figures are estimated at Gemini list price, not a Groq price (`note` says so).
    */
   usage: {
     calls: number;
@@ -133,7 +151,8 @@ export interface BatchOptions {
   cases: readonly HeldOutCase[];
   config: HeldOutConfig;
   runs: number;
-  budgetUsd: number;
+  /** The USD limit, at most the frozen config's; null where the config gives none (Groq). */
+  budgetUsd: number | null;
   only?: string;
   fromRun?: number;
   resultsDir?: string;
@@ -147,9 +166,25 @@ export interface BatchOptions {
 export interface BatchResult {
   written: string[];
   skipped: string[];
-  stopped: null | 'budget' | 'quota';
+  stopped: null | StopRecord['kind'];
+  /** Why the batch stopped, as recorded in the ledger's `stops`. */
+  stopReason: string | null;
   ledger: Ledger;
 }
+
+/**
+ * Why a call that failed for good stops the batch (ruling B22), or null: a 429 that survived the retries (quota or
+ * rate limit, either provider), or a non-retryable 4xx other than 429 (bad key, billing, model id: every later call
+ * would fail the same way). A budget refusal is handled apart.
+ */
+export function stopFor(e: unknown): { kind: 'quota' | 'provider'; reason: string } | null {
+  if (!(e instanceof ModelError) || e instanceof BudgetExceeded || e.status === null) return null;
+  if (e.status === 429) return { kind: 'quota', reason: `a 429 survived the retries (quota or rate limit): ${e.message}` };
+  if (e.status >= 400 && e.status < 500 && !e.retryable) return { kind: 'provider', reason: `the provider refused a call with HTTP ${e.status} (a key, billing or model id problem; retrying cannot help): ${e.message}` };
+  return null;
+}
+/** Consecutive provider_error attempts that stop the batch (ruling B22). */
+export const MAX_CONSECUTIVE_PROVIDER_ERRORS = 2;
 
 /** The start conditions; throws with the reason. Returns the stamp's commits. */
 export function preflight(o: Pick<BatchOptions, 'provider' | 'raw' | 'cases' | 'config' | 'runs' | 'budgetUsd'>, git: Git): { codeCommit: string; freezeCommit: string } {
@@ -158,11 +193,14 @@ export function preflight(o: Pick<BatchOptions, 'provider' | 'raw' | 'cases' | '
   if (LIST_PRICE.inputPerM !== c.listPrice.inputPerM || LIST_PRICE.outputPerM !== c.listPrice.outputPerM) throw new Error('the list price in budget.ts differs from the frozen config');
   if (o.raw.provider !== o.provider || o.raw.model !== c.models[o.provider]) throw new Error(`the model is ${o.raw.provider}/${o.raw.model}; the pinned model is ${o.provider}/${c.models[o.provider]}`);
   if (!(o.runs >= 1 && o.runs <= c.runs && Number.isInteger(o.runs))) throw new Error(`runs must be 1..${c.runs} (frozen config)`);
-  if (!(o.budgetUsd > 0 && o.budgetUsd <= c.budgetUsd)) throw new Error(`the budget must be above 0 and at most ${c.budgetUsd.toFixed(2)} USD (frozen config)`);
+  const limit = c.budgetUsd[o.provider];
+  if (limit === null) {
+    if (o.budgetUsd !== null) throw new Error(`${o.provider} is not USD-guarded in the frozen config (budgetUsd.${o.provider} is null): no budget can be given`);
+  } else if (!(o.budgetUsd !== null && o.budgetUsd > 0 && o.budgetUsd <= limit)) throw new Error(`the budget must be above 0 and at most ${limit.toFixed(2)} USD (frozen config)`);
   if (o.cases.length === 0) throw new Error('no held-out cases: heldout/cases.ts is empty');
   // The batch's own attempt files are the only thing allowed to change under packages/analyst while it runs.
-  const dirty = git(['status', '--porcelain', '--', 'packages/analyst', `:(exclude)${RESULTS_REL}`]);
-  if (dirty) throw new Error(`uncommitted changes under packages/analyst:\n${dirty}`);
+  const dirty = git(['status', '--porcelain', '--', 'packages/analyst', ...FROZEN_OUTSIDE, `:(exclude)${RESULTS_REL}`]);
+  if (dirty) throw new Error(`uncommitted changes under packages/analyst or in the frozen server files:\n${dirty}`);
   const codeCommit = git(['rev-parse', 'HEAD']);
   const frozen = listFrozenPaths();
   const freezeCommit = git(['log', '-1', '--format=%H', '--', ...frozen]);
@@ -191,6 +229,7 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
   if (o.fromRun !== undefined && !(Number.isInteger(o.fromRun) && o.fromRun >= 1 && o.fromRun <= o.runs)) throw new Error(`--from-run must be an integer from 1 to ${o.runs}`);
   const { codeCommit, freezeCommit } = preflight(o, o.git ?? realGit);
   const hash = o.hash ?? frozenHash(listFrozenPaths());
+  const cHash = casesHash(o.cases);
   const dir = join(o.resultsDir ?? RESULTS_DIR, o.provider);
 
   // One ledger per provider for the whole batch, carried over from a stopped batch (what it counted stays counted).
@@ -202,20 +241,24 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
   if (ledger.freeze) {
     if (ledger.freeze.commit !== freezeCommit) throw new Error(`the freeze commit is ${freezeCommit}; this batch began on ${ledger.freeze.commit}`);
     if (ledger.freeze.hash !== hash) throw new Error(`the frozen files' hash differs from the one this batch began on (${ledger.freeze.hash.slice(0, 12)})`);
+    if (ledger.freeze.casesHash !== cHash) throw new Error(`the held-out cases hash ${cHash.slice(0, 12)} differs from the one this batch began on (${String(ledger.freeze.casesHash).slice(0, 12)})`);
   } else if (stored.length > 0) throw new Error(`${stored.length} attempt file(s) exist but no ledger pins their freeze`);
   for (const f of stored) {
-    let stamp: string | undefined;
+    let stamp: Partial<Attempt['stamp']> | undefined;
     try {
-      stamp = (JSON.parse(readFileSync(f, 'utf8')) as Attempt).stamp?.freezeCommit;
+      stamp = (JSON.parse(readFileSync(f, 'utf8')) as Attempt).stamp;
     } catch {
       throw new Error(`${f} is unreadable; nothing starts until it has been looked at`);
     }
-    if (stamp !== freezeCommit) throw new Error(`${f} is stamped with freeze ${stamp}; the current freeze is ${freezeCommit}`);
+    if (stamp?.freezeCommit !== freezeCommit) throw new Error(`${f} is stamped with freeze ${stamp?.freezeCommit}; the current freeze is ${freezeCommit}`);
+    if (stamp.casesHash !== cHash) throw new Error(`${f} is stamped with cases hash ${stamp.casesHash}; the current cases hash is ${cHash}`);
   }
   mkdirSync(dir, { recursive: true });
-  ledger.freeze = { commit: freezeCommit, hash };
+  ledger.freeze = { commit: freezeCommit, hash, casesHash: cHash };
   ledger.limitUsd = o.budgetUsd;
-  ledger.note = BUDGET_NOTE;
+  ledger.stops = ledger.stops ?? [];
+  const note = budgetNote(o.budgetUsd);
+  ledger.note = note;
   const persist = () => writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2) + '\n');
   persist();
 
@@ -246,12 +289,24 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
         throw e;
       }),
   };
-  const isQuota = (e: unknown) => o.provider === 'groq' && e instanceof ModelError && e.status === 429;
+  // Gemini: a hard USD limit. Groq: none (B22); its USD figures are recorded, labelled as not a Groq price.
+  const usdGuarded = o.budgetUsd !== null;
+  const usdLabel = usdGuarded ? 'USD at list price' : `USD ${NOT_A_GROQ_PRICE}`;
+  const batchUsd = () => (o.budgetUsd !== null ? `batch ${committedUsd(ledger).toFixed(4)} of ${o.budgetUsd.toFixed(2)} USD` : `batch ${committedUsd(ledger).toFixed(4)} ${usdLabel} (not USD-guarded)`);
 
-  const result: BatchResult = { written: [], skipped: [], stopped: null, ledger };
+  const result: BatchResult = { written: [], skipped: [], stopped: null, stopReason: null, ledger };
+  /** The batch stops here: the reason goes to the result and, with the attempt it came from, to the ledger (B22). */
+  const stop = (kind: StopRecord['kind'], reason: string, kase: string, run: number) => {
+    result.stopped = kind;
+    result.stopReason = reason;
+    ledger.stops.push({ kind, reason, case: kase, run, at: new Date().toISOString() });
+    persist();
+  };
+  /** provider_error attempts in a row; MAX_CONSECUTIVE_PROVIDER_ERRORS of them stop the batch (B22). */
+  let providerErrorsInARow = 0;
   const cases = o.only ? o.cases.filter((c) => c.name === o.only) : o.cases;
   if (o.only && cases.length === 0) throw new Error(`no held-out case named ${o.only}`);
-  log(`${o.provider}/${o.config.models[o.provider]} · ${PROMPT_VERSION} · freeze ${freezeCommit.slice(0, 12)} · code ${codeCommit.slice(0, 12)} · limit ${o.budgetUsd.toFixed(2)} USD. ${BUDGET_NOTE}`);
+  log(`${o.provider}/${o.config.models[o.provider]} · ${PROMPT_VERSION} · freeze ${freezeCommit.slice(0, 12)} · cases ${cHash.slice(0, 12)} · code ${codeCommit.slice(0, 12)} · limit ${o.budgetUsd !== null ? `${o.budgetUsd.toFixed(2)} USD` : 'none (not USD-guarded)'}. ${note}`);
 
   batch: for (let run = o.fromRun ?? 1; run <= o.runs; run++) {
     for (const c of cases) {
@@ -261,7 +316,9 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
         continue;
       }
       if (ledger.stopped) {
+        // An earlier budget stop stays (B15): nothing more is started on this ledger.
         result.stopped = 'budget';
+        result.stopReason = `the ledger was stopped by an earlier budget stop (${ledger.stops.findLast((s) => s.kind === 'budget')?.reason ?? 'no reason recorded'})`;
         break batch;
       }
       events = [];
@@ -270,7 +327,6 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
       let status: Attempt['status'];
       let analysis: CaseAnalysis | undefined;
       let error: string | undefined;
-      let quota = false;
       try {
         analysis = await analyzeCase(c.input, { model, requestedModel: o.config.models[o.provider] });
         status = 'ok';
@@ -286,20 +342,24 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
         status = failed instanceof ModelError ? 'provider_error' : 'product_error';
         error = `a call failed and the pipeline went on without it: ${message(failed)}`;
       }
-      quota = failures.some(isQuota);
       const refused = events.filter((e) => e.kind === 'refused');
       const exceeded = events.flatMap((e) => (e.kind === 'exceeded' ? [e] : []));
       // A refusal the pipeline tolerated (a call whose failure it absorbs) still means the attempt is not whole.
       if (refused.length > 0 && status !== 'budget_stopped') {
-        error = error ?? `budget: ${refused.length} call(s) refused during the attempt. ${BUDGET_NOTE}`;
+        error = error ?? `budget: ${refused.length} call(s) refused during the attempt. ${note}`;
         status = 'budget_stopped';
       }
-      // A call reported more output + thinking than it reserved: its cost could not be bounded, so the batch stops (B12).
-      if (exceeded.length > 0) {
-        error = `${RESERVATION_EXCEEDED} (${exceeded.map((e) => `${e.reportedOutputTokens} > ${e.reservedOutputTokens} output tokens`).join('; ')}). ${BUDGET_NOTE}`;
+      // A call reported more input, or more output + thinking, than it reserved: its cost could not be bounded, so a
+      // USD-guarded batch stops (B12, B22). Without a USD guard it is counted in the ledger and printed.
+      const over = exceeded.flatMap((e) => [
+        ...(e.reportedOutputTokens > e.reservedOutputTokens ? [`${e.reportedOutputTokens} > ${e.reservedOutputTokens} output tokens`] : []),
+        ...(e.reportedInputTokens > e.reservedInputTokens ? [`${e.reportedInputTokens} > ${e.reservedInputTokens} input tokens`] : []),
+      ]);
+      if (over.length > 0 && usdGuarded) {
+        error = `${RESERVATION_EXCEEDED} (${over.join('; ')}). ${note}`;
         status = 'budget_stopped';
       }
-      const observed =events.flatMap((e) => (e.kind === 'observed' ? [e] : []));
+      const observed = events.flatMap((e) => (e.kind === 'observed' ? [e] : []));
       const unknownUsd = events.reduce((a, e) => a + (e.kind === 'unknown' ? e.usd : 0), 0);
       const observedUsd = observed.reduce((a, e) => a + e.usd, 0);
       const a: Attempt = {
@@ -310,7 +370,7 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
         startedAt,
         finishedAt: new Date().toISOString(),
         ...(error !== undefined ? { error } : {}),
-        stamp: { codeCommit, freezeCommit, promptVersion: PROMPT_VERSION, requestedModel: o.config.models[o.provider], returnedModels: [...new Set(observed.map((e) => e.usage.model))].sort() },
+        stamp: { codeCommit, freezeCommit, casesHash: cHash, promptVersion: PROMPT_VERSION, requestedModel: o.config.models[o.provider], returnedModels: [...new Set(observed.map((e) => e.usage.model))].sort() },
         usage: {
           calls: observed.length,
           httpAttempts: events.filter((e) => e.kind !== 'refused').length,
@@ -323,7 +383,7 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
           // The attempt has ended, so every reservation it made has settled.
           estimatedUsd: 0,
           costUsdAtListPrice: observedUsd + unknownUsd,
-          note: BUDGET_NOTE,
+          note,
         },
         ...(analysis && status === 'ok' ? { analysis } : {}),
         ...(analysis && status !== 'ok' ? { degradedAnalysis: analysis } : {}),
@@ -336,29 +396,37 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
         throw new Error(`${file} exists; attempts are never written over (${message(e)})`);
       }
       result.written.push(file);
-      log(`${c.name} run ${run}: ${status}${error ? ` · ${error}` : ''} · ${a.usage.httpAttempts} HTTP attempts · ${a.usage.costUsdAtListPrice.toFixed(4)} USD at list price · batch ${committedUsd(ledger).toFixed(4)} of ${o.budgetUsd.toFixed(2)} USD`);
+      log(`${c.name} run ${run}: ${status}${error ? ` · ${error}` : ''} · ${a.usage.httpAttempts} HTTP attempts · ${a.usage.costUsdAtListPrice.toFixed(4)} ${usdLabel} · ${batchUsd()}`);
+      if (over.length > 0 && !usdGuarded) log(`${c.name} run ${run}: ${RESERVATION_EXCEEDED} (${over.join('; ')}); counted, not a stop (not USD-guarded)`);
+      // The stops (B22): the attempt is stored first, whatever stops the batch.
+      providerErrorsInARow = status === 'provider_error' ? providerErrorsInARow + 1 : 0;
+      const fatal = failures.map(stopFor).find((x) => x !== null);
       if (status === 'budget_stopped') {
-        result.stopped = 'budget';
+        stop('budget', error ?? 'budget', c.name, run);
         break batch;
       }
-      if (quota) {
-        result.stopped = 'quota';
+      if (fatal) {
+        stop(fatal.kind, fatal.reason, c.name, run);
+        break batch;
+      }
+      if (providerErrorsInARow >= MAX_CONSECUTIVE_PROVIDER_ERRORS) {
+        stop('provider', `${providerErrorsInARow} consecutive attempts ended in provider_error (the last: ${error}); stopped so an outage burns no more held-out attempts`, c.name, run);
         break batch;
       }
     }
   }
   persist();
   log(
-    `${result.written.length} attempts written, ${result.skipped.length} existing kept${result.stopped ? ` · stopped (${result.stopped})` : ''} · ledger: observed ${ledger.observedUsd.toFixed(4)}, estimated ${ledger.estimatedUsd.toFixed(4)}, unknown ${ledger.unknownUsd.toFixed(4)} USD at list price. ${BUDGET_NOTE}`,
+    `${result.written.length} attempts written, ${result.skipped.length} existing kept${result.stopped ? ` · stopped (${result.stopped}): ${result.stopReason}` : ''} · ledger: observed ${ledger.observedUsd.toFixed(4)}, estimated ${ledger.estimatedUsd.toFixed(4)}, unknown ${ledger.unknownUsd.toFixed(4)} ${usdLabel}. ${note}`,
   );
   return result;
 }
 
-export const USAGE = 'usage: npm run evals:heldout -- --provider gemini|groq [--runs n] [--budget usd] [--case name] [--from-run n]';
+export const USAGE = 'usage: npm run evals:heldout -- --provider gemini|groq [--runs n] [--budget usd, gemini only] [--case name] [--from-run n]';
 export class UsageError extends Error {}
 
 /** The command line: every flag known and given with a value, numbers that are numbers. Throws UsageError. */
-export function parseCli(args: readonly string[], config: HeldOutConfig): { provider: Provider; runs: number; budgetUsd: number; only?: string; fromRun?: number } {
+export function parseCli(args: readonly string[], config: HeldOutConfig): { provider: Provider; runs: number; budgetUsd: number | null; only?: string; fromRun?: number } {
   const known = new Set(['--provider', '--runs', '--budget', '--case', '--from-run']);
   const v: Record<string, string> = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -379,7 +447,10 @@ export function parseCli(args: readonly string[], config: HeldOutConfig): { prov
   const runs = num('--runs', config.runs);
   const fromRun = v['--from-run'] === undefined ? undefined : num('--from-run', 1);
   if (fromRun !== undefined && !(Number.isInteger(fromRun) && fromRun >= 1 && fromRun <= runs)) throw new UsageError(`--from-run must be an integer from 1 to ${runs}`);
-  return { provider, runs, budgetUsd: num('--budget', config.budgetUsd), ...(v['--case'] ? { only: v['--case'] } : {}), ...(fromRun !== undefined ? { fromRun } : {}) };
+  const limit = config.budgetUsd[provider];
+  // No USD guard for this provider in the frozen config (Groq, B22): a budget would mean nothing.
+  if (limit === null && v['--budget'] !== undefined) throw new UsageError(`${provider} is not USD-guarded (frozen config): --budget is for gemini only`);
+  return { provider, runs, budgetUsd: limit === null ? null : num('--budget', limit), ...(v['--case'] ? { only: v['--case'] } : {}), ...(fromRun !== undefined ? { fromRun } : {}) };
 }
 
 async function main() {

@@ -39,7 +39,7 @@ function attempt(provider: 'gemini' | 'groq', kase: string, run: number, status:
     startedAt: '2026-10-19T10:00:00.000Z',
     finishedAt: '2026-10-19T10:00:30.000Z',
     ...(status === 'ok' ? {} : { error: 'fixture' }),
-    stamp: { codeCommit: 'c0de', freezeCommit: 'f00', promptVersion: 'rk-analyst-2026-10-09.7', requestedModel: 'm', returnedModels: ['m'] },
+    stamp: { codeCommit: 'c0de', freezeCommit: 'f00', casesHash: 'c0', promptVersion: 'rk-analyst-2026-10-09.7', requestedModel: 'm', returnedModels: ['m'] },
     usage: { calls: 3, httpAttempts: 3, refused: 0, inputTokens: 1000, outputTokens: 200, thinkingTokens: 10, observedUsd: usd, unknownUsd: o.unknownUsd ?? 0, estimatedUsd: 0, costUsdAtListPrice: usd + (o.unknownUsd ?? 0), note: 'n' },
     ...(status === 'ok' ? { analysis: analysisOf(from) } : {}),
   };
@@ -238,11 +238,23 @@ test('usage cost is computed from stored usage at 0.75 / 3.75 USD per 1M, and no
   assert.equal(r7.costUsdAtListPrice, null);
   assert.equal(r7.unrecordedAttempts, 11);
   // held-out: the split stored by the runner, from the attempts and from the ledger, apart
+  const gatt = s.usage.find((x) => x.source === 'heldout/gemini attempts')!;
+  assert.equal(gatt.unknownUsd, 0);
+  assert.equal(Number(gatt.observedUsd!.toFixed(6)), 0.06);
+  const gled = s.usage.find((x) => x.source === 'heldout/gemini/budget.json')!;
+  assert.deepEqual([gled.observedUsd, gled.estimatedUsd, gled.unknownUsd], [0.06, 0.001, 0]);
+  // B22: Groq is never given a cost: tokens only in the usage table; the runner's figures stay in the held-out row,
+  // labelled as estimated at Gemini list price, not a Groq price
   const att = s.usage.find((x) => x.source === 'heldout/groq attempts')!;
-  assert.equal(att.unknownUsd, 0.002);
-  assert.equal(Number(att.observedUsd!.toFixed(6)), 0.05);
+  assert.deepEqual([att.observedUsd, att.estimatedUsd, att.unknownUsd, att.costUsdAtListPrice], [null, null, null, null]);
+  assert.equal(att.inputTokens, 6 * 1000);
+  assert.match(att.basis, /estimated at Gemini list price, not a Groq price/);
   const led = s.usage.find((x) => x.source === 'heldout/groq/budget.json')!;
-  assert.deepEqual([led.observedUsd, led.estimatedUsd, led.unknownUsd], [0.06, 0.001, 0.002]);
+  assert.deepEqual([led.observedUsd, led.estimatedUsd, led.unknownUsd, led.costUsdAtListPrice], [null, null, null, null]);
+  assert.match(led.basis, /not a Groq price/);
+  assert.equal(s.heldOut.groq.usage.unknownUsd, 0.002);
+  assert.match(s.heldOut.groq.usageBasis, /estimated at Gemini list price, not a Groq price/);
+  assert.doesNotMatch(s.heldOut.gemini.usageBasis, /Groq/);
   // every cost comes from its own source: tokens the source stored (priced at list price), the attempts' stored
   // figures, or the ledger's stored figures; a row with a cost and no stored tokens is only ever a ledger
   const ledgerFile = (p: string) => JSON.parse(readFileSync(join(dir, 'heldout', p, 'budget.json'), 'utf8'));
@@ -559,4 +571,57 @@ test('malformed or duplicated manual judgements are reported and never used', ()
   const s = score([TWIN, X], attempts, { runs: 1, judgements: entries });
   assert.equal(s.forbidden[0]!.outcome, 'needs_manual');
   assert.deepEqual(parseJudgements('not json').invalid.map((x) => x.reason), ['not valid JSON']);
+});
+
+// ---- final fix wave (ruling B22)
+
+test('B22 m2: an ok attempt whose analysis lacks sentences, checklist.items or contradictions is unreadable with its reason, never a crash', () => {
+  const dir = fixtureDir();
+  const put = (run: number, analysis: unknown) => {
+    const a = { ...attempt('gemini', 'HO-A', run, 'ok'), analysis };
+    writeFileSync(join(dir, 'heldout', 'gemini', 'HO-A', `${run}.json`), JSON.stringify(a));
+  };
+  const good = analysisOf('nr-delivered');
+  put(4, {});
+  put(5, { ...good, sentences: undefined });
+  put(6, { ...good, checklist: { ...good.checklist, items: 'x' } });
+  put(7, { ...good, contradictions: null });
+  const s = recompute(dir, { heldOutCases: HELD_OUT });
+  const bad = Object.fromEntries(s.unreadable.map((u) => [u.file, u.reasons.join('; ')]));
+  for (const run of [4, 5, 6, 7]) assert.match(bad[`heldout/gemini/HO-A/${run}.json`] ?? '', /incomplete: analysis \(status ok\): sentences, checklist\.items, contradictions/, String(run));
+  assert.equal(s.heldOut.gemini.attempts.ok, 6);
+  assert.equal(s.heldOut.gemini.excluded, 4);
+  assert.match(summaryMarkdown(s), /Unreadable files \(4\)/);
+});
+
+test('B22 I-2: a groq ledger with no limit is read; its money is shown as estimated at Gemini list price, not a Groq price, never as a cost', () => {
+  const dir = fixtureDir();
+  const file = join(dir, 'heldout', 'groq', 'budget.json');
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), limitUsd: null, stops: [{ kind: 'quota', reason: 'a 429 survived the retries (quota or rate limit): groq answered 429', case: 'HO-B', run: 2, at: 't' }] }));
+  const s = recompute(dir, { heldOutCases: HELD_OUT });
+  assert.equal(s.heldOut.groq.ledger?.limitUsd, null);
+  const md = summaryMarkdown(s);
+  const groq = md.slice(md.indexOf('### groq', md.indexOf('## Held-out attempts')), md.indexOf('### Common subset'));
+  assert.match(groq, /Usage from the attempts: .*estimated at Gemini list price, not a Groq price/);
+  assert.match(groq, /Ledger: limit none \(not USD-guarded\) .*estimated at Gemini list price, not a Groq price/);
+  assert.match(groq, /last stop: quota, HO-B run 2: a 429 survived the retries/);
+  assert.doesNotMatch(groq, /USD at list price/);
+});
+
+test('B22 I-3: an attempt stamped with a cases hash other than the one its ledger pins is foreign and left out', () => {
+  const dir = fixtureDir();
+  const file = join(dir, 'heldout', 'gemini', 'budget.json');
+  const l = JSON.parse(readFileSync(file, 'utf8'));
+  writeFileSync(file, JSON.stringify({ ...l, freeze: { ...l.freeze, casesHash: 'c1' } }));
+  for (const run of [1, 2, 3]) {
+    const f = join(dir, 'heldout', 'gemini', 'HO-A', `${run}.json`);
+    const a = JSON.parse(readFileSync(f, 'utf8'));
+    writeFileSync(f, JSON.stringify({ ...a, stamp: { ...a.stamp, casesHash: run === 3 ? 'c2' : 'c1' } }));
+  }
+  const s = recompute(dir, { heldOutCases: HELD_OUT });
+  // HO-B attempts keep the fixture's cases hash c0 while the ledger pins c1: foreign too
+  assert.deepEqual(s.foreignStamp.map((f) => f.file), ['heldout/gemini/HO-A/3.json', 'heldout/gemini/HO-B/1.json', 'heldout/gemini/HO-B/2.json', 'heldout/gemini/HO-B/3.json']);
+  assert.match(s.foreignStamp[0]!.reason, /cases hash c2; the ledger pins c1/);
+  assert.match(s.foreignStamp[1]!.reason, /cases hash c0; the ledger pins c1/);
+  assert.equal(s.heldOut.gemini.files, 2);
 });
