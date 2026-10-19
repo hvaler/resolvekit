@@ -95,8 +95,10 @@ test('recompute reads every stored file, EV-19 runs included, and calls no provi
   try {
     const s = recompute(dir, { heldOutCases: HELD_OUT });
     assert.equal(fetched, 0);
-    assert.deepEqual(s.generatedFrom, [...s.generatedFrom].sort());
-    for (const f of [G7, R7, G6, NODETECT, UPL, 'heldout/gemini/HO-A/1.json', 'heldout/groq/budget.json', 'notes.txt']) assert.ok(s.generatedFrom.includes(f), f);
+    assert.deepEqual(s.filesSeen, [...s.filesSeen].sort());
+    for (const f of [G7, R7, G6, NODETECT, UPL, 'heldout/gemini/HO-A/1.json', 'heldout/groq/budget.json', 'notes.txt']) assert.ok(s.filesSeen.includes(f), f);
+    // an unclassified file is listed, never opened
+    assert.deepEqual(s.filesRead, s.filesSeen.filter((f) => f !== 'notes.txt'));
     const cls = Object.fromEntries(s.files.map((f) => [f.file, f.class]));
     assert.equal(cls[G7], 'development-headline');
     assert.equal(cls[G6], 'development-history');
@@ -152,7 +154,7 @@ test('an unparseable or partial file is listed in unreadable, never skipped sile
   writeFileSync(join(dir, 'heldout', 'gemini', 'HO-B', '4.json'), JSON.stringify(partial));
   writeFileSync(join(dir, 'groq-rk-analyst-2026-10-09.4.json'), JSON.stringify({ provider: 'groq', promptVersion: 'rk-analyst-2026-10-09.4' }));
   const s = recompute(dir, { heldOutCases: HELD_OUT });
-  const bad = Object.fromEntries(s.unreadable.map((u) => [u.file, u.reason]));
+  const bad = Object.fromEntries(s.unreadable.map((u) => [u.file, u.reasons.join('; ')]));
   assert.match(bad['heldout/gemini/HO-A/4.json']!, /not valid JSON/);
   assert.match(bad['heldout/gemini/HO-B/4.json']!, /incomplete: status/);
   assert.match(bad['groq-rk-analyst-2026-10-09.4.json']!, /incomplete: results/);
@@ -197,7 +199,7 @@ test('two recomputes give the same bytes, and no stored file is touched', () => 
   assert.deepEqual(Object.keys(after).filter((f) => !(f in before)).map((f) => f.slice(dir.length + 1)).sort(), ['summary.json', 'summary.md']);
   for (const [f, h] of Object.entries(before)) assert.equal(after[f], h, f);
   // the summary files are not inputs of the next recompute
-  assert.ok(!recompute(dir, { heldOutCases: HELD_OUT }).generatedFrom.includes('summary.json'));
+  assert.ok(!recompute(dir, { heldOutCases: HELD_OUT }).filesSeen.includes('summary.json'));
 });
 
 test('the common subset compares providers only on cases both completed with ok attempts', () => {
@@ -217,7 +219,8 @@ test('the common subset compares providers only on cases both completed with ok 
 
 test('usage cost is computed from stored usage at 0.75 / 3.75 USD per 1M, and no figure without a stored source appears', () => {
   assert.deepEqual(LIST_PRICE, { inputPerM: 0.75, outputPerM: 3.75 });
-  const s = recompute(fixtureDir(), { heldOutCases: HELD_OUT });
+  const dir = fixtureDir();
+  const s = recompute(dir, { heldOutCases: HELD_OUT });
   const u = stored(G7).metrics.usage;
   const g7 = s.usage.find((x) => x.source === G7)!;
   assert.equal(g7.calls, u.calls);
@@ -238,7 +241,107 @@ test('usage cost is computed from stored usage at 0.75 / 3.75 USD per 1M, and no
   assert.equal(Number(att.observedUsd!.toFixed(6)), 0.05);
   const led = s.usage.find((x) => x.source === 'heldout/groq/budget.json')!;
   assert.deepEqual([led.observedUsd, led.estimatedUsd, led.unknownUsd], [0.06, 0.001, 0.002]);
+  // every cost comes from its own source: tokens the source stored (priced at list price), the attempts' stored
+  // figures, or the ledger's stored figures; a row with a cost and no stored tokens is only ever a ledger
+  const ledgerFile = (p: string) => JSON.parse(readFileSync(join(dir, 'heldout', p, 'budget.json'), 'utf8'));
+  for (const x of s.usage) {
+    if (x.costUsdAtListPrice === null) continue;
+    if (x.kind === 'held-out ledger') {
+      const l = ledgerFile(x.provider);
+      assert.equal(x.costUsdAtListPrice, l.observedUsd + l.estimatedUsd + l.unknownUsd, x.source);
+      continue;
+    }
+    assert.ok(x.inputTokens + x.outputTokens + x.thinkingTokens > 0, `${x.source}: a cost without stored tokens`);
+    if (x.kind === 'development' || x.kind === 'experiment') assert.equal(x.costUsdAtListPrice, (x.inputTokens * 0.75 + (x.outputTokens + x.thinkingTokens) * 3.75) / 1e6, x.source);
+    else assert.equal(x.costUsdAtListPrice, Number(x.observedUsd) + Number(x.unknownUsd) + Number(x.estimatedUsd), x.source);
+  }
+  // a Gemini development file whose results all failed stored no tokens: no figure for it
+  const empty = fixtureDir({ heldOut: false });
+  const g = stored(G6);
+  writeFileSync(join(empty, G6), JSON.stringify({ provider: 'gemini', promptVersion: g.promptVersion, results: g.results.map((r: CaseResult) => ({ name: r.name, error: 'failed' })) }));
+  assert.equal(recompute(empty).usage.find((x) => x.source === G6)!.costUsdAtListPrice, null);
   const md = summaryMarkdown(s);
   assert.doesNotMatch(md, /0\.20\b/);
   assert.doesNotMatch(serializeSummary(s), /"0\.2"|0\.20\b/);
+});
+
+test('a partially bad EV-19 file contributes no rows and no usage, with every reason on one entry', () => {
+  const dir = fixtureDir({ heldOut: false });
+  const j = stored(UPL);
+  // two runs whose analysis cannot be scored (facts missing): the whole file is out, rows and usage included
+  for (const i of [0, 3]) j.runs[i].result.analysis = { ...j.runs[i].result.analysis, facts: undefined };
+  writeFileSync(join(dir, UPL), JSON.stringify(j));
+  const s = recompute(dir);
+  const bad = s.unreadable.filter((u) => u.file === UPL);
+  assert.equal(bad.length, 1);
+  assert.ok(bad[0]!.reasons.length >= 2, bad[0]!.reasons.join('; '));
+  assert.ok(bad[0]!.reasons.every((r) => /could not be scored/.test(r)));
+  assert.deepEqual(s.experiments.uploadRuns, []);
+  assert.deepEqual(s.usage.filter((x) => x.source.startsWith(UPL)), []);
+});
+
+test('an EV-19 file repeating a provider+run entry is reported as a duplicate and left out', () => {
+  const dir = fixtureDir({ heldOut: false });
+  const j = stored(UPL);
+  j.runs.push(j.runs[1]);
+  writeFileSync(join(dir, UPL), JSON.stringify(j));
+  const s = recompute(dir);
+  assert.deepEqual(s.duplicates, [{ reason: 'same run entry', key: 'upl-carrier-evidence gemini run 2', files: [UPL] }]);
+  assert.deepEqual(s.experiments.uploadRuns, []);
+  assert.deepEqual(s.usage.filter((x) => x.source.startsWith(UPL)), []);
+});
+
+test('attempts for cases outside the held-out set are counted apart, with their own usage row', () => {
+  const dir = fixtureDir();
+  mkdirSync(join(dir, 'heldout', 'gemini', 'HO-Z'), { recursive: true });
+  writeFileSync(join(dir, 'heldout', 'gemini', 'HO-Z', '1.json'), JSON.stringify(attempt('gemini', 'HO-Z', 1, 'ok', { usd: 0.5 })));
+  const s = recompute(dir, { heldOutCases: HELD_OUT });
+  const g = s.heldOut.gemini;
+  assert.equal(g.attempts.ok, 6);
+  assert.equal(g.files, 6);
+  assert.deepEqual(g.byRun.map((r) => r.attempts.ok), [2, 2, 2]);
+  assert.ok(!g.byCase.some((c) => c.case === 'HO-Z'));
+  assert.deepEqual([g.unknownCaseAttempts.files, g.unknownCaseAttempts.cases, g.unknownCaseAttempts.attempts.ok], [1, ['HO-Z'], 1]);
+  assert.equal(Number(g.usage.observedUsd.toFixed(6)), 0.06);
+  const u = s.usage.find((x) => x.kind === 'held-out attempts, unknown cases')!;
+  assert.equal(u.source, 'heldout/gemini attempts for cases not in the held-out set');
+  assert.equal(u.observedUsd, 0.5);
+  assert.match(summaryMarkdown(s), /counted apart and never scored: 1 \(HO-Z\)/);
+});
+
+test('attempts stamped with another prompt version or freeze commit are foreign and left out', () => {
+  const put = (dir: string, a: Attempt) => writeFileSync(join(dir, 'heldout', a.provider, a.case, `${a.run}.json`), JSON.stringify(a));
+  const old = attempt('gemini', 'HO-A', 4, 'ok');
+  old.stamp = { ...old.stamp, promptVersion: 'rk-analyst-2026-10-09.6' };
+  const other = attempt('gemini', 'HO-B', 4, 'ok');
+  other.stamp = { ...other.stamp, freezeCommit: 'beef' };
+  const dir = fixtureDir();
+  put(dir, old);
+  put(dir, other);
+  const s = recompute(dir, { heldOutCases: HELD_OUT });
+  assert.deepEqual(s.foreignStamp.map((f) => f.file), ['heldout/gemini/HO-A/4.json', 'heldout/gemini/HO-B/4.json']);
+  assert.match(s.foreignStamp[0]!.reason, /prompt version rk-analyst-2026-10-09\.6/);
+  assert.match(s.foreignStamp[1]!.reason, /freeze commit beef; the ledger pins f00/);
+  assert.equal(s.heldOut.gemini.attempts.ok, 6);
+  assert.equal(s.heldOut.gemini.excluded, 2);
+  assert.deepEqual(s.heldOut.gemini.stamps.freezeCommits, ['f00']);
+  assert.match(summaryMarkdown(s), /Foreign-stamped held-out attempts \(2\)/);
+  // without a usable ledger, several freeze commits cannot be told apart: all of that provider's attempts are out
+  const noLedger = fixtureDir();
+  writeFileSync(join(noLedger, 'heldout', 'gemini', 'budget.json'), '');
+  put(noLedger, other);
+  const t = recompute(noLedger, { heldOutCases: HELD_OUT });
+  assert.equal(t.heldOut.gemini.ledger, null);
+  assert.equal(t.heldOut.gemini.files, 0);
+  assert.equal(t.foreignStamp.length, 7);
+  assert.match(t.foreignStamp[0]!.reason, /2 freeze commits among the gemini attempts \(beef, f00\) and no ledger pins one/);
+});
+
+test('a -nodetect file of a newer or other prompt version is unclassified', () => {
+  const dir = fixtureDir({ heldOut: false });
+  copyFileSync(join(RESULTS, NODETECT), join(dir, 'gemini-nodetect-rk-analyst-2026-10-09.8.json'));
+  copyFileSync(join(RESULTS, NODETECT), join(dir, 'gemini-nodetect-rk-analyst-2026-11-01.1.json'));
+  const s = recompute(dir);
+  assert.deepEqual(s.unclassified, ['gemini-nodetect-rk-analyst-2026-10-09.8.json', 'gemini-nodetect-rk-analyst-2026-11-01.1.json']);
+  assert.equal(s.experiments.ablation.length, 1);
 });

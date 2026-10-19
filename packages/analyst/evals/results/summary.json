@@ -11170,7 +11170,7 @@
       "file": "upl-carrier-evidence-runs.json"
     }
   ],
-  "generatedFrom": [
+  "filesRead": [
     "gemini-nodetect-rk-analyst-2026-10-09.6.json",
     "gemini-rk-analyst-2026-10-09.3.json",
     "gemini-rk-analyst-2026-10-09.4.json",
@@ -11182,6 +11182,19 @@
     "groq-rk-analyst-2026-10-09.7.json",
     "upl-carrier-evidence-runs.json"
   ],
+  "filesSeen": [
+    "gemini-nodetect-rk-analyst-2026-10-09.6.json",
+    "gemini-rk-analyst-2026-10-09.3.json",
+    "gemini-rk-analyst-2026-10-09.4.json",
+    "gemini-rk-analyst-2026-10-09.5.json",
+    "gemini-rk-analyst-2026-10-09.6.json",
+    "gemini-rk-analyst-2026-10-09.7.json",
+    "groq-rk-analyst-2026-10-09.5.json",
+    "groq-rk-analyst-2026-10-09.6.json",
+    "groq-rk-analyst-2026-10-09.7.json",
+    "upl-carrier-evidence-runs.json"
+  ],
+  "foreignStamp": [],
   "heldOut": {
     "commonSubset": null,
     "gemini": {
@@ -11204,7 +11217,28 @@
         "requestedModels": [],
         "returnedModels": []
       },
-      "unknownCases": [],
+      "unknownCaseAttempts": {
+        "attempts": {
+          "budget_stopped": 0,
+          "ok": 0,
+          "product_error": 0,
+          "provider_error": 0
+        },
+        "cases": [],
+        "files": 0,
+        "usage": {
+          "calls": 0,
+          "costUsdAtListPrice": 0,
+          "estimatedUsd": 0,
+          "httpAttempts": 0,
+          "inputTokens": 0,
+          "observedUsd": 0,
+          "outputTokens": 0,
+          "refused": 0,
+          "thinkingTokens": 0,
+          "unknownUsd": 0
+        }
+      },
       "usage": {
         "calls": 0,
         "costUsdAtListPrice": 0,
@@ -11238,7 +11272,28 @@
         "requestedModels": [],
         "returnedModels": []
       },
-      "unknownCases": [],
+      "unknownCaseAttempts": {
+        "attempts": {
+          "budget_stopped": 0,
+          "ok": 0,
+          "product_error": 0,
+          "provider_error": 0
+        },
+        "cases": [],
+        "files": 0,
+        "usage": {
+          "calls": 0,
+          "costUsdAtListPrice": 0,
+          "estimatedUsd": 0,
+          "httpAttempts": 0,
+          "inputTokens": 0,
+          "observedUsd": 0,
+          "outputTokens": 0,
+          "refused": 0,
+          "thinkingTokens": 0,
+          "unknownUsd": 0
+        }
+      },
       "usage": {
         "calls": 0,
         "costUsdAtListPrice": 0,

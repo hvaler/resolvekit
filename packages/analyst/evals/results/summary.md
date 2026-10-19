@@ -19,6 +19,10 @@ Duplicates (0), every copy left out:
 
 - none
 
+Foreign-stamped held-out attempts (0), left out:
+
+- none
+
 Unclassified files (0), never aggregated:
 
 - none
@@ -101,11 +105,11 @@ Held-out scoring (labels, forbidden outcomes, twin pairing) is not computed yet;
 
 ### gemini
 
-0 attempt files · ok 0 · provider_error 0 · product_error 0 · budget_stopped 0 · 0 excluded (unreadable or duplicated)
+0 attempt files · ok 0 · provider_error 0 · product_error 0 · budget_stopped 0 · 0 excluded (unreadable, duplicated or foreign-stamped)
 
 ### groq
 
-0 attempt files · ok 0 · provider_error 0 · product_error 0 · budget_stopped 0 · 0 excluded (unreadable or duplicated)
+0 attempt files · ok 0 · provider_error 0 · product_error 0 · budget_stopped 0 · 0 excluded (unreadable, duplicated or foreign-stamped)
 
 ### Common subset (case+run pairs where both providers have an ok attempt)
 

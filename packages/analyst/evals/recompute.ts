@@ -10,8 +10,11 @@
  * upl-carrier-evidence-runs.json, which the brief called `development.uploadRuns`), held-out attempts
  * (heldout/<provider>/<case>/<run>.json) and held-out ledgers (heldout/<provider>/budget.json). Anything else is
  * `unclassified`: listed, never aggregated. A file that cannot be parsed or lacks what its class needs is `unreadable`;
- * two files with the same bytes, or two attempts for the same provider+case+run, are `duplicates`. All of these are
- * listed with their reason and left out of every aggregate, never silently and never by picking one.
+ * two files with the same bytes, two attempts for the same provider+case+run, or one EV-19 file repeating a
+ * provider+run entry, are `duplicates`. A held-out attempt stamped with another prompt version, or with a freeze
+ * commit other than the one its ledger pins (or, without a ledger, among several freeze commits), is `foreignStamp`.
+ * All of these are listed with their reason and left out of every aggregate (usage included), never silently and
+ * never by picking one. Attempts for a case the held-out set does not define are counted apart, never scored.
  *
  * Usage per source: development files from the usage stored in their analyses (observed; a failed result stored no
  * usage, counted as unrecorded), at the list price for Gemini; Groq ran on its free tier, so no cost is given for it.
@@ -99,15 +102,15 @@ export interface HeldOutScoring {
 }
 
 export interface HeldOutRow {
-  /** Attempt files aggregated (readable, classified, not duplicated). */
+  /** Attempt files aggregated: readable, not duplicated, stamped with this freeze and prompt, of a known case. */
   files: number;
-  /** Attempt files of this provider left out: unreadable or duplicated. */
+  /** Attempt files of this provider left out: unreadable, duplicated or foreign-stamped. */
   excluded: number;
   attempts: StatusCounts;
   byRun: Array<{ run: number; attempts: StatusCounts }>;
   byCase: Array<{ case: string; attempts: StatusCounts }>;
-  /** Attempts for a case the held-out set does not define: counted above, never scored. */
-  unknownCases: string[];
+  /** Attempts for a case the held-out set does not define: counted here only, never in the rows above or scored. */
+  unknownCaseAttempts: { files: number; cases: string[]; attempts: StatusCounts; usage: HeldOutUsage };
   stamps: { codeCommits: string[]; freezeCommits: string[]; promptVersions: string[]; requestedModels: string[]; returnedModels: string[] };
   usage: HeldOutUsage;
   ledger: Ledger | null;
@@ -116,7 +119,7 @@ export interface HeldOutRow {
 
 export interface UsageRow {
   source: string;
-  kind: 'development' | 'experiment' | 'held-out attempts' | 'held-out ledger';
+  kind: 'development' | 'experiment' | 'held-out attempts' | 'held-out attempts, unknown cases' | 'held-out ledger';
   provider: string;
   calls: number;
   inputTokens: number;
@@ -133,12 +136,17 @@ export interface UsageRow {
 }
 
 export interface Summary {
-  /** Every file read, sorted (paths relative to the results directory). */
-  generatedFrom: string[];
+  /** Every file found under the results directory, sorted (relative paths); the two summary files are never inputs. */
+  filesSeen: string[];
+  /** The files whose bytes were read: every classified file (unclassified ones are listed, not opened). */
+  filesRead: string[];
   files: Array<{ file: string; class: FileClass }>;
   unclassified: string[];
-  unreadable: Array<{ file: string; reason: string }>;
-  duplicates: Array<{ reason: 'same attempt' | 'same content'; key: string; files: string[] }>;
+  /** One entry per file, every reason it could not be used. */
+  unreadable: Array<{ file: string; reasons: string[] }>;
+  duplicates: Array<{ reason: 'same attempt' | 'same content' | 'same run entry'; key: string; files: string[] }>;
+  /** Held-out attempts stamped with another prompt version or freeze commit: left out of the held-out rows. */
+  foreignStamp: Array<{ file: string; reason: string }>;
   development: { headline: Record<Provider, MetricsRow | null>; history: MetricsRow[] };
   /** The `nodetect` ablation and the EV-19 multi-run file (the brief's `development.uploadRuns`, placed here per B2). */
   experiments: { ablation: MetricsRow[]; uploadRuns: MetricsRow[] };
@@ -164,10 +172,11 @@ export function classify(file: string): FileClass {
   const d = DEV_FILE.exec(file);
   if (d) {
     const v = d[3]!;
+    // the same gate for every development-shaped file, -nodetect included: a newer or other version is unclassified
+    const known = datePart(v) === datePart(PROMPT_VERSION) && revision(v) <= revision(PROMPT_VERSION);
+    if (!known) return 'unclassified';
     if (d[2]) return 'experiment-ablation';
-    if (v === PROMPT_VERSION) return 'development-headline';
-    if (datePart(v) === datePart(PROMPT_VERSION) && revision(v) < revision(PROMPT_VERSION)) return 'development-history';
-    return 'unclassified';
+    return v === PROMPT_VERSION ? 'development-headline' : 'development-history';
   }
   if (ATTEMPT_FILE.test(file)) return 'heldout-attempt';
   if (LEDGER_FILE.test(file)) return 'heldout-ledger';
@@ -244,7 +253,8 @@ function devUsage(source: string, kind: UsageRow['kind'], provider: string, resu
     u.outputTokens += r.analysis.usage.outputTokens;
     u.thinkingTokens += r.analysis.usage.thinkingTokens;
   }
-  const priced = provider === 'gemini';
+  // a cost only where the source stored tokens: no tokens, no figure
+  const priced = provider === 'gemini' && u.inputTokens + u.outputTokens + u.thinkingTokens > 0;
   const cost = priced ? usd(u.inputTokens, u.outputTokens, u.thinkingTokens) : null;
   return {
     source,
@@ -256,7 +266,7 @@ function devUsage(source: string, kind: UsageRow['kind'], provider: string, resu
     unknownUsd: null,
     costUsdAtListPrice: cost,
     unrecordedAttempts: results.filter((r) => !r.analysis).length,
-    basis: priced
+    basis: provider === 'gemini'
       ? `usage stored in the analyses (observed) at ${LIST_PRICE.inputPerM} / ${LIST_PRICE.outputPerM} USD per 1M input / output tokens, thinking billed as output; failed results stored no usage`
       : 'usage stored in the analyses (observed); Groq ran on its free tier, so no cost is stated; failed results stored no usage',
   };
@@ -315,27 +325,29 @@ export function scoreHeldOut(_cases: readonly HeldOutCase[], _attempts: readonly
   return null;
 }
 
-function heldOutRow(attempts: Attempt[], excluded: number, ledger: Ledger | null, cases: readonly HeldOutCase[]): HeldOutRow {
-  const counts = zeroCounts();
-  const runs = new Map<number, StatusCounts>();
-  const byCase = new Map<string, StatusCounts>();
+/** The attempts' stored usage, summed field by field. */
+function sumUsage(attempts: readonly Attempt[]): HeldOutUsage {
   const usage: HeldOutUsage = { calls: 0, httpAttempts: 0, refused: 0, inputTokens: 0, outputTokens: 0, thinkingTokens: 0, observedUsd: 0, estimatedUsd: 0, unknownUsd: 0, costUsdAtListPrice: 0 };
-  for (const a of attempts) {
-    counts[a.status]++;
-    if (!runs.has(a.run)) runs.set(a.run, zeroCounts());
-    runs.get(a.run)![a.status]++;
-    if (!byCase.has(a.case)) byCase.set(a.case, zeroCounts());
-    byCase.get(a.case)![a.status]++;
-    for (const k of Object.keys(usage) as Array<keyof HeldOutUsage>) usage[k] += a.usage[k];
-  }
-  const known = new Set(cases.map((c) => c.name));
+  for (const a of attempts) for (const k of Object.keys(usage) as Array<keyof HeldOutUsage>) usage[k] += a.usage[k];
+  return usage;
+}
+
+function statusCounts(attempts: readonly Attempt[]): StatusCounts {
+  const counts = zeroCounts();
+  for (const a of attempts) counts[a.status]++;
+  return counts;
+}
+
+/** `attempts`: of the held-out set's cases only; `unknown`: attempts for any other case, accounted apart. */
+function heldOutRow(attempts: Attempt[], unknown: Attempt[], excluded: number, ledger: Ledger | null, cases: readonly HeldOutCase[]): HeldOutRow {
+  const runs = [...new Set(attempts.map((a) => a.run))].sort((x, y) => x - y);
   return {
     files: attempts.length,
     excluded,
-    attempts: counts,
-    byRun: [...runs].sort(([x], [y]) => x - y).map(([run, attempts]) => ({ run, attempts })),
-    byCase: [...byCase].sort(([x], [y]) => (x < y ? -1 : 1)).map(([c, attempts]) => ({ case: c, attempts })),
-    unknownCases: uniq(attempts.filter((a) => !known.has(a.case)).map((a) => a.case)),
+    attempts: statusCounts(attempts),
+    byRun: runs.map((run) => ({ run, attempts: statusCounts(attempts.filter((a) => a.run === run)) })),
+    byCase: uniq(attempts.map((a) => a.case)).map((c) => ({ case: c, attempts: statusCounts(attempts.filter((a) => a.case === c)) })),
+    unknownCaseAttempts: { files: unknown.length, cases: uniq(unknown.map((a) => a.case)), attempts: statusCounts(unknown), usage: sumUsage(unknown) },
     stamps: {
       codeCommits: uniq(attempts.map((a) => a.stamp.codeCommit)),
       freezeCommits: uniq(attempts.map((a) => a.stamp.freezeCommit)),
@@ -343,7 +355,7 @@ function heldOutRow(attempts: Attempt[], excluded: number, ledger: Ledger | null
       requestedModels: uniq(attempts.map((a) => a.stamp.requestedModel)),
       returnedModels: uniq(attempts.flatMap((a) => a.stamp.returnedModels ?? [])),
     },
-    usage,
+    usage: sumUsage(attempts),
     ledger,
     scoring: scoreHeldOut(cases, attempts, Math.max(0, ...attempts.map((a) => a.run))),
   };
@@ -380,9 +392,15 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
   const heldOutCases = o.heldOutCases ?? HELD_OUT_CASES;
   const all = listFiles(resultsDir);
   const files = all.map((file) => ({ file, class: classify(file) }));
-  const unreadable: Summary['unreadable'] = [];
+  const unreadable = new Map<string, string[]>();
   const duplicates: Summary['duplicates'] = [];
+  const foreignStamp: Summary['foreignStamp'] = [];
   const excluded = new Set<string>();
+  /** Lists a file as unreadable (every reason on its one entry) and leaves it out. */
+  const fail = (file: string, reason: string) => {
+    unreadable.set(file, [...(unreadable.get(file) ?? []), reason]);
+    excluded.add(file);
+  };
 
   // Same bytes under two names: every copy is left out (which one is right cannot be told from the files).
   const byHash = new Map<string, string[]>();
@@ -406,9 +424,7 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
     try {
       return read(texts.get(file)!);
     } catch (e) {
-      const reason = e instanceof Unreadable ? e.message : e instanceof SyntaxError ? `not valid JSON (${e.message})` : `could not be read (${e instanceof Error ? e.message : String(e)})`;
-      unreadable.push({ file, reason });
-      excluded.add(file);
+      fail(file, e instanceof Unreadable ? e.message : e instanceof SyntaxError ? `not valid JSON (${e.message})` : `could not be read (${e instanceof Error ? e.message : String(e)})`);
       return null;
     }
   };
@@ -417,8 +433,7 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
     try {
       return make();
     } catch (e) {
-      unreadable.push({ file, reason: `could not be scored (${e instanceof Error ? e.message : String(e)})` });
-      excluded.add(file);
+      fail(file, `could not be scored (${e instanceof Error ? e.message : String(e)})`);
       return null;
     }
   };
@@ -447,11 +462,21 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
       if (!d) continue;
       const kase = devCases.find((c) => c.name === d.case);
       if (!kase) {
-        unreadable.push({ file, reason: `incomplete: case ${d.case} is not in the development set` });
+        fail(file, `incomplete: case ${d.case} is not in the development set`);
+        continue;
+      }
+      // A provider+run entry stored twice: which one is the run cannot be told, so the whole file is left out.
+      const seen = new Map<string, number>();
+      for (const r of d.runs) seen.set(`${r.provider} run ${r.run}`, (seen.get(`${r.provider} run ${r.run}`) ?? 0) + 1);
+      const doubled = [...seen].filter(([, n]) => n > 1).map(([k]) => k).sort();
+      if (doubled.length) {
+        for (const k of doubled) duplicates.push({ reason: 'same run entry', key: `${d.case} ${k}`, files: [file] });
         excluded.add(file);
         continue;
       }
+      // Rows and usage are kept only if every run of the file could be scored.
       const rows: MetricsRow[] = [];
+      const fileUsage: UsageRow[] = [];
       for (const p of PROVIDERS) {
         const mine = d.runs.filter((r) => r.provider === p).sort((x, y) => x.run - y.run);
         if (!mine.length) continue;
@@ -462,9 +487,12 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
           row({ label: `${d.case} ${p}, runs ${runs.join(', ')}`, file, promptVersion: d.promptVersion, provider: p, runs: mine.length, cases: perRunCases([kase], runs), results: mine.map((r) => ({ ...r.result, name: `${r.result.name}#${r.run}` })) }),
         );
         if (all) rows.push(all);
-        usage.push(devUsage(`${file} (${p})`, 'experiment', p, mine.map((r) => r.result)));
+        fileUsage.push(devUsage(`${file} (${p})`, 'experiment', p, mine.map((r) => r.result)));
       }
-      if (!excluded.has(file)) uploadRuns.push(...rows);
+      if (!excluded.has(file)) {
+        uploadRuns.push(...rows);
+        usage.push(...fileUsage);
+      }
     } else if (cls === 'heldout-attempt') {
       const m = ATTEMPT_FILE.exec(file)!;
       const a = parse(file, (t) => readAttempt(t, m));
@@ -486,13 +514,48 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
       duplicates.push({ reason: 'same attempt', key, files: fs.sort() });
       fs.forEach((f) => excluded.add(f));
     }
-    kept[p] = attempts[p].filter((x) => !excluded.has(x.file)).map((x) => x.a);
-    const out = [...excluded].filter((f) => ATTEMPT_FILE.exec(f)?.[1] === p).length;
-    heldOut[p] = heldOutRow(kept[p], out, ledgers[p], heldOutCases);
-    if (attempts[p].length || out) {
-      const u = heldOut[p].usage;
-      usage.push({ source: `heldout/${p} attempts`, kind: 'held-out attempts', provider: p, calls: u.calls, inputTokens: u.inputTokens, outputTokens: u.outputTokens, thinkingTokens: u.thinkingTokens, observedUsd: u.observedUsd, estimatedUsd: u.estimatedUsd, unknownUsd: u.unknownUsd, costUsdAtListPrice: u.costUsdAtListPrice, unrecordedAttempts: 0, basis: `the runner's per-attempt record at list price (observed + unknown). ${BUDGET_NOTE}` });
+    // Stamps: the prompt version must be this one; the freeze commit the one the ledger pins, or, without a ledger,
+    // the only one among the attempts (several, and none pinned: none can be told right, so all are left out).
+    let rest = attempts[p].filter((x) => !excluded.has(x.file));
+    const pinned = ledgers[p]?.freeze?.commit;
+    const freezes = uniq(rest.map((x) => x.a.stamp.freezeCommit));
+    for (const { file, a } of rest) {
+      const why =
+        a.stamp.promptVersion !== PROMPT_VERSION
+          ? `prompt version ${a.stamp.promptVersion}, not ${PROMPT_VERSION}`
+          : pinned !== undefined && a.stamp.freezeCommit !== pinned
+            ? `freeze commit ${a.stamp.freezeCommit}; the ledger pins ${pinned}`
+            : pinned === undefined && freezes.length > 1
+              ? `${freezes.length} freeze commits among the ${p} attempts (${freezes.join(', ')}) and no ledger pins one`
+              : null;
+      if (why) {
+        foreignStamp.push({ file, reason: why });
+        excluded.add(file);
+      }
     }
+    rest = rest.filter((x) => !excluded.has(x.file));
+    const known = new Set(heldOutCases.map((c) => c.name));
+    kept[p] = rest.filter((x) => known.has(x.a.case)).map((x) => x.a);
+    const unknown = rest.filter((x) => !known.has(x.a.case)).map((x) => x.a);
+    const out = [...excluded].filter((f) => ATTEMPT_FILE.exec(f)?.[1] === p).length;
+    heldOut[p] = heldOutRow(kept[p], unknown, out, ledgers[p], heldOutCases);
+    const attemptUsage = (source: string, kind: UsageRow['kind'], u: HeldOutUsage, what: string): UsageRow => ({
+      source,
+      kind,
+      provider: p,
+      calls: u.calls,
+      inputTokens: u.inputTokens,
+      outputTokens: u.outputTokens,
+      thinkingTokens: u.thinkingTokens,
+      observedUsd: u.observedUsd,
+      estimatedUsd: u.estimatedUsd,
+      unknownUsd: u.unknownUsd,
+      costUsdAtListPrice: u.costUsdAtListPrice,
+      unrecordedAttempts: 0,
+      basis: `the runner's per-attempt record${what} at list price (observed + unknown). ${BUDGET_NOTE}`,
+    });
+    if (kept[p].length) usage.push(attemptUsage(`heldout/${p} attempts`, 'held-out attempts', heldOut[p].usage, ''));
+    if (unknown.length) usage.push(attemptUsage(`heldout/${p} attempts for cases not in the held-out set`, 'held-out attempts, unknown cases', heldOut[p].unknownCaseAttempts.usage, ' (cases not in the held-out set, never scored)'));
     const l = ledgers[p];
     if (l)
       usage.push({ source: `heldout/${p}/budget.json`, kind: 'held-out ledger', provider: p, calls: l.checks - l.refusals, inputTokens: 0, outputTokens: 0, thinkingTokens: 0, observedUsd: l.observedUsd, estimatedUsd: l.estimatedUsd, unknownUsd: l.unknownUsd, costUsdAtListPrice: l.observedUsd + l.estimatedUsd + l.unknownUsd, unrecordedAttempts: 0, basis: `the batch ledger: HTTP attempts checked by the guard (calls = checks − refusals), tokens not kept there. ${BUDGET_NOTE}` });
@@ -502,11 +565,13 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
   const byLabel = (x: MetricsRow, y: MetricsRow) => (x.label < y.label ? -1 : x.label > y.label ? 1 : 0);
   const byFileThenLabel = (x: MetricsRow, y: MetricsRow) => (x.provider < y.provider ? -1 : x.provider > y.provider ? 1 : revision(x.promptVersion) - revision(y.promptVersion) || byLabel(x, y));
   return {
-    generatedFrom: all,
+    filesSeen: all,
+    filesRead: [...texts.keys()].sort(),
     files,
     unclassified: files.filter((f) => f.class === 'unclassified').map((f) => f.file),
-    unreadable: unreadable.sort((x, y) => (x.file < y.file ? -1 : 1)),
-    duplicates: duplicates.sort((x, y) => (x.files[0]! < y.files[0]! ? -1 : 1)),
+    unreadable: [...unreadable].sort(([x], [y]) => (x < y ? -1 : 1)).map(([file, reasons]) => ({ file, reasons })),
+    duplicates: duplicates.sort((x, y) => (x.files[0]! < y.files[0]! ? -1 : x.files[0]! > y.files[0]! ? 1 : x.key < y.key ? -1 : 1)),
+    foreignStamp: foreignStamp.sort((x, y) => (x.file < y.file ? -1 : 1)),
     development: { headline, history: history.sort(byFileThenLabel) },
     experiments: { ablation: ablation.sort(byFileThenLabel), uploadRuns: uploadRuns.sort((x, y) => (x.provider < y.provider ? -1 : x.provider > y.provider ? 1 : x.runs - y.runs || byLabel(x, y))) },
     heldOut,
@@ -550,8 +615,9 @@ export function summaryMarkdown(s: Summary): string {
   const byClass = new Map<FileClass, number>();
   for (const f of s.files) byClass.set(f.class, (byClass.get(f.class) ?? 0) + 1);
   out.push('## Files', '', '| Class | Files |', '|---|---|', ...[...byClass].sort(([x], [y]) => (x < y ? -1 : 1)).map(([c, n]) => `| ${c} | ${n} |`), '');
-  out.push(`Unreadable files (${s.unreadable.length}), left out of every aggregate:`, '', ...(s.unreadable.length ? s.unreadable.map((u) => `- \`${u.file}\`: ${u.reason}`) : ['- none']), '');
+  out.push(`Unreadable files (${s.unreadable.length}), left out of every aggregate:`, '', ...(s.unreadable.length ? s.unreadable.map((u) => `- \`${u.file}\`: ${u.reasons.join('; ')}`) : ['- none']), '');
   out.push(`Duplicates (${s.duplicates.length}), every copy left out:`, '', ...(s.duplicates.length ? s.duplicates.map((d) => `- ${d.reason} (${d.key}): ${d.files.map((f) => `\`${f}\``).join(', ')}`) : ['- none']), '');
+  out.push(`Foreign-stamped held-out attempts (${s.foreignStamp.length}), left out:`, '', ...(s.foreignStamp.length ? s.foreignStamp.map((f) => `- \`${f.file}\`: ${f.reason}`) : ['- none']), '');
   out.push(`Unclassified files (${s.unclassified.length}), never aggregated:`, '', ...(s.unclassified.length ? s.unclassified.map((f) => `- \`${f}\``) : ['- none']), '');
 
   out.push(`## Development headline (prompt \`${PROMPT_VERSION}\`)`, '');
@@ -572,9 +638,10 @@ export function summaryMarkdown(s: Summary): string {
   out.push('## Held-out attempts', '', 'Held-out scoring (labels, forbidden outcomes, twin pairing) is not computed yet; this is the attempt accounting.', '');
   for (const p of PROVIDERS) {
     const h = s.heldOut[p];
-    out.push(`### ${p}`, '', `${h.files} attempt files · ${counts(h.attempts)} · ${h.excluded} excluded (unreadable or duplicated)`, '');
+    out.push(`### ${p}`, '', `${h.files} attempt files · ${counts(h.attempts)} · ${h.excluded} excluded (unreadable, duplicated or foreign-stamped)`, '');
     if (h.byRun.length) out.push('| Run | Attempts |', '|---|---|', ...h.byRun.map((r) => `| ${r.run} | ${counts(r.attempts)} |`), '');
-    if (h.unknownCases.length) out.push(`Attempts for cases not in the held-out set (not scored): ${h.unknownCases.join(', ')}`, '');
+    const u = h.unknownCaseAttempts;
+    if (u.files) out.push(`Attempts for cases not in the held-out set, counted apart and never scored: ${u.files} (${u.cases.join(', ')}) · ${counts(u.attempts)}`, '');
     if (h.files) out.push(`Usage from the attempts: ${h.usage.calls} calls (${h.usage.httpAttempts} HTTP attempts, ${h.usage.refused} refused) · observed ${money(h.usage.observedUsd)} · estimated ${money(h.usage.estimatedUsd)} · unknown ${money(h.usage.unknownUsd)} USD at list price`, '');
     if (h.ledger) out.push(`Ledger: limit ${money(h.ledger.limitUsd)} · observed ${money(h.ledger.observedUsd)} · estimated ${money(h.ledger.estimatedUsd)} · unknown ${money(h.ledger.unknownUsd)} USD · ${h.ledger.checks} checks, ${h.ledger.refusals} refused, ${h.ledger.exceeded ?? 0} exceeded · stopped ${h.ledger.stopped ? 'yes' : 'no'}`, '');
   }
@@ -602,8 +669,9 @@ export function writeSummary(resultsDir = RESULTS_ROOT, o: RecomputeOptions = {}
 
 export function main() {
   const s = writeSummary();
-  console.log(`${s.generatedFrom.length} files read · ${s.unreadable.length} unreadable · ${s.duplicates.length} duplicates · ${s.unclassified.length} unclassified → results/summary.json, results/summary.md`);
-  for (const u of s.unreadable) console.log(`  unreadable ${u.file}: ${u.reason}`);
+  console.log(`${s.filesSeen.length} files seen, ${s.filesRead.length} read · ${s.unreadable.length} unreadable · ${s.duplicates.length} duplicates · ${s.foreignStamp.length} foreign-stamped · ${s.unclassified.length} unclassified → results/summary.json, results/summary.md`);
+  for (const u of s.unreadable) console.log(`  unreadable ${u.file}: ${u.reasons.join('; ')}`);
+  for (const f of s.foreignStamp) console.log(`  foreign stamp ${f.file}: ${f.reason}`);
   for (const d of s.duplicates) console.log(`  duplicate (${d.reason}): ${d.files.join(', ')}`);
   for (const f of s.unclassified) console.log(`  unclassified ${f}`);
 }
