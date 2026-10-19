@@ -132,7 +132,7 @@ test('lock matrix', () => {
   const retry = s.beginSend(o.id, o.caseId, 'o4');
   assert.equal(retry.ok, true);
   assert.equal((retry as { intent: StoredIntent }).intent.requestId, o.requestId);
-  s.failed(o.id, 'o4', 'PayPal refused: 422 INVALID_REQUEST');
+  s.failed(o.id, 'o4', 'PayPal refused: 422 INVALID_REQUEST', 'refused');
   assert.equal(s.held(D), false);
 
   // Escalate recorded: no closure lock in the store (PayPal's read decides).
@@ -145,7 +145,7 @@ test('lock matrix', () => {
   s.recordReadBack(e.id, { state: 'recorded', detail: 'escalation by seller' });
   assert.equal(s.held(D), false);
   assert.equal(refusal(s, b), 'ok');
-  s.failed(b.id, 'o2', 'PayPal refused: 422');
+  s.failed(b.id, 'o2', 'PayPal refused: 422', 'refused');
   // Accept recorded: the store still allows the next send (the fresh read refuses it).
   const c = approved(s, actionDraft('o6', accept));
   start(s, c);
@@ -280,7 +280,7 @@ test('message text never reaches the audit or send log', () => {
     s.recordReadBack(a.id, { state: 'recorded', detail: 'found' });
     const b = approved(s, actionDraft('o1', message(TEXT + ' again')));
     start(s, b);
-    s.failed(b.id, 'o1', 'PayPal refused: 422');
+    s.failed(b.id, 'o1', 'PayPal refused: 422', 'refused');
     const all = s.events(CASE);
     const logs = readFileSync(eventsFile, 'utf8') + readFileSync(join(dir, 'audit-events-sends.jsonl'), 'utf8');
     for (const blob of [JSON.stringify(all), logs]) {
@@ -300,4 +300,118 @@ test('message text never reaches the audit or send log', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ------------------------------------------------------------------------------------------------ review fixes
+
+test('fix 1: a refused action send frees the dispute, also on reseed; an ambiguous or unflagged one keeps the hold', () => {
+  for (const proof of ['refused', 'ambiguous', undefined] as const) {
+    const dir = mkdtempSync(join(tmpdir(), 'rk-locks-'));
+    try {
+      const file = join(dir, 'intents.json');
+      const eventsFile = join(dir, 'audit-events.jsonl');
+      const s = new IntentStore({ file, eventsFile, now: () => NOW });
+      const a = approved(s, actionDraft('o1', message()));
+      start(s, a);
+      s.failed(a.id, 'o1', 'PayPal refused: 422 INVALID_REQUEST', proof);
+      assert.equal(s.held(D), proof !== 'refused', `memory, ${proof}`);
+      if (proof === 'refused') {
+        const ev = s.events(CASE).find((e) => e.kind === 'send_failed')!;
+        assert.equal(ev.outcome, 'refused');
+      }
+      unlinkSync(file);
+      assert.equal(new IntentStore({ file, eventsFile, now: () => NOW }).held(D), proof !== 'refused', `reseed, ${proof}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  // A legacy send_failed (no outcome) after an action send_started keeps the hold on reseed.
+  const dir = mkdtempSync(join(tmpdir(), 'rk-locks-'));
+  try {
+    const at = NOW.toISOString();
+    const base = { at, caseId: CASE, actor: 'local', disputeId: D, intentId: `int-${'d'.repeat(32)}`, action: 'send_message', scope: 'action' };
+    writeFileSync(join(dir, 'audit-events-sends.jsonl'), [{ ...base, kind: 'send_started' }, { ...base, kind: 'send_failed' }].map((e) => JSON.stringify(e)).join('\n') + '\n');
+    assert.equal(new IntentStore({ eventsFile: join(dir, 'audit-events.jsonl'), now: () => NOW }).held(D), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // Evidence is unchanged: a failed evidence send never holds.
+  const s = new IntentStore({ now: () => NOW });
+  const ev = approved(s, evidenceDraft('o1'));
+  start(s, ev);
+  s.failed(ev.id, 'o1', 'x', 'ambiguous');
+  assert.equal(s.held(D), false);
+  assert.equal(s.peek(ev.id)!.status, 'failed');
+});
+
+test('fix 2: a read-back during the in-flight POST is refused and changes nothing', () => {
+  const s = new IntentStore({ now: () => NOW });
+  const a = approved(s, actionDraft('o1', message()));
+  const b = approved(s, actionDraft('o2', offer));
+  start(s, a);
+  assert.equal(s.recordReadBack(a.id, { state: 'absent', detail: 'nothing yet' }), false);
+  assert.equal(s.recordReadBack(a.id, { state: 'recorded', detail: 'x' }), false);
+  assert.equal(s.recordReadBack(a.id, { state: 'pending', detail: 'x' }), false);
+  assert.equal(s.peek(a.id)!.status, 'sending');
+  assert.equal(refusal(s, b), 'DISPUTE_BUSY');
+  assert.equal(s.events(CASE).some((e) => e.kind === 'read_back'), false);
+});
+
+test('fix 3: a recorded or absent read-back whose log line is not durable changes nothing', async () => {
+  const { durableTestHooks } = await import('@resolvekit/hosting');
+  for (const state of ['recorded', 'absent'] as const) {
+    const dir = mkdtempSync(join(tmpdir(), 'rk-locks-'));
+    try {
+      const file = join(dir, 'intents.json');
+      const eventsFile = join(dir, 'audit-events.jsonl');
+      const s = new IntentStore({ file, eventsFile, now: () => NOW });
+      const a = approved(s, actionDraft('o1', message()));
+      start(s, a);
+      s.markUncertain(a.id, 'timeout');
+      const before = readFileSync(file, 'utf8');
+      durableTestHooks.failAt = 'write';
+      durableTestHooks.match = /sends\.jsonl$/;
+      assert.equal(s.recordReadBack(a.id, { state, detail: 'proof' }), false);
+      assert.ok(s.isUncertain(D), state);
+      assert.equal(s.peek(a.id)!.status, 'failed');
+      assert.equal(s.peek(a.id)!.readBack, 'pending');
+      assert.equal(s.recordedDuplicate(D, duplicateKey(a)!), false);
+      assert.equal(readFileSync(file, 'utf8'), before);
+      // Once the log can be written, it goes through.
+      assert.equal(s.recordReadBack(a.id, { state, detail: 'proof' }), true);
+      assert.equal(s.isUncertain(D), null);
+    } finally {
+      durableTestHooks.failAt = null;
+      durableTestHooks.match = null;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('fix 4: the duplicate guard is rebuilt from the send log alone', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-locks-'));
+  try {
+    const file = join(dir, 'intents.json');
+    const eventsFile = join(dir, 'audit-events.jsonl');
+    const s = new IntentStore({ file, eventsFile, now: () => NOW });
+    const a = approved(s, actionDraft('o1', message()));
+    start(s, a);
+    s.sent(a.id, 'o1', 'accepted');
+    s.recordReadBack(a.id, { state: 'recorded', detail: 'found' });
+    unlinkSync(file);
+    const r = new IntentStore({ file, eventsFile, now: () => NOW });
+    assert.equal(r.recordedDuplicate(D, duplicateKey(a)!), true);
+    assert.equal(r.held(D), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('fix 8: markUncertain is for actions only', () => {
+  const s = new IntentStore({ now: () => NOW });
+  const ev = approved(s, evidenceDraft('o1'));
+  start(s, ev);
+  assert.equal(s.markUncertain(ev.id, 'timeout'), false);
+  assert.equal(s.isUncertain(D), null);
+  assert.equal(s.peek(ev.id)!.status, 'sending');
 });

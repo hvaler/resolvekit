@@ -149,6 +149,9 @@ export interface AuditEvent {
   textSha256?: string;
   /** read_back recorded: sha256 of the duplicate key ({@link duplicateKey}), so the guard is seeded without the text. */
   keySha256?: string;
+  // Both hashes are plain sha256 on purpose: the logs are server-only, and a short text is guessable from its hash.
+  /** send_failed of an action: PayPal's answer proves nothing was done, so the dispute is free (also on reseed). */
+  outcome?: 'refused';
 }
 
 export interface Refused {
@@ -277,13 +280,13 @@ export class IntentStore {
         if (e.kind === 'sent' && !this.sentDisputes.has(k)) this.sentDisputes.set(k, { intentId: e.intentId, at: e.at });
         continue;
       }
-      const proven = e.kind === 'read_back' && (e.detail === 'recorded' || e.detail === 'absent');
+      const proven = (e.kind === 'read_back' && (e.detail === 'recorded' || e.detail === 'absent')) || (e.kind === 'send_failed' && e.outcome === 'refused');
       if (proven) {
         open.delete(e.intentId);
         if (e.detail === 'recorded' && e.keySha256) this.addKey(e.disputeId, e.keySha256);
       } else if (e.kind !== 'send_failed' && !open.has(e.intentId)) {
-        // send_started, sent (accepted, not proven), send_uncertain, read_back pending. A send_failed after them
-        // does not clear it: after a restart only a read-back does.
+        // send_started, sent (accepted, not proven), send_uncertain, read_back pending. A send_failed without the
+        // 'refused' outcome (written before outcomes) does not clear it: only a read-back does.
         open.set(e.intentId, { intentId: e.intentId, since: e.at, caseId: e.caseId, disputeId: e.disputeId });
       }
     }
@@ -850,11 +853,15 @@ export class IntentStore {
   /**
    * The outcome of an action send is not proven (ambiguous error, timeout, a read-back without proof): the dispute is
    * held until a read-back settles it, durably (send log `send_uncertain`). The intent, if it was sending, is failed
-   * but cannot be retried while held. False when it did not reach the disk (the hold still applies in memory).
+   * but cannot be retried while held. False when it did not reach the disk (the hold still applies in memory), or for
+   * an evidence intent (evidence keeps its own behaviour: failed, PayPal read before any retry).
+   *
+   * Fail-closed, unlike {@link recordReadBack}'s recorded/absent: the hold is taken in memory first and kept even if the
+   * log line is not durable, because holding more than needed is safe and freeing too early is not.
    */
   markUncertain(id: string, why: string): boolean {
     const i = this.intents.get(id) ?? this.tombstones.get(id);
-    if (!i?.disputeId) return false;
+    if (!i?.disputeId || !isActionIntent(i)) return false;
     this.unlock(i);
     const at = this.iso();
     if (i.status === 'sending') Object.assign(i, { status: 'failed', reason: why, failedAt: at });
@@ -871,8 +878,10 @@ export class IntentStore {
    * - `recorded`: the intent is sent and recorded, its duplicate key remembered, the dispute free again;
    * - `absent`: the intent failed and may be retried with the same PayPal-Request-Id, the dispute free again;
    * - `pending`: no proof either way, the dispute stays (or becomes) held. Never «closed».
-   * Works from the hold alone when the intent itself is gone (seeded from the send log). False when unknown, or when
-   * it did not reach the disk.
+   * Works from the hold alone when the intent itself is gone (seeded from the send log). Refused (false, nothing
+   * changed) while the intent is being sent: its POST has not answered yet. recorded/absent free the dispute only once
+   * their log line is durable (otherwise false, nothing changed); pending holds at once (fail-closed).
+   * `r.detail` is kept in the intent's reason (never in a log) and must never contain message or thread text.
    */
   recordReadBack(id: string, r: { state: 'recorded' | 'absent' | 'pending'; detail: string }): boolean {
     const i = this.intents.get(id) ?? this.tombstones.get(id) ?? null;
@@ -881,43 +890,57 @@ export class IntentStore {
     const hold = this.uncertain.get(disputeId);
     const caseId = i?.caseId ?? hold?.caseId;
     if (!caseId) return false;
+    // The POST has not answered: nothing can be read back yet, and the in-flight lock stays.
+    if (i?.status === 'sending' || this.inFlight.get(disputeId) === id) return false;
     const ours = hold?.intentId === id;
     const at = this.iso();
-    let keySha256: string | undefined;
-    if (i) {
-      this.unlock(i);
-      i.readBack = r.state;
+    const key = r.state === 'recorded' && i ? duplicateKey(i) : null;
+    const keySha256 = key ? sha256(key) : undefined;
+    const line = () =>
+      this.recordChecked({
+        caseId, kind: 'read_back', actor: 'ResolveKit', scope: 'action', ...(i ? { owner: i.createdBy, contentHash: i.contentHash, requestId: i.requestId } : {}), disputeId, intentId: id, detail: r.state,
+        ...(keySha256 ? { keySha256 } : {}),
+      }).durable;
+    if (r.state === 'pending') {
+      // Fail-closed: held whatever the disk says.
+      if (i) i.readBack = 'pending';
+      if (!hold) this.uncertain.set(disputeId, { intentId: id, since: at, caseId });
+      const saved = this.save(true);
+      return line() && saved;
     }
+    // recorded / absent free the dispute only once the send log says so durably (a restart must agree).
+    if (!line()) return false;
+    if (i) i.readBack = r.state;
     if (r.state === 'recorded') {
       if (i) {
         if (i.status !== 'sent') Object.assign(i, { status: 'sent', sentAt: i.sentAt ?? at });
         i.reason = null;
-        const key = duplicateKey(i);
-        if (key) this.addKey(disputeId, (keySha256 = sha256(key)));
       }
-      if (ours) this.uncertain.delete(disputeId);
-    } else if (r.state === 'absent') {
-      if (ours) this.uncertain.delete(disputeId);
-      if (i && this.intents.has(id) && (i.status === 'sent' || i.status === 'sending' || i.status === 'failed')) {
-        Object.assign(i, { status: 'failed', reason: `PayPal does not show it: ${r.detail}`, failedAt: at, sentAt: null });
-      }
-    } else if (!hold) {
-      this.uncertain.set(disputeId, { intentId: id, since: at, caseId });
+      if (keySha256) this.addKey(disputeId, keySha256);
+    } else if (i && this.intents.has(id) && (i.status === 'sent' || i.status === 'failed')) {
+      Object.assign(i, { status: 'failed', reason: `PayPal does not show it: ${r.detail}`, failedAt: at, sentAt: null });
     }
+    if (ours) this.uncertain.delete(disputeId);
     const saved = this.save(true);
-    const logged = this.recordChecked({
-      caseId, kind: 'read_back', actor: 'ResolveKit', scope: 'action', ...(i ? { owner: i.createdBy, contentHash: i.contentHash, requestId: i.requestId } : {}), disputeId, intentId: id, detail: r.state,
-      ...(keySha256 ? { keySha256 } : {}),
-    }).durable;
     if (r.state === 'absent' && i?.voidReason && i.status === 'failed') this.invalidate(id, i.voidReason, i.createdBy);
-    return saved && logged;
+    return saved;
   }
 
-  failed(id: string, actor: string, reason: string) {
+  /**
+   * sending → failed. Evidence: as before, whatever `proof`. An action: `refused` (PayPal's answer proves nothing was
+   * done) frees the dispute and is logged with outcome 'refused', so a restart frees it too; `ambiguous`, or no proof
+   * given, holds it as uncertain ({@link markUncertain}).
+   */
+  failed(id: string, actor: string, reason: string, proof?: 'refused' | 'ambiguous') {
     const i = this.intents.get(id);
     if (!i) return;
+    const action = isActionIntent(i);
+    if (action && proof !== 'refused') {
+      this.markUncertain(id, reason);
+      return;
+    }
     this.unlock(i);
-    this.record({ caseId: i.caseId, kind: 'send_failed', actor, owner: i.createdBy, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId, detail: reason });
+    this.record({ caseId: i.caseId, kind: 'send_failed', actor, owner: i.createdBy, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId, detail: reason, ...(action ? { outcome: 'refused' as const } : {}) });
     if (i.voidReason) return this.invalidate(id, i.voidReason, i.createdBy);
     i.status = 'failed';
     i.reason = reason;
