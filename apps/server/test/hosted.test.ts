@@ -8,10 +8,11 @@ import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.t
 import { AnalystService } from '../src/analysis.ts';
 import { parseBindings } from '../src/bindings.ts';
 import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
+import { SellerMemory } from '../src/sellers.ts';
 import { IntentStore } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
 
-import { RESOLVED, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
+import { RESOLVED, SELLER_ID, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
@@ -23,7 +24,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const boundInput = (): AnalysisInput => caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
 
 /** PayPal by path: every dispute read answers the waiting dispute, every send succeeds; optionally slow or failing reads. */
-function routedPayPal(o: { failRead?: () => boolean; delayMs?: number; disputes?: Record<string, Dispute> } = {}) {
+function routedPayPal(o: { failRead?: (path: string) => boolean; failStatus?: number; delayMs?: number; disputes?: Record<string, Dispute> } = {}) {
   const calls: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
@@ -31,15 +32,16 @@ function routedPayPal(o: { failRead?: () => boolean; delayMs?: number; disputes?
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
     await sleep(o.delayMs ?? 2);
     if (u.pathname.endsWith('/provide-evidence')) return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
-    if (o.failRead?.()) return new Response(JSON.stringify({ name: 'INTERNAL_SERVICE_ERROR' }), { status: 500, headers: { 'content-type': 'application/json' } });
+    if (o.failRead?.(u.pathname)) return new Response(JSON.stringify({ name: 'INTERNAL_SERVICE_ERROR' }), { status: o.failStatus ?? 500, headers: { 'content-type': 'application/json' } });
     const byId = o.disputes?.[decodeURIComponent(u.pathname.split('/').pop() ?? '')];
     return new Response(JSON.stringify(byId ?? standardDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   return { calls, sends: () => calls.filter((c) => c.endsWith('/provide-evidence')).length, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; disputes?: Record<string, Dispute>; slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore } = {}) {
-  const pp = routedPayPal({ ...(o.failRead ? { failRead: o.failRead } : {}), ...(o.disputes ? { disputes: o.disputes } : {}) });
+function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; disputes?: Record<string, Dispute>; failStatus?: number; sellerMemory?: SellerMemory; failReadPath?: (path: string) => boolean; slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore } = {}) {
+  const failRead = o.failReadPath ?? (o.failRead ? () => o.failRead!() : undefined);
+  const pp = routedPayPal({ ...(failRead ? { failRead } : {}), ...(o.failStatus ? { failStatus: o.failStatus } : {}), ...(o.disputes ? { disputes: o.disputes } : {}) });
   const fm = fakeModel(standardScript);
   const store = o.store ?? new MemoryAnalysisStore();
   const lines: string[] = [];
@@ -73,6 +75,7 @@ function setup(o: { bindings?: Record<string, { dispute: string; capture: string
     ...(o.limits ? { limits: o.limits } : {}),
     ...(o.now ? { now: o.now } : {}),
     ...(o.intents ? { intents: o.intents } : {}),
+    ...(o.sellerMemory ? { sellerMemory: o.sellerMemory } : {}),
   });
   teams.set(app, people);
   return { app, pp, counters, model: fm, store, lines, people };
@@ -120,6 +123,49 @@ async function intentFor(app: ReturnType<typeof setup>['app'], cookie: string, a
   return i;
 }
 const analysisPath = `/api/cases/${CASE}/analysis`;
+const disputeGets = (pp: ReturnType<typeof routedPayPal>, id: string) => pp.calls.filter((c) => c === `GET /v1/customer/disputes/${id}`).length;
+
+test('sellers: a request with an unread binding refreshes the sellers once; concurrent requests share one read', async () => {
+  // 404 is not retried by the client, so each refresh is exactly one GET of the unread dispute.
+  const { app, pp, people } = setup({ failReadPath: (p) => p.endsWith(`/${REAL}`), failStatus: 404 });
+  const member = people.member();
+  assert.equal((await app(req(`/api/disputes/${CASE}`, { cookie: member }))).status, 404);
+  assert.equal(disputeGets(pp, REAL), 1);
+  await app(req('/api/health', { cookie: member }));
+  assert.equal(disputeGets(pp, REAL), 2);
+  await Promise.all([app(req('/api/health', { cookie: member })), app(req(`/api/disputes/${CASE}`, { cookie: member }))]);
+  assert.ok(disputeGets(pp, REAL) <= 4, String(disputeGets(pp, REAL)));
+});
+
+test('sellers: concurrent requests share one in-flight seller read', async () => {
+  const { app, pp, people } = setup({ failReadPath: (p) => p.endsWith(`/${REAL}`), failStatus: 404 });
+  const member = people.member();
+  await Promise.all(Array.from({ length: 5 }, () => app(req('/api/health', { cookie: member }))));
+  assert.equal(disputeGets(pp, REAL), 1);
+});
+
+test('sellers: a later read of the same dispute without a merchant id keeps the known seller (no 404 until rotation)', async () => {
+  const disputes: Record<string, Dispute> = { [REAL]: standardDispute() };
+  const { app, people } = setup({ disputes });
+  const member = people.member();
+  assert.equal((await app(req(`/api/disputes/${CASE}`, { cookie: member }))).status, 200);
+  const d = standardDispute();
+  disputes[REAL] = { ...d, disputed_transactions: [{ ...d.disputed_transactions![0]!, seller: {} }] };
+  await app(req(`/api/disputes/${CASE}`, { cookie: member }));
+  assert.equal((await app(req(`/api/disputes/${CASE}/audit`, { cookie: member }))).status, 200);
+  assert.deepEqual(((await (await app(req('/api/health', { cookie: member }))).json()) as { bound: string[] }).bound, [CASE]);
+});
+
+test('sellers: an unreadable dispute keeps the seller remembered for the same case and dispute, never another dispute', async () => {
+  for (const [dispute, visible] of [[REAL, true], ['PP-R-OLD-1', false]] as const) {
+    const sellerMemory = new SellerMemory({ file: null });
+    sellerMemory.confirm([{ caseId: CASE, dispute, merchant: SELLER_ID }]);
+    const { app, people } = setup({ failReadPath: (p) => p.endsWith(`/${REAL}`), failStatus: 404, sellerMemory });
+    const member = people.member();
+    assert.equal((await app(req(`/api/disputes/${CASE}/audit`, { cookie: member }))).status, visible ? 200 : 404, dispute);
+    assert.deepEqual(((await (await app(req('/api/health', { cookie: member }))).json()) as { bound: string[] }).bound, visible ? [CASE] : [], dispute);
+  }
+});
 
 test('per case: with two bound disputes of two sellers, each workspace gets 404 on the other seller’s case (snapshot, analysis, intent)', async () => {
   const OTHER_CASE = notAsDescribedCase.summary.id;

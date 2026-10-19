@@ -391,12 +391,23 @@ export function createApi(opts: ApiOptions): Api {
   const sellers = new Map<string, { dispute: string; merchant: string | null; name: string | null }>();
   const noteSeller = (caseId: string, d: Dispute) => {
     const s = d.disputed_transactions?.[0]?.seller;
-    sellers.set(caseId, { dispute: d.dispute_id ?? '', merchant: s?.merchant_id ?? null, name: s?.name ?? null });
+    const dispute = d.dispute_id ?? '';
+    // The same dispute read again without a merchant id keeps the seller already known for it: a sparse answer must
+    // not hide the case from its seller until the binding rotates.
+    const known = sellers.get(caseId);
+    const keep = known && known.dispute === dispute && !s?.merchant_id ? known : null;
+    sellers.set(caseId, { dispute, merchant: s?.merchant_id ?? keep?.merchant ?? null, name: s?.name ?? keep?.name ?? null });
   };
   /** The seller's name as PayPal gives it on a bound dispute (after {@link sellerIds} read them), or null. */
   const sellerName = (merchantId: string): string | null => [...sellers.values()].find((s) => s.merchant === merchantId && s.name)?.name ?? null;
   /** The merchant ids that are the seller on a bound dispute (each dispute read once, then on every fresh read). */
-  const sellerRead = async (): Promise<SellerRead> => {
+  // Single-flight: concurrent requests share the read in progress.
+  let sellerFlight: Promise<SellerRead> | null = null;
+  const sellerRead = (): Promise<SellerRead> =>
+    (sellerFlight ??= readSellers().finally(() => {
+      sellerFlight = null;
+    }));
+  const readSellers = async (): Promise<SellerRead> => {
     const paypal = opts.paypal;
     if (paypal) {
       await Promise.all(

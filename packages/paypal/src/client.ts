@@ -132,7 +132,8 @@ export class PayPalClient {
   // `headers` adds request headers (e.g. Prefer: return=representation); it cannot replace Authorization.
   // Retried here: 429 (PayPal refused the request before acting on it), with the same PayPal-Request-Id and body;
   // and a GET that PayPal failed (408, 5xx). Any other failure goes to the caller, which knows whether a retry is safe. `noRetry` turns that off
-  // (webhook verification: a delivery PayPal cannot confirm now is answered 503 and PayPal delivers it again).
+  // (webhook verification: a delivery PayPal cannot confirm now is answered 503 and PayPal delivers it again; the
+  // dispute action POSTs in disputes.ts, which are never retried since PayPal-Request-Id deduplication is unproven).
   async request<T>(
     method: 'GET' | 'POST',
     path: string,

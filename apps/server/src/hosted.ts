@@ -175,6 +175,17 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   /** The seller of each bound case: from the fresh read, else remembered for the same case and dispute. */
   let caseSellers: ReadonlyMap<string, string> = new Map<string, string>();
   let api: ReturnType<typeof createApi>;
+  // Once per request (memoised on the Request): the route, live() and seesCase() share it, so a hanging sandbox costs
+  // one wait per request, not one per check. api.sellerRead is single-flight across concurrent requests.
+  const perRequest = new WeakMap<Request, ReturnType<typeof refreshSellers>>();
+  const refreshFor = (req: Request): ReturnType<typeof refreshSellers> => {
+    let p = perRequest.get(req);
+    if (!p) {
+      p = refreshSellers();
+      perRequest.set(req, p);
+    }
+    return p;
+  };
   const refreshSellers = async () => {
     const read = await api.sellerRead();
     const effective = new Set<string>();
@@ -190,8 +201,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     sellers = effective;
     return { effective, complete: read.complete, none: read.cases.length === 0 };
   };
-  const connectionOf = async (payerId: string): Promise<Connection> => {
-    const { effective, complete, none } = await refreshSellers();
+  const connectionOf = async (payerId: string, req?: Request): Promise<Connection> => {
+    const { effective, complete, none } = await (req ? refreshFor(req) : refreshSellers());
     if (effective.has(payerId)) return 'evaluation';
     // No case bound at all: the last confirmed seller keeps the evaluation label (an empty inbox, not the waiting
     // screen). A label only: `sellers` stays empty and every case route stays bound-only.
@@ -203,7 +214,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     identity: o.identity,
     secret: o.sessionSecret,
     origins: o.origins,
-    connectionOf,
+    connectionOf: (payerId) => connectionOf(payerId),
     sellerName: (payerId) => api.sellerName(payerId),
     now,
     log: o.log,
@@ -272,7 +283,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     },
     async live(req: Request) {
       const s = session(req);
-      return s.ok && (await connectionOf(s.workspace.payerId)) === 'evaluation';
+      return s.ok && (await connectionOf(s.workspace.payerId, req)) === 'evaluation';
     },
     merchant(req: Request) {
       const s = session(req);
@@ -282,7 +293,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     async seesCase(req: Request, caseId: string) {
       const s = session(req);
       if (!s.ok) return false;
-      await refreshSellers();
+      await refreshFor(req); // already done for this request by the route and live(): no new read
       return caseSellers.get(caseId) === s.workspace.payerId;
     },
     // Each PDF page read is one unit of the address's upload limit, as a redaction is: all of them or none.
@@ -435,7 +446,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const authRes = auth.route(req, path);
       if (authRes) return authRes;
       // A signed-in request sees the sellers as PayPal reports them now (each bound dispute read once, then cached).
-      if (session(req).ok) await refreshSellers();
+      if (session(req).ok) await refreshFor(req);
       // Reads that go to PayPal: the dispute itself, and composing an intent (it reads the dispute fresh).
       const paypalRead =
         (req.method === 'GET' && path.startsWith('/api/disputes/') && !path.endsWith('/audit') && !path.includes('/intent/')) ||
