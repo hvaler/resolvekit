@@ -104,6 +104,8 @@ export const RUN_INJECTED_FAILURE = "UPSTREAM_UNAVAILABLE (injected for this run
 /** An open_budget cap: whole dollars (1–2 digits) and up to 2 decimals, in {@link CURRENCY}. */
 const CAP_FORMAT = /^\d{1,2}(\.\d{1,2})?$/;
 const MAX_FAIL_FIRST = 3;
+/** Authorization statuses that hold nothing more: never voided on a cancel. */
+const FINAL_AUTHORIZATION: ReadonlySet<string> = new Set(['VOIDED', 'DENIED', 'EXPIRED', 'CAPTURED']);
 
 /**
  * Why METERMCP_BUDGET / METERMCP_MIN_BUDGET cannot be served, or null: amounts that are not money, or a smallest cap
@@ -579,8 +581,9 @@ export class Meter {
   }
 
   /**
-   * A session cancelled while still pending_approval may have an authorization PayPal holds PENDING (review): it never
-   * opened the session, so nothing would ever settle it. Void it (the same PayPal-Request-Id as the late-arrival void).
+   * A session cancelled while still pending_approval may have an authorization at PayPal that never opened it: PENDING
+   * (review), or CREATED but refused by the opening checks (authorizationProblem) or left by a crash between authorize
+   * and activate. Nothing would ever settle it: void any that is not already final (the late-arrival void's request id).
    * Best effort: a failed read or void is logged and the hold is left to expire at PayPal.
    */
   private async voidHeld(s: SessionRow): Promise<void> {
@@ -593,12 +596,12 @@ export class Meter {
       this.o.log(`session ${s.id}: cancelled; its order could not be read to release a held authorization (${why(e)})`);
       return;
     }
-    if (held?.status !== 'PENDING' || !held.id) return;
+    if (!held?.id || !held.status || FINAL_AUTHORIZATION.has(held.status)) return;
     try {
       const v = await paypal.payments.voidAuthorization(held.id, { requestId: `${s.id}-void` });
-      this.o.log(`session ${s.id}: cancelled; authorization ${held.id} PENDING at PayPal; voided (${v.status ?? 'no status'})`);
+      this.o.log(`session ${s.id}: cancelled; authorization ${held.id} ${held.status} at PayPal; voided (${v.status ?? 'no status'})`);
     } catch (e) {
-      this.o.log(`session ${s.id}: cancelled; authorization ${held.id} PENDING at PayPal; void FAILED (${why(e)}), still held at PayPal`);
+      this.o.log(`session ${s.id}: cancelled; authorization ${held.id} ${held.status} at PayPal; void FAILED (${why(e)}), still held at PayPal`);
     }
   }
 

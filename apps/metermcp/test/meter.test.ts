@@ -492,6 +492,20 @@ test('closing a session whose authorization PayPal holds PENDING voids it: no ho
   assert.equal(pp.count(/capture$/), 0);
 });
 
+test('closing a pending_approval session whose authorization is CREATED (refused by the opening checks) voids it', async () => {
+  // Past the fake authorization's expiration_time: authorizationProblem refuses it, the session stays pending_approval.
+  const { meter, pp, ledger } = setup({ now: () => new Date('2026-12-01T00:00:00Z') });
+  const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
+  pp.approve(pr.order_id);
+  assert.equal(body(await meter.balance('mcp-1')).status, 'pending_approval');
+  const authId = pp.orders.get(pr.order_id)!.authorizationId!;
+  assert.equal(pp.auths.get(authId)!.status, 'CREATED');
+  assert.equal((await meter.close(pr.session_id)).status, 'cancelled');
+  assert.equal(ledger.session(pr.session_id)!.status, 'cancelled');
+  assert.equal(pp.auths.get(authId)!.status, 'VOIDED');
+  assert.equal(pp.calls.find((c) => c.path.endsWith('/void'))!.headers['PayPal-Request-Id'], `${pr.session_id}-void`);
+});
+
 test('closing a never-approved session reads the order and voids nothing (no authorization exists)', async () => {
   const { meter, pp, ledger } = setup();
   const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
