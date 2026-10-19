@@ -45,12 +45,8 @@ export interface HeldOutConfig {
 export const CONFIG_FILE = fileURLToPath(new URL('./heldout/config.json', import.meta.url));
 export const loadConfig = (): HeldOutConfig => JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) as HeldOutConfig;
 
-/**
- * Repo-relative: the files that must be byte-identical to the freeze commit for the batch to start, and whose hash the
- * first batch pins in budget.json (ruling B14). The freeze commit is the last commit touching any of them (B15). Add a
- * file here when it joins the freeze; a listed file that does not exist refuses the start.
- */
-export const FROZEN_PATHS = [
+const REPO = fileURLToPath(new URL('../../../', import.meta.url));
+const FROZEN_STATIC = [
   'packages/analyst/evals/heldout/cases.ts',
   'packages/analyst/evals/heldout/schema.ts',
   'packages/analyst/evals/heldout/config.json',
@@ -59,12 +55,31 @@ export const FROZEN_PATHS = [
   'packages/analyst/evals/heldout/score.ts',
   'packages/analyst/evals/heldout/manual-judgements.json',
 ];
+const FROZEN_SRC_DIR = 'packages/analyst/src';
+/** The batch code is part of what is measured too (ruling B20), next to the system under test in src. */
+const FROZEN_BATCH = ['packages/analyst/evals/runs.ts', 'packages/analyst/evals/budget.ts'];
+
+/**
+ * Repo-relative: the files that must be byte-identical to the freeze commit for the batch to start, and whose hash the
+ * first batch pins in budget.json (ruling B14). The freeze commit is the last commit touching any of them (B15). The
+ * system under test is frozen with the set (B20): every .ts file under packages/analyst/src, found by listing the
+ * directory (sorted, so a new src file is frozen too), plus the batch code runs.ts and budget.ts. A listed file that
+ * does not exist refuses the start.
+ */
+export function listFrozenPaths(root = REPO): string[] {
+  const src = readdirSync(join(root, FROZEN_SRC_DIR), { recursive: true, encoding: 'utf8' })
+    .map((f) => f.replaceAll('\\', '/'))
+    .filter((f) => f.endsWith('.ts'))
+    .sort()
+    .map((f) => `${FROZEN_SRC_DIR}/${f}`);
+  return [...FROZEN_STATIC, ...src, ...FROZEN_BATCH];
+}
+export const FROZEN_PATHS: readonly string[] = listFrozenPaths();
 const RESULTS_REL = 'packages/analyst/evals/results/heldout';
 export const RESULTS_DIR = fileURLToPath(new URL('./results/heldout/', import.meta.url));
 
 /** git in the repository root; throws on a non-zero exit. */
 export type Git = (args: string[]) => string;
-const REPO = fileURLToPath(new URL('../../../', import.meta.url));
 export const realGit: Git = (args) => execFileSync('git', args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /** sha256 over each frozen file's path and bytes, in FROZEN_PATHS order. */
@@ -149,12 +164,13 @@ export function preflight(o: Pick<BatchOptions, 'provider' | 'raw' | 'cases' | '
   const dirty = git(['status', '--porcelain', '--', 'packages/analyst', `:(exclude)${RESULTS_REL}`]);
   if (dirty) throw new Error(`uncommitted changes under packages/analyst:\n${dirty}`);
   const codeCommit = git(['rev-parse', 'HEAD']);
-  const freezeCommit = git(['log', '-1', '--format=%H', '--', ...FROZEN_PATHS]);
+  const frozen = listFrozenPaths();
+  const freezeCommit = git(['log', '-1', '--format=%H', '--', ...frozen]);
   if (!freezeCommit) throw new Error('no freeze commit: none of the frozen files has ever been committed');
   try {
-    git(['diff', '--quiet', freezeCommit, 'HEAD', '--', ...FROZEN_PATHS]);
+    git(['diff', '--quiet', freezeCommit, 'HEAD', '--', ...frozen]);
   } catch {
-    throw new Error(`the frozen files differ from the freeze commit ${freezeCommit}: ${FROZEN_PATHS.join(', ')}`);
+    throw new Error(`the frozen files differ from the freeze commit ${freezeCommit}: ${frozen.join(', ')}`);
   }
   return { codeCommit, freezeCommit };
 }
@@ -174,7 +190,7 @@ export async function runHeldOut(o: BatchOptions): Promise<BatchResult> {
   const log = o.log ?? console.log;
   if (o.fromRun !== undefined && !(Number.isInteger(o.fromRun) && o.fromRun >= 1 && o.fromRun <= o.runs)) throw new Error(`--from-run must be an integer from 1 to ${o.runs}`);
   const { codeCommit, freezeCommit } = preflight(o, o.git ?? realGit);
-  const hash = o.hash ?? frozenHash();
+  const hash = o.hash ?? frozenHash(listFrozenPaths());
   const dir = join(o.resultsDir ?? RESULTS_DIR, o.provider);
 
   // One ledger per provider for the whole batch, carried over from a stopped batch (what it counted stays counted).

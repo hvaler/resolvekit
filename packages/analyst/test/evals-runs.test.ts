@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -9,7 +9,7 @@ import { PROMPT_VERSION } from '../src/prompts.ts';
 import { GroqModel } from '../src/providers.ts';
 import { BudgetExceeded, LIST_PRICE, RESERVATION_EXCEEDED, budgetGuard, newLedger, reservationUsd, usageUsd } from '../evals/budget.ts';
 import type { HeldOutCase } from '../evals/heldout/schema.ts';
-import { FROZEN_PATHS, UsageError, frozenHash, loadConfig, parseCli, runHeldOut, type Attempt, type Git, type HeldOutConfig } from '../evals/runs.ts';
+import { FROZEN_PATHS, UsageError, frozenHash, listFrozenPaths, loadConfig, parseCli, runHeldOut, type Attempt, type Git, type HeldOutConfig } from '../evals/runs.ts';
 import { fakeModel, input, standardScript } from './fake.ts';
 
 const noSleep = async () => {};
@@ -302,7 +302,7 @@ test('the runner refuses to start when a frozen file differs from the freeze com
   assert.equal(calls.length, 0);
   const diff = git.seen.find((a) => a[0] === 'diff')!;
   assert.deepEqual(diff, ['diff', '--quiet', 'f00', 'HEAD', '--', ...FROZEN_PATHS]);
-  assert.deepEqual(FROZEN_PATHS, [
+  assert.deepEqual(FROZEN_PATHS.slice(0, 7), [
     'packages/analyst/evals/heldout/cases.ts',
     'packages/analyst/evals/heldout/schema.ts',
     'packages/analyst/evals/heldout/config.json',
@@ -464,4 +464,32 @@ test('the command line: flags without a value, unknown flags, bad numbers and a 
   assert.deepEqual(parseCli(['--case', 'HO-A', '--budget', '0.5'], config), { provider: 'gemini', runs: 3, budgetUsd: 0.5, only: 'HO-A' });
   for (const args of [['--provider'], ['--provider', '--runs', '3'], ['--from-run'], ['--nope', 'x'], ['--budget', 'lots'], ['--from-run', '0'], ['--from-run', '4'], ['--from-run', '1.5'], ['--provider', 'openai']])
     assert.throws(() => parseCli(args, config), UsageError, args.join(' '));
+});
+
+test('B20: the frozen set covers the analyst src (listed at runtime, sorted) and the batch code', () => {
+  for (const p of ['packages/analyst/src/prompts.ts', 'packages/analyst/src/pipeline.ts', 'packages/analyst/evals/runs.ts', 'packages/analyst/evals/budget.ts']) {
+    assert.ok(FROZEN_PATHS.includes(p), p);
+  }
+  const src = FROZEN_PATHS.filter((p) => p.startsWith('packages/analyst/src/'));
+  assert.deepEqual(src, [...src].sort());
+  assert.equal(src.length, readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.ts')).length);
+});
+
+test('B20: a new or changed src file changes the frozen set and frozenHash', () => {
+  const root = mkdtempSync(join(tmpdir(), 'frozen-'));
+  try {
+    for (const p of listFrozenPaths()) {
+      mkdirSync(dirname(join(root, p)), { recursive: true });
+      copyFileSync(join(fileURLToPath(new URL('../../../', import.meta.url)), p), join(root, p));
+    }
+    const before = frozenHash(listFrozenPaths(root), root);
+    appendFileSync(join(root, 'packages/analyst/src/prompts.ts'), '\n// changed\n');
+    assert.notEqual(frozenHash(listFrozenPaths(root), root), before);
+    const mid = frozenHash(listFrozenPaths(root), root);
+    writeFileSync(join(root, 'packages/analyst/src/newfile.ts'), 'export {};\n');
+    assert.ok(listFrozenPaths(root).includes('packages/analyst/src/newfile.ts'));
+    assert.notEqual(frozenHash(listFrozenPaths(root), root), mid);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
