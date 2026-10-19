@@ -320,6 +320,8 @@ test('paypal: an unsafe `next` is ignored — no other origin, scheme, protocol-
     'javascript:alert(1)',
     'evil.example',
     '/api/auth/me',
+    '/./../api/auth/signout',
+    '/%2F/evil.example/../..//x',
     `/${'a'.repeat(600)}`,
     42,
     ['/cases'],
