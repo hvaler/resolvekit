@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { Connect, Plugin, ProxyOptions } from 'vite';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
-import { apiProxyDecision } from './src/proxyGuard';
+import { apiProxyDecision } from './src/proxyGuard.ts';
 
 // The ResolveKit server (apps/server) writes a per-launch token here. The proxy adds it to /api requests on the
 // server side, so the browser never holds it and no other website can call the API.
@@ -55,7 +55,10 @@ export default defineConfig({
     // AG Grid Community (core + the modules registered in src/components/grid/theme.ts) is ~0.86 MB minified; keep
     // it in its own cacheable chunk.
     chunkSizeWarningLimit: 900,
-    rollupOptions: { output: { manualChunks: { 'ag-grid': ['ag-grid-community', 'ag-grid-react'] } } },
+    // Vite 8 (Rolldown): codeSplitting groups replace Rollup's object-form manualChunks.
+    rolldownOptions: {
+      output: { codeSplitting: { groups: [{ name: 'ag-grid', test: /\/node_modules\/ag-grid-(?:community|react)\// }] } },
+    },
   },
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
