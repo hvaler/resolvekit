@@ -38,7 +38,7 @@
  * ids; no document text). No secrets.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, statSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { appendFileDurable, preserveCorrupt, readStoreFile, writeFileDurable } from '@resolvekit/hosting';
 import type { CaseAnalysis } from '@resolvekit/analyst';
@@ -236,6 +236,13 @@ export class IntentStore {
   private problem: string | null = null;
   /** The unreadable intents file could not be moved aside: nothing is written over it. */
   private blocked = false;
+  /** The send log exists but could not be read at start: interrupted actions are held whatever it might say. */
+  private sendLogUnreadable = false;
+
+  private addProblem(p: string) {
+    this.problem = this.problem ? `${this.problem}; ${p}` : p;
+    this.log(`ERROR intents · ${p}`);
+  }
 
   constructor(o: { file?: string | null; eventsFile?: string | null; sendsFile?: string | null; now?: () => Date; ttlMs?: number; log?: (line: string) => void } = {}) {
     this.file = o.file ?? null;
@@ -244,26 +251,31 @@ export class IntentStore {
     this.now = o.now ?? (() => new Date());
     this.ttlMs = o.ttlMs ?? INTENT_TTL_MS;
     this.log = o.log ?? (() => {});
-    const load = (file: string | null, into: (e: AuditEvent) => void) => {
-      if (!file) return 0;
-      try {
-        const text = readFileSync(file, 'utf8');
-        for (const l of text.split('\n').filter(Boolean)) {
-          try {
-            into(JSON.parse(l) as AuditEvent);
-          } catch {
-            /* a torn last line */
-          }
+    /** Read a log: its size, or 'missing' (never written), or the read error's code (it exists but cannot be read). */
+    const load = (file: string | null, into: (e: AuditEvent) => void): number | 'missing' | { error: string } => {
+      if (!file) return 'missing';
+      const read = readStoreFile(file);
+      if (read.kind === 'missing') return 'missing';
+      if (read.kind === 'error') return { error: read.code };
+      for (const l of read.text.split('\n').filter(Boolean)) {
+        try {
+          into(JSON.parse(l) as AuditEvent);
+        } catch {
+          /* a torn last line */
         }
-        return Buffer.byteLength(text);
-      } catch {
-        return 0;
       }
+      return Buffer.byteLength(read.text);
     };
-    this.eventsBytes = load(this.eventsFile, (e) => this.bucketPush(e));
+    const events = load(this.eventsFile, (e) => this.bucketPush(e));
+    this.eventsBytes = typeof events === 'number' ? events : 0;
     // The send log first: it is durable and append-only, so even when intents.json is lost or unreadable every dispute
     // PayPal accepted an intent for is known again (no other intent is sent there).
-    load(this.sendsFile, (e) => this.sendLog.push(e));
+    const sends = load(this.sendsFile, (e) => this.sendLog.push(e));
+    if (typeof sends === 'object') {
+      // It exists but cannot be read: what was started is unknown, so every interrupted action stays held (below).
+      this.sendLogUnreadable = true;
+      this.addProblem(`${basename(this.sendsFile!)} could not be read (${sends.error}); every action interrupted by the restart is held until a read-back settles it`);
+    }
     const interrupted = this.file ? this.loadIntents(this.file) : [];
     this.seedFromSendLog();
     // An action cut short by a restart may have reached PayPal: the dispute is held until a read-back says. Only if
@@ -272,7 +284,9 @@ export class IntentStore {
     // is held (fail-closed).
     for (const i of interrupted) {
       if (!i.disputeId || this.uncertain.has(i.disputeId)) continue;
-      if (this.sendsFile && !this.startedSinceLastOutcome(i.id)) {
+      // A missing log was never written, so no send_started was either (appendFileDurable creates it); an unreadable
+      // one tells nothing: held.
+      if (this.sendsFile && !this.sendLogUnreadable && !this.startedSinceLastOutcome(i.id)) {
         this.log(`intents · ${i.id}: the server restarted before its send started; failed (retryable), nothing was sent`);
         continue;
       }
@@ -396,13 +410,13 @@ export class IntentStore {
   private unreadable(file: string, why: string, corrupt: boolean) {
     const to = corrupt ? preserveCorrupt(file, this.now()) : null;
     const name = basename(file);
-    if (to) {
-      this.problem = `${name} could not be read (${why}); preserved as ${to}. Open intents started empty; the disputes already sent to were taken from the send log (sends are still guarded by PayPal's fresh read)`;
-    } else {
-      this.blocked = true;
-      this.problem = `${name} could not be read (${why})${corrupt ? ' and could not be moved aside' : ''}; left in place and never written over: every send is refused until it is fixed or removed, then restart`;
-    }
-    this.log(`ERROR intents · ${this.problem}`);
+    if (!to) this.blocked = true;
+    // Kept with any earlier problem (an unreadable send log): both are reported.
+    this.addProblem(
+      to
+        ? `${name} could not be read (${why}); preserved as ${to}. Open intents started empty; the disputes already sent to were taken from the send log (sends are still guarded by PayPal's fresh read)`
+        : `${name} could not be read (${why})${corrupt ? ' and could not be moved aside' : ''}; left in place and never written over: every send is refused until it is fixed or removed, then restart`,
+    );
   }
 
   /** Why the saved intents could not be read at start, or null (shown by /api/health and the operator's check). */

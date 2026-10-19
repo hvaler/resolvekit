@@ -236,7 +236,8 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
     if (!st.snap || st.disputeId !== i.disputeId) return json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${i.disputeId ?? 'the simulator'}; the case is bound to ${st.disputeId ?? 'the simulator'} now` });
     const notSeller = deps.sellerRefusal(req, st);
     if (notSeller) return notSeller;
-    const unshown = relevantNewBuyerMessages(intentAction(i), [...(i.threadKeysAtApproval ?? []), ...(shown as string[])], st.snap);
+    // Each shown key once: a key repeated in the body never stands for a message that was not shown.
+    const unshown = relevantNewBuyerMessages(intentAction(i), [...(i.threadKeysAtApproval ?? []), ...new Set(shown as string[])], st.snap);
     if (unshown.length) return needsReview(unshown);
     const t = intents.acknowledge(intentId, caseId, who.actor, buyerKeys(st.snap));
     if (!t.ok) return json(t.status, { error: t.error, detail: t.detail });

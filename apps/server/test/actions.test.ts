@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { durableTestHooks } from '@resolvekit/hosting';
@@ -523,4 +523,85 @@ test('a read-back base that cannot be written alone: 503, no POST, no send_start
   assert.equal(intents.events(CASE).filter((e) => e.kind === 'send_started').length, 0);
   assert.equal(intents.isUncertain(REAL), null);
   assert.equal(intents.peek(i.id)!.status, 'approved');
+});
+
+// ------------------------------------------------------------------------------------------------ review fixes, round 2
+
+/** An approved message intent claimed for sending on a store with files, then "the process dies". */
+async function interrupted(dir: string, before?: (intents: IntentStore, i: { id: string; contentHash: string; requestId: string }, owner: string) => void) {
+  const files = { file: join(dir, 'intents.json'), eventsFile: join(dir, 'audit-events.jsonl') };
+  const intents = new IntentStore({ ...files, now: () => new Date(T0) });
+  const { app } = await setupActions({ intents });
+  const i = await compose(app);
+  await approve(app, i);
+  const owner = intents.peek(i.id)!.createdBy;
+  before?.(intents, i, owner);
+  assert.equal(intents.beginSend(i.id, CASE, owner).ok, true);
+  return { files, i, owner, intents };
+}
+const startedLine = (intents: IntentStore, i: { id: string; contentHash: string; requestId: string }, owner: string) =>
+  intents.recordChecked({ caseId: CASE, kind: 'send_started', actor: owner, disputeId: REAL, intentId: i.id, contentHash: i.contentHash, requestId: i.requestId, stage: 'INQUIRY' });
+
+test('restart: an unreadable send log keeps an interrupted action held and is reported; a missing one frees it', async () => {
+  for (const kind of ['unreadable', 'missing'] as const) {
+    const dir = mkdtempSync(join(tmpdir(), 'rk-actions-'));
+    try {
+      const { files, i } = await interrupted(dir);
+      const sends = join(dir, 'audit-events-sends.jsonl');
+      if (kind === 'unreadable') {
+        // The log exists (another dispute's send) but cannot be read at start.
+        writeFileSync(sends, JSON.stringify({ at: new Date(T0).toISOString(), caseId: CASE, kind: 'sent', actor: 'x', disputeId: 'PP-R-OTHER' }) + '\n');
+        durableTestHooks.readError = { match: /sends\.jsonl$/, code: 'EIO' };
+      } else rmSync(sends, { force: true });
+      const after = new IntentStore({ ...files, now: () => new Date(T0 + 1_000) });
+      durableTestHooks.readError = null;
+      assert.equal(after.peek(i.id)!.status, 'failed');
+      if (kind === 'unreadable') {
+        assert.equal(after.isUncertain(REAL)?.intentId, i.id);
+        assert.match(after.storageProblem() ?? '', /audit-events-sends\.jsonl could not be read \(EIO\)/);
+      } else {
+        assert.equal(after.isUncertain(REAL), null);
+        assert.equal(after.storageProblem(), null);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('restart: an earlier attempt read back absent, then a crash before the new send_started → not held; after it → held', async () => {
+  for (const started of [false, true]) {
+    const dir = mkdtempSync(join(tmpdir(), 'rk-actions-'));
+    try {
+      const { files, i, owner, intents } = await interrupted(dir, (s, x, who) => {
+        // The earlier attempt: started, then proven absent by a read-back.
+        assert.equal(s.beginSend(x.id, CASE, who).ok, true);
+        startedLine(s, x, who);
+        s.failed(x.id, who, 'PayPal timed out', 'ambiguous');
+        assert.equal(s.recordReadBack(x.id, { state: 'absent', detail: 'no trace' }), true);
+      });
+      if (started) startedLine(intents, i, owner);
+      const after = new IntentStore({ ...files, now: () => new Date(T0 + 1_000) });
+      assert.equal(after.peek(i.id)!.status, 'failed');
+      assert.equal(after.isUncertain(REAL)?.intentId ?? null, started ? i.id : null);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('acknowledge: repeated shown keys count once', async () => {
+  const { app, state } = await setupActions();
+  const i = await compose(app);
+  await approve(app, i);
+  const at = state.t + 1_000;
+  state.dispute = withMessage(state.dispute, 'BUYER', at, 'Where is it??');
+  state.t += 2_000;
+  const s = await send(app, i);
+  const shown = s.body.messageKeys as string[];
+  // A second message with the same key (same time, same length) arrives: it was never shown.
+  state.dispute = withMessage(state.dispute, 'BUYER', at, 'Any news?????');
+  const r = await acknowledge(app, i, [shown[0]!, shown[0]!]);
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.equal(r.body.error, 'NEEDS_REVIEW');
 });
