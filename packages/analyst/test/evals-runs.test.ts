@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { ModelError, withRetries, type AnalystModel, type ModelRequest } from '../src/model.ts';
 import { PROMPT_VERSION } from '../src/prompts.ts';
 import { GroqModel } from '../src/providers.ts';
-import { BudgetExceeded, LIST_PRICE, budgetGuard, newLedger, reservationUsd, usageUsd } from '../evals/budget.ts';
+import { BudgetExceeded, LIST_PRICE, RESERVATION_EXCEEDED, budgetGuard, newLedger, reservationUsd, usageUsd } from '../evals/budget.ts';
 import type { HeldOutCase } from '../evals/heldout/schema.ts';
-import { FROZEN_PATHS, loadConfig, runHeldOut, type Attempt, type Git, type HeldOutConfig } from '../evals/runs.ts';
+import { FROZEN_PATHS, UsageError, frozenHash, loadConfig, parseCli, runHeldOut, type Attempt, type Git, type HeldOutConfig } from '../evals/runs.ts';
 import { fakeModel, input, standardScript } from './fake.ts';
 
 const noSleep = async () => {};
@@ -28,7 +28,7 @@ const CASES = [kase('HO-A'), kase('HO-B')];
  * The raw provider: answers from the standard script with fixed usage, the model id it "returns" in CallUsage.model,
  * and `fail` deciding which HTTP attempts throw (and what). Counts every call made. No network.
  */
-function raw(provider: 'gemini' | 'groq', o: { fail?: (req: ModelRequest, n: number) => Error | null; returned?: string } = {}) {
+function raw(provider: 'gemini' | 'groq', o: { fail?: (req: ModelRequest, n: number) => Error | null; returned?: string; usage?: (req: ModelRequest) => Partial<typeof USAGE> } = {}) {
   const { model: inner } = fakeModel(standardScript, { provider, model: config.models[provider] });
   const calls: ModelRequest[] = [];
   const model: AnalystModel = {
@@ -39,19 +39,19 @@ function raw(provider: 'gemini' | 'groq', o: { fail?: (req: ModelRequest, n: num
       const e = o.fail?.(req, calls.length);
       if (e) throw e;
       const r = await inner.generate(req);
-      return { json: r.json, usage: { ...r.usage, ...USAGE, model: o.returned ?? config.models[provider] } };
+      return { json: r.json, usage: { ...r.usage, ...USAGE, ...o.usage?.(req), model: o.returned ?? config.models[provider] } };
     },
   };
   return { model, calls };
 }
 
 /** git as the runner sees it: a clean tree, HEAD c0de, freeze commit f00; `over` replaces one answer (a thrown Error = non-zero exit). */
-function fakeGit(over: { status?: string; diff?: Error } = {}): Git & { seen: string[][] } {
+function fakeGit(over: { status?: string; diff?: Error; freeze?: string } = {}): Git & { seen: string[][] } {
   const seen: string[][] = [];
   const g = ((args: string[]) => {
     seen.push(args);
     if (args[0] === 'rev-parse') return 'c0de';
-    if (args[0] === 'log') return 'f00';
+    if (args[0] === 'log') return over.freeze ?? 'f00';
     if (args[0] === 'status') return over.status ?? '';
     if (args[0] === 'diff') {
       if (over.diff) throw over.diff;
@@ -127,9 +127,10 @@ test('an attempt file is opened exclusively: an existing one is never written ov
   await base({ raw: model, resultsDir: dir, runs: 1, cases: [CASES[0]!] });
   const file = join(dir, 'gemini', 'HO-A', '1.json');
   writeFileSync(file, 'sentinel');
-  // Even if the skip check were bypassed, the write would fail: the runner reports the existing file and keeps it.
-  const r = await base({ raw: raw('gemini').model, resultsDir: dir, runs: 1, cases: [CASES[0]!] });
-  assert.equal(r.written.length, 0);
+  // An unreadable attempt (e.g. a half-written file) refuses the start; the file is kept as it is.
+  const again = raw('gemini');
+  await assert.rejects(base({ raw: again.model, resultsDir: dir, runs: 1, cases: [CASES[0]!] }), /unreadable/);
+  assert.equal(again.calls.length, 0);
   assert.equal(readFileSync(file, 'utf8'), 'sentinel');
 });
 
@@ -337,4 +338,126 @@ test('no attempt reuses a cached analysis: nothing runs.ts imports, directly or 
   assert.ok(seen.has(join(root, 'src', 'pipeline.ts')), 'the walk reaches the pipeline');
   assert.ok(!seen.has(join(root, 'src', 'cache.ts')), 'cache.ts is never imported');
   assert.ok(!/cache/i.test(readFileSync(join(root, 'evals', 'runs.ts'), 'utf8').replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '')));
+});
+
+// ---- fix round 1: B13 (absorbed failures), B12 (reservation exceeded), B14 (pinned freeze), CLI and Groq floor
+
+test('a screen call that fails for good (gemini 503) leaves a degraded analysis: provider_error, never scored, and the batch continues', async () => {
+  const dir = tmp();
+  // The screen prompt does not name the dispute: fail every screen call made while the first case (one extract) runs.
+  let extracts = 0;
+  const fail = (req: ModelRequest) => {
+    if (req.stage === 'extract') extracts++;
+    return req.stage === 'screen' && extracts === 1 ? new ModelError('gemini answered 503', { status: 503, retryable: true }) : null;
+  };
+  const { model, calls } = raw('gemini', { fail });
+  const r = await base({ raw: model, resultsDir: dir, runs: 1 });
+  assert.equal(r.stopped, null);
+  const a = attempt(dir, 'gemini', 'HO-A', 1);
+  assert.equal(a.status, 'provider_error');
+  assert.equal(a.analysis, undefined);
+  assert.ok(a.degradedAnalysis);
+  assert.match(a.error ?? '', /went on without it: gemini answered 503/);
+  assert.equal(calls.filter((c) => c.stage === 'screen').length, 3 + 1, 'three failed screen attempts for HO-A, one for HO-B');
+  assert.equal(attempt(dir, 'gemini', 'HO-B', 1).status, 'ok');
+});
+
+test('a verify call that hits the quota for good (groq 429) is a provider_error and stops the batch', async () => {
+  const dir = tmp();
+  const { model } = raw('groq', { fail: (req) => (req.stage === 'verify' ? new ModelError('groq answered 429', { status: 429, retryable: true }) : null) });
+  const r = await base({ raw: model, resultsDir: dir, runs: 1 });
+  assert.equal(r.stopped, 'quota');
+  const a = attempt(dir, 'groq', 'HO-A', 1);
+  assert.equal(a.status, 'provider_error');
+  assert.ok(a.degradedAnalysis);
+  assert.equal(a.analysis, undefined);
+  assert.deepEqual(files(dir, 'groq', 'HO-B'), []);
+});
+
+test('a call that reports more output + thinking than it reserved stops the batch: budget_stopped, reservation exceeded', async () => {
+  const dir = tmp();
+  const { model, calls } = raw('gemini', { usage: (req) => (req.stage === 'extract' ? { outputTokens: 20_000 } : {}) });
+  const r = await base({ raw: model, resultsDir: dir });
+  assert.equal(r.stopped, 'budget');
+  const a = attempt(dir, 'gemini', 'HO-A', 1);
+  assert.equal(a.status, 'budget_stopped');
+  assert.equal(a.analysis, undefined);
+  assert.ok(a.error?.includes(RESERVATION_EXCEEDED));
+  assert.match(a.error ?? '', /20005 > 14048 output tokens/);
+  // Nothing after the extract call (and the parallel screen) was started.
+  assert.ok(calls.every((c) => c.stage === 'extract' || c.stage === 'screen'));
+  assert.deepEqual(files(dir, 'gemini', 'HO-B'), []);
+  const ledger = JSON.parse(readFileSync(join(dir, 'gemini', 'budget.json'), 'utf8'));
+  assert.equal(ledger.exceeded, 1);
+  assert.equal(ledger.stopped, true);
+});
+
+test('groq: a cap below 1024 output tokens is reserved as 1024 (GroqModel floors max_completion_tokens there)', async () => {
+  const req: ModelRequest = { stage: 'x', system: '', user: '', schema: {}, maxOutputTokens: 100 };
+  assert.equal(reservationUsd(req, 0, 1024).outputTokens, 1024);
+  assert.equal(reservationUsd({ ...req, maxOutputTokens: 2000 }, 0, 1024).outputTokens, 2000);
+  const ledger = newLedger('groq', 1);
+  let reserved = 0;
+  const m: AnalystModel = {
+    provider: 'groq',
+    model: 'm',
+    generate: async () => {
+      reserved = ledger.estimatedUsd;
+      return { json: {}, usage: { stage: 'x', provider: 'groq', model: 'm', ...USAGE, ms: 0 } };
+    },
+  };
+  await budgetGuard(m, { ledger, thinkingReserveTokens: 0 }).generate(req);
+  assert.equal(reserved, reservationUsd(req, 0, 1024).usd);
+});
+
+test('the first batch pins the freeze commit and the frozen files hash in budget.json', async () => {
+  const dir = tmp();
+  await base({ raw: raw('gemini').model, resultsDir: dir, runs: 1, cases: [CASES[0]!] });
+  const ledger = JSON.parse(readFileSync(join(dir, 'gemini', 'budget.json'), 'utf8'));
+  assert.deepEqual(ledger.freeze, { commit: 'f00', hash: frozenHash() });
+  assert.match(ledger.freeze.hash, /^[0-9a-f]{64}$/);
+});
+
+test('a later batch refuses when the freeze commit moved since the first batch', async () => {
+  const dir = tmp();
+  await base({ raw: raw('gemini').model, resultsDir: dir, runs: 1, cases: [CASES[0]!] });
+  const again = raw('gemini');
+  await assert.rejects(base({ raw: again.model, resultsDir: dir, git: fakeGit({ freeze: 'f01' }) }), /freeze commit is f01; this batch began on f00/);
+  assert.equal(again.calls.length, 0);
+});
+
+test('a later batch refuses when the frozen files hash differs from the pinned one', async () => {
+  const dir = tmp();
+  await base({ raw: raw('gemini').model, resultsDir: dir, runs: 1, cases: [CASES[0]!] });
+  const again = raw('gemini');
+  await assert.rejects(base({ raw: again.model, resultsDir: dir, hash: 'other' }), /hash differs/);
+  assert.equal(again.calls.length, 0);
+});
+
+test('a later batch refuses when a stored attempt carries another freeze, or attempts exist with no pinned freeze', async () => {
+  const dir = tmp();
+  await base({ raw: raw('gemini').model, resultsDir: dir, runs: 1, cases: [CASES[0]!] });
+  const file = join(dir, 'gemini', 'HO-A', '1.json');
+  const a = JSON.parse(readFileSync(file, 'utf8'));
+  writeFileSync(file, JSON.stringify({ ...a, stamp: { ...a.stamp, freezeCommit: 'zzz' } }));
+  await assert.rejects(base({ raw: raw('gemini').model, resultsDir: dir }), /stamped with freeze zzz; the current freeze is f00/);
+  const ledgerFile = join(dir, 'gemini', 'budget.json');
+  const { freeze: _f, ...unpinned } = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+  writeFileSync(ledgerFile, JSON.stringify(unpinned));
+  await assert.rejects(base({ raw: raw('gemini').model, resultsDir: dir }), /no ledger pins their freeze/);
+});
+
+test('frozenHash refuses a listed file that does not exist (FROZEN_PATHS grows only with real files)', () => {
+  assert.throws(() => frozenHash([...FROZEN_PATHS, 'packages/analyst/evals/heldout/not-there.json']), /frozen file missing/);
+});
+
+test('--from-run outside 1..runs, or not an integer, refuses the start', async () => {
+  for (const fromRun of [0, 4, 1.5]) await assert.rejects(base({ raw: raw('gemini').model, fromRun }), /--from-run must be an integer from 1 to 3/);
+});
+
+test('the command line: flags without a value, unknown flags, bad numbers and a bad --from-run are usage errors', () => {
+  assert.deepEqual(parseCli(['--provider', 'groq', '--from-run', '2'], config), { provider: 'groq', runs: 3, budgetUsd: 1, fromRun: 2 });
+  assert.deepEqual(parseCli(['--case', 'HO-A', '--budget', '0.5'], config), { provider: 'gemini', runs: 3, budgetUsd: 0.5, only: 'HO-A' });
+  for (const args of [['--provider'], ['--provider', '--runs', '3'], ['--from-run'], ['--nope', 'x'], ['--budget', 'lots'], ['--from-run', '0'], ['--from-run', '4'], ['--from-run', '1.5'], ['--provider', 'openai']])
+    assert.throws(() => parseCli(args, config), UsageError, args.join(' '));
 });
