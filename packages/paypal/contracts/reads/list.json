@@ -1,0 +1,319 @@
+{
+  "items": [
+    {
+      "dispute_id": "PP-R-KHH-10193360",
+      "create_time": "2026-10-18T08:04:20.000Z",
+      "update_time": "2026-10-18T08:07:54.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "3NN8055885436793S",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_SELLER_RESPONSE",
+      "dispute_state": "REQUIRED_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "1.37"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "seller_response_due_date": "2026-11-07T08:04:20.000Z",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-KHH-10193360",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-HOA-10193276",
+      "create_time": "2026-10-17T17:28:53.000Z",
+      "update_time": "2026-10-18T06:58:03.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "1SY08071WS511515G",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_BUYER_RESPONSE",
+      "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-HOA-10193276",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-UVK-10193275",
+      "create_time": "2026-10-17T17:28:06.000Z",
+      "update_time": "2026-10-17T19:50:03.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "1RF49758PP574294X",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_BUYER_RESPONSE",
+      "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-UVK-10193275",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-BGW-10193053",
+      "create_time": "2026-10-16T09:06:51.000Z",
+      "update_time": "2026-10-17T17:45:04.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "7MN025873F8541411",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_BUYER_RESPONSE",
+      "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-BGW-10193053",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-PFB-10190726",
+      "create_time": "2026-10-09T05:35:12.000Z",
+      "update_time": "2026-10-09T05:38:33.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "7UM84860HS943271P",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_SELLER_RESPONSE",
+      "dispute_state": "REQUIRED_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "1.37"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "seller_response_due_date": "2026-10-29T05:35:12.000Z",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-PFB-10190726",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-WRK-10190674",
+      "create_time": "2026-10-08T19:56:07.000Z",
+      "update_time": "2026-10-08T20:00:33.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "6J241241WC5101440",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_BUYER_RESPONSE",
+      "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "12.00"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-WRK-10190674",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-ULD-10190672",
+      "create_time": "2026-10-08T19:43:50.000Z",
+      "update_time": "2026-10-08T19:48:03.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "4NY0137192963814K",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_BUYER_RESPONSE",
+      "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "1.37"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-ULD-10190672",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-VIJ-10190671",
+      "create_time": "2026-10-08T19:31:23.000Z",
+      "update_time": "2026-10-09T04:38:03.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "2SU21907CG6224711",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_BUYER_RESPONSE",
+      "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "1.37"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-VIJ-10190671",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-TVH-10190665",
+      "create_time": "2026-10-08T18:19:33.000Z",
+      "update_time": "2026-10-08T19:06:23.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "58C26559MR1280108",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_BUYER_RESPONSE",
+      "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-TVH-10190665",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    },
+    {
+      "dispute_id": "PP-R-GFC-10190664",
+      "create_time": "2026-10-08T18:18:44.000Z",
+      "update_time": "2026-10-08T18:27:03.000Z",
+      "disputed_transactions": [
+        {
+          "buyer_transaction_id": "4SH61288BH4705533",
+          "buyer": {},
+          "seller": {
+            "merchant_id": "JWULA7T75ZA4Q"
+          }
+        }
+      ],
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "RESOLVED",
+      "dispute_state": "RESOLVED",
+      "dispute_amount": {
+        "currency_code": "USD",
+        "value": "8.00"
+      },
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_channel": "INTERNAL",
+      "outcome": "LOST",
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-GFC-10190664",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes?page_size=50",
+      "rel": "self",
+      "method": "GET"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes?page_size=50",
+      "rel": "first",
+      "method": "GET"
+    }
+  ]
+}

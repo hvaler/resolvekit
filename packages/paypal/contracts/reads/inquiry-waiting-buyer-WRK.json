@@ -1,0 +1,140 @@
+{
+  "dispute_id": "PP-R-WRK-10190674",
+  "create_time": "2026-10-08T19:56:07.146Z",
+  "update_time": "2026-10-08T20:00:33.773Z",
+  "disputed_transactions": [
+    {
+      "buyer_transaction_id": "6J241241WC5101440",
+      "seller_transaction_id": "1TE10786FM341280K",
+      "create_time": "2026-10-08T18:37:52.000Z",
+      "transaction_status": "HELD",
+      "gross_amount": {
+        "currency_code": "USD",
+        "value": "12.00"
+      },
+      "invoice_number": "INV2-9MRH-T7GD-PHF2-22GC",
+      "buyer": {},
+      "seller": {
+        "merchant_id": "JWULA7T75ZA4Q"
+      },
+      "items": [
+        {
+          "item_name": "Cambio de alcance CR-1: exportación CSV",
+          "item_description": "Cambio de alcance CR-1: exportación CSV",
+          "item_quantity": "1",
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+          "item_type": "SERVICE"
+        }
+      ],
+      "seller_protection_eligible": true,
+      "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+    }
+  ],
+  "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+  "status": "WAITING_FOR_BUYER_RESPONSE",
+  "dispute_amount": {
+    "currency_code": "USD",
+    "value": "12.00"
+  },
+  "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+  "fund_movements": [
+    {
+      "party": "RECEIVER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "11.29"
+      },
+      "initiated_time": "2026-10-08T19:59:34.000Z",
+      "type": "DEBIT",
+      "reason": "HOLD_PLACED"
+    }
+  ],
+  "dispute_life_cycle_stage": "INQUIRY",
+  "dispute_channel": "INTERNAL",
+  "messages": [
+    {
+      "posted_by": "BUYER",
+      "time_posted": "2026-10-08T19:56:07.146Z",
+      "content": "<buyer message, 21 chars>"
+    }
+  ],
+  "extensions": {
+    "merchant_contacted": false,
+    "buyer_contacted_time": "2026-10-08T19:56:06.459Z"
+  },
+  "evidences": [
+    {
+      "evidence_type": "CREATE",
+      "notes": "<buyer message, 21 chars>",
+      "source": "SUBMITTED_BY_BUYER",
+      "date": "2026-10-08T19:56:07.146Z",
+      "dispute_life_cycle_stage": "INQUIRY"
+    },
+    {
+      "evidence_type": "PROOF_OF_FULFILLMENT",
+      "evidence_info": {
+        "tracking_info": [
+          {
+            "carrier_name": "OTHER",
+            "carrier_name_other": "MeterMCP digital delivery",
+            "tracking_number": "mm-sess-202610082000-receipt"
+          }
+        ]
+      },
+      "documents": [
+        {
+          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-c352-e4bb22c0-8dd5-5bb021fe16e1/files/1/download"
+        }
+      ],
+      "notes": "Digital service delivered to the buyer's agent under a buyer-approved budget (5.00 USD). 3 of 4 metered tool calls returned results and were charged (1.37); the failed call was not charged. Session receipt with per-call request hashes attached. Synthetic test data.",
+      "source": "SUBMITTED_BY_SELLER",
+      "date": "2026-10-08T20:00:22.075Z",
+      "action_info": {
+        "action": "PROVIDE_EVIDENCE"
+      },
+      "dispute_life_cycle_stage": "INQUIRY"
+    }
+  ],
+  "buyer_response_due_date": "2026-10-28T19:56:07.146Z",
+  "offer": {
+    "buyer_requested_amount": {
+      "currency_code": "USD",
+      "value": "12.00"
+    }
+  },
+  "refund_details": {
+    "allowed_refund_amount": {
+      "currency_code": "USD",
+      "value": "12.00"
+    }
+  },
+  "allowed_response_options": {
+    "accept_claim": {
+      "accept_claim_types": [
+        "REFUND"
+      ]
+    }
+  },
+  "links": [
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-WRK-10190674",
+      "rel": "self",
+      "method": "GET"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-WRK-10190674/accept-claim",
+      "rel": "accept_claim",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-WRK-10190674/send-message",
+      "rel": "send_message",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-WRK-10190674/escalate",
+      "rel": "escalate",
+      "method": "POST"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "dispute_id": "PP-R-UVK-10193275",
+  "create_time": "2026-10-17T17:28:06.112Z",
+  "update_time": "2026-10-17T19:50:03.857Z",
+  "disputed_transactions": [
+    {
+      "buyer_transaction_id": "1RF49758PP574294X",
+      "seller_transaction_id": "8T880432Y7330390L",
+      "create_time": "2026-10-17T17:24:19.000Z",
+      "transaction_status": "HELD",
+      "gross_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "buyer": {},
+      "seller": {
+        "merchant_id": "JWULA7T75ZA4Q"
+      },
+      "items": [
+        {
+          "item_name": "Linen tote, natural",
+          "item_description": "Linen tote, natural",
+          "item_quantity": "1",
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+          "item_type": "PRODUCT"
+        }
+      ],
+      "seller_protection_eligible": true,
+      "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+    }
+  ],
+  "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+  "status": "WAITING_FOR_BUYER_RESPONSE",
+  "dispute_amount": {
+    "currency_code": "USD",
+    "value": "7.00"
+  },
+  "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+  "fund_movements": [
+    {
+      "party": "RECEIVER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "6.46"
+      },
+      "initiated_time": "2026-10-17T17:31:34.000Z",
+      "type": "DEBIT",
+      "reason": "HOLD_PLACED"
+    }
+  ],
+  "dispute_life_cycle_stage": "INQUIRY",
+  "dispute_channel": "INTERNAL",
+  "messages": [
+    {
+      "posted_by": "BUYER",
+      "time_posted": "2026-10-17T17:28:06.112Z",
+      "content": "<buyer message, 25 chars>"
+    }
+  ],
+  "extensions": {
+    "merchant_contacted": false,
+    "buyer_contacted_time": "2026-10-17T17:28:05.394Z"
+  },
+  "evidences": [
+    {
+      "evidence_type": "CREATE",
+      "notes": "<buyer message, 25 chars>",
+      "source": "SUBMITTED_BY_BUYER",
+      "date": "2026-10-17T17:28:06.112Z",
+      "dispute_life_cycle_stage": "INQUIRY"
+    },
+    {
+      "evidence_type": "PROOF_OF_FULFILLMENT",
+      "evidence_info": {
+        "tracking_info": [
+          {
+            "carrier_name": "UPS",
+            "tracking_number": "1Z999AA10123456784"
+          }
+        ]
+      },
+      "documents": [
+        {
+          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-ca63-e883f090-833f-c1ad1c2c0fe3/files/1/download"
+        },
+        {
+          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-ca63-e8843eb0-a0ae-932bc03fe50c/files/1/download"
+        }
+      ],
+      "notes": "We received order #10482 totaling 7.00 USD for one natural linen tote, with payment capture 8T880432Y7330390L held for 7.00 USD. We created a shipping label for 12 Example Street, Apt 4 and shipped the package via UPS Ground under tracking number 1Z999AA10123456784 on 7 October 2026. We shipped to the order address of 12 Example Street, Apt 4, and carrier records show delivery to 12 Example Street, Apt 4B signed by J. D. The buyer submitted a message claiming the package never arrived at 18:17 UTC on 8 October 2026, several hours after delivery was recorded.",
+      "source": "SUBMITTED_BY_SELLER",
+      "date": "2026-10-17T19:49:48.071Z",
+      "action_info": {
+        "action": "PROVIDE_EVIDENCE"
+      },
+      "dispute_life_cycle_stage": "INQUIRY"
+    }
+  ],
+  "buyer_response_due_date": "2026-11-06T17:28:06.112Z",
+  "offer": {
+    "buyer_requested_amount": {
+      "currency_code": "USD",
+      "value": "7.00"
+    }
+  },
+  "refund_details": {
+    "allowed_refund_amount": {
+      "currency_code": "USD",
+      "value": "7.00"
+    }
+  },
+  "allowed_response_options": {
+    "accept_claim": {
+      "accept_claim_types": [
+        "REFUND"
+      ]
+    }
+  },
+  "links": [
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-UVK-10193275",
+      "rel": "self",
+      "method": "GET"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-UVK-10193275/accept-claim",
+      "rel": "accept_claim",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-UVK-10193275/send-message",
+      "rel": "send_message",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-UVK-10193275/escalate",
+      "rel": "escalate",
+      "method": "POST"
+    }
+  ]
+}

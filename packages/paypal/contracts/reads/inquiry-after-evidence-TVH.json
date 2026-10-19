@@ -1,0 +1,144 @@
+{
+  "dispute_id": "PP-R-TVH-10190665",
+  "create_time": "2026-10-08T18:19:33.715Z",
+  "update_time": "2026-10-08T19:06:23.866Z",
+  "disputed_transactions": [
+    {
+      "buyer_transaction_id": "58C26559MR1280108",
+      "seller_transaction_id": "2CY26152YH817252P",
+      "create_time": "2026-10-08T18:13:58.000Z",
+      "transaction_status": "HELD",
+      "gross_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "buyer": {},
+      "seller": {
+        "merchant_id": "JWULA7T75ZA4Q"
+      },
+      "items": [
+        {
+          "item_name": "Prueba de puerta (CAPTURE)",
+          "item_description": "Prueba de puerta (CAPTURE)",
+          "item_quantity": "1",
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+          "item_type": "PRODUCT"
+        }
+      ],
+      "seller_protection_eligible": true,
+      "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+    }
+  ],
+  "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+  "status": "WAITING_FOR_BUYER_RESPONSE",
+  "dispute_amount": {
+    "currency_code": "USD",
+    "value": "7.00"
+  },
+  "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+  "fund_movements": [
+    {
+      "party": "RECEIVER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "6.46"
+      },
+      "initiated_time": "2026-10-08T18:22:34.000Z",
+      "type": "DEBIT",
+      "reason": "HOLD_PLACED"
+    }
+  ],
+  "dispute_life_cycle_stage": "INQUIRY",
+  "dispute_channel": "INTERNAL",
+  "messages": [
+    {
+      "posted_by": "BUYER",
+      "time_posted": "2026-10-08T18:19:33.715Z",
+      "content": "<buyer message, 5 chars>"
+    },
+    {
+      "posted_by": "SELLER",
+      "time_posted": "2026-10-08T18:25:08.597Z",
+      "content": "Prueba de puerta: el pedido salió el 7/10; adjuntamos el seguimiento."
+    }
+  ],
+  "extensions": {
+    "merchant_contacted": true,
+    "merchant_contacted_outcome": "NO_RESPONSE",
+    "buyer_contacted_time": "2026-10-08T18:19:32.989Z"
+  },
+  "evidences": [
+    {
+      "evidence_type": "CREATE",
+      "notes": "<buyer message, 5 chars>",
+      "source": "SUBMITTED_BY_BUYER",
+      "date": "2026-10-08T18:19:33.715Z",
+      "dispute_life_cycle_stage": "INQUIRY"
+    },
+    {
+      "evidence_type": "PROOF_OF_FULFILLMENT",
+      "evidence_info": {
+        "tracking_info": [
+          {
+            "carrier_name": "UPS",
+            "tracking_number": "1Z999AA10123456784"
+          }
+        ]
+      },
+      "documents": [
+        {
+          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-c34b-5a90f950-bab1-0ad508d57ab4/files/1/download"
+        }
+      ],
+      "notes": "Synthetic test evidence: item shipped on 2026-10-07 with UPS tracking and delivered on 2026-10-08. See attached proof of shipment.",
+      "source": "SUBMITTED_BY_SELLER",
+      "date": "2026-10-08T19:06:23.866Z",
+      "action_info": {
+        "action": "PROVIDE_EVIDENCE"
+      },
+      "dispute_life_cycle_stage": "INQUIRY"
+    }
+  ],
+  "buyer_response_due_date": "2026-10-28T18:19:33.715Z",
+  "offer": {
+    "buyer_requested_amount": {
+      "currency_code": "USD",
+      "value": "7.00"
+    }
+  },
+  "refund_details": {
+    "allowed_refund_amount": {
+      "currency_code": "USD",
+      "value": "7.00"
+    }
+  },
+  "allowed_response_options": {
+    "accept_claim": {
+      "accept_claim_types": [
+        "REFUND"
+      ]
+    }
+  },
+  "links": [
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-TVH-10190665",
+      "rel": "self",
+      "method": "GET"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-TVH-10190665/accept-claim",
+      "rel": "accept_claim",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-TVH-10190665/send-message",
+      "rel": "send_message",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-TVH-10190665/escalate",
+      "rel": "escalate",
+      "method": "POST"
+    }
+  ]
+}

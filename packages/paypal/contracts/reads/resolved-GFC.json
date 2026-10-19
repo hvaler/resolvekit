@@ -1,0 +1,172 @@
+{
+  "dispute_id": "PP-R-GFC-10190664",
+  "create_time": "2026-10-08T18:18:44.365Z",
+  "update_time": "2026-10-08T18:27:03.605Z",
+  "disputed_transactions": [
+    {
+      "buyer_transaction_id": "4SH61288BH4705533",
+      "seller_transaction_id": "3B183641GA9842414",
+      "create_time": "2026-10-08T18:14:07.000Z",
+      "transaction_status": "REFUNDED",
+      "gross_amount": {
+        "currency_code": "USD",
+        "value": "8.00"
+      },
+      "buyer": {},
+      "seller": {
+        "merchant_id": "JWULA7T75ZA4Q"
+      },
+      "items": [
+        {
+          "item_name": "Prueba de puerta (CAPTURE)",
+          "item_description": "Prueba de puerta (CAPTURE)",
+          "item_quantity": "1",
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+          "item_type": "PRODUCT"
+        }
+      ],
+      "seller_protection_eligible": true,
+      "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+    }
+  ],
+  "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+  "status": "RESOLVED",
+  "dispute_amount": {
+    "currency_code": "USD",
+    "value": "8.00"
+  },
+  "dispute_state": "RESOLVED",
+  "dispute_outcome": {
+    "outcome_code": "RESOLVED_BUYER_FAVOUR",
+    "outcome_reason": "SELLER_ISSUED_REFUND",
+    "amount_refunded": {
+      "currency_code": "USD",
+      "value": "8.00"
+    }
+  },
+  "money_movements": [
+    {
+      "affected_party": "BUYER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "8.00"
+      },
+      "initiated_time": "2026-10-08T18:25:10.789Z",
+      "type": "CREDIT",
+      "reason": "DISPUTE_SETTLEMENT"
+    },
+    {
+      "affected_party": "SELLER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "8.00"
+      },
+      "initiated_time": "2026-10-08T18:25:10.789Z",
+      "type": "DEBIT",
+      "reason": "DISPUTE_SETTLEMENT"
+    },
+    {
+      "affected_party": "SELLER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "0.57"
+      },
+      "initiated_time": "2026-10-08T18:25:10.789Z",
+      "type": "DEBIT",
+      "reason": "DISPUTE_SETTLEMENT_FEE"
+    }
+  ],
+  "fund_movements": [
+    {
+      "party": "RECEIVER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "7.43"
+      },
+      "initiated_time": "2026-10-08T18:22:04.000Z",
+      "type": "DEBIT",
+      "reason": "HOLD_PLACED"
+    },
+    {
+      "party": "BUYER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "8.00"
+      },
+      "initiated_time": "2026-10-08T18:25:10.789Z",
+      "type": "CREDIT",
+      "reason": "DISPUTE_SETTLEMENT"
+    },
+    {
+      "party": "SELLER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "8.00"
+      },
+      "initiated_time": "2026-10-08T18:25:10.789Z",
+      "type": "DEBIT",
+      "reason": "DISPUTE_SETTLEMENT"
+    }
+  ],
+  "dispute_life_cycle_stage": "INQUIRY",
+  "dispute_channel": "INTERNAL",
+  "messages": [
+    {
+      "posted_by": "BUYER",
+      "time_posted": "2026-10-08T18:18:44.365Z",
+      "content": "<buyer message, 6 chars>"
+    }
+  ],
+  "extensions": {
+    "buyer_contacted_time": "2026-10-08T18:18:43.585Z"
+  },
+  "evidences": [
+    {
+      "evidence_type": "CREATE",
+      "notes": "<buyer message, 6 chars>",
+      "source": "SUBMITTED_BY_BUYER",
+      "date": "2026-10-08T18:18:44.365Z",
+      "dispute_life_cycle_stage": "INQUIRY"
+    },
+    {
+      "evidence_type": "OTHER",
+      "notes": "Prueba de puerta: se acepta la reclamación.",
+      "source": "SUBMITTED_BY_SELLER",
+      "date": "2026-10-08T18:25:10.892Z",
+      "action_info": {
+        "action": "ACCEPT_CLAIM",
+        "response_option": "REFUND"
+      },
+      "dispute_life_cycle_stage": "INQUIRY"
+    }
+  ],
+  "offer": {
+    "buyer_requested_amount": {
+      "currency_code": "USD",
+      "value": "8.00"
+    }
+  },
+  "refund_details": {
+    "allowed_refund_amount": {
+      "currency_code": "USD",
+      "value": "8.00"
+    },
+    "transactions": [
+      {
+        "id": "3H730369N6162525E",
+        "gross_amount": {
+          "currency_code": "USD",
+          "value": "8.00"
+        },
+        "create_time": "2026-10-08T18:25:10.000Z"
+      }
+    ]
+  },
+  "links": [
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-GFC-10190664",
+      "rel": "self",
+      "method": "GET"
+    }
+  ]
+}

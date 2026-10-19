@@ -1,0 +1,138 @@
+{
+  "dispute_id": "PP-R-PFB-10190726",
+  "create_time": "2026-10-09T05:35:12.943Z",
+  "update_time": "2026-10-09T05:38:33.826Z",
+  "disputed_transactions": [
+    {
+      "buyer_transaction_id": "7UM84860HS943271P",
+      "seller_transaction_id": "46T7061939746053X",
+      "create_time": "2026-10-09T05:31:48.000Z",
+      "transaction_status": "HELD",
+      "gross_amount": {
+        "currency_code": "USD",
+        "value": "1.37"
+      },
+      "invoice_number": "mm-sess-fd3e4898922c9d786560f9c2e218d599-settle",
+      "custom": "mm-sess-fd3e4898922c9d786560f9c2e218d599",
+      "buyer": {},
+      "seller": {
+        "merchant_id": "JWULA7T75ZA4Q"
+      },
+      "items": [
+        {
+          "item_name": "MeterMCP agent session (metered tool calls)",
+          "item_description": "MeterMCP agent session (metered tool calls)",
+          "item_quantity": "1",
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+          "item_type": "PRODUCT"
+        }
+      ],
+      "seller_protection_eligible": true,
+      "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+    }
+  ],
+  "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+  "status": "WAITING_FOR_SELLER_RESPONSE",
+  "dispute_amount": {
+    "currency_code": "USD",
+    "value": "1.37"
+  },
+  "dispute_state": "REQUIRED_ACTION",
+  "fund_movements": [
+    {
+      "party": "RECEIVER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "1.02"
+      },
+      "initiated_time": "2026-10-09T05:38:34.000Z",
+      "type": "DEBIT",
+      "reason": "HOLD_PLACED"
+    }
+  ],
+  "dispute_life_cycle_stage": "INQUIRY",
+  "dispute_channel": "INTERNAL",
+  "messages": [
+    {
+      "posted_by": "BUYER",
+      "time_posted": "2026-10-09T05:35:12.943Z",
+      "content": "<buyer message, 12 chars>"
+    }
+  ],
+  "extensions": {
+    "merchant_contacted": false,
+    "buyer_contacted_time": "2026-10-09T05:35:11.977Z"
+  },
+  "evidences": [
+    {
+      "evidence_type": "CREATE",
+      "notes": "<buyer message, 12 chars>",
+      "source": "SUBMITTED_BY_BUYER",
+      "date": "2026-10-09T05:35:12.943Z",
+      "dispute_life_cycle_stage": "INQUIRY"
+    },
+    {
+      "evidence_type": "PROOF_OF_FULFILLMENT",
+      "source": "REQUESTED_FROM_SELLER",
+      "date": "2026-10-09T05:38:33.826Z"
+    }
+  ],
+  "seller_response_due_date": "2026-10-29T05:35:12.943Z",
+  "offer": {
+    "buyer_requested_amount": {
+      "currency_code": "USD",
+      "value": "1.37"
+    }
+  },
+  "refund_details": {
+    "allowed_refund_amount": {
+      "currency_code": "USD",
+      "value": "1.37"
+    }
+  },
+  "allowed_response_options": {
+    "accept_claim": {
+      "accept_claim_types": [
+        "PARTIAL_REFUND",
+        "REFUND"
+      ]
+    },
+    "make_offer": {
+      "offer_types": [
+        "REFUND"
+      ]
+    }
+  },
+  "links": [
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-PFB-10190726",
+      "rel": "self",
+      "method": "GET"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-PFB-10190726/accept-claim",
+      "rel": "accept_claim",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-PFB-10190726/provide-evidence",
+      "rel": "provide_evidence",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-PFB-10190726/send-message",
+      "rel": "send_message",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-PFB-10190726/escalate",
+      "rel": "escalate",
+      "method": "POST"
+    },
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-PFB-10190726/make-offer",
+      "rel": "make_offer",
+      "method": "POST"
+    }
+  ]
+}

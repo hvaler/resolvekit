@@ -29,6 +29,7 @@
     "metermcp": "npm run start --workspace @resolvekit/metermcp",
     "demo:prepare": "node --env-file-if-exists=.env apps/server/scripts/demo-prepare.ts",
     "demo:check": "node --env-file-if-exists=.env apps/server/scripts/demo-check.ts",
+    "contract:read": "node --env-file-if-exists=.env apps/server/scripts/contract-read.ts",
     "demo-agent": "npm run demo-agent --workspace @resolvekit/metermcp --",
     "dev": "npm run dev --workspace @resolvekit/web",
     "build": "npm run build --workspace @resolvekit/web",

@@ -1,0 +1,61 @@
+{
+  "id": "3H730369N6162525E",
+  "amount": {
+    "currency_code": "USD",
+    "value": "8.00"
+  },
+  "note_to_payer": "8.0 USD; 2026-10-08 Credit has been processed and claim is now closed. Please refer Dispute ID PP-R-GFC-10190664. Thank you.",
+  "seller_payable_breakdown": {
+    "gross_amount": {
+      "currency_code": "USD",
+      "value": "8.00"
+    },
+    "paypal_fee": {
+      "currency_code": "USD",
+      "value": "0.00"
+    },
+    "net_amount": {
+      "currency_code": "USD",
+      "value": "8.00"
+    },
+    "net_amount_breakdown": [
+      {
+        "payable_amount": {
+          "currency_code": "EUR",
+          "value": "0.50"
+        },
+        "converted_amount": {
+          "currency_code": "USD",
+          "value": "0.57"
+        },
+        "exchange_rate": {
+          "source_currency": "EUR",
+          "target_currency": "USD",
+          "value": "1.131012791839615"
+        }
+      }
+    ],
+    "total_refunded_amount": {
+      "currency_code": "USD",
+      "value": "8.00"
+    }
+  },
+  "status": "COMPLETED",
+  "create_time": "2026-10-08T11:25:10-07:00",
+  "update_time": "2026-10-08T11:25:10-07:00",
+  "payer": {
+    "merchant_id": "JWULA7T75ZA4Q"
+  },
+  "links": [
+    {
+      "href": "https://api.sandbox.paypal.com/v2/payments/refunds/3H730369N6162525E",
+      "rel": "self",
+      "method": "GET"
+    },
+    {
+      "href": "https://api.sandbox.paypal.com/v2/payments/captures/3B183641GA9842414",
+      "rel": "up",
+      "method": "GET"
+    }
+  ]
+}
