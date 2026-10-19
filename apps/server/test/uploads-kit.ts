@@ -60,7 +60,8 @@ export function setup(o: { caps?: Record<string, number>; capsFile?: string; lim
     uploads: store,
     ...(o.storageBytes ? { uploadStorageBytes: o.storageBytes } : {}),
     ...(o.storedFileBytes ? { uploadStoredFileBytes: o.storedFileBytes } : {}),
-    limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 }, ...o.limits },
+    // The job polling of the PDF tests would hit the hosted API limiter (300 / 5 min) under a loaded full run.
+    limits: { api: { limit: 100_000, windowMs: 600_000 }, uploadsPerIp: { limit: 1000, windowMs: 600_000 }, ...o.limits },
   });
   return { app, calls, model: fm, people, lines, store, intents, bindings, counters, analyst };
 }
@@ -133,7 +134,7 @@ export function sendSetup(o: { maxSendBytes?: number } = {}) {
     intents,
     uploads: store,
     ...(o.maxSendBytes ? { paypalMaxSendBytes: o.maxSendBytes } : {}),
-    limits: { uploadsPerIp: { limit: 1000, windowMs: 600_000 } },
+    limits: { api: { limit: 100_000, windowMs: 600_000 }, uploadsPerIp: { limit: 1000, windowMs: 600_000 } },
   });
   /** The analysis of the case as `cookie` sees it now (the golden one, with `extra` sentences). */
   const analyse = async (cookie: string, extra: CaseAnalysis['sentences'] = []) => {

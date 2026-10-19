@@ -32,11 +32,12 @@ const uploadPdf = (app: App, cookie: string, bytes: Uint8Array, name: string) =>
   call(app, P, { body: bytes, type: 'application/pdf', cookie, headers: { 'x-upload-name': name } });
 /** Poll GET /uploads, as the web app does, until the upload's pages are read (or the job failed). */
 async function settled(app: App, cookie: string, id: string): Promise<PdfView> {
-  for (let i = 0; i < 2400; i++) {
-    const list = (await call(app, P, { cookie })).body.uploads as unknown as PdfView[];
-    const u = list.find((x) => x.id === id)!;
+  for (let i = 0; i < 800; i++) {
+    const r = await call(app, P, { cookie });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const u = (r.body.uploads as unknown as PdfView[]).find((x) => x.id === id)!;
     if (u.pdf.job.state === 'reviewing' || u.pdf.job.state === 'failed') return u;
-    await sleep(100);
+    await sleep(300);
   }
   throw new Error('the job did not finish');
 }
