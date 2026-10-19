@@ -27,8 +27,8 @@ Legend: **R** required, **O** optional; **Secret** = never commit, never log. "H
 | `RESOLVEKIT_ALLOWED_ORIGINS` | O, local | — | `http://localhost:5173`, `http://127.0.0.1:5173`, `:4173` variants | Local Origin allowlist (comma list) |
 | `TRUSTED_PROXY_HOPS` | O | — | 1 (Render blueprint: 2) | `X-Forwarded-For` entries to walk back |
 | `TRUSTED_PROXY_PEERS` | O | — | `private` | `private`, `any` or `none`: which peers may set `X-Forwarded-For` |
-| `ANALYSIS_CACHE_MAX_DAYS`, `ANALYSIS_CACHE_MAX_MB` | O | — | 30 / 100 | Analysis cache retention: an analysis not written or read for this many days is removed, and past this size the least recently used go first (swept at start and hourly; golden analyses never) |
-| `ANALYST_USAGE_MAX_DAYS`, `ANALYST_USAGE_MAX_MB` | O | — | 90 / 10 | `analyst-usage.jsonl` retention: lines older than this many days are dropped, then the oldest until it fits this size. The audit and send logs have no such setting: they never expire |
+| `ANALYSIS_CACHE_MAX_DAYS`, `ANALYSIS_CACHE_MAX_MB` | O | — | 30 / 100 | Analysis cache retention: an analysis not written or read for this many days is removed, and past this size the least recently used go first (swept at start and hourly; golden analyses and the most recently used one never). Floors: 1 day, 1 MiB; a value that is not a positive whole number gives the default |
+| `ANALYST_USAGE_MAX_DAYS`, `ANALYST_USAGE_MAX_MB` | O | — | 90 / 10 | `analyst-usage.jsonl` retention: lines older than this many days are dropped, then the oldest until it fits this size (floors: 1 day, 1 MiB). The audit and send logs have no such setting: they never expire |
 
 ### PayPal
 

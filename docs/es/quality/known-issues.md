@@ -72,7 +72,6 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 
 | Problema | Efecto | Fuente |
 |---|---|---|
-| Test intermitente del servidor | *size: five dense A4 pages…* en `uploads-pdf-recovery.test.ts` falló una vez con `429 RATE_LIMITED` bajo la carga de la suite completa; pasa solo | TR 19/10 |
 | Sin tests del DOM para la interfaz de subidas y PDF | `useUploads`, `PdfSelect`, `PdfReview`, `CasePage` y el cableado del borrado del borrador solo están cubiertos como funciones puras y por un recorrido manual en navegador | PDF |
 | Suites no ejecutadas en Linux / Render | Solo constan ejecuciones en Windows | TR |
 | Lote held-out de Groq no ejecutado | Se detuvo por cuota en el primer intento; 35 ejecuciones de caso sin ejecutar; reanudación prevista cuando se renueve la cuota gratuita | EV; `packages/analyst/evals/results/summary.md` |

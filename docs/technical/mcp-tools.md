@@ -82,8 +82,8 @@ Tool answers are MCP tool results whose text content is JSON; errors set `isErro
    observed, not documented. On the return page or a `get_balance` poll, MeterMCP re-reads the order, authorizes
    it and opens the session **only if** PayPal reports exactly one `CREATED` authorization for exactly the cap, for
    this session's order, with a future expiry (fail closed). `INSTRUMENT_DECLINED` or `DENIED` end the session;
-   `PENDING` waits; an authorization that arrives late is voided, and so is one still `PENDING` when the session is
-   closed before it opened.
+   `PENDING` waits; an authorization that arrives late is voided, and so is any authorization not yet final
+   (`PENDING`, or `CREATED` but refused by these checks) when the session is closed before it opened.
 3. Each paid call reserves its price in one SQLite transaction before the tool runs; concurrent calls cannot both
    take the last of the budget. Success is charged (`OK`), failure released (`FAILED`). Each call records the
    `sha256` of canonical `{session, n, tool, args}` and of the response.

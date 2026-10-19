@@ -39,7 +39,7 @@ vinculados son casos de demo y solo viven en el navegador.
 | Método | Ruta | Modo | Autenticación | Respuesta | Errores principales |
 |---|---|---|---|---|---|
 | GET, HEAD | `/healthz` | alojado | ninguna | Comprobación de salud de Render | 405 |
-| GET | `/api/health` | ambos | ninguna (las vinculaciones solo se listan para el espacio de trabajo del vendedor) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`: nombres de los almacenes cuyo archivo no se pudo leer al arrancar, solo cuando hay alguno) | — |
+| GET | `/api/health` | ambos | ninguna (las vinculaciones solo se listan para el espacio de trabajo del vendedor) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`, solo cuando un archivo de almacén no se pudo leer al arrancar: los nombres de los almacenes en modo local, `true` en modo alojado) | — |
 | GET | `/api/demo` | ambos | ninguna | alojado `{hosted:true, day, resetsAt, caps, reasons}`; local `{hosted:false}` | 405 |
 | GET | `/api/ops/status[?probe=models]` | alojado | Bearer de operaciones | Estado de PayPal, webhook activado/desactivado, cada vinculación verificada con una lectura fresca (puede rotar un caso usado), precalentamiento, topes, archivos de almacén ilegibles (`storage`, también en `problems`); con `probe=models`, una llamada mínima por cada modelo configurado | 404, 405, 429 |
 | GET | `/api/ops/agent-run/<run-id>` | alojado | Bearer de operaciones | Registro de la ejecución + recibo, para `demo:prepare --agent-run` | 400 `INVALID_RUN_ID`, 404 |

@@ -72,7 +72,6 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 
 | Issue | Effect | Source |
 |---|---|---|
-| Intermittent server test | *size: five dense A4 pages…* in `uploads-pdf-recovery.test.ts` failed once with `429 RATE_LIMITED` under full-suite load; passes alone | TR 19/10 |
 | No DOM tests for the upload and PDF UI | `useUploads`, `PdfSelect`, `PdfReview`, `CasePage` and draft-clear wiring are covered only as pure functions and by a manual browser walk-through | PDF |
 | Suites not run on Linux / Render | Only Windows runs recorded | TR |
 | Groq held-out batch not run | Stopped on quota at the first attempt; 35 case-runs not run; resume planned when the free quota renews | EV; `packages/analyst/evals/results/summary.md` |

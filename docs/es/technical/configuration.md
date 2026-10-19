@@ -27,8 +27,8 @@ logs. «Alojado» significa `RESOLVEKIT_MODE=hosted` (servidor) o `METERMCP_MODE
 | `RESOLVEKIT_ALLOWED_ORIGINS` | O, local | — | `http://localhost:5173`, `http://127.0.0.1:5173`, variantes con `:4173` | Lista de Origins permitidos en local (separada por comas) |
 | `TRUSTED_PROXY_HOPS` | O | — | 1 (blueprint de Render: 2) | Entradas de `X-Forwarded-For` que se recorren hacia atrás |
 | `TRUSTED_PROXY_PEERS` | O | — | `private` | `private`, `any` o `none`: qué pares pueden establecer `X-Forwarded-For` |
-| `ANALYSIS_CACHE_MAX_DAYS`, `ANALYSIS_CACHE_MAX_MB` | O | — | 30 / 100 | Retención de la caché de análisis: un análisis que no se escribe ni se lee durante estos días se elimina, y por encima de este tamaño se eliminan primero los usados hace más tiempo (barrido al arrancar y cada hora; nunca los golden) |
-| `ANALYST_USAGE_MAX_DAYS`, `ANALYST_USAGE_MAX_MB` | O | — | 90 / 10 | Retención de `analyst-usage.jsonl`: se descartan las líneas de más de esos días y después las más antiguas hasta que cabe en ese tamaño. Los logs de auditoría y de envíos no tienen este ajuste: no caducan nunca |
+| `ANALYSIS_CACHE_MAX_DAYS`, `ANALYSIS_CACHE_MAX_MB` | O | — | 30 / 100 | Retención de la caché de análisis: un análisis que no se escribe ni se lee durante estos días se elimina, y por encima de este tamaño se eliminan primero los usados hace más tiempo (barrido al arrancar y cada hora; nunca los golden ni el usado más recientemente). Mínimos: 1 día, 1 MiB; un valor que no es un número entero positivo da el valor por defecto |
+| `ANALYST_USAGE_MAX_DAYS`, `ANALYST_USAGE_MAX_MB` | O | — | 90 / 10 | Retención de `analyst-usage.jsonl`: se descartan las líneas de más de esos días y después las más antiguas hasta que cabe en ese tamaño (mínimos: 1 día, 1 MiB). Los logs de auditoría y de envíos no tienen este ajuste: no caducan nunca |
 
 ### PayPal
 

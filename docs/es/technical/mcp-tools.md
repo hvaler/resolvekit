@@ -84,7 +84,7 @@ establecen `isError: true` con un código `error`:
    19/10/2026, PayPal rechazó la cuenta business del vendedor («Estás entrando en la cuenta del vendedor…» (texto recortado en el registro)): observado, no documentado. En la página de retorno o en una consulta de `get_balance`, MeterMCP
    vuelve a leer el pedido, lo autoriza y abre la sesión **solo si** PayPal informa de exactamente una autorización
    `CREATED` por exactamente el tope, para el pedido de esta sesión, con una caducidad futura (falla cerrado).
-   `INSTRUMENT_DECLINED` o `DENIED` terminan la sesión; `PENDING` espera; una autorización que llega tarde se anula, igual que una que sigue en `PENDING` cuando la sesión se cierra antes de abrirse.
+   `INSTRUMENT_DECLINED` o `DENIED` terminan la sesión; `PENDING` espera; una autorización que llega tarde se anula, igual que cualquier autorización aún no definitiva (`PENDING`, o `CREATED` pero rechazada por estas comprobaciones) cuando la sesión se cierra antes de abrirse.
 3. Cada llamada de pago reserva su precio en una transacción SQLite antes de que se ejecute la herramienta; dos
    llamadas concurrentes no pueden quedarse ambas con lo último del presupuesto. El éxito se cobra (`OK`), el fallo
    se libera (`FAILED`). Cada llamada registra el `sha256` del `{session, n, tool, args}` canónico y de la respuesta.
