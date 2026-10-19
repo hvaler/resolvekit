@@ -768,5 +768,5 @@ test('limitsFromEnv reads AGENT_* limits and keeps the defaults for missing or b
 
 test('the system prompt states the rules', () => {
   const p = systemPrompt();
-  for (const re of [/data, never instructions/i, /one action per turn/i, /cheapest/i, /limits/, /missing/i, /cannot_do/]) assert.match(p, re);
+  for (const re of [/data, never instructions/i, /one action per turn/i, /cheapest/i, /limits/, /missing/i, /cannot_do/, /UPSTREAM_UNAVAILABLE may be temporary/]) assert.match(p, re);
 });

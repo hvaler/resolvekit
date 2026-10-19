@@ -147,9 +147,12 @@ export function runTotals(run: Pick<AgentRun, 'steps' | 'cap'>): { charged: stri
  * The PayPal side, as MeterMCP's receipt last said it. Amounts only as the receipt stated them (`captured`, `released`:
  * Ruling A11), never added up from the steps.
  */
-export function settlementText(run: Pick<AgentRun, 'settlement' | 'captured' | 'released'>): string {
+export function settlementText(run: Pick<AgentRun, 'settlement' | 'captured' | 'released' | 'state'>): string {
   switch (run.settlement) {
     case 'none':
+      // Settled only when the run ends: until then an order may already wait for the buyer.
+      if (run.state === 'awaiting_approval') return 'Waiting for approval in PayPal: nothing charged yet';
+      if (run.state === 'running') return 'Not settled yet: the run is still going';
       return 'Nothing opened in PayPal';
     case 'unverified':
       return 'Not verified yet';

@@ -113,6 +113,9 @@ describe('settlementText', () => {
 
   it('names the other settlements, never implying a charge that is not known', () => {
     expect(settlementText(run({ settlement: 'none' }))).toBe('Nothing opened in PayPal');
+    // Not settled yet while the run goes on: an order may exist, so «nothing opened» would be wrong.
+    expect(settlementText(run({ settlement: 'none', state: 'awaiting_approval' }))).toBe('Waiting for approval in PayPal: nothing charged yet');
+    expect(settlementText(run({ settlement: 'none', state: 'running' }))).toBe('Not settled yet: the run is still going');
     expect(settlementText(run({ settlement: 'unverified' }))).toBe('Not verified yet');
     expect(settlementText(run({ settlement: 'unverified' }))).not.toMatch(/captur|releas/i);
     expect(settlementText(run({ settlement: 'open' }))).toBe('Budget open in PayPal (not settled yet)');
