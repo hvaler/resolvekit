@@ -147,6 +147,14 @@ function sideProblem(docs: EvalCase['input']['documents'], s: unknown): NotEvalu
   return null;
 }
 
+/** How a contradiction is named in `notEvaluable`: its id, else its 1-based position (`#n`). */
+export const contradictionId = (k: Partial<Contradiction>, i: number) => str(k.id) || `#${i + 1}`;
+
+/** Why an output contradiction cannot be scored (checked in this order), or null when it can. */
+export function contradictionProblem(docs: EvalCase['input']['documents'], k: Partial<Contradiction>): NotEvaluableReason | null {
+  return sideProblem(docs, k.a) ?? sideProblem(docs, k.b) ?? (fieldOf(k as Contradiction) ? null : 'no_field');
+}
+
 const ratio = (n: number, of: number): Ratio => ({ n, of, rate: of ? n / of : null });
 const show = (s: { doc: string; value: string }) => `${s.doc} "${s.value}"`;
 const samePair = (x: string, y: string, p: string, q: string) => (x === p && y === q) || (x === q && y === p);
@@ -161,7 +169,7 @@ export function scoreStrict(c: EvalCase, a: CaseAnalysis | undefined): StrictSco
     return out;
   }
   const list = (Array.isArray(a.contradictions) ? a.contradictions : []) as Array<Partial<Contradiction>>;
-  const id = (k: Partial<Contradiction>, i: number) => str(k.id) || `#${i + 1}`;
+  const id = contradictionId;
   if (!c.conflicts) {
     out.unlabelled.push(c.name);
     list.forEach((k, i) => out.notEvaluable.push({ case: c.name, contradiction: id(k, i), reason: 'not_labelled' }));
@@ -171,7 +179,7 @@ export function scoreStrict(c: EvalCase, a: CaseAnalysis | undefined): StrictSco
   const scored: Array<{ field: ConflictField; a: Side; b: Side; matched: boolean }> = [];
   const unscoredPairs: Array<[string, string]> = [];
   list.forEach((k, i) => {
-    const reason = sideProblem(docs, k.a) ?? sideProblem(docs, k.b) ?? (fieldOf(k as Contradiction) ? null : 'no_field');
+    const reason = contradictionProblem(docs, k);
     if (reason) {
       out.notEvaluable.push({ case: c.name, contradiction: id(k, i), reason });
       unscoredPairs.push([str((k.a as Side | undefined)?.doc), str((k.b as Side | undefined)?.doc)]);
