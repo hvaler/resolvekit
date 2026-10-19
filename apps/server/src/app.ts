@@ -1173,9 +1173,11 @@ export function createApi(opts: ApiOptions): Api {
       // Hosted: the real disputes are listed only to the seller's workspace; everyone else runs them on the simulator.
       const live = await viewerLive(req);
       const bound = h.paypal === 'unconfigured' || !live ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
-      // A store file that could not be read: its name only here (the reason and where it was kept: the ops check, the log).
-      const storage = storageProblems().map((p) => p.store);
-      return json(200, { ...h, bound, bindings: Object.fromEntries(bound.map((k) => [k, bindingState(k)])), ...(storage.length ? { storage } : {}) });
+      // A store file that could not be read. Local: the stores' names. Hosted (public): only `true`, no names. The reason
+      // and where it was kept: the operator's check and the log.
+      const names = storageProblems().map((p) => p.store);
+      const storage = names.length ? (opts.gate ? true : names) : null;
+      return json(200, { ...h, bound, bindings: Object.fromEntries(bound.map((k) => [k, bindingState(k)])), ...(storage ? { storage } : {}) });
     }
     const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
