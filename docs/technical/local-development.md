@@ -15,7 +15,7 @@ cost money. Code at commit `fbe9621`.
 | PayPal sandbox app | optional | developer.paypal.com → Apps & Credentials → Sandbox. Without it every case runs on the simulator |
 | Gemini / Groq key | optional | Without a key the committed golden analyses of the demo cases still work; live analysis and the agent are off |
 
-Pinned dependency versions are in each `package.json` (for example React 18.3.1, Vite 5.4.21, Vitest 2.1.9,
+Pinned dependency versions are in each `package.json` (for example React 18.3.1, Vite 8.3.4, Vitest 5.0.5,
 AG Grid 33.3.2, `@modelcontextprotocol/sdk` 1.32.1, `pdfjs-dist` 6.4.299, `tesseract.js` 7.0.0).
 
 ## Install

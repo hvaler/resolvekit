@@ -15,8 +15,8 @@ modelos o cuestan dinero. Código en el commit `fbe9621`.
 | App de sandbox de PayPal | opcional | developer.paypal.com → Apps & Credentials → Sandbox. Sin ella, todos los casos funcionan sobre el simulador |
 | Clave de Gemini / Groq | opcional | Sin clave, los análisis de referencia (golden) confirmados en el repositorio para los casos de demo siguen funcionando; el análisis en directo y el agente quedan desactivados |
 
-Las versiones fijadas de las dependencias están en cada `package.json` (por ejemplo React 18.3.1, Vite 5.4.21,
-Vitest 2.1.9, AG Grid 33.3.2, `@modelcontextprotocol/sdk` 1.32.1, `pdfjs-dist` 6.4.299, `tesseract.js` 7.0.0).
+Las versiones fijadas de las dependencias están en cada `package.json` (por ejemplo React 18.3.1, Vite 8.3.4,
+Vitest 5.0.5, AG Grid 33.3.2, `@modelcontextprotocol/sdk` 1.32.1, `pdfjs-dist` 6.4.299, `tesseract.js` 7.0.0).
 
 ## Instalación
 

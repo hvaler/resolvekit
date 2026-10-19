@@ -23,7 +23,7 @@ mismo código.
 
 ### `apps/web` — el espacio de trabajo del comerciante (navegador)
 
-Vite 5 + React 18 + TypeScript + Tailwind CSS; AG Grid Community 33.3.2 para la bandeja de entrada y la tabla de
+Vite 8 + React 18 + TypeScript + Tailwind CSS; AG Grid Community 33.3.2 para la bandeja de entrada y la tabla de
 recibos.
 
 | Área | Archivos principales | Responsabilidad |

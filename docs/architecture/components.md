@@ -22,7 +22,7 @@ flowchart TB
 
 ### `apps/web` — the merchant workspace (browser)
 
-Vite 5 + React 18 + TypeScript + Tailwind CSS; AG Grid Community 33.3.2 for the inbox and the receipt grid.
+Vite 8 + React 18 + TypeScript + Tailwind CSS; AG Grid Community 33.3.2 for the inbox and the receipt grid.
 
 | Area | Main files | Responsibility |
 |---|---|---|
