@@ -51,8 +51,6 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
 | Pending | discarded after 24 hours if not confirmed |
 
 Known gaps:
-- A covered image is always re-encoded as PNG, so a large photo can exceed the 9.9 MB limit after covering even
-  if the JPEG was small. Use a screenshot or a smaller image.
 - A noisy multi-page PDF scan may not fit under 9.9 MB once rebuilt; choose fewer pages.
 - Barcodes and QR codes keep their content unless you cover the code itself.
 - Sending a PDF upload or pasted text to PayPal sandbox: **Pending** (only an image upload has been verified, 18/10/2026).

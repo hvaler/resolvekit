@@ -18,7 +18,7 @@ Code at commit `fbe9621`.
 | `intents.json` | JSON `{intents, sentDisputes}`, tmp + rename | Submission intents, including the approved notes text | `intents.ts` |
 | `audit-events.jsonl` | append JSONL, compacted above 4 MiB | Audit events: codes, hashes, ids, who and when; no document text | `intents.ts` |
 | `audit-events-sends.jsonl` | append JSONL, never compacted | Send events (started, sent, failed) | `intents.ts` |
-| `uploads/<workspaceId>/<uploadId>/` | `record.json`, `original.bin`, `sanitised.png` or `sanitised.pdf`, `page-<k>.png`, `page-<k>.orig.png`, `thumb-<n>.png` | Merchant uploads; the record is written last | `uploads/store.ts` |
+| `uploads/<workspaceId>/<uploadId>/` | `record.json`, `original.bin`, `sanitised.png`, `sanitised.jpg` (a covered photo) or `sanitised.pdf`, `page-<k>.png`, `page-<k>.orig.png`, `thumb-<n>.png` | Merchant uploads; the record is written last | `uploads/store.ts` |
 | `agent-runs/<run-id>.json` | JSON per run, tmp + rename | Agent run record: goal, steps with stated reasons, usage, settlement, receipt hash | `agent/runs.ts` |
 | `accounts.json` (hosted) | JSON | Workspaces, people (PayPal payer ids, display names, masked emails), passkey public keys, invite token **hashes** | `accounts.ts` |
 | `sellers.json` (hosted) | JSON | Seller merchant ids last confirmed for the bound disputes | `sellers.ts` |

@@ -34,7 +34,7 @@ import type { ActingPerson, Reservation } from '../app.ts';
 import { CASE_FILES } from '../documents.ts';
 import type { AuditEvent } from '../intents.ts';
 import { uploadDocuments, uploadTitle } from './documents.ts';
-import { UploadError, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
+import { UploadError, coverImage, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
 import { MAX_FILE_BYTES, MAX_REDACTS_PER_PAGE, MAX_STORAGE_BYTES, MAX_STORED_BYTES, MAX_TEXT_CHARS, MAX_UPLOADS_PER_CASE, PDF_MAX_BYTES, PDF_MAX_PAGES, PDF_MAX_SELECTED, PDF_RENDER_DPI, sizeLimitText } from './limits.ts';
 import { ocrPng } from './ocr.ts';
 import { CANNOT_START, OVER_BUDGET, TOO_BIG, TOO_SLOW, inspectPdf, pageTextHint } from './pdf-input.ts';
@@ -181,7 +181,7 @@ function capRefusal(r: { status: number; body: unknown }): Response {
   return res;
 }
 
-/** A stored image (PNG; an image's original may be a JPEG), never cached, never sniffed. */
+/** A stored image (PNG or, for a covered photo, JPEG; an original may be either), never cached, never sniffed. */
 function imageResponse(bytes: Uint8Array): Response {
   const type = bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg' : 'image/png';
   return new Response(bytes as BodyInit, { status: 200, headers: { 'content-type': type, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'content-disposition': 'inline' } });
@@ -478,17 +478,18 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     let patch: UploadPatch;
     let file: Uint8Array;
     if (rects) {
-      // Decoded once, one image at a time server-wide; the text is read again from the sanitised file.
+      // Decoded once, one image at a time server-wide; the text is read again from the sanitised file (a PNG, or a
+      // JPEG for a JPEG photo: as a lossless PNG a camera photo can outgrow the stored-file limit).
       const read = await oneImageAtATime(async () => {
-        const s1 = sanitiseImage(original, rects);
-        if (s1.png.length > maxStored) return tooBig('image');
-        if (!hasRoom(s1.png.length)) return storageFull();
-        return { s1, readLines: (await ocrPng(s1.png)).map((l) => l.text) };
+        const s1 = coverImage(original, rects);
+        if (s1.file.length > maxStored) return tooBig('image');
+        if (!hasRoom(s1.file.length)) return storageFull();
+        return { s1, readLines: (await ocrPng(s1.file)).map((l) => l.text) };
       });
       if (read instanceof Response) return read;
       const { s1, readLines } = read;
-      patch = { status: 'reviewing', rects, removals: [], readLines, sha256: s1.sha256, size: s1.png.length, mime: 'image/png' };
-      file = s1.png;
+      patch = { status: 'reviewing', rects, removals: [], readLines, sha256: s1.sha256, size: s1.file.length, mime: s1.mime };
+      file = s1.file;
     } else {
       const lines = textLines(redactText(new TextDecoder().decode(original), removals!));
       const doc = pastedTextPdf({ title: uploadTitle('text'), by: rec.uploadedBy.name.slice(0, 80), lines });

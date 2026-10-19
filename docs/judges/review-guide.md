@@ -134,7 +134,7 @@ In a Test Store case press **+ Add evidence**:
    evidence number (E7, E8…). Press **Re-run with AI** so the analysis can cite it.
 5. A sentence resting on a corrected or transcribed line asks for your explicit confirmation before it can be sent.
 
-PayPal receives only the sanitised file, named `E<n>-upload.png`, `E<n>-upload.pdf` or `E<n>-pasted.pdf`. A longer PDF
+PayPal receives only the sanitised file, named `E<n>-upload.png` (`.jpg` for a covered photo), `E<n>-upload.pdf` or `E<n>-pasted.pdf`. A longer PDF
 asks you to choose up to 5 pages. Covering the text next to a barcode or QR code does not hide what the code holds.
 Do not upload personal data you care about. Status: image upload sent to PayPal and recorded (18/10/2026); PDF and
 pasted-text sends to PayPal Pending. Details: [PDF review](../user-guide/pdf-review.md).

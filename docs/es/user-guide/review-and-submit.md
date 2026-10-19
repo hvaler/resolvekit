@@ -95,7 +95,7 @@ después, en su siguiente lectura, **solo si** queda alguna (a 19/10/2026 el cas
 | Destinatario | Qué | Cuándo |
 |---|---|---|
 | Proveedor del modelo de IA (Gemini, o Groq como respaldo) | Los documentos del caso tal como los monta el servidor (documentos sintéticos del caso, campos leídos de la disputa de PayPal y, para el caso de agente, el recibo de MeterMCP), el texto de tus subidas confirmadas; las frases editadas para las recomprobaciones | En cada análisis en directo y recomprobación |
-| PayPal (sandbox) | Tipo de evidencia; notas (solo frases con respaldo); transportista y seguimiento o referencia; PDF construidos en el servidor a partir de los documentos del caso (encabezados con «SYNTHETIC TEST DOCUMENT»); para el caso de agente, el PDF del recibo; las subidas tapadas que adjuntaste, con los nombres `E<n>-upload.png`, `E<n>-upload.pdf`, `E<n>-pasted.pdf` | Solo al pulsar **Submit evidence to PayPal** |
+| PayPal (sandbox) | Tipo de evidencia; notas (solo frases con respaldo); transportista y seguimiento o referencia; PDF construidos en el servidor a partir de los documentos del caso (encabezados con «SYNTHETIC TEST DOCUMENT»); para el caso de agente, el PDF del recibo; las subidas tapadas que adjuntaste, con los nombres `E<n>-upload.png` (`.jpg` si es una foto tapada), `E<n>-upload.pdf`, `E<n>-pasted.pdf` | Solo al pulsar **Submit evidence to PayPal** |
 | La auditoría del servidor de ResolveKit | Quién aprobó, cuándo, hash del contenido, id de petición, respuesta de PayPal; ningún texto de documentos | Al aprobar y al enviar |
 
 Tus credenciales de PayPal y las del servidor nunca llegan al navegador.

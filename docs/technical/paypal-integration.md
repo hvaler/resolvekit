@@ -79,7 +79,7 @@ file. ResolveKit sends `evidence_type`, `notes` (the supported sentences, ≤ 2 
 for proof of fulfillment, `evidence_info.tracking_info` with carrier and tracking (carrier `OTHER` with
 `carrier_name_other: "Digital delivery"` for the agent case). Files: the case's synthetic PDFs (headed «SYNTHETIC
 TEST DOCUMENT»), the real MeterMCP receipt PDF for the agent case when a session exists, and the selected confirmed
-uploads as `E<n>-upload.png`, `E<n>-upload.pdf` or `E<n>-pasted.pdf` (the original file name never leaves the
+uploads as `E<n>-upload.png` (`.jpg` for a covered photo), `E<n>-upload.pdf` or `E<n>-pasted.pdf` (the original file name never leaves the
 server). The bytes sent are exactly those whose `sha256` the approval covers.
 
 Documented: provide-evidence takes `multipart/form-data` with `evidence-file` parts; «In case the link is not

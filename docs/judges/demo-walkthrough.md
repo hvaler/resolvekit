@@ -92,8 +92,8 @@ timeout). It never appears on a case running on real PayPal.
    to let the analysis read it.
 7. If a supported sentence rests on a line you corrected or transcribed, it waits for **Confirm it reads … correctly**
    or **Confirm … is what the file shows (transcribed manually by …)**.
-8. In the review, *Attachments to send* lists your confirmed uploads. PayPal receives `E7-upload.png`,
-   `E7-upload.pdf` or `E7-pasted.pdf`, never your file name.
+8. In the review, *Attachments to send* lists your confirmed uploads. PayPal receives `E7-upload.png`
+   (`E7-upload.jpg` for a covered photo), `E7-upload.pdf` or `E7-pasted.pdf`, never your file name.
 
 ## D. The buying agent
 

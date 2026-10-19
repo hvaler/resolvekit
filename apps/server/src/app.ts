@@ -738,12 +738,14 @@ export function createApi(opts: ApiOptions): Api {
     const recs = st.uploads.filter((r) => selected.includes(r.id)).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId));
     for (const r of recs) {
       const bytes = uploads.sanitised(r.id);
-      // A screenshot goes as its PNG; pasted text and a PDF (rebuilt from its covered pages) as their stored sanitised.pdf.
-      if (!bytes || r.mime !== (r.kind === 'image' ? 'image/png' : 'application/pdf') || !r.sha256 || sha256(bytes) !== r.sha256) {
+      // A screenshot goes as its PNG (a covered photo as its JPEG); pasted text and a PDF (rebuilt from its covered
+      // pages) as their stored sanitised.pdf.
+      const type = r.kind === 'image' ? (r.mime === 'image/png' || r.mime === 'image/jpeg' ? r.mime : null) : r.mime === 'application/pdf' ? r.mime : null;
+      if (!bytes || !type || !r.sha256 || sha256(bytes) !== r.sha256) {
         return json(409, { error: 'UPLOAD_CHANGED', detail: `The stored file of ${r.evidenceId} no longer matches the one confirmed; it is not attached` });
       }
       const name = uploadFileName(r);
-      out.push({ file: { name, size: `${Math.max(1, Math.round(bytes.length / 1024))} KB`, sha256: r.sha256, source: 'upload' }, data: { name, type: r.mime, data: bytes } });
+      out.push({ file: { name, size: `${Math.max(1, Math.round(bytes.length / 1024))} KB`, sha256: r.sha256, source: 'upload' }, data: { name, type, data: bytes } });
     }
     const total = out.reduce((n, f) => n + f.data.data.length, 0);
     const limit = opts.paypalMaxSendBytes ?? PAYPAL_MAX_SEND_BYTES;

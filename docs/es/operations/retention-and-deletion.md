@@ -8,7 +8,7 @@ exportación de datos; una solicitud para borrar los datos de alguien la gestion
 (**Pendiente**: no hay procedimiento ni herramienta).
 
 **Lo que guarda PayPal queda fuera de ResolveKit.** La evidencia enviada con provide-evidence (notas, seguimiento,
-archivos llamados `E<n>-upload.png`, `E<n>-upload.pdf` o `E<n>-pasted.pdf`) queda en el registro de la disputa en
+archivos llamados `E<n>-upload.png` (`.jpg` si es una foto tapada), `E<n>-upload.pdf` o `E<n>-pasted.pdf`) queda en el registro de la disputa en
 PayPal, y los pedidos, autorizaciones y capturas de MeterMCP quedan en PayPal. Borrar algo en ResolveKit no lo elimina
 de PayPal.
 
@@ -17,7 +17,7 @@ de PayPal.
 | Estado | Qué existe | Cómo termina |
 |---|---|---|
 | `pending`, `reviewing` | Archivo original, renders/miniaturas (PDF), el texto leído, el registro. Solo quienes pueden editar ven archivos y texto; los demás ven metadatos con `restricted: true` | **Confirm as evidence** (confirmar como evidencia), **Discard** (descartar) o caducidad: 24 h después de subirla se descarta la próxima vez que se toca y con el barrido horario |
-| `confirmed` (`E<n>`) | El archivo saneado (PNG recodificado, o un PDF reconstruido solo con imágenes de las páginas tapadas), sus líneas y el registro. El original y los renders sin tapar se descartan al confirmar | **Delete** (borrar; owners y miembros completos), o archivado cuando el caso pasa a la siguiente disputa. Sin límite de tiempo en otro caso |
+| `confirmed` (`E<n>`) | El archivo saneado (PNG recodificado, o JPEG si es una foto tapada, o un PDF reconstruido solo con imágenes de las páginas tapadas), sus líneas y el registro. El original y los renders sin tapar se descartan al confirmar | **Delete** (borrar; owners y miembros completos), o archivado cuando el caso pasa a la siguiente disputa. Sin límite de tiempo en otro caso |
 | `discarded` | Solo el registro (metadatos): sin archivo ni texto | Se conserva |
 | `deleted` | Solo el registro (metadatos) | Se conserva |
 | `archived` | Solo el registro (el caso rotó a otra disputa) | Se conserva. Si falló la escritura del archivado, los archivos y el texto se quedan y la subida sigue `confirmed` para la disputa antigua (no se reintenta: problema conocido) |

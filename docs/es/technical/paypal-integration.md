@@ -81,7 +81,7 @@ archivo. ResolveKit envía `evidence_type`, `notes` (las frases respaldadas, ≤
 para la prueba de entrega, `evidence_info.tracking_info` con transportista y seguimiento (transportista `OTHER` con
 `carrier_name_other: "Digital delivery"` para el caso del agente). Archivos: los PDF sintéticos del caso (con la
 cabecera «SYNTHETIC TEST DOCUMENT»), el PDF real del recibo de MeterMCP para el caso del agente cuando existe una
-sesión, y las subidas confirmadas seleccionadas como `E<n>-upload.png`, `E<n>-upload.pdf` o `E<n>-pasted.pdf` (el
+sesión, y las subidas confirmadas seleccionadas como `E<n>-upload.png` (`.jpg` si es una foto tapada), `E<n>-upload.pdf` o `E<n>-pasted.pdf` (el
 nombre de archivo original nunca sale del servidor). Los bytes enviados son exactamente aquellos cuyo `sha256` cubre
 la aprobación.
 

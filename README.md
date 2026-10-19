@@ -81,8 +81,8 @@ Step by step with every control name: [demo walkthrough](docs/judges/demo-walkth
 In the sandbox evaluation, **+ Add evidence** takes a PNG or JPEG screenshot (5 MiB, at most 4096 px a side and
 8,294,400 pixels), a PDF (10 MiB, 30 pages, of which you keep up to 5) or pasted Latin-1 text. Everything is read on
 the ResolveKit server (local OCR). Nothing goes to an AI model or PayPal until you cover what must not be shared, read
-it again from the covered file and **Confirm as evidence**. PayPal receives only the sanitised file: a PNG with the
-covers burned in, an image-only PDF rebuilt from the covered pages, or a PDF made from the pasted text. Your file
+it again from the covered file and **Confirm as evidence**. PayPal receives only the sanitised file: a PNG (a JPEG
+for a photo) with the covers burned in, an image-only PDF rebuilt from the covered pages, or a PDF made from the pasted text. Your file
 name stays on the server. Status: images Verified in sandbox (18/10/2026); PDF and pasted-text sends to PayPal Pending.
 Guide: [cases and evidence](docs/user-guide/cases-and-evidence.md) · [PDF review](docs/user-guide/pdf-review.md).
 

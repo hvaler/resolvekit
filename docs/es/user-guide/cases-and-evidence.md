@@ -111,7 +111,7 @@ muestran a quienes pueden editarla.
 |---|---|---|
 | El servidor de ResolveKit | El archivo original, mientras está pendiente o en revisión; después, solo el archivo tapado (saneado) y su texto | Al subirlo |
 | El proveedor del modelo de IA (Google Gemini o Groq) | El texto de la evidencia confirmada (leído del archivo tapado, con tus correcciones y quién las hizo), con su número de evidencia, un título genérico («Uploaded screenshot», «Pasted text», «Uploaded PDF») y «Uploaded by <name>». Nunca el nombre del archivo, nunca el original | En el siguiente análisis que la incluya, y en las recomprobaciones |
-| PayPal (sandbox) | El archivo tapado que adjuntas, nombrado solo con su número de evidencia: `E7-upload.png` (imagen), `E8-upload.pdf` (PDF), `E9-pasted.pdf` (texto pegado) | Solo cuando envías una respuesta que lo adjunta |
+| PayPal (sandbox) | El archivo tapado que adjuntas, nombrado solo con su número de evidencia: `E7-upload.png` (imagen; `E7-upload.jpg` si es una foto tapada), `E8-upload.pdf` (PDF), `E9-pasted.pdf` (texto pegado) | Solo cuando envías una respuesta que lo adjunta |
 
 El texto se lee en el servidor (OCR local), no lo lee un proveedor de modelos ni PayPal. No subas datos personales que
 te importen: el lado de PayPal es un sandbox y la app es una demo.
@@ -135,7 +135,7 @@ te importen: el lado de PayPal es un sandbox y la app es una demo.
 | «Pasted text up to 20000 characters» | Acórtalo |
 | «A case takes at most 10 uploads; discard or delete one first» | Descarta o borra una |
 | «An upload can be redacted 5 times; discard it and upload it again» | Descártala y empieza de nuevo |
-| Archivo saneado demasiado grande | Sube una captura o una imagen más pequeña (las imágenes tapadas se guardan como PNG) |
+| Archivo saneado demasiado grande | Sube una captura o una imagen más pequeña (una captura tapada se guarda como PNG; una foto tapada, como JPEG) |
 | «A reviewer edits only their own uploads» | Pídeselo a quien la subió, al Owner o a un Member |
 | «The case moved to another PayPal dispute since this was uploaded…» | Vuelve a subirla para la disputa actual |
 | «The demo has no room for more uploads right now» | Inténtalo más tarde |

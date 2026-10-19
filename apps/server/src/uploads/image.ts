@@ -1,9 +1,10 @@
 /**
  * Decode and sanitise an uploaded image (PNG or JPEG, told apart by magic bytes only).
  *
- * The size is read from the header and checked before any pixel is decoded. The sanitised image is a new PNG
- * encoded from the decoded pixels, with the covered rectangles set to opaque black: no metadata, no ancillary
- * chunks, none of the original bytes.
+ * The size is read from the header and checked before any pixel is decoded. The sanitised image is a new file
+ * encoded from the decoded pixels, with the covered rectangles set to opaque black before encoding: no metadata, no
+ * ancillary chunks or segments, none of the original bytes. It is a PNG, except that a covered JPEG photo is stored
+ * as a fresh JPEG (see {@link coverImage}).
  */
 import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
@@ -121,11 +122,11 @@ export function decodeImage(bytes: Uint8Array): { kind: 'png' | 'jpeg'; width: n
 }
 
 /**
- * Decode, make every pixel opaque (composited onto white: nothing hides under transparency), burn the rectangles in
- * as opaque black (clipped to the image; empty ones ignored) and encode a fresh PNG.
+ * Decode, make every pixel opaque (composited onto white: nothing hides under transparency) and burn the rectangles
+ * in as opaque black (clipped to the image; empty ones ignored). The encoder only ever sees these pixels.
  */
-export function sanitiseImage(bytes: Uint8Array, rects: readonly Rect[]): { png: Uint8Array; width: number; height: number; sha256: string } {
-  const { width, height, rgba } = decodeImage(bytes);
+function coveredPixels(bytes: Uint8Array, rects: readonly Rect[]): { kind: 'png' | 'jpeg'; width: number; height: number; rgba: Uint8Array } {
+  const { kind, width, height, rgba } = decodeImage(bytes);
   for (let i = 0; i < rgba.length; i += 4) {
     const a = rgba[i + 3]!;
     if (a === 255) continue;
@@ -147,8 +148,39 @@ export function sanitiseImage(bytes: Uint8Array, rects: readonly Rect[]): { png:
       }
     }
   }
-  const png = new Uint8Array(PNG.sync.write({ width, height, data: Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength) } as PNG));
+  return { kind, width, height, rgba };
+}
+
+const encodePng = (width: number, height: number, rgba: Uint8Array) =>
+  new Uint8Array(PNG.sync.write({ width, height, data: Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength) } as PNG));
+
+/** The covered pixels as a fresh PNG: what OCR reads and what a PDF page is stored as. */
+export function sanitiseImage(bytes: Uint8Array, rects: readonly Rect[]): { png: Uint8Array; width: number; height: number; sha256: string } {
+  const { width, height, rgba } = coveredPixels(bytes, rects);
+  const png = encodePng(width, height, rgba);
   return { png, width, height, sha256: createHash('sha256').update(png).digest('hex') };
+}
+
+/**
+ * Quality of a covered photo re-encoded as JPEG. 90 is visually lossless for camera photos and keeps small print
+ * legible for OCR and for PayPal's reviewers, and the file stays about the size of the uploaded photo (cameras save at
+ * about 90 to 95), so a photo within the 5 MiB upload limit stays well under the 9.9 MB stored-file limit; as a
+ * lossless PNG the same photo can be three to five times larger and be refused.
+ */
+export const COVERED_JPEG_QUALITY = 90;
+
+/**
+ * An uploaded image with the rectangles covered, as the file to store and send: a JPEG photo becomes a fresh JPEG
+ * (baseline, JFIF header only: no EXIF, comments or other segments of the upload), a PNG a fresh PNG (screenshots stay
+ * lossless). The covered pixels are black before encoding, so nothing of what was under them reaches the file.
+ */
+export function coverImage(bytes: Uint8Array, rects: readonly Rect[]): { file: Uint8Array; mime: 'image/png' | 'image/jpeg'; width: number; height: number; sha256: string } {
+  const { kind, width, height, rgba } = coveredPixels(bytes, rects);
+  const file =
+    kind === 'jpeg'
+      ? new Uint8Array(jpeg.encode({ data: Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength), width, height }, COVERED_JPEG_QUALITY).data)
+      : encodePng(width, height, rgba);
+  return { file, mime: kind === 'jpeg' ? 'image/jpeg' : 'image/png', width, height, sha256: createHash('sha256').update(file).digest('hex') };
 }
 
 let slot: Promise<unknown> = Promise.resolve();

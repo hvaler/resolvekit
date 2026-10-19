@@ -15,7 +15,6 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 
 | Problema | Efecto | Fuente |
 |---|---|---|
-| Las fotos tapadas se convierten en PNG grandes | Toda imagen tapada se guarda como PNG sin pérdida; un JPEG de cámara de ~3.4 MB puede convertirse en ~11.5 MB y ser rechazado por el tope de 9.9 MB por archivo guardado. Posible solución: mantener JPEG para las fotos | P1; `apps/server/src/uploads/routes.ts` |
 | Un archivado fallido nunca se reintenta | Si falla la escritura de un registro archivado en la rotación, la subida sigue `confirmed` para la disputa antigua (en ninguna entrada) y sus archivos y texto se quedan en disco, contando para los 300 MiB; el barrido horario no lo reintenta | P1; `uploads/store.ts` (`archiveCase`, `sweep`) |
 | `closeOcr()` no tiene límite de tiempo | Se espera dentro de la franja pesada antes de que arranque un hijo de PDF; un arranque del worker que nunca terminara retendría la franja hasta un reinicio (el presupuesto de 30 s para arrancar el OCR lo acota por el lado del OCR) | PDF; `uploads/pdf-input.ts` |
 | Memoria en Render con un PDF de 5 páginas no medida | Se desconoce el pico de memoria en la instancia de 512 MB para la ruta de PDF; una lectura anterior de una imagen de 8 MP llegó a ~395 MB (seguimiento P1, 17/10/2026). Se sugiere `MALLOC_ARENA_MAX=2`, no probado | P1, PDF (ops) |

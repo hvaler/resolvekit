@@ -18,7 +18,7 @@ servidor de base de datos. Código en el commit `fbe9621`.
 | `intents.json` | JSON `{intents, sentDisputes}`, tmp + rename | Intents de envío, incluido el texto de las notas aprobadas | `intents.ts` |
 | `audit-events.jsonl` | JSONL de anexado, compactado por encima de 4 MiB | Eventos de auditoría: códigos, hashes, ids, quién y cuándo; sin texto de documentos | `intents.ts` |
 | `audit-events-sends.jsonl` | JSONL de anexado, nunca compactado | Eventos de envío (iniciado, enviado, fallido) | `intents.ts` |
-| `uploads/<workspaceId>/<uploadId>/` | `record.json`, `original.bin`, `sanitised.png` o `sanitised.pdf`, `page-<k>.png`, `page-<k>.orig.png`, `thumb-<n>.png` | Subidas del comerciante; el registro se escribe el último | `uploads/store.ts` |
+| `uploads/<workspaceId>/<uploadId>/` | `record.json`, `original.bin`, `sanitised.png`, `sanitised.jpg` (una foto tapada) o `sanitised.pdf`, `page-<k>.png`, `page-<k>.orig.png`, `thumb-<n>.png` | Subidas del comerciante; el registro se escribe el último | `uploads/store.ts` |
 | `agent-runs/<run-id>.json` | JSON por ejecución, tmp + rename | Registro de la ejecución del agente: objetivo, pasos con los motivos declarados, uso, liquidación, hash del recibo | `agent/runs.ts` |
 | `accounts.json` (alojado) | JSON | Espacios de trabajo, personas (payer ids de PayPal, nombres visibles, correos enmascarados), claves públicas de passkeys, **hashes** de los tokens de invitación | `accounts.ts` |
 | `sellers.json` (alojado) | JSON | Merchant ids de vendedor confirmados por última vez para las disputas vinculadas | `sellers.ts` |

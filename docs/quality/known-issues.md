@@ -15,7 +15,6 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 
 | Issue | Effect | Source |
 |---|---|---|
-| Covered photos become large PNGs | Every covered image is stored as a lossless PNG; a ~3.4 MB camera JPEG can become ~11.5 MB and be refused by the 9.9 MB stored-file cap. Candidate fix: keep JPEG for photos | P1; `apps/server/src/uploads/routes.ts` |
 | A failed archive is never retried | If writing an archived record fails at rotation, the upload stays `confirmed` for the old dispute (in no input) and its files and text stay on disk, counting toward the 300 MiB; the hourly sweep does not retry it | P1; `uploads/store.ts` (`archiveCase`, `sweep`) |
 | `closeOcr()` has no time limit | It is awaited inside the heavy slot before a PDF child starts; a worker start that never finished would hold the slot until a restart (the 30 s OCR start budget bounds it on the OCR side) | PDF; `uploads/pdf-input.ts` |
 | Memory on Render with a 5-page PDF not measured | Peak memory on the 512 MB instance unknown for the PDF path; an earlier 8 MP image reading peaked ~395 MB (P1 follow-up, 17/10/2026). `MALLOC_ARENA_MAX=2` suggested, not tried | P1, PDF (ops) |

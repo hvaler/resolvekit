@@ -7,7 +7,7 @@ What ResolveKit and MeterMCP keep, for how long, and what deletes it. Everything
 request to erase someone's data is handled by the operator by hand on the disk (**Pending**: no procedure or tool).
 
 **What PayPal keeps is outside ResolveKit.** Evidence sent with provide-evidence (notes, tracking, files named
-`E<n>-upload.png`, `E<n>-upload.pdf` or `E<n>-pasted.pdf`) stays in PayPal's dispute record, and MeterMCP's orders,
+`E<n>-upload.png` (`.jpg` for a covered photo), `E<n>-upload.pdf` or `E<n>-pasted.pdf`) stays in PayPal's dispute record, and MeterMCP's orders,
 authorizations and captures stay at PayPal. Deleting anything in ResolveKit does not remove it from PayPal.
 
 ## Merchant uploads, by state
@@ -15,7 +15,7 @@ authorizations and captures stay at PayPal. Deleting anything in ResolveKit does
 | State | What exists | How it ends |
 |---|---|---|
 | `pending`, `reviewing` | Original file, renders/thumbnails (PDF), the read text, the record. Only people who can edit see files and text; others see `restricted: true` metadata | **Confirm as evidence**, **Discard**, or expiry: 24 h after upload it is discarded when next touched and by the hourly sweep |
-| `confirmed` (`E<n>`) | The sanitised file (re-encoded PNG, or a rebuilt image-only PDF of covered pages), its lines and the record. The original and uncovered renders are dropped at confirm | **Delete** (owners and full members), or archive when the case moves to the next dispute. No time limit otherwise |
+| `confirmed` (`E<n>`) | The sanitised file (re-encoded PNG, or JPEG for a covered photo, or a rebuilt image-only PDF of covered pages), its lines and the record. The original and uncovered renders are dropped at confirm | **Delete** (owners and full members), or archive when the case moves to the next dispute. No time limit otherwise |
 | `discarded` | Record (metadata) only: no file, no text | Kept |
 | `deleted` | Record (metadata) only | Kept |
 | `archived` | Record only (the case rotated to another dispute) | Kept. If the archive write failed, files and text stay and the upload remains `confirmed` for the old dispute (not retried: known issue) |

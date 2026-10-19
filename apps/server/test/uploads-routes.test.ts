@@ -12,7 +12,7 @@ import { standardScript } from '../../../packages/analyst/test/fake.ts';
 import { AnalystService, InputPins } from '../src/analysis.ts';
 import { createApi, createApp, type ActingPerson } from '../src/app.ts';
 import { toNodeListener } from '../src/node.ts';
-import { sanitiseImage, type Rect } from '../src/uploads/image.ts';
+import { coverImage, sanitiseImage, type Rect } from '../src/uploads/image.ts';
 import { MAX_FILE_BYTES, MAX_STORED_BYTES, PAYPAL_MAX_SEND_BYTES } from '../src/uploads/limits.ts';
 import { closeOcr, ocrPng } from '../src/uploads/ocr.ts';
 import { canDeleteUpload, canEditUpload } from '../src/uploads/permissions.ts';
@@ -104,21 +104,36 @@ test("a reviewer of the seller's workspace uploads a PNG; another workspace and 
   assert.deepEqual(new Uint8Array(await img.arrayBuffer()), fixture);
 });
 
-test('a JPEG upload is accepted, and its sanitised file is a fresh PNG', TIMEOUT, async () => {
-  const { app, people } = setup();
+/** The tracking screenshot saved as a JPEG photo would be (quality 95). */
+const fixtureJpeg = () => {
+  const p = PNG.sync.read(Buffer.from(fixture));
+  return new Uint8Array(jpeg.encode({ data: p.data, width: p.width, height: p.height }, 95).data);
+};
+
+test('a JPEG upload is accepted, and its sanitised file is a fresh JPEG (a photo stays a photo), read again from that file', TIMEOUT, async () => {
+  const { app, people, store } = setup();
   const cookie = people.fullMember();
-  const w = 64, h = 32;
-  const jpg = new Uint8Array(jpeg.encode({ data: Buffer.alloc(w * h * 4, 255), width: w, height: h }, 90).data);
+  const jpg = fixtureJpeg();
   const r = await uploadPng(app, cookie, jpg, 'image/jpeg');
   assert.equal(r.status, 201, JSON.stringify(r.body));
-  const red = await call(app, `${P}/${r.body.upload.id}/redact`, { body: { rects: [{ x: 0, y: 0, w: 10, h: 10 }] }, cookie });
+  const box = await trackingRect();
+  const red = await call(app, `${P}/${r.body.upload.id}/redact`, { body: { rects: [box] }, cookie });
   assert.equal(red.status, 200, JSON.stringify(red.body));
+  assert.ok(red.body.readLines.some((l) => l.trim().length > 0), JSON.stringify(red.body.readLines));
+  assert.ok(!red.body.readLines.some((l) => l.includes('1Z999')), JSON.stringify(red.body.readLines));
+  const expected = coverImage(jpg, [box]);
+  assert.equal(expected.mime, 'image/jpeg');
+  assert.equal(red.body.upload.sha256, expected.sha256);
+  assert.equal(store.get(r.body.upload.id)!.mime, 'image/jpeg');
   const original = await app(req(`${P}/${r.body.upload.id}/image?v=original`, { cookie }));
   assert.equal(original.headers.get('content-type'), 'image/jpeg');
   const img = await app(req(`${P}/${r.body.upload.id}/image?v=sanitised`, { cookie }));
-  assert.equal(img.headers.get('content-type'), 'image/png');
-  const png = PNG.sync.read(Buffer.from(await img.arrayBuffer()));
-  assert.deepEqual([...png.data.subarray(0, 4)], [0, 0, 0, 255]);
+  assert.equal(img.headers.get('content-type'), 'image/jpeg');
+  const bytes = new Uint8Array(await img.arrayBuffer());
+  assert.deepEqual(bytes, expected.file);
+  const d = jpeg.decode(bytes, { useTArray: true });
+  const at = ((box.y + 2) * d.width + box.x + 2) * 4;
+  assert.ok([...d.data.subarray(at, at + 3)].every((v) => v <= 24));
 });
 
 test("the upload's content reaches no external service before confirmation", TIMEOUT, async () => {
@@ -1040,6 +1055,25 @@ test('the bytes sent are the approved ones', TIMEOUT, async () => {
   assert.equal(sha(await fileBytes(png)), red.body.upload.sha256);
   assert.equal(i.files.find((f) => f.name === 'E7-upload.png')!.sha256, red.body.upload.sha256);
   assert.deepEqual(await fileBytes(png), s.store.sanitised(up.body.upload.id));
+});
+
+test('a covered JPEG photo is sent as its stored JPEG: E7-upload.jpg, image/jpeg, the approved bytes', TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const up = await uploadPng(s.app, cookie, fixtureJpeg(), 'image/jpeg');
+  const red = await call(s.app, `${P}/${up.body.upload.id}/redact`, { body: { rects: [await trackingRect()] }, cookie });
+  const conf = await call(s.app, `${P}/${up.body.upload.id}/confirm`, { body: { lines: red.body.readLines, sha256: red.body.upload.sha256 }, cookie });
+  assert.equal(conf.status, 200, JSON.stringify(conf.body));
+  await s.analyse(cookie);
+  const i = await s.approved(cookie, { attachments: [up.body.upload.id] });
+  const r = await s.send(cookie, i.id);
+  assert.equal(r.status, 202, JSON.stringify(r.body));
+  const files = s.sends[0]!.getAll('evidence-file') as File[];
+  const photo = files.find((f) => f.name === 'E7-upload.jpg')!;
+  assert.equal(photo.type, 'image/jpeg');
+  assert.equal(sha(await fileBytes(photo)), red.body.upload.sha256);
+  assert.deepEqual(await fileBytes(photo), s.store.sanitised(up.body.upload.id));
+  assert.ok(!files.some((f) => f.name.endsWith('.png') && f.name.startsWith('E7')));
 });
 
 test('a stored upload whose bytes no longer match the approval is not sent (UPLOAD_CHANGED); an intent stored without file hashes must be composed again', TIMEOUT, async () => {

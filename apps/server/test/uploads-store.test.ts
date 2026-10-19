@@ -46,6 +46,18 @@ test('confirming drops the original: original() is null and the file is gone fro
   assert.throws(() => s.update(NONE, {}), (e) => e instanceof UploadError && e.code === 'NOT_FOUND' && e.status === 404);
 });
 
+test('a covered photo is stored as sanitised.jpg, read back, and removed with the upload', () => {
+  const dir = tmp();
+  const s = new UploadStore({ dir });
+  const r = s.create(base(), bytes(10));
+  s.update(r.id, { status: 'reviewing', mime: 'image/jpeg', size: 4, sha256: 'x' }, { sanitised: bytes(4, 2) });
+  assert.equal(existsSync(join(dir, 'ws1', r.id, 'sanitised.jpg')), true);
+  assert.equal(existsSync(join(dir, 'ws1', r.id, 'sanitised.png')), false);
+  assert.deepEqual([...new UploadStore({ dir }).sanitised(r.id)!], [...bytes(4, 2)]);
+  s.update(r.id, { status: 'discarded' });
+  assert.equal(existsSync(join(dir, 'ws1', r.id, 'sanitised.jpg')), false);
+});
+
 test('sweep expires pending uploads after 24 h and removes their original, page images and text', () => {
   const dir = tmp();
   let t = new Date('2026-10-17T10:00:00Z');

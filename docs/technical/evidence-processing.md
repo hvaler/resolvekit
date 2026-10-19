@@ -14,7 +14,7 @@ receive, without anything leaving the server before the merchant has covered wha
 - **The merchant decides what to cover.** Nothing is covered automatically.
 - **One sanitised version** serves the analyst and the PayPal attachment.
 - **Logs carry ids and codes only**, never file names, upload text or bytes. The file name never leaves the server:
-  PayPal receives `E<n>-upload.png`, `E<n>-upload.pdf` or `E<n>-pasted.pdf`; the model sees the titles «Uploaded
+  PayPal receives `E<n>-upload.png` (`.jpg` for a covered photo), `E<n>-upload.pdf` or `E<n>-pasted.pdf`; the model sees the titles «Uploaded
   screenshot», «Uploaded PDF», «Pasted text».
 
 ## Dependencies and compatibility
@@ -39,15 +39,19 @@ deadline applies. Linux test runs and a memory measurement on Render with a 5-pa
 
 1. `POST /api/cases/:id/uploads` with the raw bytes and `x-upload-name`. The type is told by magic bytes only; the
    size is read from the header and checked before any pixel is decoded.
-2. Decoded one image at a time server-wide. A sanitised PNG is encoded from the decoded pixels: no metadata, no
-   ancillary chunks, none of the original bytes.
+2. Decoded one image at a time server-wide. A sanitised file is encoded from the decoded pixels: no metadata, no
+   ancillary chunks or segments, none of the original bytes.
 3. OCR reads the sanitised image (downscaled for OCR only above 4 MP).
 4. The merchant covers rectangles (`POST …/redact`, at most 5 passes); covers are burned in as opaque black and the
    image is read again.
 5. The merchant reviews the lines, corrects any, and confirms (`POST …/confirm`) with the `sha256` of the sanitised
    file reviewed; a mismatch refuses (`UPLOAD_CHANGED`). The original is dropped.
 
-Covered images are always stored as PNG (a JPEG photo becomes a larger PNG; it must still fit the 9.9 MB limit).
+A covered PNG is stored as a fresh PNG (lossless, for screenshots). A covered JPEG photo is stored as a fresh baseline
+JPEG at quality 90 (JFIF header only: no EXIF or other segments), so it stays about the size of the photo and under
+the 9.9 MB limit; as a lossless PNG a camera photo can grow three to five times. The covers are burned in before
+encoding, so nothing under them reaches the file. OCR reads that stored file. Sending a covered JPEG to PayPal is
+tested locally only (**Pending** in the sandbox).
 
 ### PDF
 
@@ -104,7 +108,7 @@ kill has not been measured on Linux against a real decompression bomb (follow-up
 | Confirmation of dependent sentences | A sentence resting on a corrected or transcribed line needs the person's explicit confirmation (`confirmedCorrections`, ≤ 50 `S1@E7.l2` pairs) before it can be sent |
 | Merchant notes | An explanation not in the document is a merchant note, never documentary evidence |
 | Attachments | Only confirmed uploads of this workspace, case and active dispute; ≤ 10; in evidence order; bytes re-hashed at send |
-| What PayPal receives | The sanitised file: covers burned into the PNG, the rebuilt image-only PDF, or the pasted-text PDF |
+| What PayPal receives | The sanitised file: covers burned into the PNG (or JPEG, for a photo), the rebuilt image-only PDF, or the pasted-text PDF |
 
 ## Visibility, lifetime and deletion
 

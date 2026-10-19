@@ -86,7 +86,7 @@ En la Sandbox evaluation, **+ Add evidence** admite una captura PNG o JPEG (5 Mi
 8,294,400 píxeles), un PDF (10 MiB, 30 páginas, de las que conservas hasta 5) o texto pegado en Latin-1. Todo se lee en
 el servidor de ResolveKit (OCR local). Nada va a un modelo de IA ni a PayPal hasta que tapas lo que no debe
 compartirse, lo vuelves a leer desde el archivo tapado y pulsas **Confirm as evidence**. PayPal recibe solo el archivo
-saneado: un PNG con las zonas tapadas incrustadas, un PDF solo de imagen reconstruido a partir de las páginas tapadas o
+saneado: un PNG (un JPEG si es una foto) con las zonas tapadas incrustadas, un PDF solo de imagen reconstruido a partir de las páginas tapadas o
 un PDF generado a partir del texto pegado. El nombre de tu archivo se queda en el servidor. Estado: imágenes
 Verificado en sandbox (18/10/2026); envíos de PDF y de texto pegado a PayPal Pendiente.
 Guía: [casos y evidencias](docs/es/user-guide/cases-and-evidence.md) · [revisión de PDF](docs/es/user-guide/pdf-review.md).

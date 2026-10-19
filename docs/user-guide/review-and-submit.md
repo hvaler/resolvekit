@@ -91,7 +91,7 @@ read, **only if** one is left (as of 19/10/2026 the standard case has none).
 | Recipient | What | When |
 |---|---|---|
 | AI model provider (Gemini, or Groq as fallback) | The case's documents as the server assembles them (synthetic case documents, fields read from the PayPal dispute, for the agent case the MeterMCP receipt), your confirmed uploads' text; edited sentences for re-checks | Each live analysis and re-check |
-| PayPal (sandbox) | Evidence type; notes (supported sentences only); carrier and tracking or reference; PDFs built on the server from the case documents (headed «SYNTHETIC TEST DOCUMENT»); for the agent case the receipt PDF; the covered uploads you attached, named `E<n>-upload.png`, `E<n>-upload.pdf`, `E<n>-pasted.pdf` | Only on **Submit evidence to PayPal** |
+| PayPal (sandbox) | Evidence type; notes (supported sentences only); carrier and tracking or reference; PDFs built on the server from the case documents (headed «SYNTHETIC TEST DOCUMENT»); for the agent case the receipt PDF; the covered uploads you attached, named `E<n>-upload.png` (`.jpg` for a covered photo), `E<n>-upload.pdf`, `E<n>-pasted.pdf` | Only on **Submit evidence to PayPal** |
 | The ResolveKit server's audit | Who approved, when, content hash, request id, PayPal's answer; no document text | On approval and send |
 
 Your PayPal credentials and the server's never reach the browser.

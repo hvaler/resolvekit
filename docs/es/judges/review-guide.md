@@ -146,7 +146,7 @@ En un caso de Test Store pulsa **+ Add evidence**:
    siguiente número de evidencia (E7, E8…). Pulsa **Re-run with AI** para que el análisis pueda citarla.
 5. Una frase que se apoya en una línea corregida o transcrita pide tu confirmación explícita antes de poder enviarse.
 
-PayPal recibe solo el archivo saneado, llamado `E<n>-upload.png`, `E<n>-upload.pdf` o `E<n>-pasted.pdf`. Un PDF más
+PayPal recibe solo el archivo saneado, llamado `E<n>-upload.png` (`.jpg` si es una foto tapada), `E<n>-upload.pdf` o `E<n>-pasted.pdf`. Un PDF más
 largo te pide elegir hasta 5 páginas. Tapar el texto junto a un código de barras o un código QR no oculta lo que
 contiene el código. No subas datos personales que te importen. Estado: subida de imagen enviada a PayPal y registrada
 (18/10/2026); envíos de PDF y de texto pegado a PayPal Pendiente. Detalles: [revisión de PDF](../user-guide/pdf-review.md).

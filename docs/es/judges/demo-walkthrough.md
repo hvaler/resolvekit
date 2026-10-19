@@ -99,8 +99,8 @@ revisión, tiempo agotado). Nunca aparece en un caso que funcione sobre PayPal r
    **Re-run with AI** para que el análisis la lea.
 7. Si una frase respaldada se apoya en una línea que corregiste o transcribiste, espera a **Confirm it reads …
    correctly** o **Confirm … is what the file shows (transcribed manually by …)**.
-8. En la revisión, *Attachments to send* lista tus subidas confirmadas. PayPal recibe `E7-upload.png`,
-   `E7-upload.pdf` o `E7-pasted.pdf`, nunca el nombre de tu archivo.
+8. En la revisión, *Attachments to send* lista tus subidas confirmadas. PayPal recibe `E7-upload.png`
+   (`E7-upload.jpg` si es una foto tapada), `E7-upload.pdf` o `E7-pasted.pdf`, nunca el nombre de tu archivo.
 
 ## D. El agente comprador
 

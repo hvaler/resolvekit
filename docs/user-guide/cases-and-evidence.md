@@ -107,7 +107,7 @@ only to people who can edit it.
 |---|---|---|
 | The ResolveKit server | The original file, while it is pending or in review; then only the covered (sanitised) file and its text | On upload |
 | The AI model provider (Google Gemini or Groq) | The text of confirmed evidence (read from the covered file, with your corrections and who made them), under its evidence number, a generic title («Uploaded screenshot», «Pasted text», «Uploaded PDF») and «Uploaded by <name>». Never the file name, never the original | On the next analysis that includes it, and on re-checks |
-| PayPal (sandbox) | The covered file you attach, named only by its evidence number: `E7-upload.png` (image), `E8-upload.pdf` (PDF), `E9-pasted.pdf` (pasted text) | Only when you send a response that attaches it |
+| PayPal (sandbox) | The covered file you attach, named only by its evidence number: `E7-upload.png` (image; `E7-upload.jpg` for a covered photo), `E8-upload.pdf` (PDF), `E9-pasted.pdf` (pasted text) | Only when you send a response that attaches it |
 
 Text is read on the server (local OCR), not by a model provider or PayPal. Do not upload personal data you care
 about: the PayPal side is a sandbox and the app is a demo.
@@ -131,7 +131,7 @@ about: the PayPal side is a sandbox and the app is a demo.
 | «Pasted text up to 20000 characters» | Shorten it |
 | «A case takes at most 10 uploads; discard or delete one first» | Discard or delete one |
 | «An upload can be redacted 5 times; discard it and upload it again» | Discard and start again |
-| Sanitised file too large | Upload a screenshot or a smaller image (covered images are stored as PNG) |
+| Sanitised file too large | Upload a screenshot or a smaller image (a covered screenshot is stored as PNG, a covered photo as JPEG) |
 | «A reviewer edits only their own uploads» | Ask the uploader, the Owner or a Member |
 | «The case moved to another PayPal dispute since this was uploaded…» | Upload it again for the current dispute |
 | «The demo has no room for more uploads right now» | Try later |

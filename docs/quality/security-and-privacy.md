@@ -58,7 +58,7 @@ Merchant uploads are hostile input. Covered (redacted) content must not reach an
 |---|---|---|
 | Type by content | PNG/JPEG decided by magic bytes, whatever the name; GIF, PDF-as-image, random bytes refused | `uploads-image.test.ts` |
 | Size before decoding | 5 MiB per image; at most 4096 px a side and 8 294 400 pixels; interlaced PNGs, double `IHDR`, bad bit depths and `IDAT` that inflates past its declared size refused; an absolute inflate cap | `uploads-image.test.ts` |
-| Re-encoding | Every stored image is a fresh, opaque PNG with only `IHDR`, `IDAT` and `IEND`; transparent pixels composited onto white; covered pixels black whatever the OCR read | `uploads-image.test.ts`; verified in the sandbox on 18/10 (PayPal's copy had only those chunks, the cover burned in) |
+| Re-encoding | Every stored image is a fresh, opaque PNG with only `IHDR`, `IDAT` and `IEND` (a covered JPEG photo: a fresh baseline JPEG, quality 90, JFIF header only, no EXIF or comments); transparent pixels composited onto white; covered pixels black whatever the OCR read, set before encoding (two photos that differ only under a cover give the same bytes) | `uploads-image.test.ts`; verified in the sandbox on 18/10 (PayPal's copy had only those chunks, the cover burned in) |
 | PDFs in a separate process | pdf.js runs in a forked child (160 MB heap), killed at its deadline and, on Linux, above 200 MiB RSS; encrypted PDFs refused; ≤10 MiB, ≤30 pages; metadata never decoded | `uploads-pdf-input.test.ts` (hang, crash, spawn failure, memory ceiling, decompression bombs in content and fonts). **RSS kill on Linux against a real bomb: Pending** |
 | Rebuilt PDF | At confirm the PDF is rebuilt as image-only pages from the covered renders: no fonts, annotations, embedded files, JavaScript or XMP. The original and uncovered renders are dropped | `pdf-image.test.ts` |
 | OCR | tesseract.js with local language data, no network fetch, on the **sanitised** image or page only | `uploads-ocr.test.ts` |
@@ -66,7 +66,7 @@ Merchant uploads are hostile input. Covered (redacted) content must not reach an
 | Transcription | Must come from a visible area inside the page (≥2×2 px); refused over a covered area | `uploads-pdf-routes.test.ts` |
 | Pasted text | Latin-1 only, control characters replaced, removals become `[redacted]`, stored as a ResolveKit-made PDF; ≤20 000 characters | `uploads-text.test.ts` |
 | Content-bound confirm | The SHA-256 of the sanitised file the person reviewed must match | `uploads-routes.test.ts` |
-| File names | Never leave the server: PayPal gets `E<n>-upload.png`, `E<n>-upload.pdf` or `E<n>-pasted.pdf`; the model sees titles only | `uploads-documents.test.ts`; sandbox 18/10 (image) |
+| File names | Never leave the server: PayPal gets `E<n>-upload.png` (`.jpg` for a covered photo), `E<n>-upload.pdf` or `E<n>-pasted.pdf`; the model sees titles only | `uploads-documents.test.ts`; sandbox 18/10 (image) |
 | Pending access | Until confirmed, only people who can edit see files and text; others get metadata with `restricted: true` | `uploads-routes.test.ts` |
 
 **Covered-content recovery test.** `apps/server/test/uploads-pdf-recovery.test.ts` builds a PDF holding six distinct

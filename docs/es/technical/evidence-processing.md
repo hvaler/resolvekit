@@ -15,7 +15,7 @@ lo que quiera y haya confirmado. Código en `apps/server/src/uploads/` en el com
 - **El comerciante decide qué tapar.** Nada se tapa automáticamente.
 - **Una sola versión saneada** sirve para el analista y para el adjunto de PayPal.
 - **Los logs solo llevan ids y códigos**, nunca nombres de archivo, texto de las subidas ni bytes. El nombre del
-  archivo nunca sale del servidor: PayPal recibe `E<n>-upload.png`, `E<n>-upload.pdf` o `E<n>-pasted.pdf`; el modelo
+  archivo nunca sale del servidor: PayPal recibe `E<n>-upload.png` (`.jpg` si es una foto tapada), `E<n>-upload.pdf` o `E<n>-pasted.pdf`; el modelo
   ve los títulos «Uploaded screenshot», «Uploaded PDF», «Pasted text».
 
 ## Dependencias y compatibilidad
@@ -41,16 +41,19 @@ del proceso hijo de PDF por memoria lee `/proc/<pid>/statm` y, por tanto, solo f
 
 1. `POST /api/cases/:id/uploads` con los bytes en bruto y `x-upload-name`. El tipo se determina solo por los bytes
    mágicos; el tamaño se lee de la cabecera y se comprueba antes de decodificar ningún píxel.
-2. Se decodifica una imagen a la vez en todo el servidor. A partir de los píxeles decodificados se codifica un PNG
-   saneado: sin metadatos, sin chunks auxiliares, sin ninguno de los bytes originales.
+2. Se decodifica una imagen a la vez en todo el servidor. A partir de los píxeles decodificados se codifica un archivo
+   saneado: sin metadatos, sin chunks ni segmentos auxiliares, sin ninguno de los bytes originales.
 3. El OCR lee la imagen saneada (reducida solo para el OCR por encima de 4 MP).
 4. El comerciante tapa rectángulos (`POST …/redact`, como mucho 5 pasadas); las tapas se incrustan en negro opaco y
    la imagen se vuelve a leer.
 5. El comerciante revisa las líneas, corrige las que haga falta y confirma (`POST …/confirm`) con el `sha256` del
    archivo saneado revisado; si no coincide, se rechaza (`UPLOAD_CHANGED`). El original se elimina.
 
-Las imágenes tapadas se guardan siempre como PNG (una foto JPEG se convierte en un PNG más grande; aun así debe caber
-en el límite de 9.9 MB).
+Un PNG tapado se guarda como un PNG nuevo (sin pérdida, para las capturas). Una foto JPEG tapada se guarda como un JPEG
+baseline nuevo de calidad 90 (solo la cabecera JFIF: sin EXIF ni otros segmentos), así que ocupa más o menos lo mismo
+que la foto y queda por debajo del límite de 9.9 MB; como PNG sin pérdida una foto de cámara puede crecer de tres a
+cinco veces. Las tapas se incrustan antes de codificar, así que nada de lo que hay debajo llega al archivo. El OCR lee
+ese archivo guardado. El envío a PayPal de un JPEG tapado solo está probado en local (**Pendiente** en el sandbox).
 
 ### PDF
 
@@ -109,7 +112,7 @@ por RSS no se ha medido en Linux contra una bomba de descompresión real (seguim
 | Confirmación de las frases dependientes | Una frase que se apoya en una línea corregida o transcrita necesita la confirmación explícita de la persona (`confirmedCorrections`, ≤ 50 pares `S1@E7.l2`) antes de poder enviarse |
 | Notas del comerciante | Una explicación que no está en el documento es una nota del comerciante, nunca evidencia documental |
 | Adjuntos | Solo subidas confirmadas de este espacio de trabajo, caso y disputa activa; ≤ 10; en el orden de la evidencia; se vuelve a calcular el hash de los bytes al enviar |
-| Qué recibe PayPal | El archivo saneado: tapas incrustadas en el PNG, el PDF reconstruido solo de imagen o el PDF del texto pegado |
+| Qué recibe PayPal | El archivo saneado: tapas incrustadas en el PNG (o en el JPEG, si es una foto), el PDF reconstruido solo de imagen o el PDF del texto pegado |
 
 ## Visibilidad, vida útil y borrado
 

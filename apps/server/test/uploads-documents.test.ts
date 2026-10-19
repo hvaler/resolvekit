@@ -59,10 +59,11 @@ test('a confirmed PDF is one document: lines in page order, page-scoped fragment
   assert.ok(!JSON.stringify(d).includes('ES912'));
 });
 
-test("PayPal's file name for a PDF upload is E<n>-upload.pdf", () => {
-  assert.equal(uploadFileName({ evidenceId: 'E7', kind: 'pdf' }), 'E7-upload.pdf');
-  assert.equal(uploadFileName({ evidenceId: 'E7', kind: 'image' }), 'E7-upload.png');
-  assert.equal(uploadFileName({ evidenceId: 'E7', kind: 'text' }), 'E7-pasted.pdf');
+test("PayPal's file name for an upload: E<n>-upload.pdf, E<n>-upload.png or, for a covered photo, E<n>-upload.jpg", () => {
+  assert.equal(uploadFileName({ evidenceId: 'E7', kind: 'pdf', mime: 'application/pdf' }), 'E7-upload.pdf');
+  assert.equal(uploadFileName({ evidenceId: 'E7', kind: 'image', mime: 'image/png' }), 'E7-upload.png');
+  assert.equal(uploadFileName({ evidenceId: 'E7', kind: 'image', mime: 'image/jpeg' }), 'E7-upload.jpg');
+  assert.equal(uploadFileName({ evidenceId: 'E7', kind: 'text', mime: 'application/pdf' }), 'E7-pasted.pdf');
 });
 
 // ------------------------------------------------------------------------------------- approval and the send

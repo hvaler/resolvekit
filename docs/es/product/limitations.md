@@ -53,8 +53,6 @@ usuario, un comerciante o un jurado.
 | Pendientes | se descartan a las 24 horas si no se confirman |
 
 Carencias conocidas:
-- Una imagen tapada siempre se recodifica como PNG, así que una foto grande puede superar el límite de 9.9 MB tras
-  taparla aunque el JPEG fuera pequeño. Usa una captura o una imagen más pequeña.
 - Un escaneo de PDF de varias páginas con mucho ruido puede no caber en 9.9 MB una vez reconstruido; elige menos
   páginas.
 - Los códigos de barras y QR conservan su contenido salvo que tapes el propio código.

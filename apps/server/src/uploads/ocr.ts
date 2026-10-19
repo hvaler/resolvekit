@@ -101,13 +101,15 @@ export function downscaleRgba(rgba: Uint8Array, width: number, height: number, m
 
 /**
  * What OCR reads: the PNG itself when within OCR_MAX_PIXELS, else a downscaled copy (the stored file is unchanged),
- * with the factors that map its coordinates back to the original image.
+ * with the factors that map its coordinates back to the original image. A JPEG (a covered photo's stored file) is
+ * read as a PNG of its decoded pixels, downscaled the same way.
  */
 function ocrInput(png: Uint8Array): { png: Uint8Array; sx: number; sy: number } {
   const v = new DataView(png.buffer, png.byteOffset, png.byteLength);
-  if (png.length < 24 || v.getUint32(16) * v.getUint32(20) <= OCR_MAX_PIXELS) return { png, sx: 1, sy: 1 };
+  const isJpeg = png[0] === 0xff && png[1] === 0xd8;
+  if (!isJpeg && (png.length < 24 || v.getUint32(16) * v.getUint32(20) <= OCR_MAX_PIXELS)) return { png, sx: 1, sy: 1 };
   const d = decodeImage(png);
-  const s = downscaleRgba(d.rgba, d.width, d.height, OCR_MAX_PIXELS); // d is released when this returns
+  const s = d.width * d.height > OCR_MAX_PIXELS ? downscaleRgba(d.rgba, d.width, d.height, OCR_MAX_PIXELS) : d; // d is released when this returns
   const out = new Uint8Array(PNG.sync.write({ width: s.width, height: s.height, data: Buffer.from(s.rgba.buffer, s.rgba.byteOffset, s.rgba.byteLength) } as PNG));
   return { png: out, sx: d.width / s.width, sy: d.height / s.height };
 }
@@ -158,7 +160,7 @@ async function run(png: Uint8Array, timeoutMs: number, signal?: AbortSignal): Pr
   }
 }
 
-/** Recognise the text lines of a PNG, one job at a time. Rejects with UploadError OCR_TIMEOUT / OCR_FAILED. */
+/** Recognise the text lines of a PNG (or a JPEG: a covered photo), one job at a time. Rejects with UploadError OCR_TIMEOUT / OCR_FAILED. */
 export function ocrPng(png: Uint8Array, o: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<OcrLine[]> {
   pending++;
   clearTimeout(idleTimer);

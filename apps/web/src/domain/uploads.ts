@@ -43,7 +43,7 @@ export interface UploadRecordView {
   /** Of the stored sanitised file. */
   sha256?: string | null;
   size?: number | null;
-  mime?: 'image/png' | 'application/pdf' | null;
+  mime?: 'image/png' | 'image/jpeg' | 'application/pdf' | null;
   confirmedAt?: string | null;
   /** The analyst's document of a confirmed upload (lines, fragment keys, corrections); null before confirmation. */
   document?: AnalysisDocument | null;

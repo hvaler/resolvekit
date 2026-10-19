@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 import { crc32, deflateSync } from 'node:zlib';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
-import { decodeImage, oneImageAtATime, sanitiseImage, UploadError } from '../src/uploads/image.ts';
+import { coverImage, decodeImage, oneImageAtATime, sanitiseImage, UploadError, type Rect } from '../src/uploads/image.ts';
+import { MAX_FILE_BYTES, MAX_STORED_BYTES } from '../src/uploads/limits.ts';
 
 function png(w: number, h: number, fill: (x: number, y: number) => [number, number, number] = () => [255, 255, 255]): Uint8Array {
   const p = new PNG({ width: w, height: h });
@@ -260,4 +261,88 @@ test('an UNREADABLE from a corrupt PNG carries its cause', () => {
     assert.equal(e.code, 'UNREADABLE');
     assert.ok(e.cause);
   }
+});
+
+// ------------------------------------------------------------------------------------------------ covered photos
+
+/**
+ * A camera-like photo at the largest accepted size (3840 x 2160): a smooth scene plus per-pixel sensor noise, saved
+ * as a JPEG at quality 92 (about 3.7 MB, under the 5 MiB upload limit). Seeded, so every run makes the same bytes.
+ */
+function cameraPhoto(o: { w?: number; h?: number; seed?: number; inside?: { rect: Rect; rgb: [number, number, number] } } = {}): Uint8Array {
+  const w = o.w ?? 3840, h = o.h ?? 2160;
+  let s = (o.seed ?? 1) >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const data = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    const r = o.inside?.rect;
+    const base = r && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h ? o.inside!.rgb
+      : y < h * 0.45 ? [90 + (y / h) * 120, 140 + (y / h) * 80, 230] : [70 + 40 * Math.sin(x / 37), 110 + 30 * Math.cos(y / 23), 50 + 20 * Math.sin((x + y) / 51)];
+    for (let c = 0; c < 3; c++) data[i + c] = Math.max(0, Math.min(255, Math.round(base[c]! + (rnd() - 0.5) * 20)));
+    data[i + 3] = 255;
+  }
+  return new Uint8Array(jpeg.encode({ data, width: w, height: h }, 92).data);
+}
+
+/** The marker of each JPEG segment up to the scan (SOI first). */
+function jpegMarkers(b: Uint8Array): number[] {
+  const out = [b[1]!];
+  for (let o = 2; o + 4 <= b.length && b[o] === 0xff; o += 2 + ((b[o + 2]! << 8) | b[o + 3]!)) {
+    out.push(b[o + 1]!);
+    if (b[o + 1] === 0xda) break;
+  }
+  return out;
+}
+
+test('a covered camera photo (JPEG) is stored as a JPEG and fits the stored-file limit; as a PNG it would not', () => {
+  const src = cameraPhoto();
+  assert.ok(src.length > 3_000_000 && src.length <= MAX_FILE_BYTES, String(src.length));
+  const rect = { x: 1200, y: 800, w: 900, h: 300 };
+  const out = coverImage(src, [rect]);
+  assert.equal(out.mime, 'image/jpeg');
+  assert.deepEqual([out.width, out.height], [3840, 2160]);
+  assert.equal(decodeImage(out.file).kind, 'jpeg');
+  assert.ok(out.file.length < MAX_STORED_BYTES, String(out.file.length));
+  // About the size of the photo itself (quality 90 against the camera's 92), not the lossless PNG's.
+  assert.ok(out.file.length < src.length * 1.2, `${out.file.length} vs ${src.length}`);
+  assert.ok(sanitiseImage(src, [rect]).png.length > MAX_STORED_BYTES);
+  assert.equal(out.sha256, createHash('sha256').update(out.file).digest('hex'));
+});
+
+test('a covered JPEG keeps nothing of what was covered: sources that differ only there give the same bytes', () => {
+  // On the photos' 16 px block grid, so the two uploads differ only inside the area (a JPEG's own blocks would
+  // otherwise carry the difference a few pixels past it, in pixels that are not covered).
+  const rect = { x: 32, y: 16, w: 64, h: 48 };
+  const a = cameraPhoto({ w: 160, h: 96, seed: 7, inside: { rect, rgb: [250, 20, 20] } });
+  const b = cameraPhoto({ w: 160, h: 96, seed: 7, inside: { rect, rgb: [20, 250, 250] } });
+  assert.notDeepEqual(a, b);
+  const ca = coverImage(a, [rect]);
+  assert.deepEqual(ca.file, coverImage(b, [rect]).file);
+  // Decoded, the covered area is black, up to JPEG ringing near its edges.
+  const got = decodeImage(ca.file).rgba;
+  for (let y = rect.y + 4; y < rect.y + rect.h - 4; y++) for (let x = rect.x + 4; x < rect.x + rect.w - 4; x++) {
+    assert.ok(px(got, 160, x, y).slice(0, 3).every((v) => v <= 24), `${x},${y}: ${px(got, 160, x, y)}`);
+  }
+});
+
+test('a covered JPEG carries no metadata: EXIF, comments and other segments of the upload are not kept', () => {
+  const j = Buffer.from(jpg(16, 16));
+  const exif = Buffer.concat([Buffer.from([0xff, 0xe1, 0x00, 0x0f]), Buffer.from('Exif\0\0GPSDATA', 'latin1')]);
+  const com = Buffer.concat([Buffer.from([0xff, 0xfe, 0x00, 0x08]), Buffer.from('secret', 'latin1')]);
+  const src = Buffer.concat([j.subarray(0, 2), exif, com, j.subarray(2)]);
+  assert.deepEqual(jpegMarkers(src).slice(0, 4), [0xd8, 0xe1, 0xfe, 0xe0]);
+  const out = coverImage(src, [{ x: 0, y: 0, w: 4, h: 4 }]);
+  assert.equal(out.mime, 'image/jpeg');
+  // A fresh file: SOI, JFIF APP0, tables, frame, huffman tables, scan; nothing else before the image data.
+  assert.deepEqual(jpegMarkers(out.file), [0xd8, 0xe0, 0xdb, 0xc0, 0xc4, 0xda]);
+  for (const s of ['Exif', 'GPSDATA', 'secret']) assert.ok(!Buffer.from(out.file).includes(s), s);
+});
+
+test('a covered PNG stays a PNG (lossless, as a screenshot needs): the same file sanitiseImage makes', () => {
+  const src = png(200, 100, redBlock);
+  const rects = [{ x: 5, y: 5, w: 60, h: 30 }];
+  const out = coverImage(src, rects);
+  assert.equal(out.mime, 'image/png');
+  assert.deepEqual(out.file, sanitiseImage(src, rects).png);
 });

@@ -1,6 +1,6 @@
 /**
  * Store of merchant evidence uploads, one directory per upload:
- * `<dir>/<workspaceId>/<uploadId>/{record.json, original.bin, sanitised.png|pdf}`, plus for a pdf `page-<k>.png`
+ * `<dir>/<workspaceId>/<uploadId>/{record.json, original.bin, sanitised.png|jpg|pdf}`, plus for a pdf `page-<k>.png`
  * (sanitised page), `page-<k>.orig.png` (uncovered render, only while reviewing) and `thumb-<n>.png`.
  *
  * The original exists only while the upload is pending or reviewing. A discarded, deleted or archived upload keeps
@@ -37,7 +37,8 @@ export interface UploadRecord {
   /** of the stored sanitised file */
   sha256: string | null;
   size: number | null;
-  mime: 'image/png' | 'application/pdf' | null;
+  /** The sanitised file's type: a PNG, a JPEG (a covered photo) or a PDF. */
+  mime: 'image/png' | 'image/jpeg' | 'application/pdf' | null;
   createdAt: string;
   expiresAt: string;
   confirmedAt: string | null;
@@ -76,7 +77,7 @@ const WORKSPACE = /^[A-Za-z0-9_-]{1,64}$/;
 const LIVE: UploadStatus[] = ['pending', 'reviewing'];
 /** Statuses that keep the record only: no files, no text. */
 const STRIPPED: UploadStatus[] = ['discarded', 'deleted', 'archived'];
-const FILES = ['original.bin', 'sanitised.png', 'sanitised.pdf'];
+const FILES = ['original.bin', 'sanitised.png', 'sanitised.jpg', 'sanitised.pdf'];
 
 /** Fields an update can never change: who the upload is and what it is bound to. */
 type Pinned = 'id' | 'workspaceId' | 'caseId' | 'boundDisputeId' | 'kind' | 'uploadedBy';
@@ -372,8 +373,8 @@ export class UploadStore {
     for (const f of this.fileNames(r)) if (ORIG_PAGE.test(f)) this.removeFile(r, f);
   }
 
-  private sanitisedName(mime: 'image/png' | 'application/pdf'): string {
-    return mime === 'application/pdf' ? 'sanitised.pdf' : 'sanitised.png';
+  private sanitisedName(mime: NonNullable<UploadRecord['mime']>): string {
+    return mime === 'application/pdf' ? 'sanitised.pdf' : mime === 'image/jpeg' ? 'sanitised.jpg' : 'sanitised.png';
   }
 
   private path(r: Pick<UploadRecord, 'id' | 'workspaceId'>, name?: string): string {

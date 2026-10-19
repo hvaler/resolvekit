@@ -12,12 +12,15 @@ const evidenceNumber = (id: string | null) => Number(/^E(\d+)$/.exec(id ?? '')?.
 const attr = (s: string) => s.replace(/["<>]/g, '');
 
 /**
- * The file name PayPal receives for a confirmed upload: `<evidenceId>-upload.png` (image), `<evidenceId>-upload.pdf`
- * (PDF, rebuilt from its covered pages) or `<evidenceId>-pasted.pdf` (pasted text). The uploaded name never leaves
- * this server (it can hold what the person did not cover, an account number say); only the workspace sees it.
+ * The file name PayPal receives for a confirmed upload: `<evidenceId>-upload.png` (image; `.jpg` for a covered JPEG
+ * photo), `<evidenceId>-upload.pdf` (PDF, rebuilt from its covered pages) or `<evidenceId>-pasted.pdf` (pasted text).
+ * The uploaded name never leaves this server (it can hold what the person did not cover, an account number say); only
+ * the workspace sees it.
  */
-export function uploadFileName(r: Pick<UploadRecord, 'evidenceId' | 'kind'>): string {
-  return r.kind === 'text' ? `${r.evidenceId}-pasted.pdf` : r.kind === 'pdf' ? `${r.evidenceId}-upload.pdf` : `${r.evidenceId}-upload.png`;
+export function uploadFileName(r: Pick<UploadRecord, 'evidenceId' | 'kind' | 'mime'>): string {
+  if (r.kind === 'text') return `${r.evidenceId}-pasted.pdf`;
+  if (r.kind === 'pdf') return `${r.evidenceId}-upload.pdf`;
+  return `${r.evidenceId}-upload.${r.mime === 'image/jpeg' ? 'jpg' : 'png'}`;
 }
 
 const TITLES: Record<UploadRecord['kind'], { title: string; type: string }> = {
