@@ -1163,6 +1163,9 @@ export function createApi(opts: ApiOptions): Api {
     const paypal = opts.paypal;
     if (!paypal) return;
     const caseId = Object.keys(opts.bindings).find((k) => bindingOf(k)?.dispute === disputeId) ?? null;
+    // The notice names the case whose active binding or reserve lists the dispute (the reads and the audit trail below
+    // stay with the active binding only).
+    const noticeCase = caseId ?? caseListing(disputeId);
     // The next view of the case reads PayPal again, even inside the read cache's lifetime.
     if (caseId) reads.delete(caseId);
     // PayPal will not deliver an acknowledged event again, so a failed read is retried here a few times.
@@ -1182,7 +1185,7 @@ export function createApi(opts: ApiOptions): Api {
     if (caseId) noteSeller(caseId, d);
     const amount = d.dispute_amount?.value && d.dispute_amount.currency_code ? { value: d.dispute_amount.value, currency: d.dispute_amount.currency_code } : null;
     const at = now().toISOString();
-    notices.unshift({ eventId: e.id, eventType: e.event_type, disputeId, caseId, merchant, status: d.status ?? null, reason: d.reason ?? null, amount, at });
+    notices.unshift({ eventId: e.id, eventType: e.event_type, disputeId, caseId: noticeCase, merchant, status: d.status ?? null, reason: d.reason ?? null, amount, at });
     if (notices.length > MAX_NOTICES) notices.length = MAX_NOTICES;
     if (caseId) {
       // One audit bucket per seller workspace, so one busy merchant cannot push another's history out.
@@ -1193,11 +1196,16 @@ export function createApi(opts: ApiOptions): Api {
   };
 
   /** GET /api/paypal/notices: the viewer's own (hosted: the signed-in merchant's disputes; local: all). */
+  /** The cases whose active binding or reserve lists this dispute (the first one: {@link caseListing}). */
+  const casesListing = (disputeId: string): string[] =>
+    Object.keys(opts.bindings).filter((k) => bindingOf(k)?.dispute === disputeId || (opts.reserve?.[k] ?? []).some((b) => b.dispute === disputeId));
+  const caseListing = (disputeId: string): string | null => casesListing(disputeId)[0] ?? null;
   const noticesFor = (req: Request): Response => {
     const merchant = opts.gate ? (opts.gate.merchant?.(req) ?? null) : undefined;
     const mine = merchant === undefined ? notices : merchant ? notices.filter((n) => n.merchant === merchant) : [];
-    // A notice about an owner-only case (the settlement case) is the owner's only, as the case itself.
-    const visible = mine.filter((n) => !n.caseId || ownerSees(req, n.caseId));
+    // A notice about an owner-only case (the settlement case) is the owner's only, as the case itself: by the case it
+    // names, and by its dispute, wherever the bindings list it now (active or reserve).
+    const visible = mine.filter((n) => [n.caseId, ...casesListing(n.disputeId)].every((k) => !k || ownerSees(req, k)));
     return json(200, { notices: visible.map(({ merchant: _m, ...n }) => n) });
   };
 

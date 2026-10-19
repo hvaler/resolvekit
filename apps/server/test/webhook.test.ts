@@ -13,6 +13,7 @@ const BOUND = 'PP-R-REAL-1';
 const NEW = 'PP-R-NEW-2';
 const ELSEWHERE = 'PP-R-OTHER-3';
 const STL = 'PP-R-STL-WH-4';
+const STL_RESERVE = 'PP-R-STL-WH-5';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** PayPal: verify answers `verdict()` (or fails), dispute reads by id; every call recorded. */
@@ -24,6 +25,7 @@ function paypal(o: { verdict?: () => string | number; failReads?: number } = {})
     [BOUND]: { ...standardDispute(), dispute_id: BOUND },
     [NEW]: { ...standardDispute(), dispute_id: NEW },
     [STL]: { ...standardDispute(), dispute_id: STL },
+    [STL_RESERVE]: { ...standardDispute(), dispute_id: STL_RESERVE },
     [ELSEWHERE]: { ...standardDispute(), dispute_id: ELSEWHERE, disputed_transactions: [{ ...standardDispute().disputed_transactions![0]!, seller: { merchant_id: 'SOMEONEELSE01' } }] },
   };
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
@@ -47,7 +49,7 @@ function paypal(o: { verdict?: () => string | number; failReads?: number } = {})
 
 const KEY = 'k'.repeat(16) + '0123456789abcdef0123';
 
-function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; webhook?: { id: string; key: string; verifyLimit?: { perMinute: number; inFlight: number } } | null; verdict?: () => string | number; failReads?: number } = {}) {
+function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; reserve?: Record<string, Array<{ dispute: string; capture: string }>>; webhook?: { id: string; key: string; verifyLimit?: { perMinute: number; inFlight: number } } | null; verdict?: () => string | number; failReads?: number } = {}) {
   const pp = paypal({ ...(o.verdict ? { verdict: o.verdict } : {}), ...(o.failReads ? { failReads: o.failReads } : {}) });
   const people = testAccounts();
   const lines: string[] = [];
@@ -55,6 +57,7 @@ function setup(o: { bindings?: Record<string, { dispute: string; capture: string
     paypal: pp.client,
     env: 'sandbox',
     bindings: o.bindings ?? { [CASE]: { dispute: BOUND, capture: STD_CAPTURE } },
+    ...(o.reserve ? { reserve: o.reserve } : {}),
     log: (l) => lines.push(l),
     counters: new DailyCounters({ file: null, limits: {} }),
     site: null,
@@ -241,4 +244,18 @@ test('a notice about the owner-only settlement case is listed to the owner only'
   await until(async () => (await notices(app, people.ownerCookie)).length > 1);
   assert.deepEqual((await notices(app, people.ownerCookie)).map((n) => n.caseId).sort(), [CASE, SETTLEMENT_CASE_ID].sort());
   for (const cookie of [people.member(), people.fullMember()]) assert.deepEqual((await notices(app, cookie)).map((n) => n.caseId), [CASE]);
+});
+
+test('a notice about a dispute in the settlement case’s reserve (not active yet) is the owner’s only too', async () => {
+  const { app, people } = setup({
+    bindings: { [CASE]: { dispute: BOUND, capture: STD_CAPTURE }, [SETTLEMENT_CASE_ID]: { dispute: STL, capture: STD_CAPTURE } },
+    reserve: { [SETTLEMENT_CASE_ID]: [{ dispute: STL_RESERVE, capture: '4FT237453Y5353099' }] },
+  });
+  assert.equal((await app(delivery(event('CUSTOMER.DISPUTE.CREATED', STL_RESERVE)))).status, 200);
+  assert.equal((await app(delivery(event('CUSTOMER.DISPUTE.UPDATED', BOUND)))).status, 200);
+  await until(async () => (await notices(app, people.ownerCookie)).length > 1);
+  const owner = await notices(app, people.ownerCookie);
+  assert.deepEqual(owner.map((n) => n.disputeId).sort(), [BOUND, STL_RESERVE].sort());
+  assert.equal(owner.find((n) => n.disputeId === STL_RESERVE)!.caseId, SETTLEMENT_CASE_ID);
+  for (const cookie of [people.member(), people.fullMember()]) assert.deepEqual((await notices(app, cookie)).map((n) => n.disputeId), [BOUND]);
 });
