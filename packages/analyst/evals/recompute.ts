@@ -20,9 +20,10 @@
  * usage, counted as unrecorded), at the list price for Gemini; Groq ran on its free tier, so no cost is given for it.
  * Held-out attempts and ledgers carry the runner's own observed / estimated / unknown split, reported as stored.
  *
- * Held-out scoring (labels, forbidden outcomes, twin pairing) is Task 5: `scoreHeldOut` returns null until then and
- * the held-out section reports the attempt accounting. The common subset compares providers only on the case+run
- * pairs where both have an ok attempt.
+ * Held-out scoring (labels, forbidden outcomes, twin pairing, per-run rows and spread) is heldout/score.ts, with the
+ * frozen config's runs and negation window and the judgements in heldout/manual-judgements.json (malformed or
+ * repeated entries are listed in `manualJudgements.invalid`, never used). The common subset compares providers only
+ * on the case+run pairs where both have an ok attempt.
  *
  * Output is deterministic: rows sorted, object keys sorted, no timestamps, so two recomputes give the same bytes.
  */
@@ -36,8 +37,9 @@ import { BUDGET_NOTE, LIST_PRICE, type Ledger } from './budget.ts';
 import { CASES, type EvalCase } from './cases.ts';
 import { HELD_OUT_CASES } from './heldout/cases.ts';
 import type { HeldOutCase } from './heldout/schema.ts';
+import { parseJudgements, scoreHeldOut, type HeldOutScoring, type ManualJudgement, type Tally } from './heldout/score.ts';
 import { computeMetrics, metricsTable, type CaseResult, type Metrics, type Ratio } from './metrics.ts';
-import type { Attempt, Provider } from './runs.ts';
+import type { Attempt, HeldOutConfig, Provider } from './runs.ts';
 import type { NotEvaluableReason } from './strict.ts';
 
 const PROVIDERS: Provider[] = ['gemini', 'groq'];
@@ -92,15 +94,6 @@ export interface HeldOutUsage {
   costUsdAtListPrice: number;
 }
 
-/** What Task 5 adds to each provider's held-out row (labels, forbidden outcomes, twin pairing); null until then. */
-export interface HeldOutScoring {
-  perRun: MetricsRow[];
-  spread: Record<string, { min: number; median: number; max: number }>;
-  notEvaluable: Partial<Record<string, number>>;
-  injectionPairs: unknown;
-  labelChecks: unknown;
-}
-
 export interface HeldOutRow {
   /** Attempt files aggregated: readable, not duplicated, stamped with this freeze and prompt, of a known case. */
   files: number;
@@ -114,6 +107,7 @@ export interface HeldOutRow {
   stamps: { codeCommits: string[]; freezeCommits: string[]; promptVersions: string[]; requestedModels: string[]; returnedModels: string[] };
   usage: HeldOutUsage;
   ledger: Ledger | null;
+  /** Labels, forbidden outcomes, twin pairing, per-run rows and spread (heldout/score.ts); null with no attempts. */
   scoring: HeldOutScoring | null;
 }
 
@@ -151,13 +145,23 @@ export interface Summary {
   /** The `nodetect` ablation and the EV-19 multi-run file (the brief's `development.uploadRuns`, placed here per B2). */
   experiments: { ablation: MetricsRow[]; uploadRuns: MetricsRow[] };
   heldOut: Record<Provider, HeldOutRow> & { commonSubset: { cases: string[]; pairs: string[]; gemini: MetricsRow; groq: MetricsRow } | null };
+  /** The manual judgements file: entries that could not be used, with the reason. */
+  manualJudgements: { invalid: Array<{ entry: unknown; reason: string }> };
   usage: UsageRow[];
 }
 
 export interface RecomputeOptions {
   devCases?: readonly EvalCase[];
   heldOutCases?: readonly HeldOutCase[];
+  /** Default heldout/manual-judgements.json. */
+  judgementsFile?: string;
+  /** Planned held-out runs; default the frozen config's (or more, when attempts carry a higher run). */
+  runs?: number;
 }
+
+const CONFIG_FILE = fileURLToPath(new URL('./heldout/config.json', import.meta.url));
+export const JUDGEMENTS_FILE = fileURLToPath(new URL('./heldout/manual-judgements.json', import.meta.url));
+const heldOutConfig = (): HeldOutConfig => JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) as HeldOutConfig;
 
 const DEV_FILE = /^(gemini|groq)(-nodetect)?-(rk-analyst-[\d-]+\.\d+)\.json$/;
 const ATTEMPT_FILE = /^heldout\/(gemini|groq)\/([^/]+)\/(\d+)\.json$/;
@@ -316,15 +320,6 @@ function readLedger(text: string, provider: string): Ledger {
   return l as unknown as Ledger;
 }
 
-/**
- * Held-out scoring for one provider: labels, forbidden outcomes, twin pairing (Task 5). Until then null, and the
- * held-out row carries the attempt accounting only. Task 5 fills it from the ok attempts (scored per run with
- * `perRunCases`, so run i pairs with twin run i) and every case × run of the frozen set (missing attempts reported).
- */
-export function scoreHeldOut(_cases: readonly HeldOutCase[], _attempts: readonly Attempt[], _runs: number): HeldOutScoring | null {
-  return null;
-}
-
 /** The attempts' stored usage, summed field by field. */
 function sumUsage(attempts: readonly Attempt[]): HeldOutUsage {
   const usage: HeldOutUsage = { calls: 0, httpAttempts: 0, refused: 0, inputTokens: 0, outputTokens: 0, thinkingTokens: 0, observedUsd: 0, estimatedUsd: 0, unknownUsd: 0, costUsdAtListPrice: 0 };
@@ -339,7 +334,7 @@ function statusCounts(attempts: readonly Attempt[]): StatusCounts {
 }
 
 /** `attempts`: of the held-out set's cases only; `unknown`: attempts for any other case, accounted apart. */
-function heldOutRow(attempts: Attempt[], unknown: Attempt[], excluded: number, ledger: Ledger | null, cases: readonly HeldOutCase[]): HeldOutRow {
+function heldOutRow(attempts: Attempt[], unknown: Attempt[], excluded: number, ledger: Ledger | null, cases: readonly HeldOutCase[], score: { provider: Provider; runs: number; negationWindowWords: number; judgements: readonly ManualJudgement[] }): HeldOutRow {
   const runs = [...new Set(attempts.map((a) => a.run))].sort((x, y) => x - y);
   return {
     files: attempts.length,
@@ -357,7 +352,7 @@ function heldOutRow(attempts: Attempt[], unknown: Attempt[], excluded: number, l
     },
     usage: sumUsage(attempts),
     ledger,
-    scoring: scoreHeldOut(cases, attempts, Math.max(0, ...attempts.map((a) => a.run))),
+    scoring: scoreHeldOut(cases, attempts, { ...score, runs: Math.max(score.runs, ...attempts.map((a) => a.run)) }),
   };
 }
 
@@ -390,6 +385,9 @@ function commonSubset(attempts: Record<Provider, Attempt[]>, cases: readonly Hel
 export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary {
   const devCases = o.devCases ?? CASES;
   const heldOutCases = o.heldOutCases ?? HELD_OUT_CASES;
+  const config = heldOutConfig();
+  const judgementsFile = o.judgementsFile ?? JUDGEMENTS_FILE;
+  const judgements = existsSync(judgementsFile) ? parseJudgements(readFileSync(judgementsFile, 'utf8')) : { entries: [], invalid: [{ entry: judgementsFile, reason: 'file missing' }] };
   const all = listFiles(resultsDir);
   const files = all.map((file) => ({ file, class: classify(file) }));
   const unreadable = new Map<string, string[]>();
@@ -538,7 +536,7 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
     kept[p] = rest.filter((x) => known.has(x.a.case)).map((x) => x.a);
     const unknown = rest.filter((x) => !known.has(x.a.case)).map((x) => x.a);
     const out = [...excluded].filter((f) => ATTEMPT_FILE.exec(f)?.[1] === p).length;
-    heldOut[p] = heldOutRow(kept[p], unknown, out, ledgers[p], heldOutCases);
+    heldOut[p] = heldOutRow(kept[p], unknown, out, ledgers[p], heldOutCases, { provider: p, runs: o.runs ?? config.runs, negationWindowWords: config.negationWindowWords, judgements: judgements.entries });
     const attemptUsage = (source: string, kind: UsageRow['kind'], u: HeldOutUsage, what: string): UsageRow => ({
       source,
       kind,
@@ -575,6 +573,7 @@ export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary
     development: { headline, history: history.sort(byFileThenLabel) },
     experiments: { ablation: ablation.sort(byFileThenLabel), uploadRuns: uploadRuns.sort((x, y) => (x.provider < y.provider ? -1 : x.provider > y.provider ? 1 : x.runs - y.runs || byLabel(x, y))) },
     heldOut,
+    manualJudgements: { invalid: judgements.invalid },
     usage: usage.sort((x, y) => (x.source < y.source ? -1 : 1)),
   };
 }
@@ -609,6 +608,39 @@ function rowsTable(rows: MetricsRow[], uploads = false): string[] {
   ];
 }
 
+const tallyCell = (t: Tally) =>
+  `${t.rate.rate == null ? '—' : `${(t.rate.rate * 100).toFixed(0)}% (${t.hits}/${t.evaluable})`} · coverage ${t.evaluable}/${t.planned}${Object.keys(t.notEvaluable).length ? ` · not evaluable: ${Object.entries(t.notEvaluable).sort(([x], [y]) => (x < y ? -1 : 1)).map(([k, n]) => `${k} ${n}`).join(', ')}` : ''}`;
+const num = (v: number | null) => (v == null ? '—' : `${(v * 100).toFixed(0)}%`);
+
+/** One provider's held-out scoring: per-run rows, spread, totals, attack rows. */
+function scoringMarkdown(g: HeldOutScoring): string[] {
+  const out: string[] = [];
+  const notScored = Object.entries(g.notEvaluable).sort(([x], [y]) => (x < y ? -1 : 1)).map(([k, n]) => `${k} ${n}`).join(', ') || 'none';
+  out.push(`Planned runs: ${g.runs} · case × run attempts not scored: ${notScored}${g.notRun.length ? ` (not run: ${g.notRun.join(', ')})` : ''}`, '');
+  const head = ['Run', 'Attempts', 'Strict conflicts found', 'True notes rejected', 'Bait notes sent', 'Forbidden hit', 'Unchanged vs twin'];
+  out.push(`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`);
+  for (const r of g.perRun) out.push(`| ${[r.run, counts(r.attempts), tallyCell(r.strict), tallyCell(r.trueRejected), tallyCell(r.baitSent), tallyCell(r.forbiddenHit), tallyCell(r.unchangedVsTwin)].join(' | ')} |`);
+  const l = g.labelChecks;
+  const p = g.injectionPairs;
+  out.push(`| all runs | ${g.perRun.reduce((n, r) => n + r.attempts.ok, 0)} ok | ${tallyCell(l.strictTally)} | ${tallyCell(l.notes.trueRejected)} | ${tallyCell(l.notes.baitSent)} | ${tallyCell(l.forbidden)}${l.forbidden.manual ? ` · ${l.forbidden.manual} «manual»` : ''} | ${p.unchanged}/${p.evaluable} · coverage ${p.evaluable}/${p.pairs} · twin self-agreement ${p.twinAgreement.agreeing}/${p.twinAgreement.of} |`, '');
+  out.push('Spread over runs (rate per run; runs with nothing evaluable left out; no best-of):', '', '| Metric | Min | Median | Max | Runs | Per run |', '|---|---|---|---|---|---|');
+  for (const [k, v] of Object.entries(g.spread)) out.push(`| ${k} | ${num(v.min)} | ${num(v.median)} | ${num(v.max)} | ${v.runs} | ${v.perRun.map(num).join(' / ')} |`);
+  out.push('');
+  if (p.twins.length) out.push(...p.twins.map((t) => `- twin ${t.twin}: ok runs ${t.okRuns.join(', ') || 'none'} · twin self-agreement ${t.agreeing}/${t.of}`), '');
+  if (g.forbidden.length) {
+    out.push('| Attack | Run | Forbidden outcome | Action | Checklist | Claims | Unchanged vs twin | Detail |', '|---|---|---|---|---|---|---|---|');
+    for (const f of g.forbidden) {
+      const pair = p.rows.find((x) => x.case === f.case && x.run === f.run);
+      out.push(`| ${f.case} | ${f.run} | ${f.outcome}${f.manual ? ' «manual»' : ''} | ${f.action ?? '—'} | ${f.checklist ?? '—'} | ${f.claims ?? '—'} | ${pair?.outcome ?? '—'} | ${[...f.detail, ...(pair?.detail ?? [])].join('; ').replace(/\|/g, '\\|') || '—'} |`);
+    }
+    out.push('');
+  }
+  const pending = g.forbidden.flatMap((f) => f.needsManual.filter((n) => n.judgement === null).map((n) => `- ${f.case} run ${f.run} ${n.sentenceId} (pattern \`${n.pattern}\`, match "${n.match}"): "${n.text}"`));
+  if (pending.length) out.push('Needs a manual judgement (negated match; not counted until recorded in heldout/manual-judgements.json):', '', ...pending, '');
+  if (g.judgements.unused.length) out.push(`Judgements matching no negated match (not used): ${g.judgements.unused.join(', ')}`, '');
+  return out;
+}
+
 /** The tables docs/evals.md quotes. */
 export function summaryMarkdown(s: Summary): string {
   const out: string[] = ['# Eval summary', '', 'Generated by `npm run evals:recompute` from the stored results (no model called). Do not edit by hand.', ''];
@@ -635,7 +667,12 @@ export function summaryMarkdown(s: Summary): string {
   out.push('## Experiments', '', '### Ablation: detection ignored', '', ...rowsTable(s.experiments.ablation), '');
   out.push('### Upload case, repeated runs (EV-19, `upl-carrier-evidence-runs.json`)', '', ...rowsTable(s.experiments.uploadRuns, true), '');
 
-  out.push('## Held-out attempts', '', 'Held-out scoring (labels, forbidden outcomes, twin pairing) is not computed yet; this is the attempt accounting.', '');
+  out.push(
+    '## Held-out attempts',
+    '',
+    'Only ok attempts are scored; failed and missing attempts are counted as not evaluable with their reason. Each metric shows hits / evaluable, coverage (evaluable / planned) and the not-evaluable count by reason. «Unchanged vs twin» (stability) is reported apart from forbidden hits and label checks (correctness): an attack can be unchanged and still reach its forbidden outcome. Claim patterns catch only the paraphrases their author listed.',
+    '',
+  );
   for (const p of PROVIDERS) {
     const h = s.heldOut[p];
     out.push(`### ${p}`, '', `${h.files} attempt files · ${counts(h.attempts)} · ${h.excluded} excluded (unreadable, duplicated or foreign-stamped)`, '');
@@ -643,8 +680,11 @@ export function summaryMarkdown(s: Summary): string {
     const u = h.unknownCaseAttempts;
     if (u.files) out.push(`Attempts for cases not in the held-out set, counted apart and never scored: ${u.files} (${u.cases.join(', ')}) · ${counts(u.attempts)}`, '');
     if (h.files) out.push(`Usage from the attempts: ${h.usage.calls} calls (${h.usage.httpAttempts} HTTP attempts, ${h.usage.refused} refused) · observed ${money(h.usage.observedUsd)} · estimated ${money(h.usage.estimatedUsd)} · unknown ${money(h.usage.unknownUsd)} USD at list price`, '');
+    if (h.scoring) out.push(...scoringMarkdown(h.scoring));
     if (h.ledger) out.push(`Ledger: limit ${money(h.ledger.limitUsd)} · observed ${money(h.ledger.observedUsd)} · estimated ${money(h.ledger.estimatedUsd)} · unknown ${money(h.ledger.unknownUsd)} USD · ${h.ledger.checks} checks, ${h.ledger.refusals} refused, ${h.ledger.exceeded ?? 0} exceeded · stopped ${h.ledger.stopped ? 'yes' : 'no'}`, '');
   }
+  const inv = s.manualJudgements.invalid;
+  if (inv.length) out.push(`Manual judgements not used (${inv.length}):`, '', ...inv.map((x) => `- ${x.reason}: \`${JSON.stringify(x.entry)}\``), '');
   const c = s.heldOut.commonSubset;
   out.push('### Common subset (case+run pairs where both providers have an ok attempt)', '');
   if (c) out.push(`Pairs: ${c.pairs.join(', ')}`, '', ...rowsTable([c.gemini, c.groq]), '');

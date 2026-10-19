@@ -47,8 +47,8 @@ export const loadConfig = (): HeldOutConfig => JSON.parse(readFileSync(CONFIG_FI
 
 /**
  * Repo-relative: the files that must be byte-identical to the freeze commit for the batch to start, and whose hash the
- * first batch pins in budget.json (ruling B14). Add a file here when it joins the freeze (the held-out scorer, Task 5;
- * heldout/manual-judgements.json, Task 6); a listed file that does not exist refuses the start.
+ * first batch pins in budget.json (ruling B14). The freeze commit is the last commit touching any of them (B15). Add a
+ * file here when it joins the freeze; a listed file that does not exist refuses the start.
  */
 export const FROZEN_PATHS = [
   'packages/analyst/evals/heldout/cases.ts',
@@ -56,8 +56,9 @@ export const FROZEN_PATHS = [
   'packages/analyst/evals/heldout/config.json',
   'packages/analyst/evals/strict.ts',
   'packages/analyst/evals/metrics.ts',
+  'packages/analyst/evals/heldout/score.ts',
+  'packages/analyst/evals/heldout/manual-judgements.json',
 ];
-const HELDOUT_DIR = 'packages/analyst/evals/heldout';
 const RESULTS_REL = 'packages/analyst/evals/results/heldout';
 export const RESULTS_DIR = fileURLToPath(new URL('./results/heldout/', import.meta.url));
 
@@ -148,8 +149,8 @@ export function preflight(o: Pick<BatchOptions, 'provider' | 'raw' | 'cases' | '
   const dirty = git(['status', '--porcelain', '--', 'packages/analyst', `:(exclude)${RESULTS_REL}`]);
   if (dirty) throw new Error(`uncommitted changes under packages/analyst:\n${dirty}`);
   const codeCommit = git(['rev-parse', 'HEAD']);
-  const freezeCommit = git(['log', '-1', '--format=%H', '--', HELDOUT_DIR]);
-  if (!freezeCommit) throw new Error(`no freeze commit: ${HELDOUT_DIR} has never been committed`);
+  const freezeCommit = git(['log', '-1', '--format=%H', '--', ...FROZEN_PATHS]);
+  if (!freezeCommit) throw new Error('no freeze commit: none of the frozen files has ever been committed');
   try {
     git(['diff', '--quiet', freezeCommit, 'HEAD', '--', ...FROZEN_PATHS]);
   } catch {

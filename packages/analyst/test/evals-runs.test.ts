@@ -308,7 +308,11 @@ test('the runner refuses to start when a frozen file differs from the freeze com
     'packages/analyst/evals/heldout/config.json',
     'packages/analyst/evals/strict.ts',
     'packages/analyst/evals/metrics.ts',
+    'packages/analyst/evals/heldout/score.ts',
+    'packages/analyst/evals/heldout/manual-judgements.json',
   ]);
+  // B15: the freeze commit is the last commit touching any frozen file, not only the heldout folder
+  assert.deepEqual(git.seen.find((a) => a[0] === 'log'), ['log', '-1', '--format=%H', '--', ...FROZEN_PATHS]);
 });
 
 test('the runner refuses to start on a prompt version, model or budget other than the frozen config, or on no cases', async () => {
