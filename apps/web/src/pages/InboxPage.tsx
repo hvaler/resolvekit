@@ -132,7 +132,7 @@ export function InboxPage() {
                 placeholder="Search ID, reason, status, next step"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                className="min-w-0 flex-1 border-0 bg-transparent text-body text-ink outline-none placeholder:text-ink-3 focus-visible:outline-none"
+                className="min-w-0 flex-1 border-0 bg-transparent text-body text-ink outline-hidden placeholder:text-ink-3 focus-visible:outline-hidden"
               />
             </label>
             <button

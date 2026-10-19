@@ -90,7 +90,7 @@ export function UploadReview({ upload, readLines, pastedText, client, onChange, 
       >
         <div className="flex flex-none items-center gap-5 border-b border-line px-[26px] py-4 max-md:px-4">
           <div className="flex min-w-0 flex-col gap-0.5">
-            <h2 id="upload-review-title" ref={headingRef} tabIndex={-1} className="m-0 text-[18px] font-semibold tracking-[-0.01em] outline-none">
+            <h2 id="upload-review-title" ref={headingRef} tabIndex={-1} className="m-0 text-[18px] font-semibold tracking-[-0.01em] outline-hidden">
               Review new evidence
             </h2>
             <span className="truncate font-mono text-caption leading-[1.3] text-ink-3">

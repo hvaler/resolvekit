@@ -379,7 +379,7 @@ function ApproveIntent({
       >
         <div className="flex flex-none items-center gap-5 border-b border-line px-[26px] py-4 max-md:relative max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-2 max-md:py-3 max-md:pl-4 max-md:pr-14">
           <div className="flex flex-col gap-0.5">
-            <h2 id="approve-title" ref={headingRef} tabIndex={-1} className="m-0 text-[18px] font-semibold tracking-[-0.01em] outline-none">
+            <h2 id="approve-title" ref={headingRef} tabIndex={-1} className="m-0 text-[18px] font-semibold tracking-[-0.01em] outline-hidden">
               {title(flow, mode)}
             </h2>
             <span className="font-mono text-caption leading-[1.3] text-ink-3">

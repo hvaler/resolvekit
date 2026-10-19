@@ -1,10 +1,52 @@
 /* Design tokens (colour, type, radius, elevation, motion) from the design handoff. Light/dark via data-theme,
    teal/indigo via data-accent on <html>. Tailwind names for them come from tailwind.resolvekit.cjs. */
-@import './theme/resolvekit-tokens.css';
+/* In the base layer, as in v3 (where it came before the utilities): the utilities still override its :focus-visible. */
+@import './theme/resolvekit-tokens.css' layer(base);
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+/* Tailwind v4 reads the v3 JS config (and through it the design-handoff preset, unchanged). */
+@config '../tailwind.config.ts';
+
+/* Tailwind v4 changed some v3 defaults; these keep the v3 look (see the v4 upgrade guide). */
+/* `hover:` applied on every device in v3; v4 limits it to @media (hover: hover). */
+@custom-variant hover (&:hover);
+
+@layer base {
+  /* v3 default border colour (gray-200); v4 uses currentColor. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: #e5e7eb;
+  }
+  /* v3 placeholder colour (gray-400); v4 uses the text colour at 50%. */
+  input::placeholder,
+  textarea::placeholder {
+    color: #9ca3af;
+  }
+  /* v3 buttons had a pointer cursor; v4 uses the default cursor. */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+  /* v3 preflight styled search inputs as plain text fields; v4 dropped it. */
+  [type='search'] {
+    -webkit-appearance: textfield;
+    appearance: textfield;
+    outline-offset: -2px;
+  }
+  /* v4's transition utilities also animate outline-color, so the focus outline would fade in from the text
+     colour. With the outline colour set beforehand there is nothing to animate (v3: it appears at once). */
+  * {
+    outline-color: var(--acc);
+  }
+}
+
+/* Outside the layers, like v3's preflight: AG Grid draws a line above the pinned totals row with a zero-specificity
+   :where() rule, which v3's unlayered `* { border-width: 0 }` overrode. Keep it hidden (AG Grid still reserves the
+   1px, as it did with v3). */
+:where(.ag-floating-bottom:not(.ag-invisible)) { border-top-width: 0; }
 
 /* App-only token: the backdrop behind the approve-and-send dialog. */
 [data-theme='light'] { --scrim: rgba(12, 14, 15, 0.48); }
