@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { CONTRACTS, type VariantContract } from './actionContracts';
 import {
   ACTION_EVIDENCE_BLANK,
+  ACTION_RULES,
   ACTION_TEXT_LIMIT,
   actionAvailability,
+  actionAvailabilityWith,
   composeAction,
+  composeActionWith,
   confirmationTerms,
   consequenceText,
   disputePin,
@@ -175,16 +178,26 @@ describe('availability', () => {
       { variant: 'return_address', type: 'REFUND_WITH_RETURN', available: false, why: CONTRACTS.return_address.reason },
     ]);
     expect(actionAvailability(khh({ responseOptions: undefined }), 'accept_claim', OWNER)).toMatchObject({ sendable: false, variants: [], why: 'PayPal offers no type for this action on this dispute right now' });
+    // Types PayPal offers that no ResolveKit variant covers: listed as unavailable, with their own reason.
+    expect(actionAvailability(khh({ responseOptions: { acceptClaimTypes: [], offerTypes: ['REFUND_WITH_REPLACEMENT'] } }), 'make_offer', OWNER)).toEqual({
+      action: 'make_offer',
+      offered: true,
+      sendable: false,
+      why: 'ResolveKit cannot send the types PayPal offers on this dispute',
+      variants: [{ variant: null, type: 'REFUND_WITH_REPLACEMENT', available: false, why: 'ResolveKit cannot send this type' }],
+    });
+    // A covered variant's reason wins over an uncovered type's.
+    expect(actionAvailability(khh({ responseOptions: { acceptClaimTypes: [], offerTypes: ['REFUND_WITH_REPLACEMENT', 'REFUND'] } }), 'make_offer', OWNER).why).toBe(CONTRACTS['make_offer:REFUND'].reason);
 
     // With a test-only recorded contract, the same fresh read makes it sendable, for a reviewer too (not owner-only).
     const reg = { ...CONTRACTS, send_message: testContract('send_message') };
-    expect(actionAvailability(khh(), 'send_message', REVIEWER, reg)).toMatchObject({ offered: true, sendable: true, why: null });
-    expect(actionAvailability(khh({ allowedActions: [] }), 'send_message', OWNER, reg)).toMatchObject({ offered: false, sendable: false });
+    expect(actionAvailabilityWith(khh(), 'send_message', REVIEWER, reg)).toMatchObject({ offered: true, sendable: true, why: null });
+    expect(actionAvailabilityWith(khh({ allowedActions: [] }), 'send_message', OWNER, reg)).toMatchObject({ offered: false, sendable: false });
     const acc = { ...CONTRACTS, 'accept_claim:REFUND': testContract('accept_claim:REFUND') };
-    expect(actionAvailability(khh(), 'accept_claim', OWNER, acc)).toMatchObject({ sendable: true, why: null });
-    expect(actionAvailability(khh(), 'accept_claim', REVIEWER, acc)).toMatchObject({ sendable: false, why: 'Only the workspace owner can send this action' });
+    expect(actionAvailabilityWith(khh(), 'accept_claim', OWNER, acc)).toMatchObject({ sendable: true, why: null });
+    expect(actionAvailabilityWith(khh(), 'accept_claim', REVIEWER, acc)).toMatchObject({ sendable: false, why: 'Only the workspace owner can send this action' });
     // PayPal no longer allows REFUND: the recorded variant is not offered.
-    expect(actionAvailability(khh({ responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND'], offerTypes: [] } }), 'accept_claim', OWNER, acc).sendable).toBe(false);
+    expect(actionAvailabilityWith(khh({ responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND'], offerTypes: [] } }), 'accept_claim', OWNER, acc).sendable).toBe(false);
   });
 
   it('the pin is the fresh read', () => {
@@ -205,10 +218,10 @@ describe('compose', () => {
     // PayPal does not allow the type now.
     const acc = { ...CONTRACTS, 'accept_claim:REFUND': testContract('accept_claim:REFUND') };
     const onlyPartial = khh({ responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND'], offerTypes: [] } });
-    expect(err(composeAction({ ...base, req: { action: 'accept_claim', acceptType: 'REFUND', note: '', amount: null, attachments: [] }, snap: onlyPartial }, acc))).toBe('409 VARIANT_NOT_AVAILABLE');
+    expect(err(composeActionWith({ ...base, req: { action: 'accept_claim', acceptType: 'REFUND', note: '', amount: null, attachments: [] }, snap: onlyPartial }, acc))).toBe('409 VARIANT_NOT_AVAILABLE');
     // Available in the registry, but the action's rules have not landed yet.
     const reg = { ...CONTRACTS, send_message: testContract('send_message') };
-    expect(composeAction({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh() }, reg)).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE' });
+    expect(composeActionWith({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh() }, reg)).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE' });
   });
 
   it('then stage, currency, amount and text, in that order', () => {
@@ -216,19 +229,19 @@ describe('compose', () => {
     const offer: ActionRules = { stages: ['INQUIRY'], amount: 'required', text: 'required' };
     const rules = { make_offer: () => offer, send_message: (): ActionRules => ({ stages: null, amount: 'not_allowed', text: 'required' }) };
     const req = (amount: { value: string; currency: string } | null, note = 'Half back.') => ({ action: 'make_offer' as const, offerType: 'REFUND', note, amount, attachments: [] as [] });
-    const go = (r: ReturnType<typeof req>, snap = khh()) => composeAction({ ...base, req: r, snap }, reg, rules);
+    const go = (r: ReturnType<typeof req>, snap = khh()) => composeActionWith({ ...base, req: r, snap }, reg, rules);
 
     expect(err(go(req({ value: '9.00', currency: 'EUR' }, ''), khh({ stage: 'CHARGEBACK' })))).toBe('409 ACTION_STAGE');
     expect(err(go(req({ value: '9.00', currency: 'EUR' }, '')))).toBe('422 CURRENCY_MISMATCH');
     expect(err(go(req({ value: '9.00', currency: 'USD' }, ''), khh({ amount: { value: '7', currency: 'XYZ' } })))).toBe('422 UNKNOWN_CURRENCY');
-    expect(err(go(req({ value: '9.00', currency: 'USD' }, ''), khh({ amount: null })))).toBe('422 UNKNOWN_CURRENCY');
+    expect(err(go(req({ value: '9.00', currency: 'USD' }, ''), khh({ amount: null })))).toBe('422 DISPUTE_AMOUNT_UNKNOWN');
     expect(err(go(req({ value: '7.01', currency: 'USD' }, '')))).toBe('422 AMOUNT_ABOVE_DISPUTE');
     expect(err(go(req({ value: '0', currency: 'USD' }, '')))).toBe('422 AMOUNT_ABOVE_DISPUTE');
     expect(err(go(req(null, '')))).toBe('422 AMOUNT_REQUIRED');
     expect(err(go(req({ value: '7.00', currency: 'USD' }, '')))).toBe('422 TEXT_REQUIRED');
     expect(err(go(req({ value: '7.00', currency: 'USD' }, 'x'.repeat(ACTION_TEXT_LIMIT + 1))))).toBe('422 TEXT_TOO_LONG');
     // No amount asked: the dispute amount is not needed.
-    expect(err(composeAction({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh({ amount: null }) }, reg, rules))).toBe('ok');
+    expect(err(composeActionWith({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh({ amount: null }) }, reg, rules))).toBe('ok');
 
     const ok = go(req({ value: '7.00', currency: 'USD' }));
     expect(ok).toEqual({
@@ -243,8 +256,22 @@ describe('compose', () => {
     // Amounts compare as minor units: 7 is 7.00, and the payload carries the canonical string.
     expect(go(req({ value: '7', currency: 'USD' }))).toMatchObject({ payload: { amount: { value: '7.00', currency: 'USD' } } });
     // Below the dispute amount when the rules say so (a partial refund).
-    expect(err(composeAction({ ...base, req: req({ value: '7.00', currency: 'USD' }), snap: khh() }, reg, { make_offer: () => ({ ...offer, belowDispute: true }) }))).toBe('422 AMOUNT_ABOVE_DISPUTE');
-    expect(err(composeAction({ ...base, req: req({ value: '1.00', currency: 'USD' }), snap: khh() }, reg, { make_offer: () => ({ ...offer, amount: 'not_allowed' }) }))).toBe('422 AMOUNT_NOT_ALLOWED');
+    expect(err(composeActionWith({ ...base, req: req({ value: '7.00', currency: 'USD' }), snap: khh() }, reg, { make_offer: () => ({ ...offer, belowDispute: true }) }))).toBe('422 AMOUNT_ABOVE_DISPUTE');
+    expect(err(composeActionWith({ ...base, req: req({ value: '1.00', currency: 'USD' }), snap: khh() }, reg, { make_offer: () => ({ ...offer, amount: 'not_allowed' }) }))).toBe('422 AMOUNT_NOT_ALLOWED');
+  });
+
+  it('an accept with no amount and no dispute amount is refused: the owner never confirms a refund without an amount', () => {
+    const acc = { ...CONTRACTS, 'accept_claim:REFUND': testContract('accept_claim:REFUND') };
+    const rules = { accept_claim: (): ActionRules => ({ stages: null, amount: 'not_allowed', text: 'optional' }) };
+    const accept = { action: 'accept_claim' as const, acceptType: 'REFUND', note: '', amount: null, attachments: [] as [] };
+    expect(composeActionWith({ ...base, req: accept, snap: khh({ amount: null }) }, acc, rules)).toMatchObject({ status: 422, error: 'DISPUTE_AMOUNT_UNKNOWN' });
+    expect(composeActionWith({ ...base, req: accept, snap: khh() }, acc, rules)).toMatchObject({ action: 'accept_claim', pin: { amount: { value: '7.00', currency: 'USD' } } });
+  });
+
+  it('the public entry points use the registry and the frozen rules only', () => {
+    expect(Object.isFrozen(ACTION_RULES)).toBe(true);
+    expect(composeAction.length).toBe(1);
+    expect(actionAvailability.length).toBe(3);
   });
 });
 
@@ -309,5 +336,12 @@ describe('new buyer messages after approval', () => {
     // Only the merchant's own message, the read time and the link order changed: nothing holds the send.
     expect(relevantNewBuyerMessages('send_message', keys, khh({ messages: [...(before.messages ?? []), seller], readAt: 'later', allowedActions: [...before.allowedActions].reverse() }))).toEqual([]);
     expect(relevantNewBuyerMessages('send_message', keys, khh({ messages: undefined }))).toEqual([]);
+  });
+
+  it('a second buyer message with the same key as one at approval still holds the send (multiset)', () => {
+    const untimed = { postedBy: 'BUYER', time: null, content: 'Hi!', files: [] };
+    const keys = [messageKey(untimed)];
+    expect(relevantNewBuyerMessages('send_message', keys, khh({ messages: [untimed] }))).toEqual([]);
+    expect(relevantNewBuyerMessages('send_message', keys, khh({ messages: [untimed, { ...untimed, content: 'Yo!' }] }))).toEqual([{ ...untimed, content: 'Yo!' }]);
   });
 });

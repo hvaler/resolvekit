@@ -8,7 +8,7 @@
  * mapped lists are read back under those names, and a field the snapshot does not carry is null, so it never matches.
  */
 import { variantOf, type ProofFields, type VariantContract, type VariantId } from './actionContracts.ts';
-import { intentAction, messageKey } from './actions.ts';
+import { intentAction, messageKey, unseen } from './actions.ts';
 import type { IntentContent } from './intent.ts';
 import { evidenceKey } from './recorded.ts';
 import type { DisputeSnapshot } from './types';
@@ -138,8 +138,8 @@ export function proveSend(c: IntentContent, base: ReadBackBase, after: DisputeSn
   if (!proof || !proof.list || !proof.actorField || !proof.actorValue || !proof.timeField || proof.matchFields.length === 0) return pending;
   if (variantOfContent(c) !== contract.id) return pending;
 
-  const seen = new Set(base.entryKeys);
-  const fresh = actorEntries(after, proof).filter((e) => !seen.has(e.key));
+  // A multiset: an entry whose key matches a baseline entry's is new once those baseline entries are used up.
+  const fresh = unseen(actorEntries(after, proof), (e) => e.key, base.entryKeys);
   const started = Date.parse(base.sentStartedAt);
   const approved = proof.matchFields.map((f) => [f, approvedValue(c, f)] as const);
   const ours = (e: Entry): boolean => {

@@ -180,7 +180,8 @@ export interface ActionAvailability {
   sendable: boolean;
   /** Why it is not sendable; null when it is. */
   why: string | null;
-  variants: Array<{ variant: VariantId; type: string | null; available: boolean; why: string | null }>;
+  /** `variant` null: a type PayPal offers that no ResolveKit variant covers (never available). */
+  variants: Array<{ variant: VariantId | null; type: string | null; available: boolean; why: string | null }>;
 }
 
 export type ContractRegistry = Readonly<Record<VariantId, VariantContract>>;
@@ -188,6 +189,8 @@ export type ContractRegistry = Readonly<Record<VariantId, VariantContract>>;
 const NOT_OFFERED = 'PayPal does not offer this action on this dispute right now';
 const OWNER_ONLY = 'Only the workspace owner can send this action';
 const NO_TYPE = 'PayPal offers no type for this action on this dispute right now';
+const UNCOVERED_TYPES = 'ResolveKit cannot send the types PayPal offers on this dispute';
+const UNCOVERED_TYPE = 'ResolveKit cannot send this type';
 
 const ownerOk = (action: IntentAction, who: Viewer): boolean => !OWNER_ACTIONS.includes(action) || (who.role === 'owner' && !who.reviewer);
 
@@ -213,22 +216,29 @@ function variantTypes(snap: DisputeSnapshot, action: IntentAction): Array<string
  * PayPal allows, available only when its contract is recorded (with the registry's reason otherwise); owner-only
  * actions refused to anyone else. Nothing is inferred from earlier reads or local state.
  */
-export function actionAvailability(snap: DisputeSnapshot, action: IntentAction, who: Viewer, contracts: ContractRegistry = CONTRACTS): ActionAvailability {
+export function actionAvailability(snap: DisputeSnapshot, action: IntentAction, who: Viewer): ActionAvailability {
+  return actionAvailabilityWith(snap, action, who, CONTRACTS);
+}
+
+/** {@link actionAvailability} against a given registry. Internal: for tests with test-only contracts. */
+export function actionAvailabilityWith(snap: DisputeSnapshot, action: IntentAction, who: Viewer, contracts: ContractRegistry): ActionAvailability {
   const offered = snap.allowedActions.includes(action);
-  const variants = variantTypes(snap, action).flatMap((type) => {
+  const variants: ActionAvailability['variants'] = variantTypes(snap, action).map((type) => {
     const variant = variantOf(action, type);
-    if (!variant) return []; // a type no variant of the registry covers: never sendable
+    if (!variant) return { variant: null, type, available: false, why: UNCOVERED_TYPE };
     const c = contracts[variant];
     const ok = c.status !== 'not_available';
-    return [{ variant, type, available: ok, why: ok ? null : (c.reason ?? 'Not available') }];
+    return { variant, type, available: ok, why: ok ? null : (c.reason ?? 'Not available') };
   });
   // Evidence keeps its own flow (its variants are checked where it is composed).
   const withVariants = action !== 'provide_evidence';
+  const covered = variants.filter((v) => v.variant !== null);
   let why: string | null = null;
   if (!offered) why = NOT_OFFERED;
   else if (!ownerOk(action, who)) why = OWNER_ONLY;
   else if (withVariants && variants.length === 0) why = NO_TYPE;
-  else if (withVariants && !variants.some((v) => v.available)) why = variants[0]!.why;
+  else if (withVariants && covered.length === 0) why = UNCOVERED_TYPES;
+  else if (withVariants && !covered.some((v) => v.available)) why = covered[0]!.why;
   return { action, offered, sendable: why === null, why, variants };
 }
 
@@ -249,7 +259,7 @@ export interface ActionRules {
 export type RulesOf = (req: ActionRequest, snap: DisputeSnapshot) => ActionRules | null;
 
 /** No action's rules have landed yet: every action is refused VARIANT_NOT_AVAILABLE until its task adds them. */
-export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = {};
+export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Object.freeze({});
 
 const requestType = (req: ActionRequest): string | null =>
   req.action === 'send_message' ? (req.attachments.length ? 'file' : null) : req.action === 'accept_claim' ? req.acceptType : req.action === 'make_offer' ? req.offerType : null;
@@ -267,6 +277,8 @@ function payloadOf(req: ActionRequest, amount: Money | null): ActionPayload {
   }
 }
 
+const disputeAmountUnknown = (): ComposeProblem => ({ status: 422, error: 'DISPUTE_AMOUNT_UNKNOWN', detail: 'PayPal reports no dispute amount for this dispute: ResolveKit cannot check or show the amount' });
+
 /** The canonical decimal string of an amount (`7` USD → `7.00`); the value as given when it has none. */
 function canonicalValue(m: Money): string {
   const r = parseAmount(m.value, m.currency);
@@ -278,11 +290,21 @@ function canonicalValue(m: Money): string {
  * type allowed now), the contract's stage rule, currency, amount, text. Each action's rules come with its task;
  * without them the action is refused VARIANT_NOT_AVAILABLE.
  */
-export function composeAction(
-  x: { caseId: string; req: ActionRequest; snap: DisputeSnapshot; disputeId: string | null; seller: string | null; files: SubmissionFile[] },
-  contracts: ContractRegistry = CONTRACTS,
-  rules: Readonly<Partial<Record<SimpleAction, RulesOf>>> = ACTION_RULES,
-): IntentContent | ComposeProblem {
+export interface ComposeActionInput {
+  caseId: string;
+  req: ActionRequest;
+  snap: DisputeSnapshot;
+  disputeId: string | null;
+  seller: string | null;
+  files: SubmissionFile[];
+}
+
+export function composeAction(x: ComposeActionInput): IntentContent | ComposeProblem {
+  return composeActionWith(x, CONTRACTS, ACTION_RULES);
+}
+
+/** {@link composeAction} against a given registry and rules. Internal: for tests with test-only contracts. */
+export function composeActionWith(x: ComposeActionInput, contracts: ContractRegistry, rules: Readonly<Partial<Record<SimpleAction, RulesOf>>> = ACTION_RULES): IntentContent | ComposeProblem {
   const { req, snap } = x;
   // 1. Availability, from the fresh read and the registry only.
   if (!snap.allowedActions.includes(req.action)) return { status: 409, error: 'ACTION_NOT_OFFERED', detail: NOT_OFFERED };
@@ -309,7 +331,7 @@ export function composeAction(
   if (amount) {
     if (r.amount === 'not_allowed') return { status: 422, error: 'AMOUNT_NOT_ALLOWED', detail: 'PayPal takes no amount for this action' };
     const d = snap.amount;
-    if (!d) return { status: 422, error: 'UNKNOWN_CURRENCY', detail: 'PayPal reports no dispute amount to check the amount against' };
+    if (!d) return disputeAmountUnknown();
     if (!Object.hasOwn(CURRENCY_EXPONENT, d.currency)) return { status: 422, error: 'UNKNOWN_CURRENCY', detail: `Unknown currency ${d.currency}: ResolveKit cannot check amounts in it` };
     if (amount.currency !== d.currency) return { status: 422, error: 'CURRENCY_MISMATCH', detail: `The amount must be in ${d.currency}, the dispute's currency` };
     let minor: bigint;
@@ -325,6 +347,8 @@ export function composeAction(
     }
     money = { value: canonicalValue(amount), currency: amount.currency };
   } else if (r.amount === 'required') return { status: 422, error: 'AMOUNT_REQUIRED', detail: 'Type the amount' };
+  // An accept without an amount refunds the disputed amount: the owner must see it in the terms they confirm.
+  else if (req.action === 'accept_claim' && !snap.amount) return disputeAmountUnknown();
 
   // 5. Text.
   const text = req.action === 'send_message' ? req.text : req.note;
@@ -421,6 +445,20 @@ const HELD_BY_BUYER_MESSAGE: readonly IntentAction[] = ['send_message', 'make_of
  */
 export function relevantNewBuyerMessages(action: IntentAction, keysAtApproval: readonly string[], fresh: DisputeSnapshot): DisputeMessage[] {
   if (!HELD_BY_BUYER_MESSAGE.includes(action)) return [];
-  const seen = new Set(keysAtApproval);
-  return (fresh.messages ?? []).filter((m) => m.postedBy === 'BUYER' && !seen.has(messageKey(m)));
+  return unseen(fresh.messages ?? [], messageKey, keysAtApproval).filter((m) => m.postedBy === 'BUYER');
+}
+
+/**
+ * The items not in a baseline, compared as a multiset: each baseline key absorbs one item with that key, so a second
+ * item with the same key (e.g. two untimed messages of the same length) is new.
+ */
+export function unseen<T>(items: readonly T[], key: (t: T) => string, baseline: readonly string[]): T[] {
+  const left = new Map<string, number>();
+  for (const k of baseline) left.set(k, (left.get(k) ?? 0) + 1);
+  return items.filter((t) => {
+    const k = key(t);
+    const n = left.get(k) ?? 0;
+    if (n > 0) left.set(k, n - 1);
+    return n === 0;
+  });
 }

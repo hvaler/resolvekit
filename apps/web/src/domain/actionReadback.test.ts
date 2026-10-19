@@ -111,6 +111,16 @@ describe('read-back proof', () => {
     expect(proveSend(content('Hello'), base, snap([BUYER, msg('SELLER', '2026-10-19T10:00:05.000Z', 'Other')]), contract(), SENT_MS + 600_000).state).toBe('pending');
   });
 
+  it('proof: the baseline is a multiset, so a new entry with a baseline key is still new (never a false absent)', () => {
+    const untimed: DisputeMessage = { postedBy: 'SELLER', time: null, content: 'Hello', files: [] };
+    const before = snap([BUYER, untimed]);
+    const base = readBackBase(before, proof(), SENT);
+    expect(base.entryKeys).toEqual(['SELLER||5']);
+    expect(proveSend(content('Hello'), base, before, contract(), SENT_MS + 600_000).state).toBe('absent');
+    const twice = snap([BUYER, untimed, untimed]);
+    expect(proveSend(content('Hello'), base, twice, contract(), SENT_MS + 600_000)).toEqual({ state: 'pending', detail: 'Outcome pending confirmation: PayPal shows a different seller entry' });
+  });
+
   it('proof: a contract without proof fields never records', () => {
     const before = snap([BUYER]);
     const base = readBackBase(before, proof(), SENT);
