@@ -10,9 +10,9 @@
  * verdict in memory (best effort, logged).
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
-import { preserveCorrupt, writeFileDurable } from '@resolvekit/hosting';
+import { openStoreFile, writeFileDurable } from '@resolvekit/hosting';
 import type { Recheck } from '../../web/src/domain/draft.ts';
 
 export const MAX_VERDICTS = 2000;
@@ -37,29 +37,22 @@ export class RecheckVerdicts {
     this.max = o.max ?? MAX_VERDICTS;
     this.log = o.log ?? (() => {});
     if (!this.file) return;
-    let raw: string;
-    try {
-      raw = readFileSync(this.file, 'utf8');
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return;
-      raw = '';
-    }
-    try {
-      const saved = JSON.parse(raw) as { v?: unknown; verdicts?: unknown };
-      if (saved?.v !== 1 || !Array.isArray(saved.verdicts)) throw new Error('not verdicts');
-      for (const e of saved.verdicts as Array<[unknown, unknown]>) {
-        if (!Array.isArray(e) || typeof e[0] !== 'string' || !isRecheck(e[1])) throw new Error('not a verdict');
-        this.verdicts.set(e[0], e[1]);
-      }
-    } catch {
-      this.verdicts.clear();
-      const to = preserveCorrupt(this.file, o.now?.() ?? new Date());
-      this.blocked = !to;
-      this.problem = to
-        ? `${basename(this.file)} could not be read; preserved as ${to}. Edits re-checked before need a new re-check`
-        : `${basename(this.file)} could not be read and could not be moved aside; left in place and not written over`;
-      this.log(`ERROR re-check verdicts · ${this.problem}`);
-    }
+    const opened = openStoreFile(
+      this.file,
+      (raw) => {
+        const saved = JSON.parse(raw) as { v?: unknown; verdicts?: unknown };
+        if (saved?.v !== 1 || !Array.isArray(saved.verdicts)) throw new Error('not verdicts');
+        for (const e of saved.verdicts as Array<[unknown, unknown]>) {
+          if (!Array.isArray(e) || typeof e[0] !== 'string' || !isRecheck(e[1])) throw new Error('not a verdict');
+        }
+        return saved.verdicts as Array<[string, Recheck]>;
+      },
+      { ifEmpty: 'Edits re-checked before need a new re-check', now: o.now?.() },
+    );
+    for (const [k, r] of opened.value ?? []) this.verdicts.set(k, r);
+    this.blocked = opened.blocked;
+    this.problem = opened.problem;
+    if (this.problem) this.log(`ERROR re-check verdicts · ${this.problem}`);
   }
 
   private static key(analysisKey: string, text: string) {

@@ -40,7 +40,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
-import { appendFileDurable, preserveCorrupt, writeFileDurable } from '@resolvekit/hosting';
+import { appendFileDurable, preserveCorrupt, readStoreFile, writeFileDurable } from '@resolvekit/hosting';
 import type { CaseAnalysis } from '@resolvekit/analyst';
 import type { IntentRequest, IntentStatus, SubmissionIntent } from '../../web/src/domain/intent.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
@@ -182,7 +182,6 @@ export class IntentStore {
     this.now = o.now ?? (() => new Date());
     this.ttlMs = o.ttlMs ?? INTENT_TTL_MS;
     this.log = o.log ?? (() => {});
-    if (this.file) this.loadIntents(this.file);
     const load = (file: string | null, into: (e: AuditEvent) => void) => {
       if (!file) return 0;
       try {
@@ -200,7 +199,13 @@ export class IntentStore {
       }
     };
     this.eventsBytes = load(this.eventsFile, (e) => this.bucketPush(e));
+    // The send log first: it is durable and append-only, so even when intents.json is lost or unreadable every dispute
+    // PayPal accepted an intent for is known again (no other intent is sent there).
     load(this.sendsFile, (e) => this.sendLog.push(e));
+    if (this.file) this.loadIntents(this.file);
+    for (const e of this.sendLog) {
+      if (e.kind === 'sent' && e.disputeId && e.intentId && !this.sentDisputes.has(e.disputeId)) this.sentDisputes.set(e.disputeId, { intentId: e.intentId, at: e.at });
+    }
   }
 
   private iso() {
@@ -211,13 +216,10 @@ export class IntentStore {
 
   /** Read the saved intents. A missing file is an empty store; one that cannot be read is preserved, never overwritten. */
   private loadIntents(file: string) {
-    let raw: string;
-    try {
-      raw = readFileSync(file, 'utf8');
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return; // no intents yet
-      return this.unreadable(file, (e as NodeJS.ErrnoException).code ?? (e as Error).message);
-    }
+    const read = readStoreFile(file);
+    if (read.kind === 'missing') return; // no intents yet
+    if (read.kind === 'error') return this.unreadable(file, read.code, false);
+    const raw = read.text;
     const intents = new Map<string, StoredIntent>();
     const sent = new Map<string, { intentId: string; at: string }>();
     try {
@@ -233,21 +235,24 @@ export class IntentStore {
       }
       if (!Array.isArray(saved)) for (const [d, v] of Object.entries(saved.sentDisputes ?? {})) sent.set(d, v);
     } catch (e) {
-      return this.unreadable(file, e instanceof SyntaxError ? 'not JSON' : (e as Error).message);
+      return this.unreadable(file, e instanceof SyntaxError ? 'not JSON' : (e as Error).message, true);
     }
     for (const [k, v] of intents) this.intents.set(k, v);
     for (const [k, v] of sent) this.sentDisputes.set(k, v);
   }
 
-  /** Move the unreadable intents file aside (or, if that fails, never write over it), log it and remember why. */
-  private unreadable(file: string, why: string) {
-    const to = preserveCorrupt(file, this.now());
+  /**
+   * The intents file could not be used. Corrupt content (`corrupt`) is moved aside; a read error (busy, permissions:
+   * the file may be fine) or a failed move leaves it in place, never written over. Logs it and remembers why.
+   */
+  private unreadable(file: string, why: string, corrupt: boolean) {
+    const to = corrupt ? preserveCorrupt(file, this.now()) : null;
     const name = basename(file);
     if (to) {
-      this.problem = `${name} could not be read (${why}); preserved as ${to}. Open intents and the per-dispute "sent" memory started empty (sends are still guarded by PayPal's fresh read)`;
+      this.problem = `${name} could not be read (${why}); preserved as ${to}. Open intents started empty; the disputes already sent to were taken from the send log (sends are still guarded by PayPal's fresh read)`;
     } else {
       this.blocked = true;
-      this.problem = `${name} could not be read (${why}) and could not be moved aside; left in place and never written over: every send is refused until it is fixed or removed`;
+      this.problem = `${name} could not be read (${why})${corrupt ? ' and could not be moved aside' : ''}; left in place and never written over: every send is refused until it is fixed or removed, then restart`;
     }
     this.log(`ERROR intents · ${this.problem}`);
   }

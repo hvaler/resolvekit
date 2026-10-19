@@ -18,9 +18,9 @@ import {
 } from '@resolvekit/analyst/node';
 import { canonicalJson } from '@resolvekit/analyst';
 import { documentsSignature } from '@resolvekit/cases';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
-import { preserveCorrupt, writeFileDurable } from '@resolvekit/hosting';
+import { openStoreFile, writeFileDurable } from '@resolvekit/hosting';
 
 export interface LiveState {
   configured: boolean;
@@ -219,26 +219,19 @@ export class InputPins {
   constructor(o: { file?: string; now?: () => Date; log?: (line: string) => void } = {}) {
     this.file = o.file ?? null;
     if (!this.file) return;
-    let raw: string;
-    try {
-      raw = readFileSync(this.file, 'utf8');
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return; // no pins yet
-      raw = '';
-    }
-    try {
-      const saved = JSON.parse(raw) as Record<string, AnalysisInput>;
-      if (!saved || typeof saved !== 'object' || Array.isArray(saved)) throw new Error('not pins');
-      for (const [k, v] of Object.entries(saved)) if (v && typeof v === 'object') this.pins.set(k, v);
-    } catch {
-      this.pins.clear();
-      const to = preserveCorrupt(this.file, o.now?.() ?? new Date());
-      this.blocked = !to;
-      this.problem = to
-        ? `${basename(this.file)} could not be read; preserved as ${to}. Cases whose seller evidence is in may need one new analysis`
-        : `${basename(this.file)} could not be read and could not be moved aside; left in place and not written over`;
-      o.log?.(`ERROR analysis pins · ${this.problem}`);
-    }
+    const opened = openStoreFile(
+      this.file,
+      (raw) => {
+        const saved = JSON.parse(raw) as Record<string, AnalysisInput>;
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved)) throw new Error('not pins');
+        return saved;
+      },
+      { ifEmpty: 'Cases whose seller evidence is in may need one new analysis', now: o.now?.() },
+    );
+    for (const [k, v] of Object.entries(opened.value ?? {})) if (v && typeof v === 'object') this.pins.set(k, v);
+    this.blocked = opened.blocked;
+    this.problem = opened.problem;
+    if (this.problem) o.log?.(`ERROR analysis pins · ${this.problem}`);
   }
 
   /** Why the saved pins could not be read at start, or null. */

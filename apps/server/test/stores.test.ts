@@ -16,6 +16,8 @@ import { parseBindingPools } from '../src/bindings.ts';
 import { createHostedApp } from '../src/hosted.ts';
 import { IntentStore } from '../src/intents.ts';
 import { UploadStore } from '../src/uploads/store.ts';
+import { RecheckVerdicts } from '../src/verdicts.ts';
+import { ReserveMemory } from '../src/reserve.ts';
 import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'rk-stores-'));
@@ -165,7 +167,75 @@ test('hosted operator check: an unreadable intents.json is a problem with where 
     const s = (await (await app(new Request('https://rk.example.com/api/ops/status', { headers: { host: 'rk.example.com', 'x-forwarded-for': '203.0.113.9', authorization: `Bearer ${OPS}` } }))).json()) as { ok: boolean; problems: string[] };
     assert.equal(s.ok, false);
     assert.ok(s.problems.some((x) => /intents\.json could not be read/.test(x) && /corrupt-/.test(x)), s.problems.join(' | '));
+    // The public health answer only says that a store is degraded (no names in hosted mode).
+    const h = (await (await app(new Request('https://rk.example.com/api/health', { headers: { host: 'rk.example.com', 'x-forwarded-for': '203.0.113.9' } }))).json()) as { storage?: unknown };
+    assert.equal(h.storage, true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+const draftFor = (owner: string, disputeId: string) => ({
+  caseId: CASE, disputeId, documentsHash: 'd', analysisKey: 'k', evidenceType: 'OTHER', carrier: '', tracking: '', notes: 'n', files: [], sentences: [], resolutionNotes: [],
+  contentHash: 'h', request: { evidenceType: 'OTHER', edits: {}, resolutions: {}, confirmedCorrections: [], attachments: [] }, rechecks: {}, createdBy: owner, createdFrom: 'ip',
+}) as unknown as Parameters<IntentStore['create']>[0];
+
+test('a corrupt intents.json does not forget a dispute already sent to: the send log seeds it, a new send is refused', () => {
+  const dir = tmp();
+  try {
+    writeFileSync(join(dir, 'intents.json'), '{broken');
+    const sent = { at: '2026-10-19T11:00:00.000Z', caseId: CASE, kind: 'sent', actor: 'local', disputeId: 'PP-R-SENT-1', intentId: `int-${'a'.repeat(32)}` };
+    writeFileSync(join(dir, 'audit-events-sends.jsonl'), JSON.stringify(sent) + '\n');
+    const store = new IntentStore({ file: join(dir, 'intents.json'), eventsFile: join(dir, 'audit-events.jsonl'), now: () => NOW });
+    assert.match(store.storageProblem()!, /taken from the send log/);
+    assert.deepEqual(store.sentFor('PP-R-SENT-1'), { intentId: sent.intentId, at: sent.at });
+    const i = store.create(draftFor('me', 'PP-R-SENT-1'));
+    assert.ok(!('ok' in i));
+    const id = (i as { id: string; contentHash: string }).id;
+    assert.equal(store.approve(id, CASE, 'h', 'me').ok, true);
+    const t = store.beginSend(id, CASE, 'me');
+    assert.equal(t.ok, false);
+    assert.equal((t as { error: string }).error, 'SELLER_EVIDENCE_EXISTS');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a read error on intents.json (EBUSY) never moves the file aside: left in place, not written over, reported', () => {
+  const dir = tmp();
+  try {
+    const file = join(dir, 'intents.json');
+    writeFileSync(file, '{"intents":[]}');
+    durableTestHooks.readError = { match: /intents\.json$/, code: 'EBUSY' };
+    const store = new IntentStore({ file, now: () => NOW });
+    assert.match(store.storageProblem()!, /could not be read \(EBUSY\); left in place/);
+    assert.deepEqual(readdirSync(dir), ['intents.json']);
+    assert.equal((store as unknown as { save(now: boolean): boolean }).save(true), false);
+    assert.equal(readFileSync(file, 'utf8'), '{"intents":[]}');
+  } finally {
+    durableTestHooks.readError = null;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+for (const [name, make] of [
+  ['analysis-inputs.json', (file: string) => new InputPins({ file, now: () => NOW })],
+  ['recheck-verdicts.json', (file: string) => new RecheckVerdicts({ file, now: () => NOW })],
+  ['reserve-position.json', (file: string) => new ReserveMemory({ file, now: () => NOW })],
+] as const) {
+  test(`a read error on ${name} leaves the file in place and unwritten; only bad content is moved aside`, () => {
+    const dir = tmp();
+    try {
+      const file = join(dir, name);
+      writeFileSync(file, 'kept as it is');
+      durableTestHooks.readError = { match: new RegExp(`${name.replace('.', '\.')}$`), code: 'EPERM' };
+      const s = make(file);
+      assert.match(s.storageProblem()!, /could not be read \(EPERM\); left in place/);
+      assert.deepEqual(readdirSync(dir), [name]);
+      assert.equal(readFileSync(file, 'utf8'), 'kept as it is');
+    } finally {
+      durableTestHooks.readError = null;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}

@@ -11,9 +11,9 @@
  * file). A file that cannot be read is moved aside (`<file>.corrupt-<time>`) and reported; the case then walks its list
  * as before. A failed write keeps the position in memory (logged).
  */
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
-import { preserveCorrupt, writeFileDurable } from '@resolvekit/hosting';
+import { openStoreFile, writeFileDurable } from '@resolvekit/hosting';
 import type { Binding, BindingPools } from './bindings.ts';
 
 /** A case's reserve is short (a list in BINDINGS_JSON); this bounds what one case can hold in the file. */
@@ -30,29 +30,24 @@ export class ReserveMemory {
     this.file = o.file ?? null;
     this.log = o.log ?? (() => {});
     if (!this.file) return;
-    let raw: string;
-    try {
-      raw = readFileSync(this.file, 'utf8');
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return;
-      raw = '';
-    }
-    try {
-      const s = JSON.parse(raw) as { v?: unknown; used?: unknown };
-      if (s?.v !== 1 || !s.used || typeof s.used !== 'object' || Array.isArray(s.used)) throw new Error('shape');
-      for (const [k, v] of Object.entries(s.used)) {
-        if (!Array.isArray(v) || !v.every((d) => typeof d === 'string')) throw new Error('shape');
-        this.used[k] = v.slice(-MAX_USED_PER_CASE);
-      }
-    } catch {
-      this.used = {};
-      const to = preserveCorrupt(this.file, o.now?.() ?? new Date());
-      this.blocked = !to;
-      this.problem = to
-        ? `${basename(this.file)} could not be read; preserved as ${to}. Each case starts again at the first dispute of its list`
-        : `${basename(this.file)} could not be read and could not be moved aside; left in place and not written over`;
-      this.log(`ERROR reserve · ${this.problem}`);
-    }
+    const opened = openStoreFile(
+      this.file,
+      (raw) => {
+        const s = JSON.parse(raw) as { v?: unknown; used?: unknown };
+        if (s?.v !== 1 || !s.used || typeof s.used !== 'object' || Array.isArray(s.used)) throw new Error('shape');
+        const used: Record<string, string[]> = {};
+        for (const [k, v] of Object.entries(s.used)) {
+          if (!Array.isArray(v) || !v.every((d) => typeof d === 'string')) throw new Error('shape');
+          used[k] = v.slice(-MAX_USED_PER_CASE);
+        }
+        return used;
+      },
+      { ifEmpty: 'Each case starts again at the first dispute of its list', now: o.now?.() },
+    );
+    this.used = opened.value ?? {};
+    this.blocked = opened.blocked;
+    this.problem = opened.problem;
+    if (this.problem) this.log(`ERROR reserve · ${this.problem}`);
   }
 
   /** The disputes this case was moved past (tests, logs). */
