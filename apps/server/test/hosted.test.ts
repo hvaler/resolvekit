@@ -25,13 +25,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const boundInput = (): AnalysisInput => caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
 
 /** PayPal by path: every dispute read answers the waiting dispute, every send succeeds; optionally slow or failing reads. */
-function routedPayPal(o: { failRead?: (path: string) => boolean; failStatus?: number; delayMs?: number; disputes?: Record<string, Dispute> } = {}) {
+function routedPayPal(o: { failRead?: (path: string) => boolean; failStatus?: number; delayMs?: number; postDelayMs?: number; disputes?: Record<string, Dispute> } = {}) {
   const calls: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
     calls.push(`${init.method ?? 'GET'} ${u.pathname}`);
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
     await sleep(o.delayMs ?? 2);
+    if ((init.method ?? 'GET') === 'POST' && o.postDelayMs) await sleep(o.postDelayMs);
     if (u.pathname.endsWith('/provide-evidence')) return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     if (o.failRead?.(u.pathname)) return new Response(JSON.stringify({ name: 'INTERNAL_SERVICE_ERROR' }), { status: o.failStatus ?? 500, headers: { 'content-type': 'application/json' } });
     const byId = o.disputes?.[decodeURIComponent(u.pathname.split('/').pop() ?? '')];
@@ -45,9 +46,9 @@ function routedPayPal(o: { failRead?: (path: string) => boolean; failStatus?: nu
     client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; disputes?: Record<string, Dispute>; failStatus?: number; sellerMemory?: SellerMemory; failReadPath?: (path: string) => boolean; slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore; actions?: boolean } = {}) {
+function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; disputes?: Record<string, Dispute>; failStatus?: number; sellerMemory?: SellerMemory; failReadPath?: (path: string) => boolean; slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore; actions?: boolean; postDelayMs?: number; opsToken?: string } = {}) {
   const failRead = o.failReadPath ?? (o.failRead ? () => o.failRead!() : undefined);
-  const pp = routedPayPal({ ...(failRead ? { failRead } : {}), ...(o.failStatus ? { failStatus: o.failStatus } : {}), ...(o.disputes ? { disputes: o.disputes } : {}) });
+  const pp = routedPayPal({ ...(failRead ? { failRead } : {}), ...(o.failStatus ? { failStatus: o.failStatus } : {}), ...(o.disputes ? { disputes: o.disputes } : {}), ...(o.postDelayMs ? { postDelayMs: o.postDelayMs } : {}) });
   const fm = fakeModel(standardScript);
   const store = o.store ?? new MemoryAnalysisStore();
   const lines: string[] = [];
@@ -82,6 +83,7 @@ function setup(o: { bindings?: Record<string, { dispute: string; capture: string
     ...(o.now ? { now: o.now } : {}),
     ...(o.intents ? { intents: o.intents } : {}),
     ...(o.sellerMemory ? { sellerMemory: o.sellerMemory } : {}),
+    ...(o.opsToken ? { opsToken: o.opsToken } : {}),
     // The action routes against the test-only registry (the real one still says «Not available»).
     ...(o.actions ? { actionRegistry: { contracts: TEST_CONTRACTS, rules: TEST_RULES } } : {}),
   });
@@ -731,6 +733,20 @@ test('settlement case invisible to members and reviewers', async () => {
     }
     // Their own case is there; the settlement case is not listed.
     assert.equal((await app(req(`/api/disputes/${CASE}`, { cookie }))).status, 200);
+    // Every other route of the case answers the same (one sample each).
+    const someIntent = `${stlIntent}/int-${'0'.repeat(32)}`;
+    for (const [path, init] of [
+      [`/api/cases/${SETTLEMENT_CASE_ID}/uploads`, {}],
+      [`/api/cases/${SETTLEMENT_CASE_ID}/analysis/progress?key=${'0'.repeat(64)}`, {}],
+      [`/api/cases/${SETTLEMENT_CASE_ID}/analysis/verify`, { body: { text: 'The parcel was delivered.' } }],
+      [someIntent, {}],
+      [`${someIntent}/readback`, {}],
+      [`/api/disputes/${SETTLEMENT_CASE_ID}/audit`, {}],
+    ] as Array<[string, Init]>) {
+      const r = await app(req(path, { ...init, cookie }));
+      assert.equal(r.status, 404, path);
+      assert.equal(((await r.json()) as { error: string }).error, 'UNKNOWN_CASE', path);
+    }
     const h = (await (await app(req('/api/health', { cookie }))).json()) as { bound: string[]; bindings: Record<string, unknown> };
     assert.deepEqual(h.bound, [CASE]);
     assert.deepEqual(Object.keys(h.bindings), [CASE]);
@@ -751,4 +767,24 @@ test('warm-up skips the owner-only case', async () => {
   assert.deepEqual(out.map((w) => [w.caseId, w.outcome]), [[CASE, 'done']]);
   assert.equal(model.requests.filter((r) => r.stage === 'extract').length, 1);
   assert.ok(!lines.some((l) => l.includes(SETTLEMENT_CASE_ID) && l.startsWith('warm-up')), lines.join('\n'));
+});
+
+test('ops report names a send in flight (before PayPal answers), then the unproven one', async () => {
+  const OPS = 'o'.repeat(20) + '0123456789abcdef';
+  const intents = new IntentStore();
+  const { app, people } = setup({ intents, actions: true, postDelayMs: 60, opsToken: OPS });
+  const ops = async () =>
+    ((await (await app(req('/api/ops/status', { headers: { authorization: `Bearer ${OPS}` } }))).json()) as { bindings: Record<string, { held: { intentId: string; since: string } | null }> }).bindings[CASE]!.held;
+  assert.equal(await ops(), null);
+  const cookie = people.member();
+  const m = await actionReq(app, intentPath, MESSAGE, cookie);
+  await actionReq(app, `${intentPath}/${m.body.id}/approve`, { contentHash: m.body.contentHash }, cookie);
+  const sending = actionReq(app, sendPath, { intentId: m.body.id }, cookie);
+  while (!intents.holdOf(REAL)) await sleep(1);
+  const inFlight = await ops();
+  assert.equal(inFlight?.intentId, m.body.id);
+  assert.equal(typeof inFlight?.since, 'string');
+  assert.equal((await sending).status, 202);
+  assert.equal(intents.isUncertain(REAL)?.intentId, m.body.id);
+  assert.equal((await ops())?.intentId, m.body.id);
 });

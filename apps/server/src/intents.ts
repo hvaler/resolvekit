@@ -209,8 +209,8 @@ export class IntentStore {
    * sent in that stage. A key without `|` (written before stages, or with no known stage) blocks the whole dispute.
    */
   private readonly sentDisputes = new Map<string, { intentId: string; at: string }>();
-  /** PayPal dispute → the intent being sent to it right now (any action). */
-  private readonly inFlight = new Map<string, string>();
+  /** PayPal dispute → the intent being sent to it right now (any action), and since when. */
+  private readonly inFlight = new Map<string, { intentId: string; since: string }>();
   /**
    * PayPal dispute → the action send whose outcome is not proven ([A1]): no write of any kind goes there until a
    * read-back proves it recorded, or absent. Never turned into «closed». Persisted, and seeded from the send log.
@@ -668,6 +668,15 @@ export class IntentStore {
     return h ? { intentId: h.intentId, since: h.since } : null;
   }
 
+  /**
+   * What holds the dispute, if anything: the send in flight first (since it was claimed), else the unproven one
+   * (the ops report names it).
+   */
+  holdOf(disputeId: string): { intentId: string; since: string } | null {
+    const f = this.inFlight.get(disputeId);
+    return f ? { intentId: f.intentId, since: f.since } : this.isUncertain(disputeId);
+  }
+
   /** Whether the dispute is in flight or uncertain (rotation never moves a case off it). */
   held(disputeId: string): boolean {
     return this.inFlight.has(disputeId) || this.uncertain.has(disputeId);
@@ -821,9 +830,9 @@ export class IntentStore {
       if (done && done.intentId !== id) {
         return { ok: false, status: 409, error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent', intent: i };
       }
-      const busy = this.inFlight.get(i.disputeId);
+      const busy = this.inFlight.get(i.disputeId)?.intentId;
       if (busy && busy !== id) return { ok: false, status: 409, error: 'DISPUTE_BUSY', detail: 'Another response to this dispute is being sent right now; read the dispute back in a moment', intent: i };
-      this.inFlight.set(i.disputeId, id);
+      if (busy !== id) this.inFlight.set(i.disputeId, { intentId: id, since: this.iso() });
     }
     const previous = i.status;
     i.status = 'sending';
@@ -885,7 +894,7 @@ export class IntentStore {
   }
 
   private unlock(i: StoredIntent) {
-    if (i.disputeId && this.inFlight.get(i.disputeId) === i.id) this.inFlight.delete(i.disputeId);
+    if (i.disputeId && this.inFlight.get(i.disputeId)?.intentId === i.id) this.inFlight.delete(i.disputeId);
   }
 
   /** proposed | approved | failed → cancelled, by its owner only. */
@@ -982,7 +991,7 @@ export class IntentStore {
     const caseId = i?.caseId ?? hold?.caseId;
     if (!caseId) return false;
     // The POST has not answered: nothing can be read back yet, and the in-flight lock stays.
-    if (i?.status === 'sending' || this.inFlight.get(disputeId) === id) return false;
+    if (i?.status === 'sending' || this.inFlight.get(disputeId)?.intentId === id) return false;
     const ours = hold?.intentId === id;
     const at = this.iso();
     const key = r.state === 'recorded' && i ? duplicateKey(i) : null;

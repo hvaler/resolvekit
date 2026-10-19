@@ -312,7 +312,7 @@ export interface OpsReport {
       used: boolean;
       /** Fresh disputes left behind it. */
       reserve: number;
-      /** The action send holding the active dispute (unproven outcome: rotation waits for its read-back), or null. */
+      /** The send holding the active dispute (in flight, else unproven: rotation waits for its read-back), or null. */
       held: { intentId: string; since: string } | null;
     }
   >;
@@ -1195,7 +1195,9 @@ export function createApi(opts: ApiOptions): Api {
   /** GET /api/paypal/notices: the viewer's own (hosted: the signed-in merchant's disputes; local: all). */
   const noticesFor = (req: Request): Response => {
     const merchant = opts.gate ? (opts.gate.merchant?.(req) ?? null) : undefined;
-    const visible = merchant === undefined ? notices : merchant ? notices.filter((n) => n.merchant === merchant) : [];
+    const mine = merchant === undefined ? notices : merchant ? notices.filter((n) => n.merchant === merchant) : [];
+    // A notice about an owner-only case (the settlement case) is the owner's only, as the case itself.
+    const visible = mine.filter((n) => !n.caseId || ownerSees(req, n.caseId));
     return json(200, { notices: visible.map(({ merchant: _m, ...n }) => n) });
   };
 
@@ -1396,7 +1398,7 @@ export function createApi(opts: ApiOptions): Api {
         checkedAt: st?.checkedAt ?? null,
         used: usedNow.get(caseId) ?? false,
         reserve: opts.reserve?.[caseId]?.length ?? 0,
-        held: intents.isUncertain(active.dispute),
+        held: intents.holdOf(active.dispute),
       };
     }
     return { ...h, bindings, storage: storageProblems().map((p) => p.problem) };

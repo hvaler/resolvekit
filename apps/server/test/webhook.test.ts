@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DailyCounters } from '@resolvekit/hosting';
-import { standardCase } from '@resolvekit/cases';
+import { SETTLEMENT_CASE_ID, standardCase } from '@resolvekit/cases';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
 import { createHostedApp } from '../src/hosted.ts';
 import { STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
@@ -12,6 +12,7 @@ const CASE = standardCase.summary.id;
 const BOUND = 'PP-R-REAL-1';
 const NEW = 'PP-R-NEW-2';
 const ELSEWHERE = 'PP-R-OTHER-3';
+const STL = 'PP-R-STL-WH-4';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** PayPal: verify answers `verdict()` (or fails), dispute reads by id; every call recorded. */
@@ -22,6 +23,7 @@ function paypal(o: { verdict?: () => string | number; failReads?: number } = {})
   const disputes: Record<string, Dispute> = {
     [BOUND]: { ...standardDispute(), dispute_id: BOUND },
     [NEW]: { ...standardDispute(), dispute_id: NEW },
+    [STL]: { ...standardDispute(), dispute_id: STL },
     [ELSEWHERE]: { ...standardDispute(), dispute_id: ELSEWHERE, disputed_transactions: [{ ...standardDispute().disputed_transactions![0]!, seller: { merchant_id: 'SOMEONEELSE01' } }] },
   };
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
@@ -45,14 +47,14 @@ function paypal(o: { verdict?: () => string | number; failReads?: number } = {})
 
 const KEY = 'k'.repeat(16) + '0123456789abcdef0123';
 
-function setup(o: { webhook?: { id: string; key: string; verifyLimit?: { perMinute: number; inFlight: number } } | null; verdict?: () => string | number; failReads?: number } = {}) {
+function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; webhook?: { id: string; key: string; verifyLimit?: { perMinute: number; inFlight: number } } | null; verdict?: () => string | number; failReads?: number } = {}) {
   const pp = paypal({ ...(o.verdict ? { verdict: o.verdict } : {}), ...(o.failReads ? { failReads: o.failReads } : {}) });
   const people = testAccounts();
   const lines: string[] = [];
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
-    bindings: { [CASE]: { dispute: BOUND, capture: STD_CAPTURE } },
+    bindings: o.bindings ?? { [CASE]: { dispute: BOUND, capture: STD_CAPTURE } },
     log: (l) => lines.push(l),
     counters: new DailyCounters({ file: null, limits: {} }),
     site: null,
@@ -230,4 +232,13 @@ test('a dispute read that fails right after a verified event is retried, so the 
   assert.equal((await app(delivery(event('CUSTOMER.DISPUTE.CREATED', NEW)))).status, 200);
   await until(async () => (await notices(app, people.ownerCookie)).length > 0);
   assert.equal((await notices(app, people.ownerCookie))[0]!.disputeId, NEW);
+});
+
+test('a notice about the owner-only settlement case is listed to the owner only', async () => {
+  const { app, people } = setup({ bindings: { [CASE]: { dispute: BOUND, capture: STD_CAPTURE }, [SETTLEMENT_CASE_ID]: { dispute: STL, capture: STD_CAPTURE } } });
+  assert.equal((await app(delivery(event('CUSTOMER.DISPUTE.UPDATED', STL)))).status, 200);
+  assert.equal((await app(delivery(event('CUSTOMER.DISPUTE.UPDATED', BOUND)))).status, 200);
+  await until(async () => (await notices(app, people.ownerCookie)).length > 1);
+  assert.deepEqual((await notices(app, people.ownerCookie)).map((n) => n.caseId).sort(), [CASE, SETTLEMENT_CASE_ID].sort());
+  for (const cookie of [people.member(), people.fullMember()]) assert.deepEqual((await notices(app, cookie)).map((n) => n.caseId), [CASE]);
 });

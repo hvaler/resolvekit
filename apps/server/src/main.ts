@@ -37,7 +37,7 @@ import { SellerMemory } from './sellers.ts';
 import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
 import { MeterMcpClient } from './metermcp.ts';
-import { ReserveMemory } from './reserve.ts';
+import { ReserveMemory, keepHeldActive } from './reserve.ts';
 import { USAGE_MAX_AGE_MS, USAGE_MAX_BYTES, UsageLog } from './usage-log.ts';
 import { RecheckVerdicts } from './verdicts.ts';
 import { DAILY_UPLOADS } from './uploads/limits.ts';
@@ -334,8 +334,11 @@ if (watchBindings) {
       else return log(`bindings file changed but is invalid, kept the old bindings: ${(e as Error).message}`);
     }
     // The disputes already used are skipped in the new lists too, before comparing with what is active now.
+    // A held active dispute stays active even when the new file lists it elsewhere (never moved off mid-settlement).
+    const kept = keepHeldActive({ bindings, reserve }, next, held);
     const skipped = reserveMemory.apply(next, held);
     if (JSON.stringify(next) === JSON.stringify({ bindings, reserve })) return;
+    for (const k of kept) log(`reserve · case ${k.caseId}: ${k.active} is held by an action still settling → kept active`);
     for (const s of skipped) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
     for (const k of Object.keys(bindings)) delete bindings[k];
     for (const k of Object.keys(reserve)) delete reserve[k];

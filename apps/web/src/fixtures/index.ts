@@ -11,6 +11,7 @@ export const caseFiles: Readonly<Record<string, CaseFile>> = CASE_FILES;
  * Initial PayPal state of every dispute, as the simulated gateway serves it: a dispute waiting for the seller, or,
  * for the cases further on, the evidence already on it, the buyer's due date and PayPal's outcome.
  */
+// The owner-only settlement case gets a snapshot too (a 9th, never listed in the demo inbox): harmless, unused there.
 export const initialSnapshots: DisputeSnapshot[] = [
   ...Object.values(caseFiles).map(
     (c): DisputeSnapshot => ({

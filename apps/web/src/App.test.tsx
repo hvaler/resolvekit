@@ -1,8 +1,10 @@
 import { renderToString } from 'react-dom/server';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { App } from './App';
 import { ServicesProvider } from './app/services';
+import { HttpDisputeGateway } from './domain/httpGateway';
+import { CasePage } from './pages/CasePage';
 import { goldenAnalyses } from './fixtures/golden';
 import { ThemeProvider } from './theme/ThemeProvider';
 
@@ -34,6 +36,27 @@ describe('routes render without errors', () => {
     const html = render('/cases');
     expect(html).toContain('8 disputes · 5 waiting for you · 2 due within 48 h · 1 new, still processing at PayPal');
     expect(html).not.toContain('Owner settlement case');
+  });
+
+  it('the settlement case: loading while the server has not said what is bound; not found without it', () => {
+    // A server that has not answered yet (renderToString runs no effects: /api/health is never asked).
+    const waiting = renderToString(
+      <ThemeProvider>
+        <ServicesProvider latencyMs={0} server={new HttpDisputeGateway({ fetch: () => new Promise<Response>(() => {}) })}>
+          <MemoryRouter initialEntries={['/cases/PP-R-STL-10190667']}>
+            <Routes>
+              <Route path="/cases/:id" element={<CasePage />} />
+            </Routes>
+          </MemoryRouter>
+        </ServicesProvider>
+      </ThemeProvider>,
+    );
+    expect(waiting).toContain('Loading case');
+    expect(waiting).not.toContain('Case not found');
+    // No server: nothing is bound, so the owner-only case does not exist here.
+    const none = render('/cases/PP-R-STL-10190667');
+    expect(none).toContain('Case not found');
+    expect(none).not.toContain('Owner settlement case');
   });
 
   it('standard case file', () => {

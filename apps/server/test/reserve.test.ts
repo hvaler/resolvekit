@@ -7,7 +7,7 @@ import { parseBindingPools } from '../src/bindings.ts';
 import { createHostedApp } from '../src/hosted.ts';
 import { UploadError } from '../src/uploads/image.ts';
 import { UploadStore } from '../src/uploads/store.ts';
-import { ReserveMemory } from '../src/reserve.ts';
+import { ReserveMemory, keepHeldActive } from '../src/reserve.ts';
 import { IntentStore } from '../src/intents.ts';
 import { CASE as ACTION_CASE, REAL, TOKEN, answer, approve, compose, confirm, readBack, recordedDispute, send, setupActions } from './actions-kit.ts';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -472,4 +472,25 @@ test('ops report names a held dispute', async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a bindings reload that reorders the list keeps a held active dispute active', () => {
+  const D = { dispute: 'PP-R-POOL-4', capture: CAP(4) };
+  const held = (d: string) => d === A.dispute;
+  const current = parseBindingPools({ [CASE]: [A, B] });
+  // The new file lists D first and A second: A is held, so it stays active and D waits behind it.
+  const next = parseBindingPools({ [CASE]: [D, A] });
+  assert.deepEqual(keepHeldActive(current, next, held), [{ caseId: CASE, active: A.dispute }]);
+  assert.deepEqual(next.bindings[CASE], A);
+  assert.deepEqual(next.reserve[CASE], [D]);
+  // Nothing held, or the held dispute no longer listed: the new file wins as before.
+  const free = parseBindingPools({ [CASE]: [D, A] });
+  assert.deepEqual(keepHeldActive(current, free, () => false), []);
+  assert.deepEqual(free.bindings[CASE], D);
+  const gone = parseBindingPools({ [CASE]: [D, B] });
+  assert.deepEqual(keepHeldActive(current, gone, held), []);
+  assert.deepEqual(gone.bindings[CASE], D);
+  // Already first: nothing to report.
+  const same = parseBindingPools({ [CASE]: [A, D] });
+  assert.deepEqual(keepHeldActive(current, same, held), []);
 });

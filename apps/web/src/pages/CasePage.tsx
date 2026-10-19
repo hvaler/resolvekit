@@ -47,9 +47,11 @@ export function ago(secs: number | null): string {
 
 export function CasePage() {
   const { id = '' } = useParams();
-  const { health } = useServices();
+  const { health, modeKnown } = useServices();
   const c = caseFiles[id];
-  // An owner-only case (the settlement case) exists only where the server lists it as bound for this viewer.
+  // An owner-only case (the settlement case) exists only where the server lists it as bound for this viewer; until
+  // the server has said, it is loading (never a «not found» flash).
+  if (c?.audience === 'owner' && !modeKnown) return <LoadingCase id={id} />;
   if (c && (c.audience !== 'owner' || (health?.bound ?? []).includes(id))) return <CaseFileScreen key={id} c={c} />;
   if (id === processingDispute.id) return <ProcessingScreen />;
   return <NotFound id={id} />;
@@ -428,6 +430,20 @@ function ProcessingScreen() {
             <ProcessingBanner checkedAt={snap?.checkedAt ?? null} allowedActions={snap?.allowedActions ?? []} />
           )}
         </div>
+      </main>
+    </div>
+  );
+}
+
+/** A case that may exist for this viewer, while the server has not said which cases are bound. */
+function LoadingCase({ id }: { id: string }) {
+  return (
+    <div className="flex min-h-screen flex-col">
+      <AppBar caseId={id} checkedAt={null} />
+      <main className="flex flex-col gap-3 px-7 py-6 max-md:px-4">
+        <p role="status" className="m-0 text-[14px] text-ink-2">
+          Loading case…
+        </p>
       </main>
     </div>
   );

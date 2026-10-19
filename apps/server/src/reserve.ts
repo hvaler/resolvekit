@@ -100,3 +100,25 @@ export class ReserveMemory {
     }
   }
 }
+
+/**
+ * A bindings reload (main.ts, the watched file) replaces the lists wholesale. A case whose active dispute an action is
+ * still settling (`held`) keeps it active when the new list still has it, wherever it is listed: it is moved to the
+ * front (the new file's entry for it), the rest keep their order behind it. Changes `next` in place; returns what was
+ * kept, per case (logged). A held dispute the new file no longer lists is not kept: the configuration wins.
+ */
+export function keepHeldActive(current: BindingPools, next: BindingPools, held: (disputeId: string) => boolean): Array<{ caseId: string; active: string }> {
+  const out: Array<{ caseId: string; active: string }> = [];
+  for (const caseId of Object.keys(next.bindings)) {
+    const active = current.bindings[caseId]?.dispute;
+    if (!active || !held(active) || next.bindings[caseId]!.dispute === active) continue;
+    const list: Binding[] = [next.bindings[caseId]!, ...(next.reserve[caseId] ?? [])];
+    const at = list.findIndex((b) => b.dispute === active);
+    if (at < 0) continue;
+    const [kept] = list.splice(at, 1);
+    (next.bindings as Record<string, Binding>)[caseId] = kept!;
+    next.reserve[caseId] = list;
+    out.push({ caseId, active });
+  }
+  return out;
+}

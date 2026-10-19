@@ -36,7 +36,8 @@ export function InboxPage() {
   const env = environmentOf(area, demo);
   // The demo shows every fictional case; the evaluation workspace only the cases bound to real sandbox disputes.
   const bound = health?.bound;
-  // An owner-only case (the settlement case) is listed only when the server lists it as bound for this viewer.
+  // An owner-only case (the settlement case) is listed only when the server lists it as bound for this viewer; the
+  // demo and local inboxes never list it (local: open it by its URL once bound).
   const disputes = useMemo(() => (env.kind === 'evaluation' ? evaluationRows([...inbox, ...ownerInbox], bound ?? []) : inbox), [env.kind, bound]);
   const { rows, clock } = useRows(disputes);
   const envKey = env.kind === 'evaluation' ? 'evaluation' : env.kind === 'demo' ? 'demo' : 'local';
