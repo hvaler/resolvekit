@@ -27,7 +27,7 @@ export interface SyncState {
   loaded: boolean;
 }
 
-interface Services {
+export interface Services {
   /** The area on screen: the Explore demo (simulator and bundled analyses only) or the workspace. */
   area: Area;
   /** Submission intents: composed, approved and sent by the server (local composition only without a server). */
@@ -68,7 +68,8 @@ interface Services {
   signOut: (everywhere?: boolean, to?: string) => Promise<void>;
 }
 
-const ServicesContext = createContext<Services | null>(null);
+/** Exported for page tests, which give a page only the services it reads; the app uses {@link ServicesProvider}. */
+export const ServicesContext = createContext<Services | null>(null);
 
 export const POLL_MS = 30_000;
 const SIMULATED_LATENCY_MS = 700;

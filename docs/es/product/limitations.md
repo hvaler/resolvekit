@@ -93,9 +93,6 @@ Carencias conocidas:
   Connect. No da a ResolveKit acceso a tus disputas.
 - «Join for this browser only» dura una sesión (12 horas). Después, abre un enlace de invitación que aún tenga usos
   (esto crea una nueva entrada de miembro) o pide ayuda al Owner.
-- En la página de inicio de sesión, «Explore without signing in» enlaza a `/cases`, que devuelve al visitante sin
-  sesión al inicio de sesión; usa **Try the demo** o `/demo` en su lugar (visto en el código; comprobación en navegador
-  **Pendiente**).
 - Mientras se comprueba la conexión con PayPal de un espacio de trabajo nuevo, la pantalla vuelve a preguntar cada 5
   segundos.
 

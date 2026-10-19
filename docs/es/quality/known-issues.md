@@ -51,7 +51,6 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | La pantalla de comprobación relee cada 5 s | Consulta periódica mientras la conexión del espacio de trabajo está en `checking` | ENV; `web/src/domain/environment.ts` |
 | `joinUrl` solo lo usa su test | Función auxiliar muerta | ENV; `environment.ts` |
 | Conexión de comerciantes no construida | No hay código de PayPal Platform / Partner Referrals; los comerciantes nuevos ven la pantalla de espera (**Pendiente**) | ENV; no hay código `partner-referrals` ni `PayPal-Auth-Assertion` en `apps/` ni en `packages/` |
-| «Explore without signing in» lleva de vuelta al inicio de sesión | En la página de inicio de sesión y en la de error de invitación, el enlace va a `/cases`, que devuelve a un visitante sin sesión a `/signin` en lugar de a la demo Explore (`/demo`). Leído del código, no probado en un navegador | `apps/web/src/pages/AuthPages.tsx:144,203` |
 
 ## Texto del producto
 

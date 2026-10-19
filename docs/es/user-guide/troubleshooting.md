@@ -9,7 +9,6 @@ Para operadores, ver el [Runbook](../operations/runbook.md).
 
 | Ves | Por qué | Solución |
 |---|---|---|
-| Otra vez la página de inicio de sesión tras «Explore without signing in» | Ese enlace va a `/cases`, que necesita sesión | Usa **Try the demo** o abre `/demo` |
 | «You're signed in with PayPal. Access to your disputes isn't available yet.» | Tu espacio de trabajo no es el vendedor de sandbox; la conexión de comerciantes no está disponible | Usa **Explore demo**. Revisores: uníos con el enlace de revisor |
 | «Checking your PayPal connection…» (se repite cada 5 s) | El servidor aún no ha leído el vendedor de las disputas vinculadas | Espera; se resuelve cuando PayPal responde |
 | «Couldn't read the bound sandbox cases yet. Retrying…» | Falló la lectura de estado del servidor | **Retry now**, o espera (los reintentos se espacian hasta 30 s) |

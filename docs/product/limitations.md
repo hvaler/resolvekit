@@ -88,8 +88,6 @@ Known gaps:
   access to your disputes.
 - «Join for this browser only» lasts one session (12 hours). After that, open an invite link that still has uses
   (this creates a new member entry) or ask the Owner.
-- On the sign-in page, «Explore without signing in» links to `/cases`, which sends a signed-out visitor back to
-  sign-in; use **Try the demo** or `/demo` instead (seen in the code; browser check **Pending**).
 - While a new workspace's PayPal connection is being checked, the screen asks again every 5 seconds.
 
 ## PayPal behaviour we rely on but do not control

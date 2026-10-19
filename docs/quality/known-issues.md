@@ -51,7 +51,6 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | The checking screen re-reads every 5 s | Polling while the workspace connection is `checking` | ENV; `web/src/domain/environment.ts` |
 | `joinUrl` used only by its test | Dead helper | ENV; `environment.ts` |
 | Merchant connection not built | No PayPal Platform / Partner Referrals code; new merchants see the waiting screen (**Pending**) | ENV; no `partner-referrals` or `PayPal-Auth-Assertion` code in `apps/` or `packages/` |
-| «Explore without signing in» leads back to sign-in | On the sign-in page and the invite-error page the link goes to `/cases`, which sends a signed-out visitor back to `/signin` instead of the Explore demo (`/demo`). Read from the code, not tried in a browser | `apps/web/src/pages/AuthPages.tsx:144,203` |
 
 ## Product text
 

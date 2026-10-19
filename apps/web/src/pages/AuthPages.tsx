@@ -56,6 +56,15 @@ function Alert({ tone, children }: { tone: 'bad' | 'ok' | 'info'; children: Reac
 
 // ------------------------------------------------------------------------------------------------ sign in
 
+/** The public Explore demo: `/cases` would send a signed-out visitor straight back to sign-in. */
+function ExploreLink({ className }: { className: string }) {
+  return (
+    <Link to="/demo" className={className}>
+      Explore without signing in
+    </Link>
+  );
+}
+
 export function SignInPage() {
   const { demo } = useServices();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -140,9 +149,7 @@ export function SignInPage() {
         or
         <span className="h-px flex-1 bg-line" />
       </div>
-      <Link to="/cases" className="self-center text-body font-medium text-acc">
-        Explore without signing in
-      </Link>
+      <ExploreLink className="self-center text-body font-medium text-acc" />
       <span className="self-center text-[11.5px] text-ink-3">PayPal sandbox · synthetic case data</span>
     </AuthShell>
   );
@@ -199,9 +206,7 @@ export function JoinPage() {
       <AuthShell>
         <h1 className="m-0 text-[20px] font-semibold">{title}</h1>
         <p className="m-0 text-body-lg leading-normal text-ink-2">{invite.message} Ask the workspace owner for a new link.</p>
-        <Link to="/cases" className="font-medium text-acc">
-          Explore without signing in
-        </Link>
+        <ExploreLink className="font-medium text-acc" />
       </AuthShell>
     );
   }

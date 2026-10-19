@@ -9,7 +9,6 @@ operators, see the [Runbook](../operations/runbook.md).
 
 | You see | Why | Fix |
 |---|---|---|
-| The sign-in page again after «Explore without signing in» | That link goes to `/cases`, which needs a sign-in | Use **Try the demo** or open `/demo` |
 | «You're signed in with PayPal. Access to your disputes isn't available yet.» | Your workspace is not the sandbox seller; merchant connection is not available | Use **Explore demo**. Reviewers: join with the reviewer link instead |
 | «Checking your PayPal connection…» (repeats every 5 s) | The server has not yet read the bound disputes' seller | Wait; it resolves when PayPal answers |
 | «Couldn't read the bound sandbox cases yet. Retrying…» | The server's health read failed | **Retry now**, or wait (retries back off up to 30 s) |
