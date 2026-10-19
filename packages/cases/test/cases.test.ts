@@ -14,6 +14,8 @@ import {
   caseView,
   documentsSignature,
   resolvedCase,
+  SETTLEMENT_CASE_ID,
+  settlementCase,
   standardCase,
   unauthorisedCase,
   type PayPalSource,
@@ -45,14 +47,30 @@ const live = (over: Partial<DisputeSnapshot> = {}): PayPalSource => ({
 
 test('simulated cases: the input is the demo case as committed, so the golden analyses still match', async () => {
   for (const c of Object.values(CASE_FILES)) {
+    // The owner-only settlement case has no golden analysis (it is never warmed up or shown in the demo).
+    if (c.audience === 'owner') continue;
     const input = caseInput(c, { kind: 'simulated' });
     assert.deepEqual(input, buildInput(c));
     const g = golden.find((a) => a.caseId === c.summary.id);
     assert.ok(g, `golden analysis for ${c.summary.id} (else: npm run golden -- --case ${c.summary.id} --golden)`);
     assert.equal(await analysisKey(input, g.requestedModel, g.promptVersion), g.key, c.summary.id);
   }
-  assert.equal(Object.keys(CASE_FILES).length, 7);
+  assert.equal(Object.keys(CASE_FILES).length, 8);
   assert.ok(CASE_FILES[standardCase.summary.id] && CASE_FILES[agentCase.summary.id]);
+});
+
+test('the settlement case: the standard case (same 7.00 USD order) under its own id, owner only', () => {
+  assert.equal(SETTLEMENT_CASE_ID, 'PP-R-STL-10190667');
+  assert.equal(settlementCase.summary.id, SETTLEMENT_CASE_ID);
+  assert.equal(CASE_FILES[SETTLEMENT_CASE_ID], settlementCase);
+  assert.equal(settlementCase.audience, 'owner');
+  assert.equal(settlementCase.summary.title, 'Owner settlement case (sandbox)');
+  assert.equal(standardCase.audience, undefined);
+  const { id: _a, title: _t, ...same } = settlementCase.summary;
+  const { id: _b, ...std } = standardCase.summary;
+  assert.deepEqual(same, std);
+  assert.deepEqual(settlementCase.evidence, standardCase.evidence);
+  assert.deepEqual(settlementCase.attachments, standardCase.attachments);
 });
 
 test('every case follows PayPal: actions by stage, evidence types from the reasons-and-evidence table, state by status', () => {

@@ -25,6 +25,14 @@ export const inbox: InboxDispute[] = [
   { id: 'PP-R-PLN-10189901', reason: 'Item not as described', item: 'Physical product', amount: 86.0, currency: 'USD', stage: 'CHARGEBACK', status: 'WAITING_FOR_SELLER_RESPONSE', caseType: 'Standard', ready: 4, next: 'Approve response', nextKind: 'approve', nextSub: 'Draft ready · 5 of 7 supported', respondBy: '2026-10-13T19:00:00Z', dueNote: null },
 ];
 
+/**
+ * The owner's settlement case (the standard case's order; packages/cases settlementCase.ts): never in the demo inbox,
+ * listed only when the server lists it as bound for this viewer (the workspace's owner). No golden analysis: unscored.
+ */
+export const ownerInbox: InboxDispute[] = [
+  { id: 'PP-R-STL-10190667', reason: 'Item not received', item: 'Physical product', amount: 7.0, currency: 'USD', stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', caseType: 'Standard', ready: null, next: 'Owner actions', nextKind: 'work', nextSub: 'Owner settlement case (sandbox)', respondBy: '2026-10-18T17:00:00Z', dueNote: null, audience: 'owner' },
+];
+
 /** A dispute PayPal has just opened: UNDER_REVIEW with no seller actions yet (see docs/sandbox-findings.md). */
 export const processingDispute: DisputeSummary = {
   id: 'PP-R-NKQ-10194410',

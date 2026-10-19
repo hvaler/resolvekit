@@ -39,6 +39,8 @@ export interface InboxDispute {
    * Absent for demo/simulated disputes.
    */
   paypal?: 'loading' | 'live' | 'saved' | 'unavailable';
+  /** `owner`: listed only when the server lists it as bound for this viewer (the owner's settlement case). */
+  audience?: 'owner';
 }
 
 /** What the grid shows: the dispute plus the values its columns sort and filter on. */

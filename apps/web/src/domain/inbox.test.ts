@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEMO_NOW, caseFiles, inbox, initialSnapshots, processingOpening } from '../fixtures';
+import { DEMO_NOW, caseFiles, inbox, initialSnapshots, ownerInbox, processingOpening } from '../fixtures';
 import { goldenAnalyses } from '../fixtures/golden';
 import {
   NO_BOUND_CASES,
@@ -26,7 +26,8 @@ import {
 import type { DisputeSnapshot } from './types';
 
 const rows = inbox.map((d) => toGridRow(d, DEMO_NOW));
-const row = (id: string) => rows.find((r) => r.id === id)!;
+// Any row with a case file, the owner-only settlement case included (it is not in the demo inbox).
+const row = (id: string) => [...rows, ...ownerInbox.map((d) => toGridRow(d, DEMO_NOW))].find((r) => r.id === id)!;
 
 describe('due dates', () => {
   it('formats hours left as days and hours, rounded to the hour', () => {
@@ -56,6 +57,19 @@ describe('due dates', () => {
     expect([...values].sort((a, b) => compareDue(a, b))).toEqual([30, 120, 238, null, null]);
     // AG Grid negates the comparator for a descending sort.
     expect([...values].sort((a, b) => -compareDue(a, b, true))).toEqual([238, 120, 30, null, null]);
+  });
+});
+
+describe('the owner-only settlement case', () => {
+  it('is not in the demo inbox; listed only when the server lists it as bound; agrees with its case file', () => {
+    const [stl] = ownerInbox;
+    const c = caseFiles[stl!.id]!;
+    expect(c.audience).toBe('owner');
+    expect(inbox.some((d) => d.id === stl!.id)).toBe(false);
+    expect(evaluationRows([...inbox, ...ownerInbox], ['PP-R-TVH-10190665']).map((d) => d.id)).toEqual(['PP-R-TVH-10190665']);
+    expect(evaluationRows([...inbox, ...ownerInbox], ['PP-R-TVH-10190665', stl!.id]).map((d) => d.id)).toEqual(['PP-R-TVH-10190665', stl!.id]);
+    expect([money(stl!.amount!), stl!.currency, stl!.stage, stl!.status, stl!.item, stl!.nextSub]).toEqual([c.summary.amount, c.summary.currency, c.summary.stage, c.summary.status, c.summary.buyerItemType, c.summary.title]);
+    expect(stl!.respondBy).toBe(inbox.find((d) => d.id === 'PP-R-TVH-10190665')!.respondBy);
   });
 });
 

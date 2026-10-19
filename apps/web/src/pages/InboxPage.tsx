@@ -8,7 +8,7 @@ import { cx } from '../components/ui';
 import { casesBase, environmentOf } from '../domain/environment';
 import { CHIPS, applySnapshot, chipCounts, clockNote, emptyInboxNote, evaluationRows, inboxView, inboxSummary, toGridRow, type ChipKey, type InboxDispute, type InboxGridRow } from '../domain/inbox';
 import { boundInboxRow, payPalSource } from '../domain/paypalView';
-import { DEMO_NOW, inbox } from '../fixtures';
+import { DEMO_NOW, inbox, ownerInbox } from '../fixtures';
 
 /**
  * Inbox rows. A dispute bound to real PayPal takes every PayPal field from PayPal (or "—" while reading / when
@@ -36,7 +36,8 @@ export function InboxPage() {
   const env = environmentOf(area, demo);
   // The demo shows every fictional case; the evaluation workspace only the cases bound to real sandbox disputes.
   const bound = health?.bound;
-  const disputes = useMemo(() => (env.kind === 'evaluation' ? evaluationRows(inbox, bound ?? []) : inbox), [env.kind, bound]);
+  // An owner-only case (the settlement case) is listed only when the server lists it as bound for this viewer.
+  const disputes = useMemo(() => (env.kind === 'evaluation' ? evaluationRows([...inbox, ...ownerInbox], bound ?? []) : inbox), [env.kind, bound]);
   const { rows, clock } = useRows(disputes);
   const envKey = env.kind === 'evaluation' ? 'evaluation' : env.kind === 'demo' ? 'demo' : 'local';
   const emptyNote = modeKnown ? emptyInboxNote(envKey, rows.length) : null;
@@ -82,7 +83,7 @@ export function InboxPage() {
         {env.kind === 'evaluation' && (
           <div className="flex flex-wrap gap-x-5 gap-y-1">
             <Link to="/demo" className="text-[12.5px] text-acc">
-              Explore demo · {inbox.length - rows.length} more fictional cases
+              Explore demo · {inbox.length - disputes.filter((d) => d.audience !== 'owner').length} more fictional cases
             </Link>
             <Link to="/agent" className="text-[12.5px] text-acc">
               Try the buying agent

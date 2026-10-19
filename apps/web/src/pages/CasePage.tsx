@@ -47,8 +47,10 @@ export function ago(secs: number | null): string {
 
 export function CasePage() {
   const { id = '' } = useParams();
+  const { health } = useServices();
   const c = caseFiles[id];
-  if (c) return <CaseFileScreen key={id} c={c} />;
+  // An owner-only case (the settlement case) exists only where the server lists it as bound for this viewer.
+  if (c && (c.audience !== 'owner' || (health?.bound ?? []).includes(id))) return <CaseFileScreen key={id} c={c} />;
   if (id === processingDispute.id) return <ProcessingScreen />;
   return <NotFound id={id} />;
 }

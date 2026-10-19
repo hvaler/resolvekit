@@ -65,16 +65,18 @@ export class ReserveMemory {
 
   /**
    * Move each case past the disputes remembered as used, in place: the active binding and the reserve are what the
-   * configuration lists without them (never fewer than its last one). Returns what was skipped, per case.
+   * configuration lists without them (never fewer than its last one). `held` (main.ts: the intent store's in-flight or
+   * uncertain disputes) stops the walk at a dispute an action is still settling: it is never shifted past, whatever the
+   * file says. Returns what was skipped, per case.
    */
-  apply(pools: BindingPools): Array<{ caseId: string; skipped: string[]; active: string }> {
+  apply(pools: BindingPools, held?: (disputeId: string) => boolean): Array<{ caseId: string; skipped: string[]; active: string }> {
     const out: Array<{ caseId: string; skipped: string[]; active: string }> = [];
     for (const caseId of Object.keys(pools.bindings)) {
       const used = new Set(this.used[caseId] ?? []);
       if (!used.size) continue;
       const list: Binding[] = [pools.bindings[caseId]!, ...(pools.reserve[caseId] ?? [])];
       const skipped: string[] = [];
-      while (list.length > 1 && used.has(list[0]!.dispute)) skipped.push(list.shift()!.dispute);
+      while (list.length > 1 && used.has(list[0]!.dispute) && !held?.(list[0]!.dispute)) skipped.push(list.shift()!.dispute);
       if (!skipped.length) continue;
       (pools.bindings as Record<string, Binding>)[caseId] = list[0]!;
       pools.reserve[caseId] = list.slice(1);

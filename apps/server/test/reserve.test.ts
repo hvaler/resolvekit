@@ -8,6 +8,8 @@ import { createHostedApp } from '../src/hosted.ts';
 import { UploadError } from '../src/uploads/image.ts';
 import { UploadStore } from '../src/uploads/store.ts';
 import { ReserveMemory } from '../src/reserve.ts';
+import { IntentStore } from '../src/intents.ts';
+import { CASE as ACTION_CASE, REAL, TOKEN, answer, approve, compose, confirm, readBack, recordedDispute, send, setupActions } from './actions-kit.ts';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -61,10 +63,10 @@ function poolDispute(b: { dispute: string; capture: string }, state: { evidenceA
   };
 }
 
-function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW, delayMs = 0, reserveMemory?: ReserveMemory) {
+function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW, delayMs = 0, reserveMemory?: ReserveMemory, intents?: IntentStore) {
   const p = parseBindingPools(raw);
-  // What main.ts does at start: skip the disputes remembered as used.
-  const skipped = reserveMemory?.apply(p) ?? [];
+  // What main.ts does at start: skip the disputes remembered as used (never one held by an action).
+  const skipped = reserveMemory?.apply(p, intents ? (d) => intents.held(d) : undefined) ?? [];
   const reads: string[] = [];
   const lines: string[] = [];
   const fetch = (async (url: string | URL) => {
@@ -97,11 +99,12 @@ function setup(raw: unknown, disputes: Record<string, Dispute>, now = () => NOW,
     uploads: store,
     now,
     ...(reserveMemory ? { reserveMemory } : {}),
+    ...(intents ? { intents } : {}),
   });
   return { app, reads, lines, people, store, pools: p, skipped };
 }
 
-type Status = { ok: boolean; problems: string[]; bindings: Record<string, { dispute: string; status: string; used: boolean; reserve: number }> };
+type Status = { ok: boolean; problems: string[]; bindings: Record<string, { dispute: string; status: string; used: boolean; reserve: number; held: { intentId: string; since: string } | null }> };
 const status = async (app: ReturnType<typeof setup>['app']) =>
   (await (await app(new Request(`${ORIGIN}/api/ops/status`, { headers: { host: HOST, 'x-forwarded-for': '203.0.113.9', authorization: `Bearer ${OPS}` } }))).json()) as Status;
 
@@ -356,6 +359,116 @@ test('an unreadable reserve-position.json is preserved and reported; every case 
     assert.deepEqual(m.apply(p), []);
     m.markUsed(CASE, A.dispute);
     assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { v: 1, used: { [CASE]: [A.dispute] } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ------------------------------------------------------------------------------------------------ rotation guard
+
+/** A store whose send log (on disk) has an action send_started on `dispute` and nothing after it: held at start. */
+function heldStore(dir: string, dispute: string, intentId = `int-${'1'.repeat(32)}`): IntentStore {
+  const files = { file: join(dir, 'intents.json'), eventsFile: join(dir, 'audit-events.jsonl') };
+  const first = new IntentStore({ ...files, now: () => NOW });
+  const w = first.recordChecked({ caseId: CASE, kind: 'send_started', actor: 'Northwind Goods (owner)', disputeId: dispute, intentId, contentHash: 'c'.repeat(64), requestId: 'rk-held-1', action: 'accept_claim', scope: 'action', stage: 'INQUIRY' });
+  assert.equal(w.durable, true);
+  first.flush();
+  return new IntentStore({ ...files, now: () => NOW });
+}
+
+test('rotateIfUsed holds a dispute that is in flight, uncertain or awaiting read-back; read-back reads the pinned dispute', async () => {
+  const NEXT = 'PP-R-POOL-NEXT';
+  const disputes: Record<string, Dispute> = { [REAL]: recordedDispute(), [NEXT]: { ...recordedDispute(), dispute_id: NEXT } };
+  const { app, pp, intents, state } = await setupActions({ dispute: (id) => disputes[id] ?? disputes[REAL]!, reserve: { [ACTION_CASE]: [{ dispute: NEXT, capture: STD_CAPTURE }] }, postDelayMs: 40 });
+  const view = async () => {
+    const r = await app(new Request(`http://127.0.0.1:8787/api/disputes/${ACTION_CASE}`, { headers: { 'x-resolvekit-token': TOKEN } }));
+    const b = await answer(r);
+    assert.equal(b.status, 200, JSON.stringify(b.body));
+    return b.body as { origin?: { disputeId?: string } };
+  };
+  const i = await compose(app, { action: 'accept_claim', acceptType: 'REFUND' });
+  const a = await approve(app, i);
+  assert.equal((await confirm(app, i, a.body.confirmation)).status, 200);
+  // In flight: the POST has not answered and PayPal already shows the dispute resolved. A read does not move the case.
+  const sending = send(app, i);
+  while (pp.posts.length === 0) await new Promise((r) => setTimeout(r, 1));
+  assert.ok(intents.held(REAL));
+  disputes[REAL] = { ...recordedDispute(), status: 'RESOLVED' };
+  await view();
+  assert.equal((await view()).origin?.disputeId, REAL);
+  const s = await sending;
+  assert.equal(s.status, 202, JSON.stringify(s.body));
+  // Accepted, not proven (awaiting read-back): uncertain, still held. Reads keep the case on its dispute.
+  assert.ok(intents.isUncertain(REAL));
+  state.t += 20 * MIN;
+  await view();
+  assert.equal((await view()).origin?.disputeId, REAL);
+  // Read back as recorded: the dispute is free, so the next read moves the case on.
+  assert.equal(intents.recordReadBack(i.id, { state: 'recorded', detail: 'Recorded by PayPal' }), true);
+  assert.equal(intents.held(REAL), false);
+  assert.equal((await view()).origin?.disputeId, REAL);
+  assert.equal((await view()).origin?.disputeId, NEXT);
+  // Reading this intent back again reads the dispute pinned in it, not the case's new one.
+  const before = pp.reads.length;
+  const rb = await readBack(app, i);
+  assert.equal(rb.status, 200, JSON.stringify(rb.body));
+  assert.deepEqual(pp.reads.slice(before).filter((p) => p.includes('/disputes/')), [`/v1/customer/disputes/${REAL}`]);
+});
+
+test('ReserveMemory.apply on start honours held', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-reserve-'));
+  try {
+    const file = join(dir, 'reserve-position.json');
+    writeFileSync(file, JSON.stringify({ v: 1, used: { [CASE]: [A.dispute] } }));
+    const intents = heldStore(dir, A.dispute);
+    assert.ok(intents.held(A.dispute));
+    // A is resolved at PayPal (the accept went through) but its send was never proven: the case stays on A.
+    const disputes = { [A.dispute]: poolDispute(A, { resolved: true }), [B.dispute]: poolDispute(B) };
+    const { app, skipped } = setup({ [CASE]: [A, B] }, disputes, () => NOW, 0, new ReserveMemory({ file }), intents);
+    assert.deepEqual(skipped, []);
+    await status(app);
+    assert.equal((await status(app)).bindings[CASE]!.dispute, A.dispute);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a bindings reload that replaces bindings wholesale keeps a held dispute active', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-reserve-'));
+  try {
+    const m = new ReserveMemory({ file: join(dir, 'reserve-position.json') });
+    m.markUsed(CASE, A.dispute);
+    const intents = heldStore(dir, A.dispute);
+    // What main.ts does on a changed bindings file: a new object, applied with the guard.
+    const next = parseBindingPools({ [CASE]: [A, B, C] });
+    assert.deepEqual(m.apply(next, (d) => intents.held(d)), []);
+    assert.deepEqual(next.bindings[CASE], A);
+    assert.deepEqual(next.reserve[CASE], [B, C]);
+    // Held further down the list: it stops there, never shifting past it.
+    m.markUsed(CASE, B.dispute);
+    const later = parseBindingPools({ [CASE]: [B, A, C] });
+    assert.deepEqual(m.apply(later, (d) => intents.held(d)), [{ caseId: CASE, skipped: [B.dispute], active: A.dispute }]);
+    // Nothing held: lote2's behaviour (A used → B).
+    const free = parseBindingPools({ [CASE]: [A, B, C] });
+    assert.deepEqual(m.apply(free, () => false), [{ caseId: CASE, skipped: [A.dispute, B.dispute], active: C.dispute }]);
+    const plain = parseBindingPools({ [CASE]: [A, C] });
+    assert.deepEqual(m.apply(plain), [{ caseId: CASE, skipped: [A.dispute], active: C.dispute }]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ops report names a held dispute', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-reserve-'));
+  try {
+    const intentId = `int-${'2'.repeat(32)}`;
+    const intents = heldStore(dir, A.dispute, intentId);
+    const { app } = setup({ [CASE]: [A, B] }, { [A.dispute]: poolDispute(A), [B.dispute]: poolDispute(B) }, () => NOW, 0, undefined, intents);
+    const s = await status(app);
+    assert.equal(s.bindings[CASE]!.held?.intentId, intentId);
+    assert.equal(typeof s.bindings[CASE]!.held?.since, 'string');
+    const free = setup({ [CASE]: [A, B] }, { [A.dispute]: poolDispute(A), [B.dispute]: poolDispute(B) });
+    assert.equal((await status(free.app)).bindings[CASE]!.held, null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,8 +1,8 @@
 import type { CaseFile, DisputeSnapshot } from '../domain/types';
 import { CASE_FILES, agentCase, standardCase } from '@resolvekit/cases';
-import { DEMO_NOW, inbox, processingDispute, processingOpening } from './inbox';
+import { DEMO_NOW, inbox, ownerInbox, processingDispute, processingOpening } from './inbox';
 
-export { agentCase, DEMO_NOW, inbox, processingDispute, processingOpening, standardCase };
+export { agentCase, DEMO_NOW, inbox, ownerInbox, processingDispute, processingOpening, standardCase };
 
 /** Every inbox dispute with a full case file (all but the one PayPal is still processing). */
 export const caseFiles: Readonly<Record<string, CaseFile>> = CASE_FILES;

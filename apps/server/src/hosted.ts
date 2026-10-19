@@ -31,6 +31,7 @@ import { SellerMemory, type Connection } from './sellers.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
 import { PersonRunCaps } from './agent/person-caps.ts';
 import { RUN_ID } from './agent/runs.ts';
+import { CASE_FILES } from './documents.ts';
 import type { Receipt } from './metermcp.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
 import { acceptsFileBody, HINT_PATH, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
@@ -551,6 +552,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     const run = async () => {
       const out: WarmUpOutcome[] = [];
       for (const caseId of Object.keys(o.bindings)) {
+        // An owner-only case (the settlement case) is never analysed ahead: nobody else may see it.
+        if (CASE_FILES[caseId]?.audience === 'owner') continue;
         let w: WarmUpOutcome;
         try {
           w = await warmCase(caseId);

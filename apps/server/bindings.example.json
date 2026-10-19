@@ -3,5 +3,10 @@
   "PP-R-TVH-10190665": {
     "dispute": "PP-R-XXX-00000000",
     "capture": "XXXXXXXXXXXXXXXXX"
-  }
+  },
+  "_comment_settlement": "Owner-only settlement case (the standard case's 7.00 USD order): a list binds the first dispute and keeps the rest in reserve. Only the workspace owner sees it; it is never moved off a dispute an action is still settling.",
+  "PP-R-STL-10190667": [
+    { "dispute": "PP-R-YYY-00000001", "capture": "YYYYYYYYYYYYYYYY1" },
+    { "dispute": "PP-R-YYY-00000002", "capture": "YYYYYYYYYYYYYYYY2" }
+  ]
 }

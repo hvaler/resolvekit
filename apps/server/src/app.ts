@@ -312,6 +312,8 @@ export interface OpsReport {
       used: boolean;
       /** Fresh disputes left behind it. */
       reserve: number;
+      /** The action send holding the active dispute (unproven outcome: rotation waits for its read-back), or null. */
+      held: { intentId: string; since: string } | null;
     }
   >;
 }
@@ -392,7 +394,9 @@ export function createApi(opts: ApiOptions): Api {
    * for the workspace of that case's own seller; everything else is UNKNOWN_CASE (three-environments plan, task 2).
    */
   const caseVisible = async (req: Request, caseId: string): Promise<boolean> =>
-    Object.hasOwn(CASE_FILES, caseId) && (!opts.gate || (!!bindingOf(caseId) && (await viewerLive(req)) && (await sellerOfCase(req, caseId))));
+    Object.hasOwn(CASE_FILES, caseId) && (!opts.gate || (!!bindingOf(caseId) && ownerSees(req, caseId) && (await viewerLive(req)) && (await sellerOfCase(req, caseId))));
+  /** An owner-only case (the settlement case) exists only for the workspace's owner; anyone else: UNKNOWN_CASE. */
+  const ownerSees = (req: Request, caseId: string): boolean => CASE_FILES[caseId]?.audience !== 'owner' || personOf(req)?.role === 'owner';
 
   /** The seller's PayPal merchant id on each bound dispute, from the last read of it. */
   const sellers = new Map<string, { dispute: string; merchant: string | null; name: string | null }>();
@@ -661,6 +665,9 @@ export function createApi(opts: ApiOptions): Api {
     usedNow.set(caseId, since != null);
     const queue = opts.reserve?.[caseId];
     if (since == null || !queue?.length || now().getTime() - since < ROTATE_AFTER_MS) return;
+    // An action on it is in flight, or its outcome is unproven (awaiting a read-back): the case stays, and it is not
+    // remembered as used, so whoever sent it reads PayPal's answer on the same dispute.
+    if (intents.held(binding.dispute)) return;
     const next = queue.shift()!;
     (opts.bindings as Record<string, string | Binding>)[caseId] = next;
     // Remembered on the data dir: after a restart the case starts past it (reserve.ts), not at the first entry again.
@@ -1273,7 +1280,7 @@ export function createApi(opts: ApiOptions): Api {
       const candidates = h.paypal === 'unconfigured' || !live ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
       // Per case: only the cases whose seller is this workspace.
       const bound: string[] = [];
-      for (const k of candidates) if (await sellerOfCase(req, k)) bound.push(k);
+      for (const k of candidates) if (ownerSees(req, k) && (await sellerOfCase(req, k))) bound.push(k);
       // A store file that could not be read. Local: the stores' names. Hosted (public): only `true`, no names. The reason
       // and where it was kept: the operator's check and the log.
       const names = storageProblems().map((p) => p.store);
@@ -1389,6 +1396,7 @@ export function createApi(opts: ApiOptions): Api {
         checkedAt: st?.checkedAt ?? null,
         used: usedNow.get(caseId) ?? false,
         reserve: opts.reserve?.[caseId]?.length ?? 0,
+        held: intents.isUncertain(active.dispute),
       };
     }
     return { ...h, bindings, storage: storageProblems().map((p) => p.problem) };

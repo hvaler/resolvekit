@@ -12,6 +12,7 @@ import { caseInput, standardCase } from '@resolvekit/cases';
 import { CONTRACTS } from '../../web/src/domain/actionContracts.ts';
 import type { ContractRegistry, RulesOf, SimpleAction } from '../../web/src/domain/actions.ts';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
+import type { Binding } from '../src/bindings.ts';
 import { IntentStore } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
 import { SELLER_ID, STD_CAPTURE, analystFor } from './kit.ts';
@@ -69,7 +70,7 @@ export interface ActionPost {
  * PayPal by path. Reads answer `dispute()` (or `readReply()` when set: an unreadable dispute); the action POSTs are
  * recorded and answered by `actionReply()`.
  */
-export function actionPayPal(o: { dispute: () => Dispute; actionReply?: () => Reply; readReply?: () => Reply | null; postDelayMs?: number }) {
+export function actionPayPal(o: { dispute: (id: string) => Dispute; actionReply?: () => Reply; readReply?: () => Reply | null; postDelayMs?: number }) {
   const posts: ActionPost[] = [];
   const reads: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
@@ -88,7 +89,7 @@ export function actionPayPal(o: { dispute: () => Dispute; actionReply?: () => Re
     const fail = o.readReply?.();
     if (fail instanceof Error) throw fail;
     if (fail) return new Response(JSON.stringify(fail.body), { status: fail.status, headers: { 'content-type': 'application/json' } });
-    return new Response(JSON.stringify(o.dispute()), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify(o.dispute(decodeURIComponent(u.pathname.split('/').pop() ?? ''))), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   return { posts, reads, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch, sleep: async () => {} }) };
 }
@@ -97,19 +98,20 @@ export function actionPayPal(o: { dispute: () => Dispute; actionReply?: () => Re
 export const timeout = () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
 
 /** The local app with the standard case bound to the recorded dispute, the test-only registry and a movable clock. */
-export async function setupActions(o: { dispute?: () => Dispute; actionReply?: () => Reply; readReply?: () => Reply | null; postDelayMs?: number; intents?: IntentStore; registry?: false } = {}) {
+export async function setupActions(o: { dispute?: (id: string) => Dispute; reserve?: Record<string, Binding[]>; actionReply?: () => Reply; readReply?: () => Reply | null; postDelayMs?: number; intents?: IntentStore; registry?: false } = {}) {
   const state = { dispute: recordedDispute(), t: T0 };
   const dispute = o.dispute ?? (() => state.dispute);
   const pp = actionPayPal({ dispute, ...(o.actionReply ? { actionReply: o.actionReply } : {}), ...(o.readReply ? { readReply: o.readReply } : {}), ...(o.postDelayMs ? { postDelayMs: o.postDelayMs } : {}) });
   const now = () => new Date(state.t);
   const intents = o.intents ?? new IntentStore({ now });
-  const input = caseInput(standardCase, { kind: 'live', snap: toSnapshot(dispute(), CASE, 'sandbox', now()), failed: null });
+  const input = caseInput(standardCase, { kind: 'live', snap: toSnapshot(dispute(REAL), CASE, 'sandbox', now()), failed: null });
   const { analyst } = await analystFor([[CASE, input]]);
   const lines: string[] = [];
   const app = createApp({
     paypal: pp.client,
     env: 'sandbox',
     bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
+    ...(o.reserve ? { reserve: o.reserve } : {}),
     now,
     log: (l) => lines.push(l),
     port: 8787,

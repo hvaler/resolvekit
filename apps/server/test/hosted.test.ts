@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DailyCounters, StaticSite } from '@resolvekit/hosting';
 import { MemoryAnalysisStore, RateLimiter, analysisKey, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst/node';
-import { caseInput, notAsDescribedCase, standardCase } from '@resolvekit/cases';
+import { SETTLEMENT_CASE_ID, caseInput, notAsDescribedCase, standardCase } from '@resolvekit/cases';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
 import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
 import { AnalystService } from '../src/analysis.ts';
@@ -703,4 +703,52 @@ test('read-back counts as a PayPal read', async () => {
   assert.equal(first.status, 200);
   const second = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie, ip: '198.51.100.2' }));
   assert.equal(second.status, 429);
+});
+
+// ------------------------------------------------------------------------------------------------ settlement case (owner only)
+
+const STL_DISPUTE = 'PP-R-STL-FAKE-1';
+const settlementSetup = () =>
+  setup({
+    bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE }, [SETTLEMENT_CASE_ID]: { dispute: STL_DISPUTE, capture: STD_CAPTURE } },
+    disputes: { [REAL]: standardDispute(), [STL_DISPUTE]: standardDispute({ dispute_id: STL_DISPUTE }) },
+    actions: true,
+  });
+
+test('settlement case invisible to members and reviewers', async () => {
+  const { app, people } = settlementSetup();
+  const stlIntent = `/api/disputes/${SETTLEMENT_CASE_ID}/intent`;
+  for (const cookie of [people.member(), people.fullMember()]) {
+    for (const [path, init] of [
+      [`/api/disputes/${SETTLEMENT_CASE_ID}`, {}],
+      [`/api/cases/${SETTLEMENT_CASE_ID}/analysis`, { body: {} }],
+      [stlIntent, { body: MESSAGE }],
+      [stlIntent, { body: { action: 'accept_claim', acceptType: 'REFUND' } }],
+    ] as Array<[string, Init]>) {
+      const r = await app(req(path, { ...init, cookie }));
+      assert.equal(r.status, 404, path);
+      assert.equal(((await r.json()) as { error: string }).error, 'UNKNOWN_CASE', path);
+    }
+    // Their own case is there; the settlement case is not listed.
+    assert.equal((await app(req(`/api/disputes/${CASE}`, { cookie }))).status, 200);
+    const h = (await (await app(req('/api/health', { cookie }))).json()) as { bound: string[]; bindings: Record<string, unknown> };
+    assert.deepEqual(h.bound, [CASE]);
+    assert.deepEqual(Object.keys(h.bindings), [CASE]);
+  }
+  const owner = people.ownerCookie;
+  const read = await app(req(`/api/disputes/${SETTLEMENT_CASE_ID}`, { cookie: owner }));
+  assert.equal(read.status, 200);
+  assert.equal(((await read.json()) as { origin?: { disputeId?: string } }).origin?.disputeId, STL_DISPUTE);
+  const composed = await actionReq(app, stlIntent, ESCALATE, owner);
+  assert.equal(composed.status, 201, JSON.stringify(composed.body));
+  const h = (await (await app(req('/api/health', { cookie: owner }))).json()) as { bound: string[] };
+  assert.deepEqual(h.bound, [CASE, SETTLEMENT_CASE_ID]);
+});
+
+test('warm-up skips the owner-only case', async () => {
+  const { app, model, lines } = settlementSetup();
+  const out = await app.warmUp();
+  assert.deepEqual(out.map((w) => [w.caseId, w.outcome]), [[CASE, 'done']]);
+  assert.equal(model.requests.filter((r) => r.stage === 'extract').length, 1);
+  assert.ok(!lines.some((l) => l.includes(SETTLEMENT_CASE_ID) && l.startsWith('warm-up')), lines.join('\n'));
 });

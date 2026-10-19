@@ -201,6 +201,8 @@ export type TimelineItem =
 
 export interface DisputeSummary {
   id: string;
+  /** A name for a case that is not one of the demo's stories (the owner's settlement case). Absent: none. */
+  title?: string;
   amount: string;
   currency: string;
   reason: DisputeReason;
@@ -249,6 +251,11 @@ export interface AuditEntry {
 
 export interface CaseFile {
   kind: CaseKind;
+  /**
+   * Who may see the case. Absent: everyone who may see the demo. `owner`: hosted, only the seller workspace's owner
+   * (the settlement case: never warmed up, never in the demo inbox, 404 UNKNOWN_CASE for anyone else).
+   */
+  audience?: 'owner';
   summary: DisputeSummary;
   merchant: { name: string; initials: string };
   evidence: Evidence[];

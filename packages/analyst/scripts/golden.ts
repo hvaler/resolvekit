@@ -34,6 +34,8 @@ if (!cfg) {
 
 for (const c of Object.values(CASE_FILES)) {
   if (only && c.summary.id !== only) continue;
+  // The owner-only settlement case is never analysed ahead (no golden analysis, never warmed up).
+  if (c.audience === 'owner') continue;
   // The case as the app shows it unbound (simulated PayPal; for the agent case, the demo MeterMCP session).
   const input = caseInput(c, { kind: 'simulated' });
   const key = await analysisKey(input, cfg.primary.model);

@@ -30,6 +30,12 @@ describe('routes render without errors', () => {
     expect(html).toContain('Simulated disputes run on a demo clock (8 Oct 2026 19:00 UTC), so their due times read the same any day.');
   });
 
+  it('the inbox count is unchanged without an owner seeing the settlement case', () => {
+    const html = render('/cases');
+    expect(html).toContain('8 disputes · 5 waiting for you · 2 due within 48 h · 1 new, still processing at PayPal');
+    expect(html).not.toContain('Owner settlement case');
+  });
+
   it('standard case file', () => {
     const html = render('/cases/PP-R-TVH-10190665');
     expect(html).toContain('Response draft');

@@ -7,8 +7,8 @@ import { AnalysisClient, AnalysisRequestError, AnalysisUnreachableError } from '
 import { deriveSentences, notesText } from './draft';
 
 describe('golden analyses', () => {
-  it('exist for every case file and were made from exactly the documents the app shows (else: npm run golden -- --golden)', async () => {
-    for (const c of Object.values(caseFiles)) {
+  it('exist for every case file (but the owner-only settlement case) and were made from exactly the documents the app shows (else: npm run golden -- --golden)', async () => {
+    for (const c of Object.values(caseFiles).filter((c) => c.audience !== 'owner')) {
       const g = goldenAnalyses[c.summary.id]!;
       expect(g, c.summary.id).toBeDefined();
       expect(await analysisKey(buildInput(c), g.requestedModel, g.promptVersion)).toBe(g.key);
@@ -29,7 +29,7 @@ describe('golden analyses', () => {
   });
 
   it('every case: the merchant’s unsupported note is removed, never sent, and every quote is in its document', () => {
-    for (const base of Object.values(caseFiles)) {
+    for (const base of Object.values(caseFiles).filter((c) => c.audience !== 'owner')) {
       const g = goldenAnalyses[base.summary.id]!;
       const c = withAnalysis(base, g, buildInput(base));
       const views = deriveSentences(c.sentences, { edits: {}, checking: null, analysisStep: 99, rejectionStep: c.analysis.rejectionStep });

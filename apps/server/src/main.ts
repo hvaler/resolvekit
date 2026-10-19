@@ -93,9 +93,15 @@ function loadBindings(): BindingPools {
 
 // The active binding of each case and its reserve; both change in place (rotation in app.ts, the watched file below).
 const { bindings, reserve } = loadBindings();
+// Submission intents (what the merchant approved, exactly) and the approval/send audit log: the server's record. Never
+// expired by size or age beyond what intents.ts keeps (the send log is never compacted). Opened before the reserve is
+// applied: its in-flight and uncertain disputes (seeded from the send log) are never skipped.
+const intents = new IntentStore({ file: join(dataDir, 'intents.json'), eventsFile: join(dataDir, 'audit-events.jsonl'), log });
+/** A dispute an action is still settling (in flight or unproven): rotation never moves a case off it. */
+const held = (disputeId: string) => intents.held(disputeId);
 // The disputes this server already moved each case past (reserve.ts): a restart starts after them, not at the first.
 const reserveMemory = new ReserveMemory({ file: join(dataDir, 'reserve-position.json'), log });
-for (const s of reserveMemory.apply({ bindings, reserve })) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
+for (const s of reserveMemory.apply({ bindings, reserve }, held)) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
 const port = Number(process.env.PORT ?? (hosted ? 10000 : 8787));
 const host = hosted ? '0.0.0.0' : '127.0.0.1';
 
@@ -148,10 +154,6 @@ const pins = new InputPins({ file: join(dataDir, 'analysis-inputs.json'), log })
 
 // The verifier's verdicts on edited sentences: a re-check made before a restart still counts (verdicts.ts).
 const verdicts = new RecheckVerdicts({ file: join(dataDir, 'recheck-verdicts.json'), log });
-
-// Submission intents (what the merchant approved, exactly) and the approval/send audit log: the server's record. Never
-// expired by size or age beyond what intents.ts keeps (the send log is never compacted).
-const intents = new IntentStore({ file: join(dataDir, 'intents.json'), eventsFile: join(dataDir, 'audit-events.jsonl'), log });
 
 // Merchant evidence uploads, outside any web-served path. At start and every hour, expired pending uploads and
 // leftovers of interrupted writes are removed (counts only in the log; the routes also refuse an expired one at once),
@@ -332,7 +334,7 @@ if (watchBindings) {
       else return log(`bindings file changed but is invalid, kept the old bindings: ${(e as Error).message}`);
     }
     // The disputes already used are skipped in the new lists too, before comparing with what is active now.
-    const skipped = reserveMemory.apply(next);
+    const skipped = reserveMemory.apply(next, held);
     if (JSON.stringify(next) === JSON.stringify({ bindings, reserve })) return;
     for (const s of skipped) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
     for (const k of Object.keys(bindings)) delete bindings[k];
