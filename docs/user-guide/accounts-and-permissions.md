@@ -23,7 +23,7 @@ once you approve it, reads which PayPal account approved it. No agreement is cre
 does **not** give ResolveKit access to your disputes.
 
 After a PayPal sign-in you come back to the page you started from (the start page if you opened `/signin` directly).
-If PayPal sign-in fails, `/signin` shows why:
+If PayPal sign-in fails or you cancel it, you land on the sign-in page instead, which shows why:
 
 | Message | Meaning |
 |---|---|

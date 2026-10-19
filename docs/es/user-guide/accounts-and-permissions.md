@@ -24,7 +24,8 @@ obsoleta) y, una vez que lo apruebas, lee qué cuenta de PayPal lo aprobó. No s
 Iniciar sesión **no** da a ResolveKit acceso a tus disputas.
 
 Tras iniciar sesión con PayPal vuelves a la página desde la que empezaste (la página de inicio si abriste `/signin`
-directamente). Si el inicio de sesión con PayPal falla, `/signin` muestra el motivo:
+directamente). Si el inicio de sesión con PayPal falla o lo cancelas, llegas en su lugar a la página de inicio de sesión, que muestra
+el motivo:
 
 | Mensaje | Significado |
 |---|---|
