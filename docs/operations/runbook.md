@@ -56,7 +56,7 @@ There is no alerting in the code. What exists:
 |---|---|---|
 | Memory | Render's service metrics (512 MB per instance) | The image/PDF/OCR path is the heavy one. One image or PDF job runs at a time server-wide; the PDF child is capped at 160 MB heap and, on Linux, killed above 200 MiB RSS; the OCR worker is stopped after 60 s idle and never resident together with a PDF child. Observed earlier: ~250 MB resident after an 8 MP image reading, peak ~395 MB of 512 (P1 follow-up, 17/10/2026, `docs/superpowers/plans/2026-10-17-merchant-evidence-phase1-followups.md`). **Memory with a 5-page PDF on Render: Pending.** If memory grows, the follow-ups suggest trying `MALLOC_ARENA_MAX=2` (not tried) |
 | CPU | Render's service metrics (0.5 CPU) | PDF thumbnails have 3 s each, page renders 20 s, a PDF session 90 s in all; on 0.5 CPU real PDFs may hit the thumbnail deadline (follow-up, not measured) |
-| Storage | Render disk usage (1 GB each) | Uploads are capped at 300 MiB in all (`507 STORAGE_FULL` beyond). The analysis cache, analyst usage log, input pins, audit sends log and MeterMCP ledger have **no expiry in code** and grow; nothing alerts on disk use |
+| Storage | Render disk usage (1 GB each) | Uploads are capped at 300 MiB in all (`507 STORAGE_FULL` beyond). The analysis cache (unused 30 days, 100 MiB) and the analyst usage log (90 days, 10 MiB) are swept at start and hourly (`ANALYSIS_CACHE_MAX_*`, `ANALYST_USAGE_MAX_*`). The audit sends log and the MeterMCP ledger are audit and money records and **never expire**; they grow, and nothing alerts on disk use |
 | Providers | ResolveKit log lines `analyst call · <stage> · <provider>/<model> · in … out … thinking … · <ms> ms` and `analyst fallback · <why>`; `<data>/analyst-usage.jsonl` (token counts and timings only); `demo:check` model lines | Groq's free tier answers `429` when its quota is used (observed in the evaluations); the analyst then falls back, the agent picks its provider at the first answer and keeps it |
 | PayPal | `demo:check` lines; the log at start (`… → <dispute> · capture …`, `checkBindings` results); webhook lines | `PayPal unconfigured`, bindings not `verified` |
 | Agent runs | Log lines `agent runs · reconcile failed`, `agent run <id>: not saved …`, `agent runs · sweep · …` | Runs with settlement `open`, `capture_pending`, `failed` or `unverified` are retried every 5 min |
@@ -103,7 +103,7 @@ Useful log lines (ResolveKit unless noted). Logs never carry document text, keys
 | **Agent reconcile and sweep** | Every 5 min | Unsaved records are written; runs whose settlement is `open`, `capture_pending`, `failed` or `unverified` are closed or reconciled and their receipt re-read; runs older than 30 days are deleted unless kept, unsettled, unsaved or bound to a case |
 | **MeterMCP sweep** | Every 30 s | Idle sessions closed (`METERMCP_IDLE_MINUTES`, 15) and settled; `capture_pending` captures read back until `COMPLETED` (→ `settled`) or `DECLINED`/`FAILED` (→ `capture_declined`); idle MCP transports freed. `settlement_failed` sessions are retried on close with the same `PayPal-Request-Id`. **`capture_pending` was not observed in the sandbox: Pending** |
 | **PDF upload jobs** (thumbnails, renders, OCR) | In the background after the upload route answers, one upload at a time server-wide | A job cut by a restart is marked failed with *The server restarted while reading this PDF. Discard it and upload it again.* and its files are dropped |
-| **Upload sweep** | At start and hourly | Pending/reviewing uploads older than 24 h discarded (record kept, files and text gone); leftovers of interrupted writes (`*.tmp`, directories nothing refers to) removed |
+| **Upload sweep** | At start and hourly | Pending/reviewing uploads older than 24 h discarded (record kept, files and text gone); leftovers of interrupted writes (`*.tmp`, directories nothing refers to) removed. The same sweep bounds the analysis cache and the analyst usage log (log lines `analysis cache · sweep …`, `analyst usage log · sweep …`, counts only) |
 | **Evidence sends** | On request | A send cut by a restart (`sending`) comes back as `failed` (*the server restarted during the send*) and may be retried for 30 min with the same intent and `PayPal-Request-Id`; the evidence route reads PayPal first, and refuses if seller evidence is already there |
 | **Warm-up analyses** | After start, after a binding change, after a rotation | Each bound case analysed once if its documents have no stored analysis (system runs, same hourly limit and daily cap) |
 | **Bindings file watch** | Every 30 s, only when `BINDINGS_JSON` is not set | An invalid file is logged and ignored |
@@ -113,8 +113,8 @@ Useful log lines (ResolveKit unless noted). Logs never carry document text, keys
 On `SIGTERM`/`SIGINT` ResolveKit first gives agent runs up to 20 s to end as `interrupted` and settle, then flushes
 intents, stops the upload sweep and the OCR worker, removes the local token file and closes. MeterMCP stops its sweep,
 closes MCP sessions and the ledger. In-memory state is lost on restart: PDF text hints, remembered webhook event ids
-(a repeated delivery is re-read, harmlessly), the last 50 webhook notices, WebAuthn challenges, rate-limiter windows,
-and the reserve position (see below). Without `RESOLVEKIT_SESSION_SECRET` (32+ characters) every restart signs
+(a repeated delivery is re-read, harmlessly), the last 50 webhook notices, WebAuthn challenges and rate-limiter windows.
+The reserve position and the re-check verdicts are kept on the disk (see below). Without `RESOLVEKIT_SESSION_SECRET` (32+ characters) every restart signs
 everybody out.
 
 ## Auxiliary processes and temporary files
@@ -123,7 +123,8 @@ everybody out.
 |---|---|
 | PDF reader child (`pdf-child.ts`, forked, `--max-old-space-size=160`) | One per PDF session. Killed with `SIGKILL` past its deadline (20 s a page, 3 s a thumbnail, 90 s a session) and, on Linux only, above 200 MiB RSS (read every 100 ms). A crash never takes the server down; the next session starts a fresh child. **Killing a real decompression bomb by RSS on Linux was not measured: Pending** |
 | OCR worker (tesseract.js, local language data, no network) | Created on demand, one job at a time; stopped after 60 s idle and before any PDF child starts; a job that times out (45 s, start 30 s) terminates it. `closeOcr()` has no time limit of its own (known issue) |
-| `*.tmp` files | Every store writes tmp + rename. Leftovers: removed by the upload sweep (uploads), at start (analysis cache); a run record's `.tmp` is removed when its write fails and overwritten by the next write |
+| `*.tmp` files | Every store writes durably: `<file>.<pid>.<random>.tmp`, fsync, rename, then a best-effort fsync of the directory (`packages/hosting/src/durable.ts`); a failed write removes its temporary file. Leftovers of a crash: removed by the upload sweep (uploads), at start (the data dir of each service itself, only names of that pattern older than 10 min; analysis cache, agent runs) |
+| `*.corrupt-<time>` files | A store file that exists but cannot be read at start (`intents.json`, `analysis-inputs.json`, `recheck-verdicts.json`, `reserve-position.json`) is renamed to `<file>.corrupt-<UTC time>` when its content is bad, logged as `ERROR …`, flagged in `/api/health` (`storage`: the store names locally, `true` in hosted mode) and listed by `demo:check` (`storage · …`); the store starts empty (`intents.json`: the disputes already sent to are rebuilt from the send log). Look at the file, then put it back (stopped service) or delete it. A read error (busy, permissions) or a rename that fails leaves the file in place, never written over (for `intents.json`: every send is refused); fix it and restart |
 | `apps/server/.runtime-token`, `apps/metermcp/.runtime-token` | Local mode only: written at start (mode 600), removed at a clean stop |
 
 ## Dispute rotation and the reserve
@@ -139,10 +140,14 @@ dispute's uploads (records kept, files and text dropped), and triggers a warm-up
 previous dispute is refused (`BINDING_CHANGED`). With an empty reserve nothing moves: the case stays on its used
 dispute and `demo:check` fails with `… is used … and no dispute is left in reserve`.
 
-**The reserve position lives in memory.** After a restart the server starts again from the first entry of
-`BINDINGS_JSON`. Used entries are walked past again, one step per read, each step with its own warm-up analysis
-(derived from the code; not observed). After a dispute is used, remove it from `BINDINGS_JSON` (this restarts the
-service) so the list starts at a fresh one.
+**The reserve position is kept on the disk** (`<data>/reserve-position.json`, `apps/server/src/reserve.ts`): each
+dispute a case moved past is recorded there. At start, and when a bindings file changes, the server skips those
+disputes at the front of the case's `BINDINGS_JSON` list and logs `reserve · case …: … used before
+(reserve-position.json) → …`. `BINDINGS_JSON` stays the source of truth: only a dispute still listed for that case is
+skipped, entries that no longer match the bindings are ignored, and the last listed dispute is never skipped. Trimming
+used disputes from `BINDINGS_JSON` is still tidy but no longer needed. An unreadable file is preserved as
+`reserve-position.json.corrupt-<time>` and the cases walk their lists as before (Tested locally,
+`apps/server/test/reserve.test.ts`; not yet observed on the hosted service).
 
 **State on 19/10/2026 (private evidence):** the standard case's active dispute is used and its reserve is empty, so new
 sends to it are **Pending** until the reserve is refilled (planned 25–30/11). PayPal documents that the inquiry

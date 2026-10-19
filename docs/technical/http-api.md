@@ -38,9 +38,9 @@ gets 404 `UNKNOWN_CASE` before any work. Unbound ids are demo cases and live onl
 | Method | Path | Mode | Auth | Answer | Main errors |
 |---|---|---|---|---|---|
 | GET, HEAD | `/healthz` | hosted | none | Render health check | 405 |
-| GET | `/api/health` | both | none (bindings listed only for the seller's workspace) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}}` | — |
+| GET | `/api/health` | both | none (bindings listed only for the seller's workspace) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`, only when a store file could not be read at start: the store names in local mode, `true` in hosted mode) | — |
 | GET | `/api/demo` | both | none | hosted `{hosted:true, day, resetsAt, caps, reasons}`; local `{hosted:false}` | 405 |
-| GET | `/api/ops/status[?probe=models]` | hosted | ops Bearer | PayPal state, webhook on/off, each binding verified on a fresh read (may rotate a used case), warm-up, caps; with `probe=models` one tiny call per configured model | 404, 405, 429 |
+| GET | `/api/ops/status[?probe=models]` | hosted | ops Bearer | PayPal state, webhook on/off, each binding verified on a fresh read (may rotate a used case), warm-up, caps, unreadable store files (`storage`, also in `problems`); with `probe=models` one tiny call per configured model | 404, 405, 429 |
 | GET | `/api/ops/agent-run/<run-id>` | hosted | ops Bearer | Run record + receipt, for `demo:prepare --agent-run` | 400 `INVALID_RUN_ID`, 404 |
 | GET | `/api/paypal/notices` | both | hosted: the disputes' seller only | Latest verified webhook notices (≤ 50) | 405 |
 | POST | `/api/paypal/webhook/<key>` | hosted, with webhook env | key + PayPal verification | 200 (event acted on or ignored) | 404 wrong key, 405, 400 `BAD_TRANSMISSION`/`NOT_AN_EVENT`/`NOT_VERIFIED`, 408, 413, 429, 503 `BUSY`/`VERIFY_UNAVAILABLE` |

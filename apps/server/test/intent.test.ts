@@ -5,13 +5,14 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PayPalClient, type Dispute } from '@resolvekit/paypal';
 import { caseInput, standardCase } from '@resolvekit/cases';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER, LOCAL_OPERATOR } from '../src/app.ts';
 import { IntentStore } from '../src/intents.ts';
+import { RecheckVerdicts } from '../src/verdicts.ts';
 import { toSnapshot } from '../src/mapping.ts';
 import { RESOLVED, STD_CAPTURE, analystFor, goldenNotes, standardDispute } from './kit.ts';
 import type { Binding } from '../src/bindings.ts';
@@ -43,7 +44,7 @@ function routedPayPal(o: { dispute?: () => Dispute; sendStatus?: () => number; s
 
 const boundInput = (d: Dispute = standardDispute()) => caseInput(standardCase, { kind: 'live', snap: toSnapshot(d, CASE, 'sandbox', NOW), failed: null });
 
-async function setup(o: Parameters<typeof routedPayPal>[0] & { bound?: boolean; binding?: string | Binding; recheck?: Record<string, unknown>; intents?: IntentStore } = {}) {
+async function setup(o: Parameters<typeof routedPayPal>[0] & { bound?: boolean; binding?: string | Binding; recheck?: Record<string, unknown>; intents?: IntentStore; verdicts?: RecheckVerdicts } = {}) {
   const pp = routedPayPal(o);
   const { analyst, model } = await analystFor([[CASE, boundInput()], [CASE, caseInput(standardCase, { kind: 'simulated' })]], o.recheck);
   const lines: string[] = [];
@@ -58,6 +59,7 @@ async function setup(o: Parameters<typeof routedPayPal>[0] & { bound?: boolean; 
     allowedOrigins: DEFAULT_ORIGINS,
     analyst,
     ...(o.intents ? { intents: o.intents } : {}),
+    ...(o.verdicts ? { verdicts: o.verdicts } : {}),
   });
   return { app, pp, lines, model };
 }
@@ -195,6 +197,30 @@ test('H1: editing a sentence after approval invalidates the intent; a re-checked
   assert.equal(pp.sends.length, 1);
   const notes = JSON.parse(await ((pp.sends[0]!.init.body as FormData).get('input') as Blob).text()).evidences[0].notes;
   assert.equal(notes, next.notes);
+});
+
+test('a re-checked edit survives a restart: the verdict is on the data dir (by text hash), so the edit can still be sent', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rk-verdicts-'));
+  try {
+    const file = join(dir, 'recheck-verdicts.json');
+    const edited = 'We shipped order #10482 (1 × Linen tote, natural · 7.00 USD) with UPS.';
+    const before = await setup({ verdicts: new RecheckVerdicts({ file }) });
+    assert.equal((await before.app(post(`/api/cases/${CASE}/analysis/verify`, { text: edited }))).status, 200);
+    const onDisk = readFileSync(file, 'utf8');
+    assert.equal(onDisk.includes(edited), false, 'the edited text itself is not stored');
+    // A new process: the verdict is read back and the edit composes, without a new re-check.
+    const after = await setup({ verdicts: new RecheckVerdicts({ file }) });
+    const i = await propose(after.app, { edits: { S2: edited } });
+    assert.ok(i.notes.includes(edited));
+    assert.deepEqual(i.sentences.find((s) => s.id === 'S2'), { id: 'S2', text: edited, edited: true });
+    // Without the file (verdicts in memory only, as before) the same edit is not composed.
+    const fresh = await setup();
+    const r = await fresh.app(post(intentPath, request({ edits: { S2: edited } })));
+    const b = (await r.json()) as Intent;
+    assert.ok(r.status !== 201 || !b.notes.includes(edited), JSON.stringify(b));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('H1: an edit the verifier does not support is not sent', async () => {

@@ -15,13 +15,13 @@
  * to RENDER_EXTERNAL_URL) for PayPal's return to /agent?run=<id>; neither set: MeterMCP's own approval page.
  */
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor, type ProxyTrust } from '@resolvekit/hosting';
+import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor, sweepDurableTmp, type ProxyTrust } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
-import { FileAnalysisStore, RateLimiter, modelFromEnv, modelProbesFromEnv } from '@resolvekit/analyst/node';
+import { CACHE_MAX_AGE_MS, CACHE_MAX_BYTES, FileAnalysisStore, RateLimiter, modelFromEnv, modelProbesFromEnv } from '@resolvekit/analyst/node';
 import { agentModelsFromEnv, limitsFromEnv } from '@resolvekit/agent';
 import { RunStore } from './agent/runs.ts';
 import { AgentService, RECONCILE_EVERY_MS } from './agent/service.ts';
@@ -36,6 +36,9 @@ import { SellerMemory } from './sellers.ts';
 import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
 import { MeterMcpClient } from './metermcp.ts';
+import { ReserveMemory } from './reserve.ts';
+import { USAGE_MAX_AGE_MS, USAGE_MAX_BYTES, UsageLog } from './usage-log.ts';
+import { RecheckVerdicts } from './verdicts.ts';
 import { DAILY_UPLOADS } from './uploads/limits.ts';
 import { closeOcr } from './uploads/ocr.ts';
 import { UploadStore } from './uploads/store.ts';
@@ -58,8 +61,12 @@ const fail = (why: string): never => {
   process.exit(1);
 };
 
-// Analysis cache, usage log and (hosted) daily caps. On Render this is the service's persistent disk.
+// Every store of this server (intents, audit, accounts, caps, analyses, uploads, agent runs…). On Render this is the
+// service's persistent disk.
 const dataDir = process.env.RESOLVEKIT_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
+// A crash in the middle of a durable write leaves `<file>.<pid>.<8 hex>.tmp` next to the store file: nothing reads it.
+// Only that name, and only older than 10 min (never a write another process has in progress).
+sweepDurableTmp(dataDir);
 
 const bindingsFile = process.env.RESOLVEKIT_BINDINGS ?? (hosted ? join(dataDir, 'bindings.json') : fileURLToPath(new URL('../bindings.json', import.meta.url)));
 
@@ -85,6 +92,9 @@ function loadBindings(): BindingPools {
 
 // The active binding of each case and its reserve; both change in place (rotation in app.ts, the watched file below).
 const { bindings, reserve } = loadBindings();
+// The disputes this server already moved each case past (reserve.ts): a restart starts after them, not at the first.
+const reserveMemory = new ReserveMemory({ file: join(dataDir, 'reserve-position.json'), log });
+for (const s of reserveMemory.apply({ bindings, reserve })) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
 const port = Number(process.env.PORT ?? (hosted ? 10000 : 8787));
 const host = hosted ? '0.0.0.0' : '127.0.0.1';
 
@@ -99,48 +109,76 @@ const meterMcp = new MeterMcpClient({
 });
 
 // The AI analyst: Gemini (primary) with Groq as automatic fallback, keys from the environment. Live runs are cached
-// in <data>/analysis-cache; committed golden analyses answer for the demo documents.
-const usageFile = join(dataDir, 'analyst-usage.jsonl');
+// in <data>/analysis-cache; committed golden analyses answer for the demo documents. The cache and the usage log are
+// bounded (swept at start and hourly with the uploads): ANALYSIS_CACHE_MAX_DAYS / _MAX_MB (unused for 30 days, 100 MiB)
+// and ANALYST_USAGE_MAX_DAYS / _MAX_MB (90 days, 10 MiB). Floors: 1 day and 1 MiB (a value below, 0 or not a whole number
+// gives the default), so a typo cannot empty the cache or the log on the next sweep.
+const atLeast = (name: string, floor: number, dflt: number) => Math.max(floor, envInt(process.env, name, dflt));
+const DAY = 86_400_000;
+const MIB = 1024 * 1024;
+const usageLog = new UsageLog({
+  file: join(dataDir, 'analyst-usage.jsonl'),
+  maxAgeMs: atLeast('ANALYST_USAGE_MAX_DAYS', 1, USAGE_MAX_AGE_MS / DAY) * DAY,
+  maxBytes: atLeast('ANALYST_USAGE_MAX_MB', 1, USAGE_MAX_BYTES / MIB) * MIB,
+});
+const analysisCache = new FileAnalysisStore({
+  dir: join(dataDir, 'analysis-cache'),
+  maxAgeMs: atLeast('ANALYSIS_CACHE_MAX_DAYS', 1, CACHE_MAX_AGE_MS / DAY) * DAY,
+  maxBytes: atLeast('ANALYSIS_CACHE_MAX_MB', 1, CACHE_MAX_BYTES / MIB) * MIB,
+});
 const analystConfig = modelFromEnv(process.env, { onFallback: (why) => log(`analyst fallback · ${why}`) });
 const HOUR = 3_600_000;
 const analyst = new AnalystService({
   model: analystConfig?.model ?? null,
   primaryModel: analystConfig?.primary.model ?? 'gemini-3.8-flash',
-  store: new FileAnalysisStore({ dir: join(dataDir, 'analysis-cache') }),
+  store: analysisCache,
   liveLimit: new RateLimiter({ limit: envInt(process.env, 'LIVE_ANALYSES_PER_HOUR', 6), windowMs: HOUR }),
   verifyLimit: new RateLimiter({ limit: envInt(process.env, 'RECHECKS_PER_HOUR', 30), windowMs: HOUR }),
   log,
   // Token counts and timings only: no prompt or document text.
   onUsage: (caseId, u) => {
     log(`analyst call · ${u.stage} · ${u.provider}/${u.model} · in ${u.inputTokens} out ${u.outputTokens} thinking ${u.thinkingTokens} · ${u.ms} ms`);
-    try {
-      mkdirSync(dataDir, { recursive: true });
-      appendFileSync(usageFile, JSON.stringify({ at: new Date().toISOString(), caseId, ...u }) + '\n');
-    } catch {
-      /* the usage log is best effort */
-    }
+    usageLog.append({ caseId, ...u });
   },
 });
 
 // The input each case was analysed with before the seller's evidence went in (see InputPins).
-const pins = new InputPins({ file: join(dataDir, 'analysis-inputs.json') });
+const pins = new InputPins({ file: join(dataDir, 'analysis-inputs.json'), log });
 
-// Submission intents (what the merchant approved, exactly) and the approval/send audit log: the server's record.
-const intents = new IntentStore({ file: join(dataDir, 'intents.json'), eventsFile: join(dataDir, 'audit-events.jsonl') });
+// The verifier's verdicts on edited sentences: a re-check made before a restart still counts (verdicts.ts).
+const verdicts = new RecheckVerdicts({ file: join(dataDir, 'recheck-verdicts.json'), log });
+
+// Submission intents (what the merchant approved, exactly) and the approval/send audit log: the server's record. Never
+// expired by size or age beyond what intents.ts keeps (the send log is never compacted).
+const intents = new IntentStore({ file: join(dataDir, 'intents.json'), eventsFile: join(dataDir, 'audit-events.jsonl'), log });
 
 // Merchant evidence uploads, outside any web-served path. At start and every hour, expired pending uploads and
-// leftovers of interrupted writes are removed (counts only in the log; the routes also refuse an expired one at once).
+// leftovers of interrupted writes are removed (counts only in the log; the routes also refuse an expired one at once),
+// and the analysis cache and usage log are kept within their limits (above).
 const uploads = new UploadStore({ dir: join(dataDir, 'uploads') });
-const sweepUploads = (when: string) => {
+const sweepStores = (when: string) => {
   try {
     const s = uploads.sweep();
     if (when === 'at start' || s.expired || s.orphans) log(`uploads · sweep ${when} · ${s.expired} expired · ${s.orphans} leftover(s) removed`);
   } catch (e) {
     log(`uploads · sweep ${when} failed · ${(e as Error).name}`);
   }
+  // The analysis cache and the usage log, with the same rhythm (counts only). Never the audit or send logs.
+  try {
+    const c = analysisCache.sweep();
+    if (c.removed) log(`analysis cache · sweep ${when} · ${c.removed} unused analysis(es) removed · ${Math.round(c.bytes / 1024)} KB`);
+  } catch (e) {
+    log(`analysis cache · sweep ${when} failed · ${(e as Error).name}`);
+  }
+  try {
+    const u = usageLog.sweep();
+    if (u.dropped) log(`analyst usage log · sweep ${when} · ${u.dropped} old line(s) dropped`);
+  } catch (e) {
+    log(`analyst usage log · sweep ${when} failed · ${(e as Error).name}`);
+  }
 };
-sweepUploads('at start');
-const uploadSweep = setInterval(() => sweepUploads('hourly'), HOUR);
+sweepStores('at start');
+const uploadSweep = setInterval(() => sweepStores('hourly'), HOUR);
 uploadSweep.unref();
 
 // The buying agent: its runs on the data dir, each run its own MCP connection to MeterMCP's private /agent/mcp (hosted:
@@ -238,7 +276,7 @@ if (hosted) {
   if (!meterToken) log('WARNING: METERMCP_ADMIN_TOKEN is not set: agent runs cannot authenticate to MeterMCP (/agent/mcp) and will stop as meter_unavailable; receipts and settlement through the admin routes fail too');
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
-    paypal, env, bindings, reserve, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
+    paypal, env, bindings, reserve, reserveMemory, verdicts, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
@@ -257,7 +295,7 @@ if (hosted) {
   tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('../.runtime-token', import.meta.url));
   writeFileSync(tokenFile, token, { mode: 0o600 });
   const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
-  app = createApp({ paypal, env, bindings, reserve, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads, agent });
+  app = createApp({ paypal, env, bindings, reserve, reserveMemory, verdicts, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads, agent });
 }
 
 // Runs a previous process left unfinished become interrupted and are settled, in the background: not awaited, so a
@@ -290,7 +328,10 @@ if (watchBindings) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') next = { bindings: {}, reserve: {} };
       else return log(`bindings file changed but is invalid, kept the old bindings: ${(e as Error).message}`);
     }
+    // The disputes already used are skipped in the new lists too, before comparing with what is active now.
+    const skipped = reserveMemory.apply(next);
     if (JSON.stringify(next) === JSON.stringify({ bindings, reserve })) return;
+    for (const s of skipped) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
     for (const k of Object.keys(bindings)) delete bindings[k];
     for (const k of Object.keys(reserve)) delete reserve[k];
     Object.assign(bindings, next.bindings);

@@ -45,9 +45,9 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 **The intermittent test.** In `apps/server/test/uploads-pdf-recovery.test.ts`, *size: five dense A4 pages rebuild under
 MAX_STORED_BYTES, and with the demo PDFs stay under PAYPAL_MAX_SEND_BYTES* failed under full-suite load with
 `429 RATE_LIMITED` in its cover-and-confirm step (the run took 39 s). Run alone, twice, the file passed 3/3 both
-times. It is load-sensitive: the refusal came from a rate limit inside the test's own setup, and why it trips only
-under full-suite load was not analysed. It stays listed in [Known issues](known-issues.md) until it is made
-deterministic.
+times. Cause (found 19/10): while the PDF job ran slowly under load, the test's polling of `GET /uploads` every 100 ms
+used up the hosted API limit (300 requests per 5 min) and the next request got `429`. The test kit now raises that
+limit for these tests, and the polling (`settled()`, `waitFor()`) checks for `200` and asks every 300 ms.
 
 **Not run:** the suites on Linux (the hosted platform) and on Render. Linux-only behaviour, such as killing the PDF
 child above 200 MiB RSS, is exercised only where the test can read `/proc` (**Pending** on Linux). Earlier test counts
@@ -129,9 +129,7 @@ not by the model-driven agent.
 ## Test gaps
 
 - No DOM tests for the upload and PDF review UI (`useUploads`, `PdfSelect`, `PdfReview`, `CasePage` wiring).
-- No tests for MeterMCP's 503 session cap or for local-mode `/agent/mcp`.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
-- The intermittent PDF size test above.
 - Behaviour against live PayPal: none.
 
 The full list, with sources, is in [Known issues](known-issues.md).

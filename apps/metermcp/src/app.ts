@@ -7,8 +7,8 @@
  *   return_to is redirected there (303) once the re-read order shows it active.
  * - `GET /health`.
  * - Admin, for apps/server on this machine (header `x-metermcp-token`, the per-launch secret):
- *   `GET /sessions?capture=<id>`, `GET /sessions/<id>/receipt.json|.pdf`, `POST /sessions/<id>/close`.
- *   A session id alone never authorizes anything.
+ *   `GET /sessions?capture=<id>`, `GET /sessions/<id>/receipt.json|.pdf`, `POST /sessions/<id>/close`,
+ *   `POST /sessions/<id>/reconcile` (read a PENDING capture back from PayPal now). A session id alone never authorizes anything.
  * - `POST|GET|DELETE /agent/mcp` — the same MCP endpoint for the ResolveKit server's buying agent (admin token plus
  *   `x-agent-run: run-<32 hex>`); it may open a budget without a demo code. Private side only in hosted mode.
  *

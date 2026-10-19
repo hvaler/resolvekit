@@ -14,6 +14,9 @@
     "golden": "node --env-file-if-exists=../../.env scripts/golden.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
+  "dependencies": {
+    "@resolvekit/hosting": "*"
+  },
   "devDependencies": {
     "@types/node": "24.13.5"
   }

@@ -1,14 +1,15 @@
 /**
  * The buying agent's runs as persisted state machines: one JSON file per run, `<dir>/<run id>.json`, rewritten
- * (tmp + rename, like uploads/store.ts) at every event of the run, so a restart finds each run as it last was.
+ * (durable write: tmp, fsync, rename, like uploads/store.ts) at every event of the run, so a restart finds each run as it last was.
  *
  * Memory is the latest state. A write that fails throws `RunStoreError` but keeps the new state in memory and the
  * run in `unsaved()`; `retryUnsaved()` writes it later (the service's reconcile sweep). `dir: null` keeps everything
  * in memory (tests). Ids are checked against `run-<32 hex>` before any path is built.
  */
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeFileDurable } from '@resolvekit/hosting';
 import type { Outcome, Settlement, Step, StopReason } from '@resolvekit/agent';
 
 export type RunState = 'running' | 'awaiting_approval' | Outcome;
@@ -62,18 +63,6 @@ export class RunStoreError extends Error {
   }
 }
 
-/** Write `data` to `file` so a reader sees the old or the new content, never half of it. */
-function atomicWrite(file: string, data: string): void {
-  const tmp = `${file}.tmp`;
-  try {
-    writeFileSync(tmp, data);
-    renameSync(tmp, file);
-  } catch (e) {
-    try { unlinkSync(tmp); } catch { /* nothing to clean */ }
-    throw e;
-  }
-}
-
 export class RunStore {
   private readonly dir: string | null;
   private readonly now: () => Date;
@@ -81,11 +70,11 @@ export class RunStore {
   private readonly records = new Map<string, RunRecord>();
   private readonly pending = new Set<string>();
 
-  /** `write`: the file writer (tests inject a failing one); defaults to tmp + rename. */
+  /** `write`: the file writer (tests inject a failing one); defaults to the durable write (tmp, fsync, rename). */
   constructor(o: { dir: string | null; now?: () => Date; write?: (file: string, data: string) => void }) {
     this.dir = o.dir;
     this.now = o.now ?? (() => new Date());
-    this.write = o.write ?? atomicWrite;
+    this.write = o.write ?? writeFileDurable;
     if (this.dir) this.load(this.dir);
   }
 

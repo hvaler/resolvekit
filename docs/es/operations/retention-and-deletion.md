@@ -37,10 +37,13 @@ Los nombres de archivo nunca salen del servidor: PayPal recibe nombres `E<n>-…
 | Intents de envío (`intents.json`, incl. el texto de las notas aprobadas) | Abiertos: TTL de 30 min. Envío fallido: reintentable 30 min. Enviados: 24 h. Como máximo 2 000 guardados | Caducidad, sustitución, cancelación, invalidación (salen del almacén de inmediato; una lápida acotada de 2 000 guarda el último estado para los mensajes de error, en memoria) |
 | Marcas de «ya enviado para esta disputa» | Con `intents.json` | No caducan en el código |
 | Eventos de auditoría (`audit-events.jsonl`) | 200 por propietario de sesión, 2 000 propietarios; se compacta por encima de 4 MiB | Expulsión de los más antiguos por propietario |
-| Log de auditoría de envíos (`audit-events-sends.jsonl`) | **Solo añadir, nunca se expulsa ni se compacta** | Nada |
+| Log de auditoría de envíos (`audit-events-sends.jsonl`) | **Solo añadir, nunca se expulsa, se compacta ni caduca** (un registro de auditoría, por diseño) | Nada |
 | Registros de ejecución del agente (`agent-runs/`) | 30 días | Se barren cada 5 min pasados 30 días, **salvo** que se conserven (**Keep**, owner), estén sin liquidar (`open`, `capture_pending`, `failed`, `unverified` con sesión), aún no se hayan guardado, o su captura esté vinculada a un caso (activo o de reserva) |
-| Caché de análisis, log de uso del analista, pins de entrada | **Sin caducidad en el código** | Solo el borrado de una subida purga los análisis que citan esa subida |
-| Veredictos de recomprobación | Se guardan 2 000, en memoria (se pierden al reiniciar); un intent conserva los veredictos con los que se compuso | Se descartan los más antiguos; borrado de subida |
+| Caché de análisis (`analysis-cache/`) | Un análisis que no se escribe ni se lee durante 30 días, y 100 MiB en total (primero los usados hace más tiempo); `ANALYSIS_CACHE_MAX_DAYS`, `ANALYSIS_CACHE_MAX_MB` | El barrido al arrancar y cada hora; el borrado de una subida purga los análisis que la citan. Los análisis golden vienen con el código y nunca se barren |
+| Log de uso del analista (`analyst-usage.jsonl`, solo recuentos de tokens y tiempos) | 90 días, 10 MiB (primero las líneas más antiguas); `ANALYST_USAGE_MAX_DAYS`, `ANALYST_USAGE_MAX_MB` | El mismo barrido |
+| Pins de entrada (`analysis-inputs.json`) | Uno por caso (acotado por los casos) | Se sustituyen al analizar los casos; el borrado de una subida elimina el pin del caso |
+| Veredictos de recomprobación (`recheck-verdicts.json`: clave de análisis, SHA-256 del texto editado, veredicto y citas) | Se guardan 2 000, en el disco (un reinicio los conserva); un intent conserva los veredictos con los que se compuso | Se descartan los más antiguos; borrado de subida |
+| Posición en la reserva (`reserve-position.json`: ids de disputa por caso) | Hasta 200 por caso | No caduca; las entradas que ya no coinciden con las vinculaciones se ignoran |
 | Cuentas (`accounts.json`: payer ids, nombres visibles, correos enmascarados, claves públicas de passkey, hashes de tokens de invitación) | No caducan | **Sin borrado.** Revocar a un miembro o una invitación lo marca con `revokedAt` y termina sus sesiones; el registro se queda. Los owners no se pueden revocar |
 | Sesiones (cookies) | 12 h | Caducidad; **Sign out of all devices** (cerrar sesión en todos los dispositivos); revocación; fin del acceso de revisor |
 | Vendedores vistos (`sellers.json`) | No caducan | Se actualizan cuando cambian las vinculaciones |
@@ -51,7 +54,7 @@ Los nombres de archivo nunca salen del servidor: PayPal recibe nombres `E<n>-…
 
 | Datos | Se conservan | Los borra |
 |---|---|---|
-| Ledger (`metermcp.sqlite`: sesiones, llamadas con hashes de petición/respuesta, liquidaciones) | **Sin caducidad en el código** | Nada |
+| Ledger (`metermcp.sqlite`: sesiones, llamadas con hashes de petición/respuesta, liquidaciones) | **No caduca nunca** (el registro de dinero, por diseño) | Nada |
 | Recuento diario de presupuestos | Un día UTC | Se sustituye cada día |
 | Transportes MCP | 15 min de inactividad | El barrido de 30 s los cierra (y su sesión de pago) |
 

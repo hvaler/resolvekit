@@ -1,7 +1,9 @@
 import { RawJson, type PayPalClient } from './client.ts';
 
 // Webhook notifications (CUSTOMER.DISPUTE.*). A notification is only a hint that something changed: it is verified
-// with PayPal (POST /v1/notifications/verify-webhook-signature, as PayPal recommends) and then the dispute is read
+// with PayPal (POST /v1/notifications/verify-webhook-signature, PayPal's documented postback method; PayPal calls the
+// other one, verifying the signature yourself, the preferred method, and mock events can only be verified that way)
+// and then the dispute is read
 // again from the API; nothing in the payload is trusted for what it says about the dispute. The event goes to PayPal
 // exactly as it arrived (its raw bytes), so the check never depends on how this server would re-serialise it.
 

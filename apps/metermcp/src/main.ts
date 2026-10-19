@@ -5,7 +5,7 @@
  * Local mode (default): listens on 127.0.0.1 only, keeps its ledger in apps/metermcp/data/ (git-ignored), writes a
  * per-launch admin token for apps/server to apps/metermcp/.runtime-token.
  * Env: METERMCP_PORT (8790) · METERMCP_BUDGET (5.00, the largest budget) · METERMCP_MIN_BUDGET (0.50, the smallest
- * open_budget cap) · METERMCP_IDLE_MINUTES (15) · METERMCP_PUBLIC_URL (http://127.0.0.1:<port>) · METERMCP_DB ·
+ * open_budget cap; above METERMCP_BUDGET, MeterMCP does not start) · METERMCP_IDLE_MINUTES (15) · METERMCP_PUBLIC_URL (http://127.0.0.1:<port>) · METERMCP_DB ·
  * METERMCP_FAIL_FIRST (test switch, e.g. "deep_report") · METERMCP_RETURN_ORIGINS (comma list of origins an
  * open_budget return_to may point at) · METERMCP_ALLOWED_ORIGINS · METERMCP_TOKEN_FILE.
  *
@@ -19,11 +19,11 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, envInt, insecureOrigin, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
+import { DailyCounters, envInt, insecureOrigin, publicOrigins, paypalEnvFor, sweepDurableTmp } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { createApp, type HostedMeterOptions } from './app.ts';
 import { Ledger } from './ledger.ts';
-import { Meter } from './meter.ts';
+import { Meter, budgetRangeProblem } from './meter.ts';
 import { toNodeListener } from './node.ts';
 
 const hosted = process.env.METERMCP_MODE === 'hosted';
@@ -49,10 +49,15 @@ const publicUrl = (process.env.METERMCP_PUBLIC_URL ?? (hosted ? process.env.REND
 const failFirst = (process.env.METERMCP_FAIL_FIRST ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const idleMs = Number(process.env.METERMCP_IDLE_MINUTES ?? 15) * 60_000;
 const dataDir = process.env.METERMCP_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
+// Leftovers of an interrupted durable write of the daily caps (`<file>.<pid>.<8 hex>.tmp`, older than 10 min).
+sweepDurableTmp(dataDir);
 
 const returnOrigins = (process.env.METERMCP_RETURN_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const budget = process.env.METERMCP_BUDGET ?? '5.00';
 const minBudget = process.env.METERMCP_MIN_BUDGET ?? '0.50';
+// Checked before anything is opened or written: a range open_budget could never satisfy stops the start.
+const budgetProblem = budgetRangeProblem(budget, minBudget);
+if (budgetProblem) fail(budgetProblem);
 
 // A ledger that cannot be migrated is left untouched and MeterMCP does not start (the previous deploy keeps serving).
 const ledger = (() => {
@@ -62,10 +67,6 @@ const ledger = (() => {
     return fail(e instanceof Error ? e.message : String(e));
   }
 })();
-const MONEY = /^\d+(\.\d{1,2})?$/;
-if (MONEY.test(minBudget) && MONEY.test(budget) && Number(minBudget) > Number(budget)) {
-  log(`WARNING: METERMCP_MIN_BUDGET ${minBudget} is above METERMCP_BUDGET ${budget}: open_budget will refuse every cap`);
-}
 const meter = (() => {
   try {
     return new Meter({ ledger, paypal, env, publicUrl, budget, minBudget, returnOrigins, log, failFirst });

@@ -192,3 +192,26 @@ test('hosted MeterMCP: /agent/mcp answers 429 past its per-run request limit', a
   for (let i = 0; i < 3; i++) statuses.push((await app(new Request(url, { method: 'GET', headers: agentHeaders(RUN) }))).status);
   assert.deepEqual(statuses, [400, 400, 429]);
 });
+
+test('hosted MeterMCP: /agent/mcp has its own cap of 10 live sessions (503 past it), apart from the public /mcp', async () => {
+  const { app, publicFetch } = setup();
+  const url = `http://${INTERNAL}/agent/mcp`;
+  const runOf = (i: number) => `run-${i.toString(16).padStart(32, '0')}`;
+  const statuses: number[] = [];
+  for (let i = 0; i < 12; i++) statuses.push((await app(new Request(url, { ...AGENT_INIT, headers: agentHeaders(runOf(i)) }))).status);
+  assert.deepEqual(statuses, [...Array(10).fill(200), 503, 503]);
+  const refused = await app(new Request(url, { ...AGENT_INIT, headers: agentHeaders(runOf(99)) }));
+  assert.equal(refused.status, 503);
+  assert.match(JSON.stringify(await refused.json()), /Too many live MCP sessions on this server/);
+  // The public endpoint keeps its own slots.
+  const pub = await connect(publicFetch());
+  assert.ok((await pub.listTools()).tools.length > 0);
+  await pub.close();
+  // One run alone cannot hold more than 10 either (per-run cap).
+  const { app: app2 } = setup();
+  const same: number[] = [];
+  for (let i = 0; i < 11; i++) same.push((await app2(new Request(url, { ...AGENT_INIT, headers: agentHeaders(RUN) }))).status);
+  assert.deepEqual(same, [...Array(10).fill(200), 503]);
+  await app.close();
+  await app2.close();
+});

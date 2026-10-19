@@ -12,14 +12,16 @@ servidor de base de datos. Código en el commit `fbe9621`.
 
 | Ruta | Formato | Contenido | Lo escribe |
 |---|---|---|---|
-| `analysis-cache/<sha256 key>.json` | JSON, tmp + rename | Análisis en directo (citas de los documentos, veredictos, borrador) | `FileAnalysisStore` (`packages/analyst/src/cache.ts`) |
-| `analyst-usage.jsonl` | JSONL de anexado | Recuentos de tokens y tiempos por llamada al modelo; sin texto de prompts ni de documentos | `main.ts` |
-| `analysis-inputs.json` | Mapa JSON caso → entrada | La entrada con la que se analizó un caso antes de que entrara la evidencia del vendedor (`InputPins`) | `analysis.ts` |
-| `intents.json` | JSON `{intents, sentDisputes}`, tmp + rename | Intents de envío, incluido el texto de las notas aprobadas | `intents.ts` |
-| `audit-events.jsonl` | JSONL de anexado, compactado por encima de 4 MiB | Eventos de auditoría: códigos, hashes, ids, quién y cuándo; sin texto de documentos | `intents.ts` |
-| `audit-events-sends.jsonl` | JSONL de anexado, nunca compactado | Eventos de envío (iniciado, enviado, fallido) | `intents.ts` |
+| `analysis-cache/<sha256 key>.json` | JSON, escritura duradera; se barre lo no usado en 30 días o por encima de 100 MiB | Análisis en directo (citas de los documentos, veredictos, borrador) | `FileAnalysisStore` (`packages/analyst/src/cache.ts`) |
+| `analyst-usage.jsonl` | JSONL de anexado; 90 días, 10 MiB | Recuentos de tokens y tiempos por llamada al modelo; sin texto de prompts ni de documentos | `usage-log.ts` |
+| `analysis-inputs.json` | Mapa JSON caso → entrada, escritura duradera | La entrada con la que se analizó un caso antes de que entrara la evidencia del vendedor (`InputPins`) | `analysis.ts` |
+| `recheck-verdicts.json` | JSON `{v, verdicts}`, escritura duradera, se guardan 2 000 | Los veredictos del verificador sobre frases editadas, por clave de análisis y SHA-256 del texto (no el texto): una recomprobación sobrevive a un reinicio | `verdicts.ts` |
+| `reserve-position.json` | JSON `{v, used: {case: [dispute ids]}}`, escritura duradera | Las disputas que cada caso dejó atrás en su reserva, que se vuelven a saltar al arrancar | `reserve.ts` |
+| `intents.json` | JSON `{intents, sentDisputes}`, escritura duradera | Intents de envío, incluido el texto de las notas aprobadas | `intents.ts` |
+| `audit-events.jsonl` | JSONL de anexado (con fsync), compactado por encima de 4 MiB | Eventos de auditoría: códigos, hashes, ids, quién y cuándo; sin texto de documentos | `intents.ts` |
+| `audit-events-sends.jsonl` | JSONL de anexado (con fsync), nunca compactado ni caducado | Eventos de envío (iniciado, enviado, fallido) | `intents.ts` |
 | `uploads/<workspaceId>/<uploadId>/` | `record.json`, `original.bin`, `sanitised.png`, `sanitised.jpg` (una foto tapada) o `sanitised.pdf`, `page-<k>.png`, `page-<k>.orig.png`, `thumb-<n>.png` | Subidas del comerciante; el registro se escribe el último | `uploads/store.ts` |
-| `agent-runs/<run-id>.json` | JSON por ejecución, tmp + rename | Registro de la ejecución del agente: objetivo, pasos con los motivos declarados, uso, liquidación, hash del recibo | `agent/runs.ts` |
+| `agent-runs/<run-id>.json` | JSON por ejecución, escritura duradera | Registro de la ejecución del agente: objetivo, pasos con los motivos declarados, uso, liquidación, hash del recibo | `agent/runs.ts` |
 | `accounts.json` (alojado) | JSON | Espacios de trabajo, personas (payer ids de PayPal, nombres visibles, correos enmascarados), claves públicas de passkeys, **hashes** de los tokens de invitación | `accounts.ts` |
 | `sellers.json` (alojado) | JSON | Merchant ids de vendedor confirmados por última vez para las disputas vinculadas | `sellers.ts` |
 | `daily-caps.json` (alojado) | JSON `{day, counts}` | Contadores diarios globales | `packages/hosting` |
@@ -32,6 +34,10 @@ donde se ejecuta.
 
 Un `accounts.json` o `sellers.json` ilegible detiene el arranque alojado (si no, se perderían membresías). Un
 `daily-caps.json` ilegible o un guardado fallido hacen que las acciones con tope se rechacen (`CAPS_UNAVAILABLE`, 503).
+Un `intents.json`, `analysis-inputs.json`, `recheck-verdicts.json` o `reserve-position.json` ilegible se aparta como
+`<file>.corrupt-<time>` y se informa (`storage` en `/api/health`, la comprobación del operador); el almacén empieza
+vacío. Escritura duradera: archivo temporal en el mismo directorio, fsync, rename y fsync del directorio en la medida
+de lo posible (`packages/hosting/src/durable.ts`).
 
 ## Directorio de datos de MeterMCP
 

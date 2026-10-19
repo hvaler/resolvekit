@@ -27,6 +27,8 @@ Legend: **R** required, **O** optional; **Secret** = never commit, never log. "H
 | `RESOLVEKIT_ALLOWED_ORIGINS` | O, local | — | `http://localhost:5173`, `http://127.0.0.1:5173`, `:4173` variants | Local Origin allowlist (comma list) |
 | `TRUSTED_PROXY_HOPS` | O | — | 1 (Render blueprint: 2) | `X-Forwarded-For` entries to walk back |
 | `TRUSTED_PROXY_PEERS` | O | — | `private` | `private`, `any` or `none`: which peers may set `X-Forwarded-For` |
+| `ANALYSIS_CACHE_MAX_DAYS`, `ANALYSIS_CACHE_MAX_MB` | O | — | 30 / 100 | Analysis cache retention: an analysis not written or read for this many days is removed, and past this size the least recently used go first (swept at start and hourly; golden analyses and the most recently used one never). Floors: 1 day, 1 MiB; a value that is not a positive whole number gives the default |
+| `ANALYST_USAGE_MAX_DAYS`, `ANALYST_USAGE_MAX_MB` | O | — | 90 / 10 | `analyst-usage.jsonl` retention: lines older than this many days are dropped, then the oldest until it fits this size (floors: 1 day, 1 MiB). The audit and send logs have no such setting: they never expire |
 
 ### PayPal
 
@@ -112,7 +114,7 @@ A missing or malformed value (not a positive integer) keeps the default.
 | `METERMCP_ADMIN_TOKEN` | R hosted (≥ 32 chars) | **Secret** | local: random per launch, written to the token file | Admin routes and `/agent/mcp` |
 | `METERMCP_TOKEN_FILE` | O, local | — | `apps/metermcp/.runtime-token` | |
 | `DEMO_CODE` | O hosted | **Secret** | — | Value MCP clients send in `x-demo-code` to create a budget; absent → no budget can be created. No minimum length is enforced (≤ 200 chars) |
-| `METERMCP_BUDGET`, `METERMCP_MIN_BUDGET` | O | — | 5.00 / 0.50 | Largest and smallest budget cap; min > max only warns (then every cap is refused) |
+| `METERMCP_BUDGET`, `METERMCP_MIN_BUDGET` | O | — | 5.00 / 0.50 | Largest and smallest budget cap; min above max (or an amount that is not money) stops the start |
 | `METERMCP_RETURN_ORIGINS` | O | — | none | Origins an `open_budget` `return_to` may point at (comma list); invalid stops the start. On Render: ResolveKit's public origin, set by hand |
 | `METERMCP_IDLE_MINUTES` | O | — | 15 | Idle payment-session close |
 | `METERMCP_FAIL_FIRST` | O (test switch) | — | none | Comma list of tools whose first call per `payment_required` session fails (never charged, marked injected). Must be absent on the hosted service |
@@ -156,6 +158,9 @@ Set in the blueprint: `NODE_VERSION=24.19.0`; server `RESOLVEKIT_MODE=hosted`, `
 `METERMCP_DATA_DIR=/var/data`, `PAYPAL_ENV=sandbox`, `METERMCP_BUDGET=5.00`, `METERMCP_MIN_BUDGET=0.50`,
 `DAILY_BUDGETS=20`, `TRUSTED_PROXY_HOPS=2`, `METERMCP_ADMIN_TOKEN` generated. Entered by hand (`sync: false`): PayPal
 credentials (both services), identity app, webhook id and key, `BINDINGS_JSON`, `RESOLVEKIT_OPS_TOKEN`, model keys,
-`DEMO_CODE`, `METERMCP_RETURN_ORIGINS`. Not in the blueprint (defaults apply): `DAILY_UPLOADS`,
-`RESOLVEKIT_PUBLIC_URL`, `METERMCP_PUBLIC_URL`, `METERMCP_IDLE_MINUTES`, `LIVE_ANALYSES_PER_HOUR`,
-`RECHECKS_PER_HOUR`. Procedure: [deployment](../operations/deployment.md).
+`DEMO_CODE`, `METERMCP_RETURN_ORIGINS`. Not in the blueprint (defaults apply; listed there as YAML comments with their
+defaults): `DAILY_UPLOADS`, `RESOLVEKIT_PUBLIC_URL`, `RESOLVEKIT_CUSTOM_DOMAINS`, `RESOLVEKIT_BINDINGS`,
+`TRUSTED_PROXY_PEERS`, the model choices (`ANALYST_PROVIDER`, `GEMINI_MODEL`, `GROQ_MODEL`, `AGENT_*_MODEL`,
+`GROQ_TPM`), `LIVE_ANALYSES_PER_HOUR`, `RECHECKS_PER_HOUR`, the retention settings (`ANALYSIS_CACHE_MAX_*`,
+`ANALYST_USAGE_MAX_*`); MeterMCP `METERMCP_PUBLIC_URL`, `METERMCP_CUSTOM_DOMAINS`, `METERMCP_IDLE_MINUTES`,
+`METERMCP_ALLOWED_ORIGINS`, `METERMCP_DB`, `TRUSTED_PROXY_PEERS`. Procedure: [deployment](../operations/deployment.md).

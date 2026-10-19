@@ -48,8 +48,10 @@ exit 0).
 MAX_STORED_BYTES, and with the demo PDFs stay under PAYPAL_MAX_SEND_BYTES* falló bajo la carga de la suite completa con
 `429 RATE_LIMITED` en su paso de tapar y confirmar (la ejecución duró 39 s). Ejecutado solo, dos veces, el archivo pasó
 3/3 en ambas. Es sensible a la carga: el rechazo vino de un límite de frecuencia dentro de la propia preparación del
-test, y no se ha analizado por qué salta solo bajo la carga de la suite completa. Sigue en
-[Problemas conocidos](known-issues.md) hasta que se haga determinista.
+test. Causa (encontrada el 19/10): mientras el trabajo de PDF iba lento bajo carga, el sondeo del test a `GET /uploads`
+cada 100 ms agotaba el límite de la API alojada (300 peticiones cada 5 min) y la siguiente petición recibía `429`. El kit
+de tests sube ahora ese límite para estos tests, y el sondeo (`settled()`, `waitFor()`) comprueba el `200` y pregunta
+cada 300 ms.
 
 **No ejecutado:** las suites en Linux (la plataforma de alojamiento) y en Render. El comportamiento exclusivo de Linux,
 como matar el proceso hijo de PDF por encima de 200 MiB de RSS, solo se ejercita donde el test puede leer `/proc`
@@ -133,10 +135,8 @@ anterior cliente con guion (scripted), no el agente dirigido por el modelo.
 
 - Sin tests del DOM para la interfaz de subidas y de revisión de PDF (`useUploads`, `PdfSelect`, `PdfReview`, el
   cableado de `CasePage`).
-- Sin tests para el tope de sesiones 503 de MeterMCP ni para `/agent/mcp` en modo local.
 - Rutas exclusivas de Linux (matar por RSS al hijo de PDF) no ejecutadas en Linux; memoria de un PDF de 5 páginas en
   Render no medida.
-- El test intermitente de tamaño de PDF de arriba.
 - Comportamiento contra PayPal live: ninguno.
 
 La lista completa, con fuentes, está en [Problemas conocidos](known-issues.md).

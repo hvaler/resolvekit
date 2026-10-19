@@ -55,8 +55,8 @@ Solo se pueden enviar las frases *supported*. Las rechazadas siguen visibles, ta
 **Recomprobación de una frase editada.** `POST /api/cases/:id/analysis/verify {text}` (1–600 caracteres, sin saltos
 de línea ni caracteres de control) envía la frase, delimitada como dato no fiable, a `recheck` (3 000 tokens de
 salida): el modelo vuelve a elegir citas entre los hechos extraídos y después se aplican las mismas comprobaciones
-deterministas. Los veredictos se guardan por (clave del análisis, texto), se conservan 2 000, en la memoria del
-servidor. El prompt de recomprobación no forma parte de `PROMPT_VERSION`; `rk-recheck-2026-10-09.2` lo identifica en
+deterministas. Los veredictos se guardan por (clave del análisis, hash del texto), se conservan 2 000, en el
+directorio de datos (`recheck-verdicts.json`, así que un reinicio los conserva). El prompt de recomprobación no forma parte de `PROMPT_VERSION`; `rk-recheck-2026-10-09.2` lo identifica en
 los logs y en las evaluaciones.
 
 ## Prompts y versiones
@@ -79,7 +79,7 @@ PDF», «Pasted text»), nunca los nombres de archivo.
 | Elemento | Comportamiento |
 |---|---|
 | Clave | `sha256` del JSON canónico de `{input, model, promptVersion}`; la misma en Node y en el navegador (Web Crypto) |
-| Caché en directo | `<data>/analysis-cache/<key>.json`, sin caducidad; se purga cuando se borra una subida que citaba |
+| Caché en directo | `<data>/analysis-cache/<key>.json`; un análisis sin usar durante 30 días se elimina, 100 MiB en total (primero los usados hace más tiempo; `ANALYSIS_CACHE_MAX_*`); se purga cuando se borra una subida que citaba |
 | Análisis de referencia | `packages/analyst/golden/<case>.json`, generados por `gemini-3.8-flash` y confirmados en el repositorio con id del modelo, fecha, versión del prompt y uso de tokens; solo se usan cuando la clave coincide con los documentos en pantalla |
 | Etiqueta | La barra del análisis indica cuál: «Analysis by gemini-3.8-flash · <date> · cached» o «… · live» (versión del prompt y tokens al pasar el ratón) |
 | Casos vinculados | Sus documentos incluyen datos en directo de PayPal y MeterMCP, así que los análisis de referencia no coinciden; el servidor alojado **precalienta** cada caso vinculado una vez tras el arranque o un cambio de vinculaciones (ejecuciones del sistema, mismos límites y topes) |

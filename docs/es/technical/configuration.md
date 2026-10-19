@@ -27,6 +27,8 @@ logs. «Alojado» significa `RESOLVEKIT_MODE=hosted` (servidor) o `METERMCP_MODE
 | `RESOLVEKIT_ALLOWED_ORIGINS` | O, local | — | `http://localhost:5173`, `http://127.0.0.1:5173`, variantes con `:4173` | Lista de Origins permitidos en local (separada por comas) |
 | `TRUSTED_PROXY_HOPS` | O | — | 1 (blueprint de Render: 2) | Entradas de `X-Forwarded-For` que se recorren hacia atrás |
 | `TRUSTED_PROXY_PEERS` | O | — | `private` | `private`, `any` o `none`: qué pares pueden establecer `X-Forwarded-For` |
+| `ANALYSIS_CACHE_MAX_DAYS`, `ANALYSIS_CACHE_MAX_MB` | O | — | 30 / 100 | Retención de la caché de análisis: un análisis que no se escribe ni se lee durante estos días se elimina, y por encima de este tamaño se eliminan primero los usados hace más tiempo (barrido al arrancar y cada hora; nunca los golden ni el usado más recientemente). Mínimos: 1 día, 1 MiB; un valor que no es un número entero positivo da el valor por defecto |
+| `ANALYST_USAGE_MAX_DAYS`, `ANALYST_USAGE_MAX_MB` | O | — | 90 / 10 | Retención de `analyst-usage.jsonl`: se descartan las líneas de más de esos días y después las más antiguas hasta que cabe en ese tamaño (mínimos: 1 día, 1 MiB). Los logs de auditoría y de envíos no tienen este ajuste: no caducan nunca |
 
 ### PayPal
 
@@ -112,7 +114,7 @@ Un valor ausente o mal formado (que no sea un entero positivo) mantiene el valor
 | `METERMCP_ADMIN_TOKEN` | R alojado (≥ 32 caracteres) | **Secret** | local: aleatorio por arranque, escrito en el archivo de token | Rutas de administración y `/agent/mcp` |
 | `METERMCP_TOKEN_FILE` | O, local | — | `apps/metermcp/.runtime-token` | |
 | `DEMO_CODE` | O alojado | **Secret** | — | Valor que los clientes MCP envían en `x-demo-code` para crear un presupuesto; si falta → no se puede crear ningún presupuesto. No se exige longitud mínima (≤ 200 caracteres) |
-| `METERMCP_BUDGET`, `METERMCP_MIN_BUDGET` | O | — | 5.00 / 0.50 | Tope de presupuesto máximo y mínimo; mínimo > máximo solo genera un aviso (y entonces se rechaza cualquier tope) |
+| `METERMCP_BUDGET`, `METERMCP_MIN_BUDGET` | O | — | 5.00 / 0.50 | Tope de presupuesto máximo y mínimo; un mínimo por encima del máximo (o un importe que no es dinero) impide el arranque |
 | `METERMCP_RETURN_ORIGINS` | O | — | ninguno | Orígenes a los que puede apuntar el `return_to` de un `open_budget` (lista separada por comas); un valor no válido detiene el arranque. En Render: el origen público de ResolveKit, establecido a mano |
 | `METERMCP_IDLE_MINUTES` | O | — | 15 | Cierre por inactividad de la sesión de pago |
 | `METERMCP_FAIL_FIRST` | O (interruptor de pruebas) | — | ninguno | Lista separada por comas de herramientas cuya primera llamada por sesión `payment_required` falla (nunca se cobra, se marca como inyectada). No debe estar presente en el servicio alojado |
@@ -157,5 +159,9 @@ generado, `METERMCP_URL` y `METERMCP_ADMIN_TOKEN` desde el servicio MeterMCP; Me
 `DAILY_BUDGETS=20`, `TRUSTED_PROXY_HOPS=2`, `METERMCP_ADMIN_TOKEN` generado. Introducidos a mano (`sync: false`):
 credenciales de PayPal (ambos servicios), app de identidad, id y clave del webhook, `BINDINGS_JSON`,
 `RESOLVEKIT_OPS_TOKEN`, claves de los modelos, `DEMO_CODE`, `METERMCP_RETURN_ORIGINS`. No están en el blueprint (se
-aplican los valores por defecto): `DAILY_UPLOADS`, `RESOLVEKIT_PUBLIC_URL`, `METERMCP_PUBLIC_URL`,
-`METERMCP_IDLE_MINUTES`, `LIVE_ANALYSES_PER_HOUR`, `RECHECKS_PER_HOUR`. Procedimiento: [despliegue](../operations/deployment.md).
+aplican los valores por defecto; aparecen allí como comentarios YAML con su valor por defecto): `DAILY_UPLOADS`,
+`RESOLVEKIT_PUBLIC_URL`, `RESOLVEKIT_CUSTOM_DOMAINS`, `RESOLVEKIT_BINDINGS`, `TRUSTED_PROXY_PEERS`, la elección de
+modelos (`ANALYST_PROVIDER`, `GEMINI_MODEL`, `GROQ_MODEL`, `AGENT_*_MODEL`, `GROQ_TPM`), `LIVE_ANALYSES_PER_HOUR`,
+`RECHECKS_PER_HOUR`, los ajustes de retención (`ANALYSIS_CACHE_MAX_*`, `ANALYST_USAGE_MAX_*`); en MeterMCP
+`METERMCP_PUBLIC_URL`, `METERMCP_CUSTOM_DOMAINS`, `METERMCP_IDLE_MINUTES`, `METERMCP_ALLOWED_ORIGINS`, `METERMCP_DB`,
+`TRUSTED_PROXY_PEERS`. Procedimiento: [despliegue](../operations/deployment.md).

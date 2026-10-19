@@ -8,11 +8,16 @@
  * - {@link signDemoSession} / {@link verifyDemoSession}: the HMAC-signed demo-unlock cookie.
  * - {@link withSecurityHeaders}: CSP, HSTS, nosniff, frame-ancestors 'none', Referrer-Policy.
  * - {@link StaticSite}: the built web app served from memory, with the SPA fallback.
+ * - {@link writeFileDurable} / {@link appendFileDurable} (durable.ts): the stores' writes to the data dir, in both
+ *   modes (packages/analyst's cache too).
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { writeFileDurable } from './durable.ts';
+
+export * from './durable.ts';
 
 /** Constant-time comparison of two secrets of any length (both are hashed first, so lengths do not leak). */
 export function sameSecret(a: string, b: string): boolean {
@@ -334,9 +339,7 @@ export class DailyCounters {
     if (this.broken?.kind === 'unreadable') return false;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ day: this.day, counts: this.counts }));
-      renameSync(tmp, this.file);
+      writeFileDurable(this.file, JSON.stringify({ day: this.day, counts: this.counts }));
       this.broken = null;
       return true;
     } catch (e) {

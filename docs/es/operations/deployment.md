@@ -83,7 +83,8 @@ El arranque se rechaza, y el servicio no arranca, cuando: `PAYPAL_ENV` no es `sa
 parece un id de webhook o llega sin un `PAYPAL_WEBHOOK_KEY` válido; `RESOLVEKIT_OPS_TOKEN` no tiene 32 o más caracteres
 seguros para URL; `BINDINGS_JSON` (o el archivo de vinculaciones) no es válido; `accounts.json` o `sellers.json` son
 ilegibles; falta el build web; en MeterMCP, `METERMCP_ADMIN_TOKEN` tiene menos de 32 caracteres, la URL pública no es
-https, `METERMCP_BUDGET` / `METERMCP_MIN_BUDGET` / `METERMCP_RETURN_ORIGINS` no son válidos, o el ledger no se puede
+https, `METERMCP_BUDGET` / `METERMCP_MIN_BUDGET` / `METERMCP_RETURN_ORIGINS` no son válidos (incluido un
+`METERMCP_MIN_BUDGET` por encima de `METERMCP_BUDGET`; los 5.00 / 0.50 del blueprint pasan), o el ledger no se puede
 migrar. Que falte `METERMCP_ADMIN_TOKEN` en `resolvekit`, que falte `DEMO_CODE` en MeterMCP o un secreto de sesión
 corto solo registran un `WARNING` (las ejecuciones del agente se detienen como `meter_unavailable`; no se puede crear
 ningún presupuesto; las sesiones se cierran en cada reinicio).
@@ -108,7 +109,8 @@ Los almacenes del servidor en `/var/data` (archivos JSON y JSONL, consulta
 [Copias de seguridad y recuperación](backup-and-recovery.md#qué-guarda-cada-servicio)) no llevan versión de formato. No
 hay paso de migración: el código nuevo lee los archivos existentes. Algunos archivos se comprueban al arrancar
 (`accounts.json`, `sellers.json`, vinculaciones: si son ilegibles se detiene el arranque); otros se leen con
-tolerancia (un `intents.json` ilegible se trata como vacío). No se ha probado la compatibilidad de una versión antigua
+tolerancia: un `intents.json`, `analysis-inputs.json`, `recheck-verdicts.json` o `reserve-position.json` ilegible se
+aparta como `<file>.corrupt-<time>`, se registra y se informa, y el almacén empieza vacío. No se ha probado la compatibilidad de una versión antigua
 con archivos escritos por una más nueva (**Pendiente**).
 
 ### Revertir

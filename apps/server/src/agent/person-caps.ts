@@ -1,12 +1,14 @@
 /**
  * Agent runs started per person per UTC day (hosted: 5), persisted next to the daily caps so a restart does not give
- * anyone a fresh allowance: `{ day, counts: { <person id>: n } }`, rewritten whole (tmp + rename) on every change.
+ * anyone a fresh allowance: `{ day, counts: { <person id>: n } }`, rewritten whole (durable write: tmp, fsync, rename)
+ * on every change.
  *
  * Fails closed like DailyCounters: a file that exists but cannot be read, or a count that cannot be saved, refuses the
  * run (`storage`) instead of counting it only in memory. `file: null` keeps the counts in memory (tests).
  */
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { writeFileDurable } from '@resolvekit/hosting';
 
 export type PersonTake = { ok: true; day: string } | { ok: false; reason: 'cap'; retryAfterSec: number } | { ok: false; reason: 'storage'; detail: string };
 
@@ -94,14 +96,11 @@ export class PersonRunCaps {
   /** null when written (or in memory); else why not. Never overwrites an unreadable file. */
   private save(): string | null {
     if (!this.file) return null;
-    const tmp = `${this.file}.tmp`;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(tmp, JSON.stringify({ day: this.day, counts: this.counts }));
-      renameSync(tmp, this.file);
+      writeFileDurable(this.file, JSON.stringify({ day: this.day, counts: this.counts }));
       return null;
     } catch (e) {
-      try { unlinkSync(tmp); } catch { /* nothing to clean */ }
       return `the agent-run caps cannot be saved (${(e as Error).message})`;
     }
   }

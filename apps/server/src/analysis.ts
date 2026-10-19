@@ -18,8 +18,9 @@ import {
 } from '@resolvekit/analyst/node';
 import { canonicalJson } from '@resolvekit/analyst';
 import { documentsSignature } from '@resolvekit/cases';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
+import { openStoreFile, writeFileDurable } from '@resolvekit/hosting';
 
 export interface LiveState {
   configured: boolean;
@@ -207,19 +208,35 @@ export class AnalystService {
  * The input each case was last analysed with, while PayPal still waited for the seller. Once the seller's evidence is
  * in, PayPal's allowed actions change but the documents do not: the case keeps the analysis of its pinned input (same
  * documents), as the merchant saw it before sending, instead of needing a new model run. Persisted when given a file.
+ * A file that exists but cannot be read is moved aside (`<file>.corrupt-<time>`), logged and reported
+ * ({@link storageProblem}) instead of being overwritten.
  */
 export class InputPins {
   private readonly file: string | null;
   private readonly pins = new Map<string, AnalysisInput>();
-  constructor(o: { file?: string } = {}) {
+  private problem: string | null = null;
+  private blocked = false;
+  constructor(o: { file?: string; now?: () => Date; log?: (line: string) => void } = {}) {
     this.file = o.file ?? null;
     if (!this.file) return;
-    try {
-      const saved = JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, AnalysisInput>;
-      for (const [k, v] of Object.entries(saved)) if (v && typeof v === 'object') this.pins.set(k, v);
-    } catch {
-      /* no pins yet */
-    }
+    const opened = openStoreFile(
+      this.file,
+      (raw) => {
+        const saved = JSON.parse(raw) as Record<string, AnalysisInput>;
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved)) throw new Error('not pins');
+        return saved;
+      },
+      { ifEmpty: 'Cases whose seller evidence is in may need one new analysis', now: o.now?.() },
+    );
+    for (const [k, v] of Object.entries(opened.value ?? {})) if (v && typeof v === 'object') this.pins.set(k, v);
+    this.blocked = opened.blocked;
+    this.problem = opened.problem;
+    if (this.problem) o.log?.(`ERROR analysis pins · ${this.problem}`);
+  }
+
+  /** Why the saved pins could not be read at start, or null. */
+  storageProblem(): string | null {
+    return this.problem;
   }
 
   /**
@@ -249,13 +266,12 @@ export class InputPins {
     }
   }
 
-  /** tmp + rename, so a reader or a crash never meets half a file. */
+  /** Durable write (tmp, fsync, rename), so a reader or a crash never meets half a file. */
   private write() {
     if (!this.file) return;
+    if (this.blocked) throw new Error(`${basename(this.file)} is unreadable and left in place`);
     mkdirSync(dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.pins)));
-    renameSync(tmp, this.file);
+    writeFileDurable(this.file, JSON.stringify(Object.fromEntries(this.pins)));
   }
 
   private save() {

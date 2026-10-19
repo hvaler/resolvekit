@@ -40,11 +40,12 @@ const select = async (app: App, cookie: string, id: string, pages: unknown) => {
 };
 /** Poll GET /uploads, as the web app does, until the upload's job satisfies `done`. */
 async function waitFor(app: App, cookie: string, id: string, done: (j: Job) => boolean): Promise<PdfView> {
-  for (let i = 0; i < 1200; i++) {
+  for (let i = 0; i < 400; i++) {
     const list = await call(app, P, { cookie });
+    assert.equal(list.status, 200, JSON.stringify(list.body));
     const u = (list.body.uploads as unknown as PdfView[]).find((x) => x.id === id)!;
     if (done(u.pdf.job)) return u;
-    await sleep(100);
+    await sleep(300);
   }
   throw new Error('the job did not finish');
 }
