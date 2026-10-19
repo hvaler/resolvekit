@@ -4,8 +4,10 @@
  * {@link DisputePin}). Types stay strings here; the contract registry decides which variants are available.
  */
 import { canonicalJson } from '@resolvekit/analyst';
-import { parseAmount } from './amounts.ts';
-import type { ComposeProblem, IntentContent, IntentRequest } from './intent.ts';
+import { CONTRACTS, variantOf, type VariantContract, type VariantId } from './actionContracts.ts';
+import { CURRENCY_EXPONENT, formatMoney, minorUnits, parseAmount } from './amounts.ts';
+import type { ComposeProblem, IntentContent, IntentRequest, SubmissionIntent } from './intent.ts';
+import type { DisputeMessage, DisputeSnapshot, SubmissionFile } from './types';
 
 /** The actions composed from a text and options, without the analysis. */
 export type SimpleAction = 'send_message' | 'accept_claim' | 'escalate' | 'make_offer';
@@ -155,4 +157,270 @@ export function parseActionRequest(body: unknown): ActionRequest | ComposeProble
   const m = amount();
   if (isProblem(m)) return m;
   return action === 'accept_claim' ? { action, acceptType: kind, note, amount: m, attachments: [] } : { action, offerType: kind, note, amount: m, attachments: [] };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Availability, compose, the second confirmation and new buyer messages (B0). Pure: the server and the in-browser
+// simulator use the same rules. Availability is rebuilt only from a fresh dispute read and the contract registry.
+
+/** Actions that move money or change the dispute's stage: the workspace owner only. */
+export const OWNER_ACTIONS: readonly IntentAction[] = ['accept_claim', 'make_offer', 'escalate', 'appeal'];
+
+/** Who is asking: a reviewer is a member who joined through a reviewer link. */
+export interface Viewer {
+  role: 'owner' | 'member';
+  reviewer: boolean;
+}
+
+export interface ActionAvailability {
+  action: IntentAction;
+  /** PayPal offers the action now (its link is in the fresh read). */
+  offered: boolean;
+  /** This viewer can compose and send it now, in at least one variant. */
+  sendable: boolean;
+  /** Why it is not sendable; null when it is. */
+  why: string | null;
+  variants: Array<{ variant: VariantId; type: string | null; available: boolean; why: string | null }>;
+}
+
+export type ContractRegistry = Readonly<Record<VariantId, VariantContract>>;
+
+const NOT_OFFERED = 'PayPal does not offer this action on this dispute right now';
+const OWNER_ONLY = 'Only the workspace owner can send this action';
+const NO_TYPE = 'PayPal offers no type for this action on this dispute right now';
+
+const ownerOk = (action: IntentAction, who: Viewer): boolean => !OWNER_ACTIONS.includes(action) || (who.role === 'owner' && !who.reviewer);
+
+/** The types of an action PayPal allows now (allowed_response_options), or the fixed variants of the others. */
+function variantTypes(snap: DisputeSnapshot, action: IntentAction): Array<string | null> {
+  switch (action) {
+    case 'send_message':
+      return [null, 'file'];
+    case 'accept_claim':
+      return [...(snap.responseOptions?.acceptClaimTypes ?? [])];
+    case 'make_offer':
+      return [...(snap.responseOptions?.offerTypes ?? [])];
+    case 'escalate':
+    case 'appeal':
+      return [null];
+    case 'provide_evidence':
+      return [];
+  }
+}
+
+/**
+ * What a viewer can do with an action on the dispute as just read: offered when PayPal's link is there; each variant
+ * PayPal allows, available only when its contract is recorded (with the registry's reason otherwise); owner-only
+ * actions refused to anyone else. Nothing is inferred from earlier reads or local state.
+ */
+export function actionAvailability(snap: DisputeSnapshot, action: IntentAction, who: Viewer, contracts: ContractRegistry = CONTRACTS): ActionAvailability {
+  const offered = snap.allowedActions.includes(action);
+  const variants = variantTypes(snap, action).flatMap((type) => {
+    const variant = variantOf(action, type);
+    if (!variant) return []; // a type no variant of the registry covers: never sendable
+    const c = contracts[variant];
+    const ok = c.status !== 'not_available';
+    return [{ variant, type, available: ok, why: ok ? null : (c.reason ?? 'Not available') }];
+  });
+  // Evidence keeps its own flow (its variants are checked where it is composed).
+  const withVariants = action !== 'provide_evidence';
+  let why: string | null = null;
+  if (!offered) why = NOT_OFFERED;
+  else if (!ownerOk(action, who)) why = OWNER_ONLY;
+  else if (withVariants && variants.length === 0) why = NO_TYPE;
+  else if (withVariants && !variants.some((v) => v.available)) why = variants[0]!.why;
+  return { action, offered, sendable: why === null, why, variants };
+}
+
+/** The dispute as read now, as an intent pins it. */
+export function disputePin(snap: DisputeSnapshot, disputeId: string | null, seller: string | null): DisputePin {
+  return { disputeId, seller, stage: snap.stage ?? null, status: snap.status, amount: snap.amount ? { value: snap.amount.value, currency: snap.amount.currency } : null };
+}
+
+/** The rules of one action, from its contract. They land with each action (Tasks 8–12). */
+export interface ActionRules {
+  /** Stages the contract recorded the action on; null: any stage. */
+  stages: readonly string[] | null;
+  amount: 'required' | 'not_allowed' | 'optional';
+  /** The amount must be below the dispute amount (a partial refund), not just at most it. */
+  belowDispute?: boolean;
+  text: 'required' | 'optional';
+}
+export type RulesOf = (req: ActionRequest, snap: DisputeSnapshot) => ActionRules | null;
+
+/** No action's rules have landed yet: every action is refused VARIANT_NOT_AVAILABLE until its task adds them. */
+export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = {};
+
+const requestType = (req: ActionRequest): string | null =>
+  req.action === 'send_message' ? (req.attachments.length ? 'file' : null) : req.action === 'accept_claim' ? req.acceptType : req.action === 'make_offer' ? req.offerType : null;
+
+function payloadOf(req: ActionRequest, amount: Money | null): ActionPayload {
+  switch (req.action) {
+    case 'send_message':
+      return { kind: 'send_message', text: req.text };
+    case 'escalate':
+      return { kind: 'escalate', note: req.note };
+    case 'accept_claim':
+      return { kind: 'accept_claim', acceptType: req.acceptType, note: req.note, amount };
+    case 'make_offer':
+      return { kind: 'make_offer', offerType: req.offerType, note: req.note, amount };
+  }
+}
+
+/** The canonical decimal string of an amount (`7` USD → `7.00`); the value as given when it has none. */
+function canonicalValue(m: Money): string {
+  const r = parseAmount(m.value, m.currency);
+  return r.ok ? r.value : m.value;
+}
+
+/**
+ * Compose an action intent against the dispute as just read. Checks, in this order: availability (link, variant,
+ * type allowed now), the contract's stage rule, currency, amount, text. Each action's rules come with its task;
+ * without them the action is refused VARIANT_NOT_AVAILABLE.
+ */
+export function composeAction(
+  x: { caseId: string; req: ActionRequest; snap: DisputeSnapshot; disputeId: string | null; seller: string | null; files: SubmissionFile[] },
+  contracts: ContractRegistry = CONTRACTS,
+  rules: Readonly<Partial<Record<SimpleAction, RulesOf>>> = ACTION_RULES,
+): IntentContent | ComposeProblem {
+  const { req, snap } = x;
+  // 1. Availability, from the fresh read and the registry only.
+  if (!snap.allowedActions.includes(req.action)) return { status: 409, error: 'ACTION_NOT_OFFERED', detail: NOT_OFFERED };
+  const type = requestType(req);
+  const variant = variantOf(req.action, type);
+  if (!variant) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${type ?? req.action} is not a variant ResolveKit can send` };
+  const c = contracts[variant];
+  if (c.status === 'not_available') return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${c.reason ?? 'Contract not recorded yet'}` };
+  if (req.action === 'accept_claim' || req.action === 'make_offer') {
+    const allowed = (req.action === 'accept_claim' ? snap.responseOptions?.acceptClaimTypes : snap.responseOptions?.offerTypes) ?? [];
+    if (!allowed.includes(type ?? '')) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: PayPal does not allow ${type} on this dispute right now` };
+  }
+  const r = rules[req.action]?.(req, snap) ?? null;
+  if (!r) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: not implemented yet' };
+
+  // 2. Stage.
+  if (r.stages && !r.stages.includes(snap.stage ?? '')) {
+    return { status: 409, error: 'ACTION_STAGE', detail: `The contract records this action only at stage ${r.stages.join(' or ')}; the dispute is at ${snap.stage ?? 'no stage'}` };
+  }
+
+  // 3–4. Currency and amount: exact strings, compared as integer minor units.
+  const amount = req.action === 'accept_claim' || req.action === 'make_offer' ? req.amount : null;
+  let money: Money | null = null;
+  if (amount) {
+    if (r.amount === 'not_allowed') return { status: 422, error: 'AMOUNT_NOT_ALLOWED', detail: 'PayPal takes no amount for this action' };
+    const d = snap.amount;
+    if (!d) return { status: 422, error: 'UNKNOWN_CURRENCY', detail: 'PayPal reports no dispute amount to check the amount against' };
+    if (!Object.hasOwn(CURRENCY_EXPONENT, d.currency)) return { status: 422, error: 'UNKNOWN_CURRENCY', detail: `Unknown currency ${d.currency}: ResolveKit cannot check amounts in it` };
+    if (amount.currency !== d.currency) return { status: 422, error: 'CURRENCY_MISMATCH', detail: `The amount must be in ${d.currency}, the dispute's currency` };
+    let minor: bigint;
+    let max: bigint;
+    try {
+      minor = minorUnits(amount.value, amount.currency);
+      max = minorUnits(d.value, d.currency);
+    } catch (e) {
+      return { status: 422, error: 'INVALID_AMOUNT', detail: (e as Error).message };
+    }
+    if (minor <= 0n || minor > max || (r.belowDispute && minor >= max)) {
+      return { status: 422, error: 'AMOUNT_ABOVE_DISPUTE', detail: `The amount must be more than 0 and ${r.belowDispute ? 'below' : 'at most'} the dispute amount, ${formatMoney(d)}` };
+    }
+    money = { value: canonicalValue(amount), currency: amount.currency };
+  } else if (r.amount === 'required') return { status: 422, error: 'AMOUNT_REQUIRED', detail: 'Type the amount' };
+
+  // 5. Text.
+  const text = req.action === 'send_message' ? req.text : req.note;
+  const name = req.action === 'send_message' ? 'message' : 'note';
+  if (r.text === 'required' && !text.trim()) return { status: 422, error: 'TEXT_REQUIRED', detail: `Type the ${name}` };
+  if (text.trim().length > ACTION_TEXT_LIMIT) return { status: 422, error: 'TEXT_TOO_LONG', detail: `The ${name} must be at most ${ACTION_TEXT_LIMIT} characters` };
+
+  return {
+    caseId: x.caseId,
+    disputeId: x.disputeId,
+    ...ACTION_EVIDENCE_BLANK,
+    files: x.files.map((f) => ({ ...f })),
+    action: req.action,
+    payload: payloadOf(req, money),
+    pin: disputePin(snap, x.disputeId, x.seller),
+  };
+}
+
+/** What the owner's second confirmation binds ([A3]): any difference means a new intent. */
+export interface ConfirmationTerms {
+  intentId: string;
+  contentHash: string;
+  action: IntentAction;
+  /** Canonical decimal string; null when the action moves no amount. */
+  amount: string | null;
+  currency: string | null;
+  consequence: string;
+}
+
+/** The amount an action moves: the payload's, or for an accept without one, the disputed amount it refunds. */
+function termsAmount(c: IntentContent): Money | null {
+  const p = c.payload;
+  if (p?.kind === 'make_offer') return p.amount;
+  if (p?.kind === 'accept_claim') return p.amount ?? c.pin?.amount ?? null;
+  return null;
+}
+
+/**
+ * The terms the owner confirms a second time: every owner action, and a message that repeats one PayPal already
+ * recorded (`repeat`). Null for a first-time message and for evidence.
+ */
+export function confirmationTerms(i: SubmissionIntent, repeat: boolean): ConfirmationTerms | null {
+  const action = intentAction(i);
+  if (action === 'provide_evidence' || (action === 'send_message' && !repeat)) return null;
+  const m = termsAmount(i);
+  return {
+    intentId: i.id,
+    contentHash: i.contentHash,
+    action,
+    amount: m ? canonicalValue(m) : null,
+    currency: m ? m.currency : null,
+    consequence: action === 'send_message' ? REPEATS_MESSAGE : CONSEQUENCE[action],
+  };
+}
+
+const TERM_KEYS: readonly (keyof ConfirmationTerms)[] = ['intentId', 'contentHash', 'action', 'amount', 'currency', 'consequence'];
+
+/** The terms the client echoes are exactly these: the same fields, each strictly equal (the amount as its canonical string). */
+export function sameTerms(a: ConfirmationTerms, b: unknown): boolean {
+  if (!isRecord(b)) return false;
+  return Object.keys(b).length === TERM_KEYS.length && TERM_KEYS.every((k) => Object.hasOwn(b, k) && b[k] === a[k]);
+}
+
+/** What happens at PayPal when the action is sent, in plain words for the confirmation (refined by each action's task). */
+export function consequenceText(c: IntentContent): string {
+  const m = termsAmount(c);
+  const amount = m ? formatMoney(m) : 'the disputed amount';
+  switch (intentAction(c)) {
+    case 'send_message':
+      return 'The buyer sees this message in PayPal.';
+    case 'accept_claim':
+      return `PayPal refunds ${amount} to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.`;
+    case 'escalate':
+      return 'The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.';
+    case 'make_offer':
+      return `The buyer is offered ${amount}.`;
+    case 'appeal':
+      return 'PayPal reviews its decision again with this appeal.';
+    case 'provide_evidence':
+      return 'PayPal receives this evidence for the dispute.';
+  }
+}
+
+/** A thread message's key: who, when and how long. No text, so it can be kept with an approval. */
+export const messageKey = (m: DisputeMessage): string => `${m.postedBy}|${m.time ?? ''}|${m.content.length}`;
+
+/** Actions a new buyer message holds ([A5]): the merchant may be answering an outdated message. */
+const HELD_BY_BUYER_MESSAGE: readonly IntentAction[] = ['send_message', 'make_offer', 'accept_claim'];
+
+/**
+ * The buyer messages PayPal shows now that were not there at approval (`keysAtApproval`, by {@link messageKey}), for
+ * an action they hold. Empty for escalate and appeal (shown, not blocking) and for evidence. The merchant's own
+ * messages, the read time, the link order and fields outside the hash never count.
+ */
+export function relevantNewBuyerMessages(action: IntentAction, keysAtApproval: readonly string[], fresh: DisputeSnapshot): DisputeMessage[] {
+  if (!HELD_BY_BUYER_MESSAGE.includes(action)) return [];
+  const seen = new Set(keysAtApproval);
+  return (fresh.messages ?? []).filter((m) => m.postedBy === 'BUYER' && !seen.has(messageKey(m)));
 }

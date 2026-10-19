@@ -18,7 +18,8 @@ export function hasSellerEvidence(s: DisputeSnapshot): boolean {
   return s.evidences.some(isSellerSubmission);
 }
 
-const key = (e: RecordedEvidence) => JSON.stringify([e.source, e.action ?? null, e.evidenceType, e.date ?? e.storedAt, e.tracking, [...e.files].sort(), e.notes]);
+/** An evidence entry's identity: who, what, when and its content, as PayPal reports it. */
+export const evidenceKey = (e: RecordedEvidence): string => JSON.stringify([e.source, e.action ?? null, e.evidenceType, e.date ?? e.storedAt, e.tracking, [...e.files].sort(), e.notes]);
 
 /**
  * Seller evidence that PayPal shows now and did not show in `before` (the dispute as read before sending).
@@ -26,8 +27,8 @@ const key = (e: RecordedEvidence) => JSON.stringify([e.source, e.action ?? null,
  * Returns the latest such entry, or null.
  */
 export function newSellerEvidence(after: DisputeSnapshot, before: DisputeSnapshot): RecordedEvidence | null {
-  const seen = new Set(sellerEvidence(before).map(key));
-  const fresh = sellerEvidence(after).filter((e) => !seen.has(key(e)));
+  const seen = new Set(sellerEvidence(before).map(evidenceKey));
+  const fresh = sellerEvidence(after).filter((e) => !seen.has(evidenceKey(e)));
   return fresh.length ? (fresh[fresh.length - 1] ?? null) : null;
 }
 
