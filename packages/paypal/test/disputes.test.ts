@@ -204,3 +204,28 @@ test('appeal is a seller action when PayPal links it; the recorded reads link it
   assert.ok(!sellerActions(KHH).includes('appeal'));
   assert.deepEqual(sellerActions({ links: [{ rel: 'appeal' }] }), ['appeal']);
 });
+
+// The five action POSTs never auto-retry: PayPal-Request-Id deduplication is unproven on these routes.
+const ACTIONS: Array<[string, (c: PayPalClient, requestId: string) => Promise<unknown>]> = [
+  ['send-message', (c, requestId) => c.disputes.sendMessage('PP-R-KHH-10193360', 'Hello', null, { requestId, format: 'json' })],
+  ['accept-claim', (c, requestId) => c.disputes.acceptClaim('PP-R-KHH-10193360', { accept_claim_type: 'REFUND' }, { requestId, format: 'json' })],
+  ['make-offer', (c, requestId) => c.disputes.makeOffer('PP-R-KHH-10193360', { offer_type: 'REFUND' }, { requestId, format: 'json' })],
+  ['escalate', (c, requestId) => c.disputes.escalate('PP-R-KHH-10193360', 'n', { requestId, format: 'json' })],
+  ['appeal', (c, requestId) => c.disputes.appeal('PP-R-KHH-10193360', { evidence_type: 'OTHER', notes: 'n' }, [], { requestId, format: 'multipart' })],
+];
+
+test('a 429 on an action POST is not retried: the call rejects after exactly one request', async () => {
+  for (const [name, send] of ACTIONS) {
+    const { fn, calls } = fakeFetch([{ status: 429, body: { name: 'RATE_LIMIT_REACHED' } }, OK]);
+    await assert.rejects(send(client(fn), 'rk-int-429'), /429/, name);
+    assert.equal(calls.filter((x) => !x.url.endsWith('/v1/oauth2/token')).length, 1, name);
+  }
+});
+
+test('an action POST without a request id is refused before any request', async () => {
+  for (const [name, send] of ACTIONS) {
+    const { fn, calls } = fakeFetch([OK]);
+    await assert.rejects(send(client(fn), ''), /request id/i, name);
+    assert.equal(calls.length, 0, name);
+  }
+});

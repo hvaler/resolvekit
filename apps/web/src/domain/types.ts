@@ -455,10 +455,11 @@ export interface DisputeSnapshot {
   /** PayPal's `allowed_response_options`: the accept and offer types it allows now. */
   responseOptions?: { acceptClaimTypes: string[]; offerTypes: string[] };
   /**
-   * The raw entries of a contract's proof list (`CONTRACTS[…].proof.list`) when that list is not one of the mapped ones
-   * (messages, offer history, evidences). Shaped only from the contract; absent when no contract names such a list.
+   * The entries of a contract's proof list (`CONTRACTS[…].proof.list`) when that list is not one of the mapped ones
+   * (messages, offer history, evidences), reduced to the contract's proof fields (dotted path → string or null). Never
+   * a raw PayPal object; absent when no contract names such a list.
    */
-  proofEntries?: unknown[];
+  proofEntries?: Array<Record<string, string | null>>;
   /** Agent cases only: the MeterMCP session of the disputed capture (absent for other cases and the simulator). */
   agentReceipt?: AgentReceiptSource | null;
   transaction?: {

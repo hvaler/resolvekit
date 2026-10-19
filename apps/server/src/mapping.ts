@@ -2,11 +2,12 @@
  * PayPal dispute → the web app's DisputeSnapshot. Pure: no I/O, no clock (the read time is passed in). Codes stay
  * verbatim; personal data PayPal returns (buyer and seller emails, names, addresses) is not copied. The thread
  * (`messages`) is copied for the seller's workspace only: it is shown there, never persisted and never given to the
- * analyst (packages/cases builds the analyst's input without it) [A5].
+ * analyst (packages/cases builds the analyst's input without it) [A5]. Proof lists the snapshot does not map are
+ * reduced to the contract's proof fields (`proofEntries`): never a raw PayPal object.
  */
 import { requestedEvidence, sellerActions, type Dispute, type Evidence, type PayPalEnv } from '@resolvekit/paypal';
 import type { ActionCode, DisputeMessage, DisputeSnapshot, DisputeStatus, OfferEvent, RecordedEvidence } from '../../web/src/domain/types.ts';
-import { CONTRACTS } from '../../web/src/domain/actionContracts.ts';
+import { CONTRACTS, type ProofFields } from '../../web/src/domain/actionContracts.ts';
 import { utcStamp } from '../../web/src/domain/time.ts';
 
 const STATUSES: readonly DisputeStatus[] = ['OPEN', 'WAITING_FOR_BUYER_RESPONSE', 'WAITING_FOR_SELLER_RESPONSE', 'UNDER_REVIEW', 'RESOLVED', 'OTHER'];
@@ -48,15 +49,30 @@ function mapOfferEvent(o: NonNullable<NonNullable<Dispute['offer']>['history']>[
   return { time: o.offer_time ?? null, actor: o.actor ?? 'UNKNOWN', event: o.event_type ?? 'UNKNOWN', type: o.offer_type ?? null, amount: money(o.offer_amount) };
 }
 
-/** Proof lists the snapshot maps itself; any other list a contract names is kept raw in `proofEntries`. */
+/** Proof lists the snapshot maps itself; any other list a contract names goes to `proofEntries`. */
 const MAPPED_LISTS = new Set(['messages', 'offerHistory', 'evidences']);
-const RAW_LISTS = [...new Set(Object.values(CONTRACTS).flatMap((c) => (c.proof?.list && !MAPPED_LISTS.has(c.proof.list) ? [c.proof.list] : [])))];
 
-function proofEntries(d: Dispute): unknown[] | undefined {
-  if (RAW_LISTS.length === 0) return undefined;
-  return RAW_LISTS.flatMap((l) => {
-    const v = (d as Record<string, unknown>)[l];
-    return Array.isArray(v) ? v : [];
+type ProofContracts = Readonly<Record<string, { proof: ProofFields | null }>>;
+
+/** The value at a dotted path, kept only when it is a string: never an object, so nothing else of the entry is copied. */
+function field(entry: unknown, path: string): string | null {
+  let v: unknown = entry;
+  for (const k of path.split('.')) v = v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined;
+  return typeof v === 'string' ? v : null;
+}
+
+/**
+ * The entries of each unmapped proof list the contracts name, reduced to that contract's proof fields (actor, time and
+ * match fields, by dotted path) as strings or null. Undefined when no contract names such a list.
+ */
+export function proofEntriesOf(d: Dispute, contracts: ProofContracts = CONTRACTS): Array<Record<string, string | null>> | undefined {
+  const proofs = Object.values(contracts).flatMap((c) => (c.proof?.list && !MAPPED_LISTS.has(c.proof.list) ? [c.proof] : []));
+  if (proofs.length === 0) return undefined;
+  return proofs.flatMap((p) => {
+    const list = (d as Record<string, unknown>)[p.list!];
+    if (!Array.isArray(list)) return [];
+    const paths = [...new Set([p.actorField, p.timeField, ...p.matchFields].filter((x): x is string => !!x))];
+    return list.map((e) => Object.fromEntries(paths.map((k) => [k, field(e, k)])));
   });
 }
 
@@ -65,7 +81,7 @@ function proofEntries(d: Dispute): unknown[] | undefined {
  */
 export function toSnapshot(d: Dispute, caseId: string, env: PayPalEnv, readAt: Date): DisputeSnapshot {
   const tx = d.disputed_transactions?.[0];
-  const entries = proofEntries(d);
+  const entries = proofEntriesOf(d);
   return {
     id: caseId,
     status: mapStatus(d.status),

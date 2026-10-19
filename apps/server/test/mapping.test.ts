@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mapStatus, toSnapshot } from '../src/mapping.ts';
+import { mapStatus, proofEntriesOf, toSnapshot } from '../src/mapping.ts';
 import { buildAttachments, CASE_FILES, evidenceLines, SYNTHETIC_HEADER, UnknownFileError } from '../src/documents.ts';
 import { writePdf } from '@resolvekit/pdf';
 import { evidenceInDispute, fakePayPal, waitingDispute } from './fixtures.ts';
@@ -162,6 +162,7 @@ test('the thread, offers, options and outcome are mapped from a recorded read; t
   assert.deepEqual(s.responseOptions, { acceptClaimTypes: ['PARTIAL_REFUND', 'REFUND'], offerTypes: ['REFUND'] });
   assert.equal(s.outcome, null);
   assert.equal(s.proofEntries, undefined);
+  // KHH links no appeal, so the filter below is a no-op here; the next assertion adds appeal and covers it.
   assert.deepEqual(caseInput(standardCase, live(s)), caseInput(standardCase, live({ ...s, messages: [], offerHistory: [], responseOptions: undefined, allowedActions: s.allowedActions.filter((a) => a !== 'appeal') })));
   // Appeal, once PayPal links it, never reaches the analyst either: the analysis keys stay stable.
   assert.deepEqual(caseInput(standardCase, live({ ...s, allowedActions: [...s.allowedActions, 'appeal'] })), caseInput(standardCase, live(s)));
@@ -179,4 +180,16 @@ test('a seller message, the options after evidence and a resolved outcome are ma
   assert.deepEqual(gfc.outcome, { code: 'RESOLVED_BUYER_FAVOUR', closedAt: '2026-10-08T18:27:03.605Z' });
   assert.deepEqual(gfc.responseOptions, { acceptClaimTypes: [], offerTypes: [] });
   assert.deepEqual(gfc.allowedActions, []);
+});
+
+test('proof entries keep only the contract’s proof fields, as strings or null; nothing else of the raw entry', () => {
+  // No contract names an unmapped list today (so toSnapshot leaves proofEntries out); this checks the guard with a
+  // contract naming one. The entry is synthetic on purpose: it carries fields that must never be copied.
+  const contracts = { x: { proof: { list: 'adjudications' as const, actorField: 'party', actorValue: 'SELLER', timeField: 'adjudication_time', matchFields: ['outcome.code', 'amount'], normalise: [] } } };
+  const d = { ...readContract('reads/resolved-GFC.json'), adjudications: [{ party: 'SELLER', adjudication_time: '2026-10-08T18:27:03.605Z', outcome: { code: 'X', name: 'Jane Buyer' }, amount: 8, email: 'buyer@example.com', note: 'secret' }] };
+  const e = proofEntriesOf(d, contracts);
+  assert.deepEqual(e, [{ party: 'SELLER', adjudication_time: '2026-10-08T18:27:03.605Z', 'outcome.code': 'X', amount: null }]);
+  assert.ok(!JSON.stringify(e).includes('example.com') && !JSON.stringify(e).includes('Jane') && !JSON.stringify(e).includes('secret'));
+  assert.equal(proofEntriesOf(d, {}), undefined);
+  assert.equal(toSnapshot(d, 'C', 'sandbox', NOW).proofEntries, undefined);
 });

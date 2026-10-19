@@ -136,8 +136,11 @@ export class DisputesApi {
     return this.client.request('POST', `/v1/customer/disputes/${encodeURIComponent(disputeId)}/provide-evidence`, form, opts);
   }
 
-  private post(disputeId: string, action: string, payload: unknown, opts: ActionOpts): Promise<unknown> {
-    return this.client.request('POST', `/v1/customer/disputes/${encodeURIComponent(disputeId)}/${action}`, payload, { requestId: opts.requestId });
+  // Never retried here, not even on 429: PayPal documents no deduplication by PayPal-Request-Id on these routes, so
+  // the caller reads the dispute back before deciding anything. No request id: refused before any request.
+  private async post(disputeId: string, action: string, payload: unknown, opts: ActionOpts): Promise<unknown> {
+    if (!opts.requestId) throw new Error(`A ${action} request needs the intent's request id`);
+    return this.client.request('POST', `/v1/customer/disputes/${encodeURIComponent(disputeId)}/${action}`, payload, { requestId: opts.requestId, noRetry: true });
   }
 
   /**
@@ -145,6 +148,7 @@ export class DisputesApi {
    * part the schema names). A file needs multipart and is refused in JSON before any request.
    */
   async sendMessage(disputeId: string, message: string, file: EvidenceFile | null, opts: ActionOpts): Promise<unknown> {
+    if (!opts.requestId) throw new Error("A send-message request needs the intent's request id");
     if (file && opts.format !== 'multipart') throw new Error('A message with a file is sent as multipart');
     const payload = body({ message }, opts.format);
     if (file && payload instanceof FormData) payload.append('message_document', filePart(file), file.name);
@@ -167,6 +171,7 @@ export class DisputesApi {
 
   /** Multipart only (the guide's example): `input` `{ evidences: [evidence] }` plus `evidence-file` parts, as provide-evidence. */
   async appeal(disputeId: string, evidence: EvidenceInput, files: EvidenceFile[], opts: ActionOpts): Promise<unknown> {
+    if (!opts.requestId) throw new Error("An appeal request needs the intent's request id");
     if (opts.format !== 'multipart') throw new Error('An appeal is sent as multipart');
     const form = body({ evidences: [evidence] }, 'multipart') as FormData;
     for (const f of files) form.append('evidence-file', filePart(f), f.name);
