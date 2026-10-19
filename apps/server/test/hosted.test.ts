@@ -13,6 +13,7 @@ import { IntentStore } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
 
 import { RESOLVED, SELLER_ID, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
+import { TEST_CONTRACTS, TEST_RULES } from './actions-kit.ts';
 
 const ORIGIN = 'https://rk.example.com';
 const HOST = 'rk.example.com';
@@ -36,10 +37,15 @@ function routedPayPal(o: { failRead?: (path: string) => boolean; failStatus?: nu
     const byId = o.disputes?.[decodeURIComponent(u.pathname.split('/').pop() ?? '')];
     return new Response(JSON.stringify(byId ?? standardDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
-  return { calls, sends: () => calls.filter((c) => c.endsWith('/provide-evidence')).length, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
+  return {
+    calls,
+    sends: () => calls.filter((c) => c.endsWith('/provide-evidence')).length,
+    /** Action POSTs (message, accept, offer, escalate, appeal); the fake answers them with the dispute (200). */
+    actionPosts: () => calls.filter((c) => /^POST .*\/(send-message|accept-claim|make-offer|escalate|appeal)$/.test(c)).length,
+    client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; disputes?: Record<string, Dispute>; failStatus?: number; sellerMemory?: SellerMemory; failReadPath?: (path: string) => boolean; slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore } = {}) {
+function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; disputes?: Record<string, Dispute>; failStatus?: number; sellerMemory?: SellerMemory; failReadPath?: (path: string) => boolean; slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore; actions?: boolean } = {}) {
   const failRead = o.failReadPath ?? (o.failRead ? () => o.failRead!() : undefined);
   const pp = routedPayPal({ ...(failRead ? { failRead } : {}), ...(o.failStatus ? { failStatus: o.failStatus } : {}), ...(o.disputes ? { disputes: o.disputes } : {}) });
   const fm = fakeModel(standardScript);
@@ -52,7 +58,7 @@ function setup(o: { bindings?: Record<string, { dispute: string; capture: string
     liveLimit: new RateLimiter({ limit: 50, windowMs: 3_600_000 }),
     verifyLimit: new RateLimiter({ limit: 50, windowMs: 3_600_000 }),
   });
-  const counters = new DailyCounters({ file: null, limits: { 'live-analysis': 2, recheck: 3, evidence: 2, ...o.caps }, ...(o.now ? { now: o.now } : {}) });
+  const counters = new DailyCounters({ file: null, limits: { 'live-analysis': 2, recheck: 3, evidence: 2, message: 2, settle: 2, ...o.caps }, ...(o.now ? { now: o.now } : {}) });
   const site = new StaticSite([
     ['/index.html', new TextEncoder().encode('<!doctype html><title>ResolveKit</title><div id="root"></div>')],
     ['/assets/index-abc.js', new TextEncoder().encode('console.log("app")')],
@@ -76,6 +82,8 @@ function setup(o: { bindings?: Record<string, { dispute: string; capture: string
     ...(o.now ? { now: o.now } : {}),
     ...(o.intents ? { intents: o.intents } : {}),
     ...(o.sellerMemory ? { sellerMemory: o.sellerMemory } : {}),
+    // The action routes against the test-only registry (the real one still says «Not available»).
+    ...(o.actions ? { actionRegistry: { contracts: TEST_CONTRACTS, rules: TEST_RULES } } : {}),
   });
   teams.set(app, people);
   return { app, pp, counters, model: fm, store, lines, people };
@@ -310,7 +318,7 @@ test('protected: evidence send, live re-run, cache-miss analysis and re-check ne
   assert.equal((await app(req(`${analysisPath}/progress?key=${'0'.repeat(64)}`))).status, 404);
   assert.equal(model.requests.length, 0);
   assert.equal(pp.sends(), 0);
-  assert.deepEqual(Object.values(counters.state().caps).map((c) => c.used), [0, 0, 0]);
+  assert.deepEqual(Object.values(counters.state().caps).map((c) => c.used), [0, 0, 0, 0, 0]);
 });
 
 test('signed in: an approved intent goes to PayPal and counts against the daily cap; the approver is the person, by name and role', async () => {
@@ -596,4 +604,103 @@ test('who is acting: the session gives role and reviewer flag; no session gives 
   const full = s.app.personOf(req('/api/x', { cookie: t.fullMember('Fin') }));
   assert.deepEqual(full && [full.name, full.role, full.reviewer], ['Fin', 'member', false]);
   assert.equal(s.app.personOf(req('/api/x')), null);
+});
+
+// ------------------------------------------------------------------------------------------------ actions (B0)
+
+type ActionAnswer = { status: number; body: Record<string, unknown> };
+const answerOf = async (r: Response): Promise<ActionAnswer> => ({ status: r.status, body: (await r.json()) as Record<string, unknown> });
+const actionReq = (app: ReturnType<typeof setup>['app'], path: string, body: unknown, cookie: string, ip?: string) => app(req(path, { body, cookie, ...(ip ? { ip } : {}) })).then(answerOf);
+const sendPath = `/api/disputes/${CASE}/send`;
+const MESSAGE = { action: 'send_message', text: 'Your order shipped on 7 Oct; tracking 1Z999AA10123456784.' };
+const ESCALATE = { action: 'escalate', note: 'The parcel was delivered; see the tracking.' };
+
+test('roles at every step', async () => {
+  const intents = new IntentStore();
+  const { app, pp, people } = setup({ intents, actions: true });
+  const reviewer = people.member();
+  const full = people.fullMember();
+  const owner = people.ownerCookie;
+  // A reviewer composes, approves and sends a message.
+  const m = await actionReq(app, intentPath, MESSAGE, reviewer);
+  assert.equal(m.status, 201, JSON.stringify(m.body));
+  assert.equal((await actionReq(app, `${intentPath}/${m.body.id}/approve`, { contentHash: m.body.contentHash }, reviewer)).status, 200);
+  const sent = await actionReq(app, sendPath, { intentId: m.body.id }, reviewer);
+  assert.equal(sent.status, 202, JSON.stringify(sent.body));
+  assert.equal(pp.actionPosts(), 1);
+  // Owner-only actions: refused at compose for a reviewer and for a member who is not one.
+  for (const who of [reviewer, full]) {
+    for (const body of [ESCALATE, { action: 'accept_claim', acceptType: 'REFUND' }]) {
+      const r = await actionReq(app, intentPath, body, who);
+      assert.equal(r.status, 403, JSON.stringify(r.body));
+      assert.equal(r.body.error, 'OWNER_ONLY');
+    }
+  }
+  // The owner composes an escalation; another session's request for it does not find it.
+  const e = await actionReq(app, intentPath, ESCALATE, owner);
+  assert.equal(e.status, 201, JSON.stringify(e.body));
+  const eid = e.body.id as string;
+  assert.equal((await actionReq(app, `${intentPath}/${eid}/approve`, { contentHash: e.body.contentHash }, reviewer)).status, 404);
+  // A role change while the intent exists (the reviewer's session holds it now): approve, confirm and send are refused.
+  const stored = intents.peek(eid)!;
+  stored.createdBy = intents.peek(m.body.id as string)!.createdBy;
+  const approveR = await actionReq(app, `${intentPath}/${eid}/approve`, { contentHash: e.body.contentHash }, reviewer);
+  assert.equal(approveR.status, 403);
+  assert.equal(approveR.body.error, 'OWNER_ONLY');
+  stored.status = 'approved';
+  const terms = { intentId: eid, contentHash: e.body.contentHash, action: 'escalate', amount: null, currency: null, consequence: 'MOVES_TO_CLAIM' };
+  const confirmR = await actionReq(app, `${intentPath}/${eid}/confirm`, { terms }, reviewer);
+  assert.equal(confirmR.status, 403);
+  assert.equal(confirmR.body.error, 'OWNER_ONLY');
+  const sendR = await actionReq(app, sendPath, { intentId: eid }, reviewer);
+  assert.equal(sendR.status, 403);
+  assert.equal(sendR.body.error, 'OWNER_ONLY');
+  assert.equal(stored.status, 'approved');
+  assert.equal(pp.calls.filter((c) => c.endsWith('/escalate')).length, 0);
+});
+
+test('caps message and settle', async () => {
+  const disputes: Record<string, Dispute> = { [REAL]: standardDispute() };
+  const { app, pp, people, counters } = setup({ caps: { message: 1, settle: 0 }, disputes, actions: true });
+  const cookie = people.member();
+  const m = await actionReq(app, intentPath, MESSAGE, cookie);
+  await actionReq(app, `${intentPath}/${m.body.id}/approve`, { contentHash: m.body.contentHash }, cookie);
+  assert.equal((await actionReq(app, sendPath, { intentId: m.body.id }, cookie)).status, 202);
+  // PayPal shows the message: proven, the dispute is free again.
+  disputes[REAL] = { ...standardDispute(), messages: [{ posted_by: 'SELLER', time_posted: new Date(Date.now() + 1_000).toISOString(), content: MESSAGE.text }] };
+  const rb = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie })).then(answerOf);
+  assert.equal((rb.body.readBack as { state: string }).state, 'recorded', JSON.stringify(rb.body));
+  const n = await actionReq(app, intentPath, { action: 'send_message', text: 'A second message.' }, cookie);
+  await actionReq(app, `${intentPath}/${n.body.id}/approve`, { contentHash: n.body.contentHash }, cookie);
+  const capped = await actionReq(app, sendPath, { intentId: n.body.id }, cookie);
+  assert.equal(capped.status, 429, JSON.stringify(capped.body));
+  assert.equal(capped.body.error, 'DAILY_CAP');
+  assert.equal(capped.body.action, 'message');
+  assert.match(String(capped.body.detail), /1 message sends per day/);
+  assert.equal(pp.actionPosts(), 1);
+  // The settling actions have their own cap (the owner's escalation, confirmed).
+  const owner = people.ownerCookie;
+  const e = await actionReq(app, intentPath, ESCALATE, owner);
+  const a = await actionReq(app, `${intentPath}/${e.body.id}/approve`, { contentHash: e.body.contentHash }, owner);
+  assert.equal((await actionReq(app, `${intentPath}/${e.body.id}/confirm`, { terms: a.body.confirmation }, owner)).status, 200);
+  const settle = await actionReq(app, sendPath, { intentId: e.body.id }, owner);
+  assert.equal(settle.status, 429, JSON.stringify(settle.body));
+  assert.equal(settle.body.action, 'settle');
+  assert.match(String(settle.body.detail), /settling actions per day/);
+  assert.equal(pp.actionPosts(), 1);
+  assert.equal(counters.state().caps.message!.used, 1);
+  assert.equal(counters.state().caps.settle!.used, 0);
+});
+
+test('read-back counts as a PayPal read', async () => {
+  const { app, people } = setup({ limits: { paypalReads: { limit: 1, windowMs: 300_000 } }, actions: true });
+  const cookie = people.member();
+  const m = await actionReq(app, intentPath, MESSAGE, cookie, '198.51.100.1');
+  await actionReq(app, `${intentPath}/${m.body.id}/approve`, { contentHash: m.body.contentHash }, cookie, '198.51.100.1');
+  assert.equal((await actionReq(app, sendPath, { intentId: m.body.id }, cookie, '198.51.100.1')).status, 202);
+  // From another address (its own read budget): one read-back, then the limit.
+  const first = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie, ip: '198.51.100.2' }));
+  assert.equal(first.status, 200);
+  const second = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie, ip: '198.51.100.2' }));
+  assert.equal(second.status, 429);
 });

@@ -45,6 +45,7 @@ import type { CaseAnalysis } from '@resolvekit/analyst';
 import type { IntentRequest, IntentStatus, SubmissionIntent } from '../../web/src/domain/intent.ts';
 import { duplicateKey, intentAction, type ActionRequest, type IntentAction, type Money } from '../../web/src/domain/actions.ts';
 import type { Recheck } from '../../web/src/domain/draft.ts';
+import type { ReadBackBase } from '../../web/src/domain/actionReadback.ts';
 
 /** Safety nets only: the operative limits are per session and per client address. */
 export const MAX_INTENTS = 2000;
@@ -96,11 +97,20 @@ export interface StoredIntent extends SubmissionIntent {
   confirmation?: { code: string; amount: Money | null; at: string; by: string } | null;
   /** The buyer messages in the thread when the intent was approved (their keys, never their text) ([A5]). */
   threadKeysAtApproval?: string[];
+  /**
+   * What the read right before the last POST showed (entry keys, stage, status, send_started time): the read-back
+   * compares with it. Durable before send_started (Task 7). Keys only, never message text.
+   */
+  readBackBase?: ReadBackBase | null;
 }
 
 export type AuditKind =
   | 'intent_created'
   | 'intent_approved'
+  /** The owner's second confirmation of an action ([A3]): `detail` is the consequence code. */
+  | 'intent_confirmed'
+  /** New buyer messages shown by 409 NEEDS_REVIEW were acknowledged; the same content goes on ([A5]). */
+  | 'intent_acknowledged'
   | 'intent_invalidated'
   | 'intent_cancelled'
   | 'send_started'
@@ -752,7 +762,7 @@ export class IntentStore {
    * two concurrent confirmations (of one intent, or of two intents for the same dispute) exactly one gets here, and
    * nothing is sent to a dispute PayPal already accepted evidence for through this server.
    */
-  beginSend(id: string, caseId: string, actor: string): Transition {
+  beginSend(id: string, caseId: string, actor: string, opts: { reconcile?: boolean } = {}): Transition {
     const i = this.get(id, actor);
     if (!i || i.caseId !== caseId) return NOT_FOUND;
     if (i.status !== 'approved' && i.status !== 'failed') {
@@ -767,8 +777,10 @@ export class IntentStore {
       return { ok: false, status: 409, error: `INTENT_${i.status.toUpperCase()}`, detail, intent: i };
     }
     if (i.disputeId) {
-      // An unproven send blocks every write on the dispute, its own retry included (never resent blindly).
-      if (this.uncertain.has(i.disputeId)) {
+      // An unproven send blocks every write on the dispute, its own retry included (never resent blindly). Only the
+      // action route's reconcile (`reconcile`) lets the holding intent through: it reads PayPal back before any POST.
+      const hold = this.uncertain.get(i.disputeId);
+      if (hold && !(opts.reconcile && hold.intentId === id)) {
         return { ok: false, status: 409, error: 'DISPUTE_UNCERTAIN', detail: 'The last send to this dispute is not confirmed by PayPal yet; check it again before anything else is sent', intent: i };
       }
       // Evidence: the whole-dispute memory (entries without a stage). The per-stage check is the route's, on the
@@ -791,6 +803,53 @@ export class IntentStore {
       return { ok: false, status: 503, error: 'AUDIT_UNAVAILABLE', detail: 'The approval could not be recorded durably, so nothing was sent; try again later', intent: i };
     }
     return { ok: true, intent: i, previous };
+  }
+
+  /**
+   * The read-back base of the send about to start, on disk before send_started ([A4]): false when it is not durable
+   * (the send is then refused, nothing posted). Only for an intent being sent.
+   */
+  setReadBackBase(id: string, base: ReadBackBase): boolean {
+    const i = this.intents.get(id);
+    if (!i || i.status !== 'sending') return false;
+    const before = i.readBackBase ?? null;
+    i.readBackBase = { ...base, entryKeys: [...base.entryKeys] };
+    if (this.save(true)) return true;
+    i.readBackBase = before;
+    return false;
+  }
+
+  /**
+   * The owner's second confirmation ([A3]) of an approved (or failed, retryable) intent, by its owner only: the
+   * consequence code and amount of the terms the server issued and the person echoed (the caller compares them).
+   */
+  confirm(id: string, caseId: string, actor: string, c: { code: string; amount: Money | null }): Transition {
+    const i = this.get(id, actor);
+    if (!i || i.caseId !== caseId) return NOT_FOUND;
+    if (i.status !== 'approved' && i.status !== 'failed') {
+      return { ok: false, status: 409, error: `INTENT_${i.status.toUpperCase()}`, detail: `This intent is ${i.status}${i.reason ? ` (${i.reason})` : ''}`, intent: i };
+    }
+    const previous = i.status;
+    i.confirmation = { code: c.code, amount: c.amount ? { value: c.amount.value, currency: c.amount.currency } : null, at: this.iso(), by: actor };
+    this.save();
+    this.record({ caseId, kind: 'intent_confirmed', actor, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId, detail: c.code });
+    return { ok: true, intent: i, previous };
+  }
+
+  /**
+   * After 409 NEEDS_REVIEW the owner re-confirms the same content against a new read ([A5]): the thread keys it was
+   * approved with become the ones read now. Approved or failed intents only.
+   */
+  acknowledge(id: string, caseId: string, actor: string, keys: readonly string[]): Transition {
+    const i = this.get(id, actor);
+    if (!i || i.caseId !== caseId) return NOT_FOUND;
+    if (i.status !== 'approved' && i.status !== 'failed') {
+      return { ok: false, status: 409, error: `INTENT_${i.status.toUpperCase()}`, detail: `This intent is ${i.status}${i.reason ? ` (${i.reason})` : ''}`, intent: i };
+    }
+    i.threadKeysAtApproval = [...keys];
+    this.save();
+    this.record({ caseId, kind: 'intent_acknowledged', actor, disputeId: i.disputeId, intentId: id, contentHash: i.contentHash, requestId: i.requestId });
+    return { ok: true, intent: i, previous: i.status };
   }
 
   private unlock(i: StoredIntent) {
@@ -998,6 +1057,6 @@ export class IntentStore {
 
 /** The intent as the API shows it: the content and its state, not the server's bookkeeping. */
 export function publicIntent(i: StoredIntent): SubmissionIntent {
-  const { request: _r, rechecks: _c, createdBy: _b, createdFrom: _f, analysisHash: _h, failedAt: _a, voidReason: _v, inputUploads: _u, threadKeysAtApproval: _k, ...pub } = i;
+  const { request: _r, rechecks: _c, createdBy: _b, createdFrom: _f, analysisHash: _h, failedAt: _a, voidReason: _v, inputUploads: _u, threadKeysAtApproval: _k, readBackBase: _rb, ...pub } = i;
   return pub;
 }

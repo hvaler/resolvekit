@@ -10,7 +10,8 @@
  * PAYPAL_IDENTITY_CLIENT_ID + PAYPAL_IDENTITY_CLIENT_SECRET (the platform's PayPal app, for PayPal sign-in) ·
  * RESOLVEKIT_DATA_DIR (the disk) · BINDINGS_JSON (or RESOLVEKIT_BINDINGS, a file) · METERMCP_URL + METERMCP_ADMIN_TOKEN ·
  * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · DAILY_UPLOADS (40) · TRUSTED_PROXY_HOPS (1) ·
- * RESOLVEKIT_OPS_TOKEN (the operator's check, npm run demo:check) · DAILY_AGENT_RUNS (20).
+ * RESOLVEKIT_OPS_TOKEN (the operator's check, npm run demo:check) · DAILY_AGENT_RUNS (20) · DAILY_MESSAGE_SENDS (20) ·
+ * DAILY_SETTLE_SENDS (20: accept, offer, escalate, appeal).
  * The buying agent (both modes): GEMINI_API_KEY / GROQ_API_KEY · AGENT_* run limits · RESOLVEKIT_PUBLIC_URL (falls back
  * to RENDER_EXTERNAL_URL) for PayPal's return to /agent?run=<id>; neither set: MeterMCP's own approval page.
  */
@@ -271,6 +272,8 @@ if (hosted) {
       evidence: envInt(process.env, 'DAILY_EVIDENCE_SENDS', 20),
       upload: envInt(process.env, 'DAILY_UPLOADS', DAILY_UPLOADS),
       'agent-run': envInt(process.env, 'DAILY_AGENT_RUNS', 20),
+      message: envInt(process.env, 'DAILY_MESSAGE_SENDS', 20),
+      settle: envInt(process.env, 'DAILY_SETTLE_SENDS', 20),
     },
   });
   if (!meterToken) log('WARNING: METERMCP_ADMIN_TOKEN is not set: agent runs cannot authenticate to MeterMCP (/agent/mcp) and will stop as meter_unavailable; receipts and settlement through the admin routes fail too');

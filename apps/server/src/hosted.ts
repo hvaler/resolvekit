@@ -132,10 +132,20 @@ export const LOCKED_REASON: Record<CostlyAction, string> = {
   recheck: 'Re-checking an edited sentence calls the AI model, so on this public demo only the seller’s workspace runs it.',
   upload: 'Adding evidence stores and reads a file on this server, so on this public demo only the seller’s workspace adds it.',
   'agent-run': 'An agent run uses model quota and asks for a real PayPal sandbox payment, so on this public demo only the seller’s workspace starts one.',
+  message: 'Sending a message to a real PayPal dispute is seen by the buyer, so only the seller’s workspace can do it.',
+  settle: 'Accepting, offering, escalating or appealing moves money or changes the dispute at PayPal, so only the seller’s workspace owner can do it.',
 };
 const SIGN_IN_REASON = 'Sign in to compose and approve responses: with PayPal (merchants) or with the invite link you were given.';
 
-const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks', upload: 'evidence uploads', 'agent-run': 'agent runs' };
+const CAP_NAME: Record<CostlyAction, string> = {
+  evidence: 'evidence sends',
+  'live-analysis': 'live AI runs',
+  recheck: 'AI re-checks',
+  upload: 'evidence uploads',
+  'agent-run': 'agent runs',
+  message: 'message sends',
+  settle: 'settling actions',
+};
 
 /** The operator's check (demo:check). */
 export const OPS_PATH = '/api/ops/status';
@@ -352,7 +362,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     if (r.paypal === 'unconfigured') problems.push(`PayPal is not connected${r.error ? ` (${r.error})` : ''}`);
     if (!webhook) problems.push('the PayPal webhook is off (PAYPAL_WEBHOOK_ID / PAYPAL_WEBHOOK_KEY)');
     const caps = o.counters.storageProblem();
-    if (caps) problems.push(`${caps} (evidence sends, live AI runs, re-checks, uploads and agent runs are refused)`);
+    if (caps) problems.push(`${caps} (evidence sends, message sends, settling actions, live AI runs, re-checks, uploads and agent runs are refused)`);
     for (const s of r.storage) problems.push(`storage · ${s}`);
     const cases = Object.keys(r.bindings);
     if (cases.length === 0) problems.push('no case is bound to a real PayPal dispute (BINDINGS_JSON)');
@@ -447,10 +457,12 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       if (authRes) return authRes;
       // A signed-in request sees the sellers as PayPal reports them now (each bound dispute read once, then cached).
       if (session(req).ok) await refreshFor(req);
-      // Reads that go to PayPal: the dispute itself, and composing an intent (it reads the dispute fresh).
+      // Reads that go to PayPal: the dispute itself, composing an intent (it reads the dispute fresh), an action's
+      // read-back («Check again») and acknowledging new buyer messages (both read the dispute fresh too).
       const paypalRead =
         (req.method === 'GET' && path.startsWith('/api/disputes/') && !path.endsWith('/audit') && !path.includes('/intent/')) ||
-        (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path));
+        (req.method === 'GET' && /^\/api\/disputes\/[^/]+\/intent\/[^/]+\/readback$/.test(path)) ||
+        (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent(\/[^/]+\/acknowledge)?$/.test(path));
       const composing = req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path);
       if (composing) {
         const t = intentLimit.take(ip);

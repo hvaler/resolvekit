@@ -23,7 +23,9 @@ import { InputPins, type AnalystService, type LiveGate, type Reservation } from 
 import { toBinding, verifyBinding, type Binding, type BindingState } from './bindings.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
 import { IntentStore, publicIntent, requestAttachments, type StoredIntent } from './intents.ts';
-import { isActionRequest } from '../../web/src/domain/actions.ts';
+import { intentAction, isActionRequest, isSimpleAction, type ContractRegistry, type RulesOf, type SimpleAction } from '../../web/src/domain/actions.ts';
+import { CONTRACTS } from '../../web/src/domain/actionContracts.ts';
+import { createActionRoutes } from './actions/routes.ts';
 import type { ReserveMemory } from './reserve.ts';
 import { RecheckVerdicts } from './verdicts.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
@@ -38,7 +40,7 @@ import { createAgentRoutes } from './agent/routes.ts';
 import type { AgentService } from './agent/service.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
-export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload' | 'agent-run';
+export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload' | 'agent-run' | 'message' | 'settle';
 
 /** A refusal as status + JSON body. */
 export interface Refusal {
@@ -149,6 +151,11 @@ export interface ApiOptions {
   paypalMaxSendBytes?: number;
   /** The buying agent's runs (/api/agent/runs, agent/routes.ts). null/absent: those routes answer 503. */
   agent?: AgentService | null;
+  /**
+   * Tests only: the action routes against a test-only contract registry and rules (production: CONTRACTS and
+   * ACTION_RULES, which no test changes).
+   */
+  actionRegistry?: { contracts: ContractRegistry; rules: Readonly<Partial<Record<SimpleAction, RulesOf>>> } | null;
 }
 
 /** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
@@ -314,7 +321,7 @@ const sha256 = (s: string | Uint8Array) => createHash('sha256').update(s).digest
 const evidenceNumber = (id: string | null) => Number(/^E(\d+)$/.exec(id ?? '')?.[1] ?? 0);
 
 /** The case as the server sees it right now: where PayPal's data comes from, and the analyst's input. */
-interface CaseState {
+export interface CaseState {
   source: PayPalSource;
   input: AnalysisInput;
   /** The bound dispute as just read (bound cases only). */
@@ -899,7 +906,7 @@ export function createApi(opts: ApiOptions): Api {
    * seller on the dispute as just read (the gate already hides real disputes from other workspaces; this is the check
    * on the fresh read itself). Local mode has no merchant check: the operator holds the seller's credentials.
    */
-  const sellerRefusal = (req: Request, st: CaseState): Response | null => {
+  const sellerRefusal = (req: Request, st: Pick<CaseState, 'dispute'>): Response | null => {
     if (!st.dispute || !opts.gate?.merchant) return null;
     const merchant = opts.gate.merchant(req);
     const seller = st.dispute.disputed_transactions?.[0]?.seller?.merchant_id;
@@ -916,6 +923,13 @@ export function createApi(opts: ApiOptions): Api {
     if (!parsed.ok) return parsed.res;
     const ir = parseIntentRequest(parsed.body);
     if (isComposeProblem(ir)) return json(ir.status, { error: ir.error, detail: ir.detail });
+    // An appeal is the owner's only, and not available until its contract is recorded and its flow built (Task 12).
+    if (ir.action === 'appeal') {
+      const notOwner = actions.ownerRefusal(req, 'appeal');
+      if (notOwner) return notOwner;
+      const c = (opts.actionRegistry?.contracts ?? CONTRACTS).appeal;
+      return json(409, { error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${c.status === 'not_available' ? (c.reason ?? 'Contract not recorded yet') : 'not implemented yet'}` });
+    }
     // Caps before any expensive work (PayPal read, composing, hashing); nothing changes when refused.
     const full = intents.admit(caseId, who.actor, who.client ?? 'local');
     if (full) return tooManyIntents(full);
@@ -948,8 +962,17 @@ export function createApi(opts: ApiOptions): Api {
     // Only the session that composed the intent can approve it; for any other it does not exist.
     const who = actorOf(req, true);
     if (!who.ok) return json(who.refusal.status, who.refusal.body);
+    // An owner-only action is approved by the workspace owner only (the session's own intent first: anyone else's is 404).
+    const mine = intents.get(intentId, who.actor);
+    const action = mine && mine.caseId === caseId ? intentAction(mine) : null;
+    if (action && action !== 'provide_evidence') {
+      const notOwner = actions.ownerRefusal(req, action);
+      if (notOwner) return notOwner;
+    }
     const t = intents.approve(intentId, caseId, hash, who.actor);
     if (!t.ok) return json(t.status, { error: t.error, detail: t.detail, ...(t.intent ? { intent: publicIntent(t.intent) } : {}) });
+    // An action's answer carries the terms of its second confirmation (null when it needs none); evidence's as before.
+    if (action && action !== 'provide_evidence') return json(200, { ...publicIntent(t.intent), confirmation: actions.termsOf(t.intent) });
     return json(200, publicIntent(t.intent));
   };
 
@@ -975,7 +998,9 @@ export function createApi(opts: ApiOptions): Api {
     const i0 = intents.get(intentId, who.actor);
     if (!i0 || i0.caseId !== caseId) return json(404, { error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case and session' });
     // This route sends evidence: an action intent is refused before anything is reserved, claimed or invalidated.
-    if (isActionRequest(i0.request)) return json(409, { error: 'WRONG_SEND_ROUTE', detail: 'This intent is not an evidence response; send it from its action' });
+    if (isActionRequest(i0.request) || intentAction(i0) !== 'provide_evidence' || i0.request.action === 'appeal') {
+      return json(409, { error: 'WRONG_SEND_ROUTE', detail: 'This intent is not an evidence response; send it from its action' });
+    }
     const evidenceRequest = i0.request;
     if (i0.disputeId !== boundId) {
       intents.invalidate(intentId, 'the case is bound to another dispute now');
@@ -1208,6 +1233,32 @@ export function createApi(opts: ApiOptions): Api {
     log,
   });
 
+  /** The dispute actions other than evidence (actions/routes.ts): compose, confirm, acknowledge, send, read back. */
+  const actions = createActionRoutes({
+    intents,
+    caseState: (caseId, req) => caseState(caseId, req),
+    sellerRefusal,
+    actorOf,
+    personOf,
+    uploadFiles: async (caseId, st, ids) => {
+      for (const id of ids) {
+        if (!st.uploads.some((r) => r.id === id)) return json(422, { error: 'UNKNOWN_UPLOAD', detail: `Upload ${id} is not a confirmed upload of this case’s current dispute` });
+      }
+      return filesFor(caseId, st, [], ids);
+    },
+    recomposeEvidence: async (caseId, st, i) => {
+      if (isActionRequest(i.request)) return json(409, { error: 'INTENT_STALE', detail: 'This intent is not composed from the analysis' });
+      const again = await compose(caseId, st, i.request, i.rechecks, intents.analysisPin(i.analysisHash));
+      return again instanceof Response ? again : { contentHash: again.contentHash, attachments: again.attachments };
+    },
+    reserve: opts.gate ? (req, action) => opts.gate!.reserve(req, action) : null,
+    snapshotOf,
+    paypal: opts.paypal,
+    log,
+    now,
+    ...(opts.actionRegistry ? { contracts: opts.actionRegistry.contracts, rules: opts.actionRegistry.rules } : {}),
+  });
+
   const route = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -1234,7 +1285,7 @@ export function createApi(opts: ApiOptions): Api {
     if (up) return up;
     const ag = await agentRoutes(req, url);
     if (ag) return ag;
-    const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|intent|audit)(?:\/(int-[0-9a-f]{32})(\/approve|\/cancel)?)?)?$/.exec(path);
+    const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|send|intent|audit)(?:\/(int-[0-9a-f]{32})(\/approve|\/cancel|\/confirm|\/acknowledge|\/readback)?)?)?$/.exec(path);
     if (!m) return json(404, { error: 'NOT_FOUND' });
     const caseId = m[1]!;
     const sub = m[2];
@@ -1244,8 +1295,16 @@ export function createApi(opts: ApiOptions): Api {
     // Intents and the audit log exist for every case: a simulated case's intent is approved here too, and the
     // in-browser simulator records it.
     if (sub === 'intent' || sub === 'audit') {
-      if (!intentId && sub === 'intent') return req.method === 'POST' ? createIntent(req, caseId) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (!intentId && sub === 'intent') {
+        if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+        // A simple action (message, accept, offer, escalate) is composed by the action routes; evidence and appeal here.
+        const peek = (await req.clone().json().catch(() => null)) as { action?: unknown } | null;
+        return peek && typeof peek === 'object' && isSimpleAction(peek.action) ? actions.compose(req, caseId) : createIntent(req, caseId);
+      }
       if (m[4] === '/approve') return req.method === 'POST' ? approveIntent(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (m[4] === '/confirm') return req.method === 'POST' ? actions.confirm(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (m[4] === '/acknowledge') return req.method === 'POST' ? actions.acknowledge(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      if (m[4] === '/readback') return req.method === 'GET' ? actions.readBack(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
       // Reads, cancels and the audit trail: the session's own (hosted: needs the demo unlock).
       const who = actorOf(req, true);
       if (!who.ok) return json(who.refusal.status, who.refusal.body);
@@ -1268,7 +1327,7 @@ export function createApi(opts: ApiOptions): Api {
     const disputeId = bindingOf(caseId)?.dispute;
     if (!disputeId) return json(404, { error: 'NOT_BOUND', detail: `Case ${caseId} is not bound to a PayPal dispute` });
     // Sending needs a signed-in person first (hosted). caseVisible already limited hosted to the seller's bound cases.
-    if (sub === 'evidence') {
+    if (sub === 'evidence' || sub === 'send') {
       const who = actorOf(req, true);
       if (!who.ok) return json(who.refusal.status, who.refusal.body);
     }
@@ -1283,6 +1342,7 @@ export function createApi(opts: ApiOptions): Api {
       }
     }
     if (sub === 'evidence' && req.method === 'POST') return sendIntent(req, caseId, paypal, disputeId);
+    if (sub === 'send' && req.method === 'POST') return actions.send(req, caseId, disputeId);
     return json(405, { error: 'METHOD_NOT_ALLOWED' });
   };
 
