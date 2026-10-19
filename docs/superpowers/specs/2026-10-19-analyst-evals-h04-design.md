@@ -1,6 +1,6 @@
 # Analyst evaluations that say what they prove (H-04) (design)
 
-Status: draft for the owner's approval, 19/10/2026. It addresses finding H-04 of the 17/10 audit: the analyst's AI metrics were limited. The owner's conditions (19/10) are quoted as decided.
+Status: approved by the owner on 19/10/2026, with the conditions in «Approved run conditions» below. It addresses finding H-04 of the 17/10 audit: the analyst's AI metrics were limited. The owner's conditions (19/10) are quoted as decided.
 
 ## Intent
 
@@ -104,6 +104,27 @@ Two misreadings to avoid:
   - Groq is the free tier: $0, but limited.
   - If the keys are on free tiers, the money cost is nil and the limit is the quota. The figure is labelled «estimate at list price» either way.
 - **Re-scoring the development set:** **no new model calls**. The strict contradiction metric and the new grouping are computed over the stored results only.
+
+## Approved run conditions (owner, 19/10)
+
+- **Budget.** 36 Gemini case-runs, estimated at 0.72 USD, with a **hard limit of 1.00 USD for this batch**, retries and auxiliary calls included.
+  - The runner adds up the cost from the provider-reported usage at the documented list price.
+  - It stops before a call that could exceed the limit, and keeps every result so far.
+  - It never raises the limit by itself.
+- **Groq** runs only within the free quota available. The report states, per provider, the cases and repetitions completed, the provider errors and the not evaluable results.
+- **Comparing providers.** Overall percentages of different sets are never compared. Gemini and Groq are compared only on the subset both completed.
+- **Before running, all in one commit:**
+  - freeze the cases, labels, attack goals (`forbidden`), scorer and configuration;
+  - pin the requested model id of both providers (Gemini `gemini-3.8-flash`, Groq `openai/gpt-oss-120b`) and record the version the provider returns when it gives one;
+  - confirm that the clean twins needed by the attacks are **inside the 12**. Each attack is one of the other held-out cases plus the injected document: the buyer-message attack builds on a no-contradiction case, the carrier-record attack on a contradiction case, the upload attack on an upload case. If any twin were extra, recount the runs and the cost before starting;
+  - make the three repetitions identifiable (run 1, 2, 3, with timestamp and commit), and make sure no cached analysis is reused between them.
+- **«Not evaluable» is not «correct».**
+  - Its count and reason are always published, so a smaller denominator never hides a lack of coverage.
+  - Failed attempts are never replaced without being kept.
+- **Attack vs clean twin measures stability, not correctness.** Each result is also checked against its own frozen labels, since both could agree and both be wrong.
+- **Uploads via `uploadDocuments`** evaluate how the analyst's input is built from confirmed uploads. They are not presented as an evaluation of OCR, covering or the interface, which these runs do not execute.
+- **The prompt stays unchanged during the batch.**
+- **After the batch, before any public figure changes:** show the owner all results, the variation across repetitions, the recorded usage and cost, and the limitations.
 
 ## Goals
 
