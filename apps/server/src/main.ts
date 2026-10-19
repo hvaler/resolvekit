@@ -15,11 +15,11 @@
  * to RENDER_EXTERNAL_URL) for PayPal's return to /agent?run=<id>; neither set: MeterMCP's own approval page.
  */
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor, type ProxyTrust } from '@resolvekit/hosting';
+import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor, sweepDurableTmp, type ProxyTrust } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { CACHE_MAX_AGE_MS, CACHE_MAX_BYTES, FileAnalysisStore, RateLimiter, modelFromEnv, modelProbesFromEnv } from '@resolvekit/analyst/node';
 import { agentModelsFromEnv, limitsFromEnv } from '@resolvekit/agent';
@@ -64,12 +64,9 @@ const fail = (why: string): never => {
 // Every store of this server (intents, audit, accounts, caps, analyses, uploads, agent runs…). On Render this is the
 // service's persistent disk.
 const dataDir = process.env.RESOLVEKIT_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
-// A crash in the middle of a durable write leaves `<file>.<pid>.<random>.tmp` next to the store file: nothing reads it.
-try {
-  for (const f of readdirSync(dataDir)) if (f.endsWith('.tmp')) rmSync(join(dataDir, f), { force: true });
-} catch {
-  /* no data dir yet */
-}
+// A crash in the middle of a durable write leaves `<file>.<pid>.<8 hex>.tmp` next to the store file: nothing reads it.
+// Only that name, and only older than 10 min (never a write another process has in progress).
+sweepDurableTmp(dataDir);
 
 const bindingsFile = process.env.RESOLVEKIT_BINDINGS ?? (hosted ? join(dataDir, 'bindings.json') : fileURLToPath(new URL('../bindings.json', import.meta.url)));
 
@@ -114,18 +111,20 @@ const meterMcp = new MeterMcpClient({
 // The AI analyst: Gemini (primary) with Groq as automatic fallback, keys from the environment. Live runs are cached
 // in <data>/analysis-cache; committed golden analyses answer for the demo documents. The cache and the usage log are
 // bounded (swept at start and hourly with the uploads): ANALYSIS_CACHE_MAX_DAYS / _MAX_MB (unused for 30 days, 100 MiB)
-// and ANALYST_USAGE_MAX_DAYS / _MAX_MB (90 days, 10 MiB).
+// and ANALYST_USAGE_MAX_DAYS / _MAX_MB (90 days, 10 MiB). Floors: 1 day and 1 MiB (a value below, 0 or not a whole number
+// gives the default), so a typo cannot empty the cache or the log on the next sweep.
+const atLeast = (name: string, floor: number, dflt: number) => Math.max(floor, envInt(process.env, name, dflt));
 const DAY = 86_400_000;
 const MIB = 1024 * 1024;
 const usageLog = new UsageLog({
   file: join(dataDir, 'analyst-usage.jsonl'),
-  maxAgeMs: envInt(process.env, 'ANALYST_USAGE_MAX_DAYS', USAGE_MAX_AGE_MS / DAY) * DAY,
-  maxBytes: envInt(process.env, 'ANALYST_USAGE_MAX_MB', USAGE_MAX_BYTES / MIB) * MIB,
+  maxAgeMs: atLeast('ANALYST_USAGE_MAX_DAYS', 1, USAGE_MAX_AGE_MS / DAY) * DAY,
+  maxBytes: atLeast('ANALYST_USAGE_MAX_MB', 1, USAGE_MAX_BYTES / MIB) * MIB,
 });
 const analysisCache = new FileAnalysisStore({
   dir: join(dataDir, 'analysis-cache'),
-  maxAgeMs: envInt(process.env, 'ANALYSIS_CACHE_MAX_DAYS', CACHE_MAX_AGE_MS / DAY) * DAY,
-  maxBytes: envInt(process.env, 'ANALYSIS_CACHE_MAX_MB', CACHE_MAX_BYTES / MIB) * MIB,
+  maxAgeMs: atLeast('ANALYSIS_CACHE_MAX_DAYS', 1, CACHE_MAX_AGE_MS / DAY) * DAY,
+  maxBytes: atLeast('ANALYSIS_CACHE_MAX_MB', 1, CACHE_MAX_BYTES / MIB) * MIB,
 });
 const analystConfig = modelFromEnv(process.env, { onFallback: (why) => log(`analyst fallback · ${why}`) });
 const HOUR = 3_600_000;

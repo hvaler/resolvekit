@@ -101,3 +101,19 @@ test('sweep ignores files that are not analyses and a missing directory', () => 
     done();
   }
 });
+
+test('sweep never removes the most recently used analysis, even one larger than the whole size limit', () => {
+  const { dir, store, now, age, done } = setup({ maxBytes: 500 });
+  try {
+    store.put(analysis(key(1), 2000));
+    store.put(analysis(key(2), 3000));
+    age(key(1), now() - 60_000);
+    age(key(2), now());
+    assert.equal(store.sweep().removed, 1);
+    assert.deepEqual(readdirSync(dir), [`${key(2)}.json`]);
+    assert.equal(store.sweep().removed, 0);
+    assert.equal(store.get(key(2))!.origin, 'cache');
+  } finally {
+    done();
+  }
+});

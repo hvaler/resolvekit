@@ -19,7 +19,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DailyCounters, envInt, insecureOrigin, publicOrigins, paypalEnvFor } from '@resolvekit/hosting';
+import { DailyCounters, envInt, insecureOrigin, publicOrigins, paypalEnvFor, sweepDurableTmp } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { createApp, type HostedMeterOptions } from './app.ts';
 import { Ledger } from './ledger.ts';
@@ -49,6 +49,8 @@ const publicUrl = (process.env.METERMCP_PUBLIC_URL ?? (hosted ? process.env.REND
 const failFirst = (process.env.METERMCP_FAIL_FIRST ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const idleMs = Number(process.env.METERMCP_IDLE_MINUTES ?? 15) * 60_000;
 const dataDir = process.env.METERMCP_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
+// Leftovers of an interrupted durable write of the daily caps (`<file>.<pid>.<8 hex>.tmp`, older than 10 min).
+sweepDurableTmp(dataDir);
 
 const returnOrigins = (process.env.METERMCP_RETURN_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const budget = process.env.METERMCP_BUDGET ?? '5.00';

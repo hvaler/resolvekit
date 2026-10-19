@@ -121,7 +121,7 @@ export class FileAnalysisStore implements AnalysisStore {
 
   /**
    * Remove the analyses unused for longer than the age limit, then the least recently used until the cache fits its
-   * size limit (memory and file). Only `<64 hex>.json` files are considered. Returns what was removed.
+   * size limit (memory and file), never the most recently used one. Only `<64 hex>.json` files are considered. Returns what was removed.
    */
   sweep(): { removed: number; bytes: number } {
     let names: string[];
@@ -146,7 +146,8 @@ export class FileAnalysisStore implements AnalysisStore {
     let total = files.reduce((n, f) => n + f.size, 0);
     let removed = 0;
     let bytes = 0;
-    for (const f of files) {
+    // The most recently used analysis always stays: one oversized analysis must not empty the cache.
+    for (const f of files.slice(0, -1)) {
       if (f.usedAt >= cutoff && total <= this.maxBytes) break;
       try {
         this.delete(f.key);
