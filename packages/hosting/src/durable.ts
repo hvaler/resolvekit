@@ -6,6 +6,8 @@
  *   best-effort fsync of the directory (so the rename itself survives a power cut). A failure at any step removes the
  *   temporary file and throws; the old file is untouched.
  * - {@link appendFileDurable}: append a line and fsync it (append-only logs whose lines must not be lost).
+ * - {@link preserveCorrupt}: move a store file that cannot be read aside (`<file>.corrupt-<time>`) instead of letting
+ *   the store treat it as empty and overwrite it.
  *
  * Temporary files end in `.tmp` (`<file>.<pid>.<random>.tmp`): the stores that sweep leftovers of interrupted writes
  * already remove `*.tmp` in their directories.
@@ -14,12 +16,13 @@ import { randomBytes } from 'node:crypto';
 import { closeSync, existsSync, fsyncSync, openSync, renameSync, unlinkSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-/** Tests only: make the next durable write fail at this step (then reset to null). */
-export const durableTestHooks: { failAt: 'write' | 'fsync' | 'rename' | null } = { failAt: null };
+/** Tests only: make the next durable write (to a file matching `match`, when given) fail at this step, then reset. */
+export const durableTestHooks: { failAt: 'write' | 'fsync' | 'rename' | null; match?: RegExp | null } = { failAt: null, match: null };
 
-function injected(step: 'write' | 'fsync' | 'rename'): void {
-  if (durableTestHooks.failAt !== step) return;
+function injected(step: 'write' | 'fsync' | 'rename', file: string): void {
+  if (durableTestHooks.failAt !== step || (durableTestHooks.match && !durableTestHooks.match.test(file))) return;
   durableTestHooks.failAt = null;
+  durableTestHooks.match = null;
   throw Object.assign(new Error(`injected ${step} failure`), { code: 'EIO' });
 }
 
@@ -57,14 +60,14 @@ export function writeFileDurable(file: string, data: string | Uint8Array, o: { m
   try {
     const fd = openSync(tmp, 'w', o.mode ?? 0o666);
     try {
-      injected('write');
+      injected('write', file);
       writeAll(fd, data);
-      injected('fsync');
+      injected('fsync', file);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
     }
-    injected('rename');
+    injected('rename', file);
     renameSync(tmp, file);
   } catch (e) {
     try {
@@ -77,14 +80,31 @@ export function writeFileDurable(file: string, data: string | Uint8Array, o: { m
   fsyncDir(dirname(file));
 }
 
+/**
+ * Move a store file that exists but cannot be read aside, as `<file>.corrupt-<UTC time>`, so the store can start
+ * empty and write a new one without destroying it (an operator can look at it, or put it back). Returns the new path,
+ * or null when it could not be moved (the caller must then not overwrite it).
+ */
+export function preserveCorrupt(file: string, now: Date = new Date()): string | null {
+  const to = `${file}.corrupt-${now.toISOString().replace(/:/g, '-')}`;
+  try {
+    injected('rename', file);
+    renameSync(file, to);
+  } catch {
+    return null;
+  }
+  fsyncDir(dirname(file));
+  return to;
+}
+
 /** Append `data` to `file` (created if missing, then its directory synced too) and fsync it before returning. Throws on failure. */
 export function appendFileDurable(file: string, data: string | Uint8Array): void {
   const created = !existsSync(file);
   const fd = openSync(file, 'a');
   try {
-    injected('write');
+    injected('write', file);
     writeAll(fd, data);
-    injected('fsync');
+    injected('fsync', file);
     fsyncSync(fd);
   } finally {
     closeSync(fd);

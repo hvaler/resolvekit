@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UploadStore, type NewUpload, type UploadRecord } from '../src/uploads/store.ts';
 import { UploadError } from '../src/uploads/image.ts';
+import { durableTestHooks } from '@resolvekit/hosting';
 import { PDF_MAX_PAGES, PENDING_TTL_MS } from '../src/uploads/limits.ts';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'rk-uploads-'));
@@ -188,8 +189,13 @@ test('an unwritable dir fails closed (STORAGE) and leaves no half record', () =>
   const dir = tmp();
   const ok = new UploadStore({ dir });
   const r = ok.create(base(), bytes(3));
-  mkdirSync(join(dir, 'ws1', r.id, 'record.json.tmp')); // the record cannot be written
-  assert.throws(() => ok.update(r.id, { status: 'reviewing', mime: 'image/png' }, { original: null, sanitised: bytes(2) }), (e) => e instanceof UploadError && e.code === 'STORAGE');
+  // the record cannot be written (after the files were)
+  Object.assign(durableTestHooks, { failAt: 'rename', match: /record\.json$/ });
+  try {
+    assert.throws(() => ok.update(r.id, { status: 'reviewing', mime: 'image/png' }, { original: null, sanitised: bytes(2) }), (e) => e instanceof UploadError && e.code === 'STORAGE');
+  } finally {
+    Object.assign(durableTestHooks, { failAt: null, match: null });
+  }
   assert.equal(ok.get(r.id)!.status, 'pending');
   assert.equal(ok.original(r.id)!.length, 3);
   assert.equal(ok.sanitised(r.id), null);

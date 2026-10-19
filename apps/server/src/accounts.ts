@@ -14,8 +14,9 @@
  * email masked, passkey public keys, invite token hashes. No PayPal tokens, no invite tokens, no secrets.
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { writeFileDurable } from '@resolvekit/hosting';
 
 export type Role = 'owner' | 'member';
 export type JoinedVia = 'paypal' | 'passkey' | 'browser';
@@ -175,8 +176,7 @@ export class AccountStore {
     try {
       mkdirSync(dirname(this.file), { recursive: true });
       const state: State = { workspaces: [...this.workspaces.values()], people: [...this.people.values()], credentials: [...this.credentials.values()], invites: [...this.invites.values()] };
-      writeFileSync(`${this.file}.tmp`, JSON.stringify(state));
-      renameSync(`${this.file}.tmp`, this.file);
+      writeFileDurable(this.file, JSON.stringify(state));
     } catch {
       undo();
       throw new StorageError();

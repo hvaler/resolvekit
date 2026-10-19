@@ -4,13 +4,15 @@
  * (sanitised page), `page-<k>.orig.png` (uncovered render, only while reviewing) and `thumb-<n>.png`.
  *
  * The original exists only while the upload is pending or reviewing. A discarded, deleted or archived upload keeps
- * its record (metadata, for the audit) but no file and no text. Writes are synchronous tmp + rename like
- * `AccountStore.commit`, the record is written last, and a failure throws `UploadError('STORAGE')` after undoing what
- * it had written. `dir: null` keeps everything in memory (tests). Nothing here logs bytes or text.
+ * its record (metadata, for the audit) but no file and no text. Writes are synchronous and durable (tmp, fsync,
+ * rename: `writeFileDurable`) like `AccountStore.commit`, the record is written last, and a failure throws
+ * `UploadError('STORAGE')` after undoing what it had written. `dir: null` keeps everything in memory (tests). Nothing
+ * here logs bytes or text.
  */
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeFileDurable } from '@resolvekit/hosting';
 import { UploadError, type Rect } from './image.ts';
 import { PDF_MAX_PAGES, PENDING_TTL_MS } from './limits.ts';
 import type { TextRemoval } from './text.ts';
@@ -390,13 +392,10 @@ export class UploadStore {
 
   private atomicWrite(r: UploadRecord, name: string, data: Uint8Array | string): void {
     const file = this.path(r, name);
-    const tmp = `${file}.tmp`;
     try {
       mkdirSync(this.path(r), { recursive: true });
-      writeFileSync(tmp, data);
-      renameSync(tmp, file);
+      writeFileDurable(file, data);
     } catch (e) {
-      try { unlinkSync(tmp); } catch { /* nothing to clean */ }
       throw storage(name, e);
     }
   }

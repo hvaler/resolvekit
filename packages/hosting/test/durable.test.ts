@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { appendFileDurable, durableTestHooks, fsyncDir, writeFileDurable } from '../src/durable.ts';
+import { appendFileDurable, durableTestHooks, fsyncDir, preserveCorrupt, writeFileDurable } from '../src/durable.ts';
 
 function dir() {
   const d = mkdtempSync(join(tmpdir(), 'durable-'));
@@ -73,6 +73,38 @@ test('fsyncDir never throws (Windows cannot fsync a directory; a missing one is 
     writeFileSync(join(d, 'x'), 'x');
     fsyncDir(d);
     fsyncDir(join(d, 'missing'));
+  } finally {
+    done();
+  }
+});
+
+test('the test hook can target one file: other writes go through until it is hit', () => {
+  const { d, done } = dir();
+  try {
+    durableTestHooks.failAt = 'rename';
+    durableTestHooks.match = /record\.json$/;
+    writeFileDurable(join(d, 'page.png'), 'p');
+    assert.throws(() => writeFileDurable(join(d, 'record.json'), 'r'), /injected rename/);
+    assert.equal(durableTestHooks.failAt, null);
+    writeFileDurable(join(d, 'record.json'), 'r2');
+    assert.deepEqual(readdirSync(d).sort(), ['page.png', 'record.json']);
+  } finally {
+    durableTestHooks.failAt = null;
+    durableTestHooks.match = null;
+    done();
+  }
+});
+
+test('preserveCorrupt moves the file aside with its content and a timestamped name; a missing file gives null', () => {
+  const { d, done } = dir();
+  try {
+    const f = join(d, 'intents.json');
+    writeFileSync(f, '{not json');
+    const to = preserveCorrupt(f, new Date('2026-10-19T12:34:56.789Z'));
+    assert.equal(to, join(d, 'intents.json.corrupt-2026-10-19T12-34-56.789Z'));
+    assert.equal(readFileSync(to!, 'utf8'), '{not json');
+    assert.deepEqual(readdirSync(d), ['intents.json.corrupt-2026-10-19T12-34-56.789Z']);
+    assert.equal(preserveCorrupt(f), null);
   } finally {
     done();
   }
