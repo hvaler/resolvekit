@@ -16,6 +16,8 @@ export const agentCase: CaseFile = {
     amount: '1.37',
     currency: 'USD',
     reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED',
+    // Kept as invented on purpose: the golden analysis, evals EV-11/EV-12 and the cases tests quote it. It differs
+    // from the text demo:prepare asks real sandbox buyers to type; a bound case never shows the buyer's words.
     reasonText: 'Buyer says: "I didn’t receive any confirmation of the service"',
     buyerItemType: 'Service',
     stage: 'INQUIRY',

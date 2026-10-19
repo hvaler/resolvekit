@@ -12,6 +12,8 @@ export const DEMO_NOW = DEMO_CLOCK;
  * committed analysis's checklist (items present, of five); recorded and closed rows read as the simulator's snapshot
  * makes them (tests check all three).
  */
+// The agent case's reason follows its synthetic case file (packages/cases agentCase.ts, quoted by its golden analysis),
+// not the text demo:prepare gives real sandbox buyers.
 export const inbox: InboxDispute[] = [
   { id: 'PP-R-TVH-10190665', reason: 'Item not received', item: 'Physical product', amount: 7.0, currency: 'USD', stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', caseType: 'Standard', ready: 4, next: 'Resolve contradiction', nextKind: 'contra', nextSub: 'Address differs (Apt 4 / 4B)', respondBy: '2026-10-18T17:00:00Z', dueNote: null },
   { id: 'PP-R-MMC-10190702', reason: 'No confirmation of the service', item: 'Service', amount: 1.37, currency: 'USD', stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', caseType: 'Agent purchase', ready: 5, next: 'Approve response', nextKind: 'approve', nextSub: 'Draft ready · 5 of 7 supported', respondBy: '2026-10-18T18:00:00Z', dueNote: null },
