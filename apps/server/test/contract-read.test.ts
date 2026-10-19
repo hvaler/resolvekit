@@ -33,6 +33,21 @@ test('getOnly: no method is GET; every other method, and a token POST to another
   assert.equal(seen.length, 2);
 });
 
+test('getOnly: a GET Request passes; an unparseable URL and a token POST to the live host are refused; redirects are errors', async () => {
+  const seen: Array<{ url: string; method: string; redirect: RequestRedirect | undefined }> = [];
+  const f = getOnly((async (u: string | URL | Request, i: RequestInit = {}) => {
+    seen.push({ url: u instanceof Request ? u.url : String(u), method: i.method ?? (u instanceof Request ? u.method : 'GET'), redirect: i.redirect });
+    return new Response('{}');
+  }) as typeof fetch);
+  await f(new Request('https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-1', { method: 'GET' }));
+  await f('https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-1', { redirect: 'follow' });
+  await f('https://api-m.sandbox.paypal.com/v1/oauth2/token', { method: 'POST' });
+  await assert.rejects(f('not a url'), /only GET reads are allowed/);
+  await assert.rejects(f('https://api-m.paypal.com/v1/oauth2/token', { method: 'POST' }), /only GET reads are allowed/);
+  assert.deepEqual(seen.map((s) => s.method), ['GET', 'GET', 'POST']);
+  assert.ok(seen.every((s) => s.redirect === 'error'), JSON.stringify(seen));
+});
+
 const SELLER = 'SELLERMERCHANT1';
 const dispute = () => ({
   dispute_id: 'PP-R-ABC-10000001',

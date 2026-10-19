@@ -41,6 +41,14 @@ describe('action contracts', () => {
     expect(CONTRACTS['evidence:PROOF_OF_REFUND'].route).toBe('POST /v1/customer/disputes/{id}/provide-evidence');
   });
 
+  it('says why withdraw and return types are not available, and claims a proof only where a read showed it', () => {
+    expect(CONTRACTS['make_offer:withdraw'].reason).toBe('PayPal documents no route to withdraw an offer');
+    expect(CONTRACTS.return_address.reason).toBe('Not in this delivery (owner decision)');
+    for (const id of IDS.filter((i) => i !== 'make_offer:withdraw' && i !== 'return_address')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
+    const withProof = IDS.filter((i) => CONTRACTS[i].proof !== null).sort();
+    expect(withProof).toEqual(['accept_claim:REFUND', 'send_message']);
+  });
+
   it('nothing is available yet', () => {
     for (const id of IDS) expect(available(id)).toBe(false);
   });

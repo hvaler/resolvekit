@@ -9,7 +9,8 @@ A variant becomes available (`apps/web/src/domain/actionContracts.ts`) only when
 1. **Documentation**: route, fields, body format, limits.
 2. **GET reads** of sandbox disputes in the relevant states (this folder, `reads/`).
 3. **One write approved by the owner**, request by request, with its response and its read-back. None has been sent yet:
-   every variant is «Not available: Contract not recorded yet».
+   every variant is «Not available»: «Contract not recorded yet», except offer withdrawal («PayPal documents no route to
+   withdraw an offer») and the return-address types («Not in this delivery (owner decision)»).
 
 ## Reads (`reads/`)
 

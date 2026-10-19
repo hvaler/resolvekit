@@ -13,7 +13,8 @@ import { dirname, resolve } from 'node:path';
 import { PayPalClient, PayPalError, type Dispute } from '@resolvekit/paypal';
 import { parseBindingPools } from '../src/bindings.ts';
 
-const PAYPAL_HOSTS = new Set(['api-m.sandbox.paypal.com', 'api-m.paypal.com']);
+/** The only host a token request may go to: this script reads the sandbox only. */
+const SANDBOX_HOST = 'api-m.sandbox.paypal.com';
 const ONLY_GET = 'contract-read: only GET reads are allowed';
 
 function requestOf(input: string | URL | Request, init?: RequestInit): { method: string; url: URL | null } {
@@ -27,15 +28,17 @@ function requestOf(input: string | URL | Request, init?: RequestInit): { method:
 }
 
 /**
- * A fetch that sends only GET, and the OAuth token POST (exactly `/v1/oauth2/token` on a PayPal API host). Every
- * other request is refused with `contract-read: only GET reads are allowed` before the network is touched.
+ * A fetch that sends only GET, and the OAuth token POST (exactly `/v1/oauth2/token` on the sandbox API host). Every
+ * other request, and any URL that cannot be parsed, is refused with `contract-read: only GET reads are allowed`
+ * before the network is touched. Redirects are errors: a redirected request could reach another route or method.
  */
 export function getOnly(f: typeof fetch): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const { method, url } = requestOf(input, init);
-    const token = method === 'POST' && url !== null && PAYPAL_HOSTS.has(url.hostname) && url.pathname === '/v1/oauth2/token';
+    if (url === null) throw new Error(ONLY_GET);
+    const token = method === 'POST' && url.hostname === SANDBOX_HOST && url.pathname === '/v1/oauth2/token';
     if (method !== 'GET' && !token) throw new Error(ONLY_GET);
-    return f(input, init);
+    return f(input, { ...init, redirect: 'error' });
   }) as typeof fetch;
 }
 

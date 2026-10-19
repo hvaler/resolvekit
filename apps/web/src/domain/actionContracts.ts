@@ -62,10 +62,10 @@ const REF = 'https://developer.paypal.com/api/customer-disputes/v1/';
 const NOT_RECORDED = 'Contract not recorded yet';
 const route = (action: string) => `POST /v1/customer/disputes/{id}/${action}`;
 
-const base = (id: VariantId, docUrl: string | null, body: VariantContract['body'], r: string | null, proof: ProofFields | null = null, evidence: string | null = null): VariantContract => ({
+const base = (id: VariantId, docUrl: string | null, body: VariantContract['body'], r: string | null, proof: ProofFields | null = null, evidence: string | null = null, reason = NOT_RECORDED): VariantContract => ({
   id,
   status: 'not_available',
-  reason: NOT_RECORDED,
+  reason,
   docUrl,
   body,
   route: r,
@@ -96,33 +96,24 @@ const ACCEPT_PROOF: ProofFields = {
   normalise: [],
 };
 
-/** Seen in the sandbox reads: seller evidence is an `evidences[]` entry `source: SUBMITTED_BY_SELLER` with `date`, type, stage and `action_info.action: PROVIDE_EVIDENCE`. */
-const EVIDENCE_PROOF: ProofFields = {
-  list: 'evidences',
-  actorField: 'source',
-  actorValue: 'SUBMITTED_BY_SELLER',
-  timeField: 'date',
-  matchFields: ['evidence_type', 'action_info.action', 'dispute_life_cycle_stage'],
-  normalise: [],
-};
-
 const ev = (action: string) => `contrato-${action}-2026-10-19.md`;
 
 export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.freeze({
   send_message: base('send_message', `${REF}disputes-send-message`, 'json', route('send-message'), MESSAGE_PROOF, ev('send-message')),
-  'send_message:file': base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), MESSAGE_PROOF, ev('send-message')),
+  'send_message:file': base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), null, ev('send-message')),
   'accept_claim:REFUND': base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim')),
   'accept_claim:PARTIAL_REFUND': base('accept_claim:PARTIAL_REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), null, ev('accept-claim')),
   escalate: base('escalate', `${REF}disputes-escalate`, 'json', route('escalate'), null, ev('escalate')),
   'make_offer:REFUND': base('make_offer:REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), null, ev('make-offer')),
   'make_offer:REPLACEMENT_WITHOUT_REFUND': base('make_offer:REPLACEMENT_WITHOUT_REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), null, ev('make-offer')),
-  // PayPal documents no route to withdraw an offer (Disputes v1 schema, 2026-10-19).
-  'make_offer:withdraw': base('make_offer:withdraw', `${REF}disputes-make-offer`, null, null, null, ev('make-offer')),
+  // Disputes v1 lists no operation that withdraws an offer (schema read 2026-10-19).
+  'make_offer:withdraw': base('make_offer:withdraw', `${REF}disputes-make-offer`, null, null, null, ev('make-offer'), 'PayPal documents no route to withdraw an offer'),
   appeal: base('appeal', `${REF}disputes-appeal`, 'multipart', route('appeal'), null, ev('appeal')),
-  'evidence:PROOF_OF_REFUND': base('evidence:PROOF_OF_REFUND', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), EVIDENCE_PROOF, ev('proof-of-refund')),
+  'evidence:PROOF_OF_REFUND': base('evidence:PROOF_OF_REFUND', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('proof-of-refund')),
   'evidence:after_escalation': base('evidence:after_escalation', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('escalate')),
-  // Return types go through accept-claim (REFUND_WITH_RETURN…) and make-offer (REFUND_WITH_RETURN): not in this delivery.
-  return_address: base('return_address', `${REF}disputes-make-offer`, null, null, null, null),
+  // The return types of both accept-claim (REFUND_WITH_RETURN, REFUND_WITH_RETURN_SHIPMENT_LABEL) and make-offer
+  // (REFUND_WITH_RETURN): not in this delivery, by the owner's decision.
+  return_address: base('return_address', `${REF}disputes-make-offer`, null, null, null, null, 'Not in this delivery (owner decision)'),
 });
 
 const ACCEPT: Partial<Record<string, VariantId>> = { REFUND: 'accept_claim:REFUND', PARTIAL_REFUND: 'accept_claim:PARTIAL_REFUND' };
