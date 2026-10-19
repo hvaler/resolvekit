@@ -226,3 +226,63 @@ test('every development case has set \'development\' and a group; the 10 injecti
   assert.equal(CASES.find((x) => x.name === 'nr-address-mismatch')!.group, 'nr-address-mismatch');
   for (const c of CASES.filter((x) => !x.injection)) assert.equal(c.group, c.name);
 });
+
+// ---- fix round 1 (rulings B8, B9 and review minors)
+
+test('amount: only currency codes and symbols are stripped; the currency itself is not compared', () => {
+  assert.notEqual(normalise('amount', '42 abc'), normalise('amount', '42'));
+  assert.notEqual(normalise('amount', 'for 42'), normalise('amount', '42'));
+  assert.notEqual(normalise('amount', '42 per'), normalise('amount', '42'));
+  assert.equal(normalise('amount', '42.00 USD'), normalise('amount', '$42'));
+  assert.equal(normalise('amount', '$42'), normalise('amount', '42'));
+  assert.equal(normalise('amount', '€ 42'), normalise('amount', '42 gbp'));
+  // documented: the code is stripped, not compared
+  assert.equal(normalise('amount', '42 USD'), normalise('amount', '42 EUR'));
+});
+
+test('address: punctuation is removed without a space ("Flat 2-B" = "Flat 2B" ≠ "Flat 2")', () => {
+  assert.equal(normalise('address', 'Flat 2-B'), normalise('address', 'Flat 2B'));
+  assert.notEqual(normalise('address', 'Flat 2-B'), normalise('address', 'Flat 2'));
+  assert.equal(normalise('address', '7 Sample Road, Flat 2'), normalise('address', '7 sample road flat 2'));
+});
+
+test('dates: an impossible day or a non-month word is not a date and cannot match one', () => {
+  assert.equal(normalise('date', '31 Feb 2026'), '31 feb 2026');
+  assert.notEqual(normalise('date', '2026-02-31'), normalise('date', '2026-03-03'));
+  assert.equal(normalise('date', '2026-02-31'), '2026-02-31'.toLowerCase());
+  assert.equal(normalise('date', '13 Marching 2026'), '13 marching 2026');
+  assert.notEqual(normalise('date', '13 Marching 2026'), '2026-03-13');
+  assert.equal(normalise('date', '13 Sept 2026'), '2026-09-13');
+  assert.equal(normalise('date', '29 Feb 2028'), '2028-02-29');
+  assert.equal(normalise('date', '29 Feb 2026'), '29 feb 2026');
+});
+
+test('B9: the words before "contradiction" in shortName decide; the title fallback ignores document names', () => {
+  assert.equal(fieldOf(k({ ...right(), shortName: 'contradiction', title: 'Capture date differs' })), 'date');
+  assert.equal(fieldOf(k({ ...right(), shortName: 'contradiction', title: 'Payment record and tracking record disagree on the flat' })), 'address');
+  assert.equal(fieldOf(k({ ...right(), shortName: 'delivery date contradiction', title: 'Address differs' })), 'date');
+  assert.equal(fieldOf(k({ ...right(), shortName: 'address contradiction', title: 'Captured amount differs' })), 'address');
+  assert.equal(fieldOf(k({ ...right(), shortName: 'contradiction', title: 'Tracking number differs' })), 'tracking');
+});
+
+test('B9: an expected postcode conflict also accepts an output mapped to address (one-directional)', () => {
+  const pc = CASES.find((c) => c.name === 'nr-postcode-mismatch')!;
+  const lc: EvalCase = { ...pc, conflicts: [{ field: 'postcode', a: { doc: 'E1', value: 'TF3 1AA' }, b: { doc: 'E3', value: 'TF9 1AA' } }] };
+  const c = k({ title: 'Postcode discrepancy in delivery address', shortName: 'address contradiction', a: side('E1', ORDER_LINE, 'TF3 1AA'), b: side('E3', 'Delivered to: 7 Sample Road, Flat 2, Testford TF9 1AA', 'TF9 1AA') });
+  const s = scoreStrict(lc, analysis([c]));
+  assert.deepEqual([s.evaluable, s.found, s.extras.length], [1, 1, 0]);
+  // the other way round is a miss: an expected address conflict reported as a postcode one
+  const back = scoreStrict(labelled, analysis([k({ ...right(), shortName: 'postcode contradiction' })]));
+  assert.deepEqual([back.evaluable, back.found, back.missed], [1, 0, 1]);
+});
+
+test('B8: a labelled case whose attempt failed adds its conflicts to expected as not evaluable (no_analysis)', () => {
+  const m = computeMetrics([labelled], [{ name: 'nr-address-mismatch', error: 'provider 429' }]);
+  const s = m.strictContradictions;
+  assert.deepEqual([s.expected, s.evaluable, s.found, s.missed], [1, 0, 0, 0]);
+  assert.deepEqual(s.coverage, { n: 0, of: 1, rate: 0 });
+  assert.deepEqual(s.notEvaluable, [{ case: 'nr-address-mismatch', contradiction: 'address E1↔E3', reason: 'no_analysis' }]);
+  // an unlabelled failed case adds nothing; a case not in the results file at all was not part of that run
+  assert.equal(computeMetrics([base], [{ name: 'nr-address-mismatch', error: 'x' }]).strictContradictions.expected, 0);
+  assert.equal(computeMetrics([labelled], []).strictContradictions.expected, 0);
+});

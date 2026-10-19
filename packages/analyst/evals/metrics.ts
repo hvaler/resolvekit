@@ -48,7 +48,10 @@ export interface Metrics {
   /** Upload-based cases: do the citations come from the merchant's uploads? Absent when no such case ran. */
   uploads?: UploadUse;
   failures: string[];
-  /** Every ratio above (dotted path → ratio) over the cases of each set, and of each group, so near-duplicates show. */
+  /**
+   * Every ratio above (dotted path → ratio) over the cases of each set, and of each group, so near-duplicates show.
+   * Only Ratios are aggregated here: counts, lists (extras, not evaluable, rows) and failures stay in the totals above.
+   */
   bySet: Partial<Record<EvalSet, Record<string, Ratio>>>;
   byGroup: Record<string, Record<string, Ratio>>;
 }
@@ -109,6 +112,9 @@ function computeAll(cases: readonly EvalCase[], results: readonly CaseResult[]):
 
   for (const c of cases) {
     const a = byName.get(c.name)?.analysis;
+    // a failed attempt (a result without analysis) still counts its labelled conflicts, as not evaluable (no_analysis);
+    // a case absent from the results was not part of that run
+    if (!a && byName.has(c.name)) strict.push(scoreStrict(c, undefined));
     if (!a) continue;
     valid += a.facts.length;
     quotes += a.facts.length + a.droppedFacts;
