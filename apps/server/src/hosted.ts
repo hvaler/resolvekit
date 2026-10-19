@@ -1,10 +1,12 @@
 /**
  * Hosted mode (`RESOLVEKIT_MODE=hosted`, e.g. on Render): the web app and the API on one public origin.
  *
- * - Host must be one of the service's public hosts (RENDER_EXTERNAL_HOSTNAME, custom domains). `/healthz` is exempt.
+ * - Host must be one of the service's public hosts (from RENDER_EXTERNAL_URL and RESOLVEKIT_CUSTOM_DOMAINS). `/healthz`
+ *   is exempt.
  * - /api: a state-changing request must come from the service's own origin (Origin header); a present Origin must be
- *   ours on reads too; POST bodies are JSON only (an evidence upload may also be image/png or image/jpeg, on its own
- *   route only); per-IP rate limits (client IP behind one trusted proxy hop).
+ *   ours on reads too; POST bodies are JSON only (an evidence upload may also be image/png, image/jpeg or
+ *   application/pdf, on its own route only); per-IP rate limits (client IP behind TRUSTED_PROXY_HOPS trusted proxy
+ *   hops, default 1; the Render blueprint sets 2).
  * - Browsing is free. People sign in (auth.ts): a merchant with PayPal (Owner), members through an invite link with a
  *   passkey or for one browser. The session is an HttpOnly, Secure, SameSite=Strict cookie signed with the server's
  *   secret, valid 12 h. Composing and approving a response needs a signed-in person.
