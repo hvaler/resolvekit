@@ -27,6 +27,9 @@ import type { LiveGate } from './analysis.ts';
 import { actorLabel, createAuth, type WebAuthn } from './auth.ts';
 import { SellerMemory, type Connection } from './sellers.ts';
 import { createApi, json, withLog, type ActingPerson, type Actor, type ApiOptions, type CostGate, type CostlyAction, type Handler, type Reservation } from './app.ts';
+import { PersonRunCaps } from './agent/person-caps.ts';
+import { RUN_ID } from './agent/runs.ts';
+import type { Receipt } from './metermcp.ts';
 import { createWebhookHandler, WEBHOOK_PREFIX } from './webhook.ts';
 import { acceptsFileBody, HINT_PATH, REDACT_PATH, REFUSED_EARLY, UPLOAD_PATH } from './uploads/routes.ts';
 
@@ -83,6 +86,8 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
    * the webhook, each binding verified now and the last warm-up. Absent: no such route.
    */
   opsToken?: string | null;
+  /** Agent runs started per person per day (main.ts: persisted next to the daily caps); default 5, this process only. */
+  agentRunsPerPerson?: PersonRunCaps;
   /** Each configured AI provider's health check, run by /api/ops/status?probe=models (modelProbesFromEnv). */
   modelProbes?: readonly { name: string; probe: () => Promise<void> }[];
 }
@@ -115,19 +120,25 @@ export const DEFAULT_LIMITS: HostedLimits = {
   uploadsPerIp: { limit: 20, windowMs: 10 * MIN },
 };
 
+/** Agent runs a person may start per UTC day (env-free: the spec's 5). */
+export const AGENT_RUNS_PER_PERSON = 5;
+
 /** Why each costly action is the seller workspace's only (shown by the web app as is). */
 export const LOCKED_REASON: Record<CostlyAction, string> = {
   evidence: 'Sending evidence to a real PayPal dispute cannot be undone, so only the seller’s workspace can do it: sign in with the seller’s PayPal account, or join its workspace with an invite.',
   'live-analysis': 'A live AI run uses model quota, so on this public demo only the seller’s workspace runs it. The stored analysis stays on screen.',
   recheck: 'Re-checking an edited sentence calls the AI model, so on this public demo only the seller’s workspace runs it.',
   upload: 'Adding evidence stores and reads a file on this server, so on this public demo only the seller’s workspace adds it.',
+  'agent-run': 'An agent run uses model quota and asks for a real PayPal sandbox payment, so on this public demo only the seller’s workspace starts one.',
 };
 const SIGN_IN_REASON = 'Sign in to compose and approve responses: with PayPal (merchants) or with the invite link you were given.';
 
-const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks', upload: 'evidence uploads' };
+const CAP_NAME: Record<CostlyAction, string> = { evidence: 'evidence sends', 'live-analysis': 'live AI runs', recheck: 'AI re-checks', upload: 'evidence uploads', 'agent-run': 'agent runs' };
 
 /** The operator's check (demo:check). */
 export const OPS_PATH = '/api/ops/status';
+/** `GET <prefix><run id>`: one agent run and its receipt, for `demo:prepare --agent-run` (same ops token). */
+export const OPS_AGENT_RUN_PREFIX = '/api/ops/agent-run/';
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -150,6 +161,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   const paypalStarts = new KeyedLimiter({ ...L.paypalStartsPerIp, now: () => now().getTime() });
   const webhookLimit = new KeyedLimiter({ ...L.webhookPerIp, now: () => now().getTime() });
   const uploadLimit = new KeyedLimiter({ ...L.uploadsPerIp, now: () => now().getTime() });
+  const agentRunCaps = o.agentRunsPerPerson ?? new PersonRunCaps({ file: null, limit: AGENT_RUNS_PER_PERSON, now });
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
 
   // The seller merchant ids of the bound disputes (refreshed before each signed-in request): which workspace sees
@@ -222,7 +234,28 @@ export function createHostedApp(o: HostedOptions): HostedApp {
           refusal: { status: 429, body: { error: 'DAILY_CAP', detail: `This demo allows ${s.caps[action]?.limit ?? 0} ${CAP_NAME[action]} per day; the cap resets at ${s.resetsAt}.`, action, resetsAt: s.resetsAt } },
         };
       }
-      return { ok: true, release: () => o.counters.release(action, day) };
+      if (action !== 'agent-run') return { ok: true, release: () => o.counters.release(action, day) };
+      // An agent run also takes one of the person's own units; refused, the daily unit goes back.
+      const mine = agentRunCaps.take(s.person.id);
+      if (!mine.ok) {
+        o.counters.release(action, day);
+        if (mine.reason === 'storage') {
+          o.log?.(`agent-run caps · refused · ${mine.detail}`);
+          return { ok: false, refusal: { status: 503, body: { error: 'CAPS_UNAVAILABLE', detail: 'The demo cannot record this action’s use right now, so it is not done; try again later.', action } } };
+        }
+        const limit = agentRunCaps.limit;
+        return {
+          ok: false,
+          refusal: { status: 429, body: { error: 'PERSON_CAP', detail: `This demo allows ${limit} agent run${limit === 1 ? '' : 's'} per person per day; try again in ${Math.ceil(mine.retryAfterSec / 3600)} h.`, action, retryAfterSec: mine.retryAfterSec } },
+        };
+      }
+      return {
+        ok: true,
+        release: () => {
+          o.counters.release(action, day);
+          agentRunCaps.release(s.person.id, mine.day);
+        },
+      };
     },
     // Who approves or sends: the signed-in person, named in the audit trail of their workspace. The simulator records
     // a signed-out visitor as such; anything that needs an owner (intents) needs a signed-in person.
@@ -297,7 +330,7 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     if (r.paypal === 'unconfigured') problems.push(`PayPal is not connected${r.error ? ` (${r.error})` : ''}`);
     if (!webhook) problems.push('the PayPal webhook is off (PAYPAL_WEBHOOK_ID / PAYPAL_WEBHOOK_KEY)');
     const caps = o.counters.storageProblem();
-    if (caps) problems.push(`${caps} (evidence sends, live AI runs, re-checks and uploads are refused)`);
+    if (caps) problems.push(`${caps} (evidence sends, live AI runs, re-checks, uploads and agent runs are refused)`);
     const cases = Object.keys(r.bindings);
     if (cases.length === 0) problems.push('no case is bound to a real PayPal dispute (BINDINGS_JSON)');
     for (const [caseId, b] of Object.entries(r.bindings)) {
@@ -327,6 +360,32 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const bearer = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1] ?? '';
       if (!bearer || !sameSecret(bearer, o.opsToken)) return json(404, { error: 'NOT_FOUND' });
       return req.method === 'GET' ? json(200, await opsStatus(url.searchParams.get('probe') === 'models')) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+    }
+    // demo:prepare --agent-run: the full run record and its receipt as MeterMCP's admin route reads it now. A read
+    // only: no engine, no MCP connection. Without the ops token 404 (Ruling A12, as /api/ops/status), whoever is signed in.
+    if (path.startsWith(OPS_AGENT_RUN_PREFIX)) {
+      if (!o.opsToken) return json(404, { error: 'NOT_FOUND' });
+      const t = authLimit.take(clientIp(req, hops, trust));
+      if (!t.ok) return tooMany(t.retryAfterSec, 'Too many requests from this address');
+      const bearer = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1] ?? '';
+      if (!bearer || !sameSecret(bearer, o.opsToken)) return json(404, { error: 'NOT_FOUND' });
+      if (req.method !== 'GET') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+      const id = path.slice(OPS_AGENT_RUN_PREFIX.length);
+      if (!RUN_ID.test(id)) return json(400, { error: 'INVALID_RUN_ID', detail: 'run-<32 hex>' });
+      const run = o.agent?.store.get(id) ?? null;
+      if (!run) return json(404, { error: 'NOT_FOUND' });
+      let receipt: Receipt | null = null;
+      let receiptError: string | null = null;
+      if (!run.sessionId) receiptError = 'the run has no MeterMCP session';
+      else if (!o.meterMcp) receiptError = 'MeterMCP is not configured on this server';
+      else {
+        try {
+          receipt = await o.meterMcp.receipt(run.sessionId);
+        } catch (e) {
+          receiptError = e instanceof Error ? e.message : 'the receipt could not be read';
+        }
+      }
+      return json(200, { run, receipt, receiptError });
     }
 
     // PayPal's webhook deliveries: no browser, so none of the browser rules below (Origin, session); PayPal confirms

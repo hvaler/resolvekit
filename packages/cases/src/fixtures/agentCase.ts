@@ -1,8 +1,12 @@
 import type { CaseFile } from '../../../../apps/web/src/domain/types.ts';
 
 /**
- * Synthetic agent-purchase case: a buyer's AI agent spent part of an approved budget on paid tool
+ * SYNTHETIC agent-purchase case: a buyer's AI agent spent part of an approved budget on paid tool
  * calls (MeterMCP is a fictional tool provider). One call failed and was not charged.
+ *
+ * Every value here (the 1.37 USD, the four calls, session mm-sess-20261008-01, the merchant notes) is invented. It,
+ * its golden analysis and the evals EV-11/EV-12 test the analyst, not the buying agent: it records no real run.
+ * A case bound to a real dispute with a MeterMCP session takes none of it (packages/cases/src/agent.ts `fromSession`).
  */
 export const agentCase: CaseFile = {
   kind: 'agent',

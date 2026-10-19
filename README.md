@@ -279,8 +279,9 @@ releases the rest. It is a single seller (the PayPal sandbox app in `.env` is pa
 **What is real and what is synthetic.** The PayPal side is real sandbox money flow: the budget is a PayPal Orders v2
 `AUTHORIZE` order the buyer approves, its authorization is the hard cap, and closing the session is a real partial
 capture with `final_capture` (or a void). The ledger, the request hashes and the receipts are real records of what
-happened. The **tools' outputs are synthetic** (deterministic demo data), and the failed `deep_report` call in the
-demo is injected by a test switch; the receipt says both.
+happened. The **tools' outputs are synthetic** (deterministic demo data), and each result says so. A failed call is
+there only when it was injected on purpose (per run, see [The buying agent](#the-buying-agent)); the receipt and the
+run mark it injected, never as an outage.
 
 **Flow**
 
@@ -330,19 +331,68 @@ receipt (AG Grid), settlement and timeline, each card labelled **From MeterMCP �
 cards say **Demo data** and the case says why. The evidence goes as `PROOF_OF_FULFILLMENT`, carrier `OTHER`
 ("Digital delivery"), tracking = session id, with the PDF MeterMCP builds from the real receipt.
 
-**Run the demo agent** (`apps/metermcp/scripts/demo-agent.ts`, scripted MCP client; the planner is pluggable):
+With a real session the case keeps **nothing the synthetic example asserts**: no merchant notes, no buyer quote, no
+1.37 USD, no recommended action. Amounts, refund and capture text come from PayPal's read and the receipt. When the
+case's binding names the ResolveKit run that made the payment (`run`, and its `session`, written into `BINDINGS_JSON`
+by `demo:prepare`: publishing a run's record is the owner's act) and the server holds that record for this very
+session, it is one more document, **E5 Agent run record** (*From ResolveKit · run …*, captioned *Agent's own account
+of its steps · not proof of delivery*): that caveat, the goal, one line per step with the model's stated reason and
+the result summary (a step whose result is unknown says so), and how the run ended in plain words. A run that merely
+holds the session is never shown: the case is seen by everyone who may open it. The analyst reads E5 like the other
+documents, as content, never as instructions. A run whose capture is bound (active or reserve) is never swept.
+
+Other MeterMCP settings: `METERMCP_PORT` (8790), `METERMCP_BUDGET` (5.00, the largest budget), `METERMCP_MIN_BUDGET`
+(0.50), `METERMCP_IDLE_MINUTES` (15), `METERMCP_PUBLIC_URL`, `METERMCP_RETURN_ORIGINS`. `METERMCP_FAIL_FIRST` is a
+local test switch (the first call of the named tools in each session opened by `payment_required` fails, never
+charged, marked injected); it is not set on the hosted service. Stop MeterMCP with Ctrl+C (it removes its token file).
+
+## The buying agent
+
+**`/agent`** (signed-in people: the Test Store owner and reviewer-link judges; linked from the evaluation inbox and
+the landing page) runs a **model-driven** buying agent against MeterMCP. You give a goal and a budget cap (0.50 to
+5.00 USD) and never say which tools to use.
+
+- **The model decides.** Google Gemini (`gemini-3.8-flash`) is primary and `openai/gpt-oss-120b` on Groq the
+  fallback, chosen once per run, with native **function calling**: MeterMCP's tools and prices are its functions,
+  plus `finish`. Each turn is one action with a short stated reason; the next turn comes only after it has read the
+  result. There is no scripted plan behind it and no fallback to one: without a model the run stops
+  (`model_unavailable`).
+- **Code validates every action** before it is made: the tool exists and was offered, the arguments match its schema,
+  the price fits the remaining balance (else `insufficient_balance`, the call is not made), and the run limits
+  (actions, time, model calls, tokens). Several calls in one turn are refused as a whole. Settlement is code's, never
+  the model's.
+- **The budget is approved in PayPal.** On the first paid call that fits, MeterMCP opens an `AUTHORIZE` order for
+  exactly your cap and the page shows the approval link: approve with the sandbox buyer. The agent can never raise,
+  re-open or split it.
+- **The page shows** each step (tool, price, OK or failed, result summary, the model's reason; not its internal
+  reasoning), the receipt as MeterMCP states it (captured and released only when the receipt says so), the
+  **model usage apart from the budget** (provider, calls, tokens; never charged to PayPal), **Stop**, your earlier
+  runs, and **Compare** two runs step by step (observed decisions, nothing forced).
+- **An injected failure is labelled.** *Simulate an outage* makes the first `deep_report` call of that run fail: never
+  charged, marked injected on the page and in the receipt.
+
+The same engine (`packages/agent`) runs from the command line, against MeterMCP's public `/mcp` like any MCP client:
 
 ```bash
-METERMCP_FAIL_FIRST=deep_report npm run metermcp   # PowerShell: $env:METERMCP_FAIL_FIRST='deep_report'; npm run metermcp
-npm run demo-agent                                  # prints the approval URL, waits, makes the calls, closes
-npm run demo-agent -- --no-wait                     # stop after printing the approval URL
+npm run demo-agent -- --goal "Quote for ACME-42" [--cap 2.00] [--fail-first deep_report] [--no-wait] [--out run.json]
 ```
 
-Approve with the sandbox **personal** (buyer) account. The agent then calls `quote_lookup`, `deep_report` (fails
-once: test switch, not charged), `deep_report` again, `bulk_export`, closes the session (captures 1.37 of 5.00 USD)
-and prints the PayPal capture id. `METERMCP_FAIL_FIRST` makes the first call of the named tools in each session fail;
-leave it unset for normal operation. Other settings: `METERMCP_PORT` (8790), `METERMCP_BUDGET` (5.00),
-`METERMCP_IDLE_MINUTES` (15), `METERMCP_PUBLIC_URL`. Stop MeterMCP with Ctrl+C (it removes its token file).
+It prints each step as the page shows it, the model usage and the settlement from the receipt (keys from `.env`:
+`GEMINI_API_KEY` / `GROQ_API_KEY`, `METERMCP_URL`, `METERMCP_DEMO_CODE` for the hosted MeterMCP).
+
+**Three things are kept apart:**
+
+1. **The synthetic example.** The simulated agent case `PP-R-MMC-10190702` as committed (four calls, one failure not
+   charged, 1.37 of 5.00 USD, session `mm-sess-20261008-01`), its golden analysis and the evals EV-11/EV-12 are
+   invented and labelled **Demo data**. They test the dispute analyst, not the agent's autonomy.
+2. **Real agent runs.** A run on `/agent` (or the CLI) is a real model's decisions and, when its budget is approved,
+   a real sandbox payment, with whatever calls, failures and amount really happened. A run never opens a dispute by itself; `demo:prepare
+   --agent-run <run id>` puts a finished run's capture in the agent case's reserve, and that case's documents and
+   analysis are then built from that session's receipt and run record only.
+3. **The settlement state of each run**, as MeterMCP's receipt last said it: open, captured (amount and release),
+   capture pending (not a final charge), declined, voided (nothing charged), failed (retried), not approved, or not
+   verified yet. A run's outcome (done, cannot do, out of budget, stopped with its reason, interrupted) is a separate
+   thing: a stopped or interrupted run is never called done.
 
 ## AI tools
 
@@ -456,10 +506,10 @@ services in Oregon on the paid **Starter** plan (`0.5c-512mb`), each with a 1 GB
 5. Fresh disputes for the demo: `npm run demo:prepare` (below) creates the payments, tells the sandbox buyer what to
    click, waits for the disputes and prints the `BINDINGS_JSON` to paste.
 6. The agent case shows the real MeterMCP receipt only if the hosted ledger has the session of the disputed capture:
-   run the demo agent against the hosted MeterMCP
-   (`METERMCP_URL=https://<metermcp host>/mcp METERMCP_DEMO_CODE=<code> npm run demo-agent`), approve with the sandbox
-   buyer, open the dispute on its capture as the buyer, and bind it. (Or copy the local `metermcp.sqlite` onto the
-   disk.)
+   make a run on the hosted `/agent` page (or `METERMCP_URL=https://<metermcp host>/mcp METERMCP_DEMO_CODE=<code> npm
+   run demo-agent -- --goal "…"`), approve with the sandbox buyer, then `npm run demo:prepare -- --agent-run <run id>
+   --seller <merchant id>` takes it into the reserve, tells you how to open the dispute on its capture as the buyer
+   and prints the binding. (Or copy the local `metermcp.sqlite` onto the disk.)
 7. PayPal accepts evidence once per dispute, so a case can be bound to a **reserve**: a list
    `{ "<case id>": [{ "dispute": …, "capture": … }, …] }`, first active. When PayPal shows the active dispute closed,
    or with the seller's evidence for more than 15 minutes (so whoever sent it sees the read-back), the next read moves
@@ -485,10 +535,13 @@ METERMCP_DEMO_CODE=<code> npm run demo:prepare   # PowerShell: $env:METERMCP_DEM
 1. **Standard case**: an Orders v2 `CAPTURE` order for exactly the standard case's order (1 × "Linen tote, natural",
    7.00 USD, `PHYSICAL_GOODS`). It prints the approval URL; approve with the sandbox **personal** account; it
    captures and prints the capture id.
-2. **Agent case**: the demo agent against the **hosted** MeterMCP (`--metermcp URL` for another one), so the session
-   lives in the hosted ledger and the hosted agent case shows the real receipt. Approve the budget; it makes 4 calls
-   (the first `deep_report` fails: `METERMCP_FAIL_FIRST=deep_report` on that service, never charged), closes and
-   prints the capture id. `METERMCP_DEMO_CODE` is read from the environment and never printed.
+2. **Agent case**: the model-driven agent (the engine of `/agent`) against the **hosted** MeterMCP (`--metermcp URL`
+   for another one), so the session lives in the hosted ledger and the hosted agent case shows the real receipt, with
+   `--agent-goal`, `--agent-cap` and, optionally, `--agent-fail-first deep_report` (an injected failure, marked so).
+   Approve the budget; it makes whatever calls the model decides, closes and prints the capture id. Or
+   `--agent-run <run id>`: a run already made on `/agent`, only read (record and receipt), never run or paid again.
+   A run joins the reserve only if it passes the reserve checks (at least one charged call, a completed capture…).
+   `METERMCP_DEMO_CODE` is read from the environment and never printed.
 3. It prints what the buyer clicks: "Report a problem" on each payment → *I didn't receive an item* → item type
    **Physical product** (standard) or **Service** with *"I didn't receive any confirmation of the service"* (agent).
 4. It polls PayPal until each dispute appears (~5 min) and reaches `WAITING_FOR_SELLER_RESPONSE`, then prints the

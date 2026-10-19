@@ -10,7 +10,9 @@
  * PAYPAL_IDENTITY_CLIENT_ID + PAYPAL_IDENTITY_CLIENT_SECRET (the platform's PayPal app, for PayPal sign-in) ·
  * RESOLVEKIT_DATA_DIR (the disk) · BINDINGS_JSON (or RESOLVEKIT_BINDINGS, a file) · METERMCP_URL + METERMCP_ADMIN_TOKEN ·
  * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · DAILY_UPLOADS (40) · TRUSTED_PROXY_HOPS (1) ·
- * RESOLVEKIT_OPS_TOKEN (the operator's check, npm run demo:check).
+ * RESOLVEKIT_OPS_TOKEN (the operator's check, npm run demo:check) · DAILY_AGENT_RUNS (20).
+ * The buying agent (both modes): GEMINI_API_KEY / GROQ_API_KEY · AGENT_* run limits · RESOLVEKIT_PUBLIC_URL (falls back
+ * to RENDER_EXTERNAL_URL) for PayPal's return to /agent?run=<id>; neither set: MeterMCP's own approval page.
  */
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
@@ -20,12 +22,16 @@ import { fileURLToPath } from 'node:url';
 import { DailyCounters, StaticSite, envInt, insecureOrigin, publicOrigins, paypalEnvFor, type ProxyTrust } from '@resolvekit/hosting';
 import { PayPalClient, type PayPalEnv } from '@resolvekit/paypal';
 import { FileAnalysisStore, RateLimiter, modelFromEnv, modelProbesFromEnv } from '@resolvekit/analyst/node';
+import { agentModelsFromEnv, limitsFromEnv } from '@resolvekit/agent';
+import { RunStore } from './agent/runs.ts';
+import { AgentService, RECONCILE_EVERY_MS } from './agent/service.ts';
 import { AccountStore } from './accounts.ts';
 import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
-import { checkBindings, parseBindingPools, type BindingPools } from './bindings.ts';
+import { boundCaptureSet, checkBindings, parseBindingPools, type BindingPools } from './bindings.ts';
 import { CASE_FILES } from './documents.ts';
-import { createHostedApp, type HostedApp } from './hosted.ts';
+import { AGENT_RUNS_PER_PERSON, createHostedApp, type HostedApp } from './hosted.ts';
+import { PersonRunCaps } from './agent/person-caps.ts';
 import { SellerMemory } from './sellers.ts';
 import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
@@ -137,6 +143,35 @@ sweepUploads('at start');
 const uploadSweep = setInterval(() => sweepUploads('hourly'), HOUR);
 uploadSweep.unref();
 
+// The buying agent: its runs on the data dir, each run its own MCP connection to MeterMCP's private /agent/mcp (hosted:
+// with the admin token; local: MeterMCP on this machine needs only the run key). No model key: start answers
+// MODEL_UNAVAILABLE. A run's PayPal approval returns to /agent?run=<id> on the public URL (none: MeterMCP's page).
+const runStore = new RunStore({ dir: join(dataDir, 'agent-runs') });
+const publicUrl = (process.env.RESOLVEKIT_PUBLIC_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim() || '').replace(/\/$/, '');
+const meterToken = process.env.METERMCP_ADMIN_TOKEN ?? '';
+const agentModels = agentModelsFromEnv(process.env);
+const agent = new AgentService({
+  store: runStore,
+  models: agentModels,
+  meterUrl: meterMcp.agentMcpUrl,
+  meterHeaders: (runId): Record<string, string> => (hosted ? { 'x-metermcp-token': meterToken, 'x-agent-run': runId } : { 'x-agent-run': runId }),
+  meterAdmin: meterMcp,
+  limits: limitsFromEnv(process.env),
+  returnTo: (runId) => (publicUrl ? `${publicUrl}/agent?run=${runId}` : undefined),
+  log,
+});
+const agentSweep = setInterval(() => {
+  agent.reconcile().catch((e) => log(`agent runs · reconcile failed · ${(e as Error).message}`));
+  try {
+    // A run whose capture is bound (active or reserve, read now: the bindings change in place) is never swept.
+    const gone = runStore.sweep(boundCaptureSet({ bindings, reserve }));
+    if (gone.length) log(`agent runs · sweep · ${gone.length} run(s) older than 30 days removed`);
+  } catch (e) {
+    log(`agent runs · sweep failed · ${(e as Error).message}`);
+  }
+}, RECONCILE_EVERY_MS);
+agentSweep.unref();
+
 /** How the client address is derived behind the proxy: hosted.ts's per-IP limits and node.ts's large-body slots. */
 const clientAddress = {
   trustedHops: envInt(process.env, 'TRUSTED_PROXY_HOPS', 1),
@@ -197,8 +232,10 @@ if (hosted) {
       recheck: envInt(process.env, 'DAILY_RECHECKS', 200),
       evidence: envInt(process.env, 'DAILY_EVIDENCE_SENDS', 20),
       upload: envInt(process.env, 'DAILY_UPLOADS', DAILY_UPLOADS),
+      'agent-run': envInt(process.env, 'DAILY_AGENT_RUNS', 20),
     },
   });
+  if (!meterToken) log('WARNING: METERMCP_ADMIN_TOKEN is not set: agent runs cannot authenticate to MeterMCP (/agent/mcp) and will stop as meter_unavailable; receipts and settlement through the admin routes fail too');
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
     paypal, env, bindings, reserve, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
@@ -209,6 +246,8 @@ if (hosted) {
     webhook,
     opsToken,
     modelProbes: modelProbesFromEnv(process.env),
+    agent,
+    agentRunsPerPerson: new PersonRunCaps({ file: join(dataDir, 'agent-run-caps.json'), limit: AGENT_RUNS_PER_PERSON }),
   });
   log(`Hosted mode · ${pub.origins.join(', ')} · ${site.size} web files · PayPal sign-in ${identity ? 'on' : 'OFF'} · PayPal webhook ${webhook && paypal ? 'on' : 'OFF'} · ops check ${opsToken ? 'on' : 'OFF'} · data in ${dataDir}`);
 } else {
@@ -218,13 +257,18 @@ if (hosted) {
   tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('../.runtime-token', import.meta.url));
   writeFileSync(tokenFile, token, { mode: 0o600 });
   const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
-  app = createApp({ paypal, env, bindings, reserve, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads });
+  app = createApp({ paypal, env, bindings, reserve, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads, agent });
 }
+
+// Runs a previous process left unfinished become interrupted and are settled, in the background: not awaited, so a
+// MeterMCP that is down does not delay listening.
+agent.recover().catch((e) => log(`agent runs · recovery failed · ${(e as Error).message}`));
 
 // The listener derives the client address as hosted mode does (one large upload body per address at a time).
 const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`, { ...(hosted ? clientAddress : {}), log }));
 server.listen(port, host, () => {
   log(`ResolveKit server on http://${host}:${port} · PayPal ${paypal ? env : 'unconfigured'} · ${Object.keys(bindings).length} bound case(s)`);
+  log(`Agent: ${agentModels ? `${agentModels.primary.provider}/${agentModels.primary.model}${agentModels.fallback ? ` (fallback ${agentModels.fallback.provider})` : ''}` : 'no model key: runs refused'} · return ${publicUrl ? `${publicUrl}/agent` : 'MeterMCP approval page'}`);
   log(`Analyst: ${analystConfig ? `${analystConfig.primary.provider}/${analystConfig.primary.model} (providers: ${analystConfig.available.join(', ')})` : 'no model key: stored analyses only'}`);
   for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}${reserve[caseId]?.length ? ` · ${reserve[caseId]!.length} in reserve` : ''}`);
   // Read and verify each bound dispute once in the background (logged); sending verifies again on its own fresh read.
@@ -257,7 +301,18 @@ if (watchBindings) {
   });
 }
 
+/** The agent's loops end first (interrupted, settled) within 20 s, then everything else. */
+const AGENT_STOP_MS = 20_000;
+let stopping = false;
 const stop = () => {
+  if (stopping) return;
+  stopping = true;
+  clearInterval(agentSweep);
+  void Promise.race([agent.stop(), new Promise((r) => setTimeout(r, AGENT_STOP_MS).unref())])
+    .catch((e) => log(`agent runs · stop failed · ${(e as Error).message}`))
+    .finally(closeAll);
+};
+const closeAll = () => {
   intents.flush();
   clearInterval(uploadSweep);
   void closeOcr();

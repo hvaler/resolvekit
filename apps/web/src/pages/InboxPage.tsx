@@ -80,9 +80,14 @@ export function InboxPage() {
         <PayPalNotices />
 
         {env.kind === 'evaluation' && (
-          <Link to="/demo" className="self-start text-[12.5px] text-acc">
-            Explore demo · {inbox.length - rows.length} more fictional cases
-          </Link>
+          <div className="flex flex-wrap gap-x-5 gap-y-1">
+            <Link to="/demo" className="text-[12.5px] text-acc">
+              Explore demo · {inbox.length - rows.length} more fictional cases
+            </Link>
+            <Link to="/agent" className="text-[12.5px] text-acc">
+              Try the buying agent
+            </Link>
+          </div>
         )}
 
         {showGrid && (

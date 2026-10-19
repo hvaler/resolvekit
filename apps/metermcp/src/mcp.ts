@@ -8,6 +8,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import { z } from 'zod';
 import type { BudgetGate, Meter, ToolAnswer } from './meter.ts';
 import { CURRENCY, PAID_TOOLS } from './tools.ts';
 
@@ -57,6 +58,25 @@ export function buildServer(meter: Meter, policy?: BudgetPolicy): McpServer {
     },
     async (extra) => (extra.sessionId ? meter.balance(extra.sessionId) : noSession()),
   );
+  const { min, max } = meter.capRange;
+  server.registerTool(
+    'open_budget',
+    {
+      title: 'Open budget · free',
+      description: `Open your session's budget with the cap you need, from ${min} to ${max} ${CURRENCY} (instead of the payment_required proposal). The cap must be approved by the user in PayPal: it answers an approval_url for the user, and the budget is active once they approve (poll get_balance). Only one budget at a time per session. Optional fail_first: up to 3 paid tools whose first call fails on purpose (not charged), to show that path. Optional return_to: where the user's browser goes after approving, when it is an allowed origin (free).`,
+      inputSchema: {
+        cap: z.string().max(16).describe(`Budget cap in ${CURRENCY}, e.g. "2.50" (from ${min} to ${max})`),
+        fail_first: z.array(z.string().max(64)).max(3).optional().describe('Paid tools whose first call fails on purpose (not charged), e.g. ["deep_report"]'),
+        return_to: z.string().max(2048).optional().describe('Absolute URL to send the user back to after approval (ignored unless its origin is allowed)'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      _meta: FREE,
+    },
+    async (args, extra) =>
+      extra.sessionId
+        ? meter.openBudget(extra.sessionId, { cap: args.cap, failFirst: args.fail_first, returnTo: args.return_to }, policy ? { budgetGate: policy(extra.authInfo) } : {})
+        : noSession(),
+  );
   server.registerTool(
     'close_session',
     {
@@ -82,10 +102,12 @@ const rpcError = (status: number, message: string) =>
 export interface McpLimits {
   /** Live MCP sessions in all. */
   maxSessions: number;
-  /** Live MCP sessions per client IP. */
+  /** Live MCP sessions per key (the client IP; the agent run on /agent/mcp). */
   maxPerIp: number;
   /** A session with no request for this long is closed (its transport freed, its payment session closed). */
   idleMs: number;
+  /** A request carrying a session id must come from the key that opened it (else 404): one run cannot drive another's session. */
+  bindSessionToKey?: boolean;
   now?: () => number;
 }
 
@@ -140,7 +162,7 @@ export function createMcpEndpoint(meter: Meter, policy?: BudgetPolicy, limits: P
     const sid = req.headers.get('mcp-session-id');
     if (sid) {
       const s = live.get(sid);
-      if (!s?.transport) return rpcError(404, 'Unknown MCP session');
+      if (!s?.transport || (L.bindSessionToKey && s.ip !== ip)) return rpcError(404, 'Unknown MCP session');
       s.lastSeen = now();
       return s.transport.handleRequest(req, opts);
     }

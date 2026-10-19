@@ -10,9 +10,9 @@ import { fakePayPal } from './fakePayPal.ts';
 const BASE = 'http://127.0.0.1:8790';
 const TOKEN = 'a'.repeat(64);
 
-function setup() {
+function setup(o: { returnOrigins?: string[] } = {}) {
   const pp = fakePayPal();
-  const meter = new Meter({ ledger: new Ledger(':memory:'), paypal: pp.client, env: 'sandbox', publicUrl: BASE, failFirst: ['deep_report'] });
+  const meter = new Meter({ ledger: new Ledger(':memory:'), paypal: pp.client, env: 'sandbox', publicUrl: BASE, failFirst: ['deep_report'], returnOrigins: o.returnOrigins });
   const app = createApp({ meter, env: 'sandbox', port: 8790, token: TOKEN, allowedOrigins: [] });
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => app(new Request(input, init))) as typeof globalThis.fetch;
   return { pp, meter, app, fetch };
@@ -77,7 +77,9 @@ test('over MCP (Streamable HTTP): tools declare prices; payment_required → app
     assert.match(byName[name]!.annotations!.title!, new RegExp(`${price.replace('.', '\\.')} USD per call`));
     assert.deepEqual((byName[name]!._meta as Record<string, unknown>)['metermcp/price'], { amount: price, currency: 'USD', per: 'successful call' });
   }
-  for (const free of ['price_list', 'get_balance', 'close_session', 'get_receipt']) assert.ok(byName[free], free);
+  for (const free of ['price_list', 'get_balance', 'close_session', 'get_receipt', 'open_budget']) assert.ok(byName[free], free);
+  assert.equal(byName.open_budget!.title, 'Open budget · free');
+  assert.match(byName.open_budget!.description!, /approved by the user in PayPal/);
 
   const pr = await client.callTool({ name: 'quote_lookup', arguments: { symbol: 'ACME' } });
   assert.equal(pr.isError, true);
@@ -128,6 +130,36 @@ test('/approved and /cancelled trust PayPal, not the URL', async () => {
   assert.match(await (await app(new Request(`${BASE}/cancelled?token=${p.order_id}`))).text(), /Budget not approved/);
   assert.equal(json(await client.callTool({ name: 'get_balance', arguments: {} })).status, 'pending_approval');
   assert.match(await (await app(new Request(`${BASE}/approved?token=<script>`))).text(), /Unknown order/);
+  await client.close();
+  await app.close();
+});
+
+test('GET /approved for an active session with return_to redirects 303 to return_to; without it the page is unchanged', async () => {
+  const { app, pp, fetch } = setup({ returnOrigins: ['https://resolvekit.example'] });
+  const client = await connect(fetch);
+  const ob = await client.callTool({ name: 'open_budget', arguments: { cap: '1.50', fail_first: ['deep_report'], return_to: 'https://resolvekit.example/agent?run=run-1' } });
+  assert.equal(ob.isError, undefined, JSON.stringify(ob));
+  const b = json(ob);
+  assert.deepEqual([b.cap, b.fail_first, b.status], ['1.50', ['deep_report'], 'pending_approval']);
+  // Not approved in PayPal yet: no redirect, the waiting page.
+  const waiting = await app(new Request(`${BASE}/approved?token=${b.order_id}`));
+  assert.equal(waiting.status, 200);
+  assert.match(await waiting.text(), /Waiting for PayPal/);
+  pp.approve(b.order_id);
+  const res = await app(new Request(`${BASE}/approved?token=${b.order_id}&PayerID=XYZ`));
+  assert.equal(res.status, 303);
+  assert.equal(res.headers.get('location'), 'https://resolvekit.example/agent?run=run-1');
+  assert.equal(json(await client.callTool({ name: 'get_balance', arguments: {} })).status, 'active');
+  // /cancelled never redirects.
+  assert.match(await (await app(new Request(`${BASE}/cancelled?token=${b.order_id}`))).text(), /Budget approved/);
+  // A session without return_to (payment_required, or a return_to not on the allowlist): the existing page.
+  const other = await connect(fetch);
+  const ob2 = json(await other.callTool({ name: 'open_budget', arguments: { cap: '1.00', return_to: 'https://evil.example/x' } }));
+  pp.approve(ob2.order_id);
+  const page = await app(new Request(`${BASE}/approved?token=${ob2.order_id}`));
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Budget approved/);
+  await other.close();
   await client.close();
   await app.close();
 });

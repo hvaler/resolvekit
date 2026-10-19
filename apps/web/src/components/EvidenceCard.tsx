@@ -8,10 +8,11 @@ import { EvidenceTag, cx } from './ui';
 
 export const evidenceDomId = (id: string) => `evidence-${id}`;
 
-/** The provenance badge's colours: real data (MeterMCP, PayPal), a merchant upload, or a synthetic demo document. */
+/** The provenance badge's colours: real data (MeterMCP, PayPal, ResolveKit's run record), a merchant upload, or a synthetic demo document. */
 export const PROVENANCE_CLASS: Record<Provenance['kind'], string> = {
   metermcp: 'border border-ok-line bg-ok-soft text-ok',
   paypal: 'border border-ok-line bg-ok-soft text-ok',
+  resolvekit: 'border border-ok-line bg-ok-soft text-ok',
   upload: 'border border-acc-line bg-acc-soft text-acc',
   demo: 'border border-dashed border-info-line bg-info-soft text-info',
 };

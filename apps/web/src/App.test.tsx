@@ -48,6 +48,16 @@ describe('routes render without errors', () => {
     expect(html).not.toContain('PayPal sandbox · live');
   });
 
+  it('buying agent page (local mode: the operator)', () => {
+    const html = render('/agent');
+    expect(html).toContain('Buying agent');
+    expect(html).toContain('Find the price history of ACME-42 over the last year.');
+    expect(html).toContain('Simulate an outage: the first call to Deep report fails (marked as injected)');
+    expect(html).toContain('Start the run');
+    // Local mode has no other people: no workspace toggle.
+    expect(html).not.toContain('Workspace runs');
+  });
+
   it('agent case file', () => {
     const html = render('/cases/PP-R-MMC-10190702');
     expect(html).toContain('Per-call receipt');

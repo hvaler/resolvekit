@@ -19,6 +19,13 @@ export interface Binding {
   dispute: string;
   /** The PayPal capture the dispute must be about; null for a binding in the old string form. */
   capture: string | null;
+  /**
+   * Agent case: the ResolveKit run that made the payment (demo:prepare writes it). Naming it here is the owner's act
+   * of publishing that run's record as evidence: only then does the case show it (E5). Absent when not named.
+   */
+  run?: string;
+  /** Agent case: the MeterMCP session of that run; the run record's session must match it. */
+  session?: string;
 }
 
 /** What a bound case expects of its PayPal payment (from the demo case). */
@@ -106,15 +113,26 @@ const CASE_ID = /^[A-Za-z0-9-]{1,64}$/;
 const DISPUTE_ID = /^PP-[A-Z0-9-]{4,60}$/;
 const CAPTURE_ID = /^[A-Z0-9]{8,32}$/;
 
+/** An agent entry from `demo:prepare` also names its run and MeterMCP session: kept in the JSON, not in the binding. */
+const RUN_ID = /^run-[0-9a-f]{32}$/;
+const SESSION_ID = /^[A-Za-z0-9-]{1,80}$/;
+
 /** A configured binding value (string or object) as a {@link Binding}, or null when it is not one. */
 export function toBinding(v: unknown): Binding | null {
   if (typeof v === 'string') return DISPUTE_ID.test(v) ? { dispute: v, capture: null } : null;
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
   const o = v as Record<string, unknown>;
-  if (Object.keys(o).some((k) => k !== 'dispute' && k !== 'capture')) return null;
+  if (Object.keys(o).some((k) => k !== 'dispute' && k !== 'capture' && k !== 'run' && k !== 'session')) return null;
+  if (o.run !== undefined && (typeof o.run !== 'string' || !RUN_ID.test(o.run))) return null;
+  if (o.session !== undefined && (typeof o.session !== 'string' || !SESSION_ID.test(o.session))) return null;
   if (typeof o.dispute !== 'string' || !DISPUTE_ID.test(o.dispute)) return null;
   if (o.capture != null && (typeof o.capture !== 'string' || !CAPTURE_ID.test(o.capture))) return null;
-  return { dispute: o.dispute, capture: typeof o.capture === 'string' ? o.capture : null };
+  return {
+    dispute: o.dispute,
+    capture: typeof o.capture === 'string' ? o.capture : null,
+    ...(typeof o.run === 'string' ? { run: o.run } : {}),
+    ...(typeof o.session === 'string' ? { session: o.session } : {}),
+  };
 }
 
 /**
@@ -130,6 +148,13 @@ export function parseBindings(raw: unknown): Record<string, Binding> {
 export interface BindingPools {
   bindings: Record<string, Binding>;
   reserve: Record<string, Binding[]>;
+}
+
+/** Every capture bound now: each case's active binding and its reserve (upper case). */
+export function boundCaptureSet(p: BindingPools): Set<string> {
+  const out = new Set<string>();
+  for (const b of [...Object.values(p.bindings), ...Object.values(p.reserve).flat()]) if (b.capture) out.add(b.capture.toUpperCase());
+  return out;
 }
 
 /**

@@ -27,7 +27,8 @@ PayPal sandbox buyer account (to approve an agent budget): **<SANDBOX_BUYER_EMAI
 
 **What is real and what is synthetic.** The PayPal side is real: once you joined, the two cases marked **PayPal
 sandbox · live** in the top bar are bound to real disputes in the PayPal sandbox, read through the Customer Disputes API, and "Submit
-evidence" really calls `provide-evidence`. The AI analysis is real (Google Gemini, Groq as fallback). MeterMCP's
+evidence" really calls `provide-evidence`. The AI analysis is real (Google Gemini, Groq as fallback), and so are the
+buying agent's decisions on `/agent` (a model's choices, checked by code). MeterMCP's
 budgets are real PayPal Orders v2 authorizations and captures in the sandbox. The merchant's documents (order,
 tracking, notes) are synthetic, and so are MeterMCP's tool outputs. The other (fictional) cases are in the Explore
 demo (`<APP_URL>/demo`), on an in-browser **Simulated PayPal**, and the app always says which.
@@ -114,34 +115,55 @@ case has a reserve of fresh sandbox disputes: about 15 minutes after a judge's e
 to the next one (the top bar shows its id). If it still shows **Evidence recorded by PayPal**, another judge sent it
 minutes ago: you can see the read-back, come back shortly, or walk the whole flow on the simulated cases in the demo.
 
-**6. The agent-purchase case.** Open **PP-R-MMC-10190702**: a buyer disputes a payment an AI agent made through
-MeterMCP. The mandate, the per-call receipt (one failed call, not charged) and the settlement come from MeterMCP's real
-ledger ("From MeterMCP · session …"); the evidence goes to PayPal as digital delivery referenced by the session id,
+**6. The buying agent.** Open **<APP_URL>/agent** (the inbox's **Try the buying agent**). Type a goal (or edit an
+example) and a budget cap (0.50 to 5.00 USD), and **Start the run**. A real model decides each action: Google Gemini,
+with Groq as fallback, through function calling over MeterMCP's tools and prices. You never say which tools to use.
+Code checks every action before it is made (tool, arguments, price against the balance, run limits); there is no
+scripted plan behind it. On its first paid call the page shows the PayPal approval link: approve exactly your cap
+with the sandbox buyer above. Then watch the steps (tool, price, OK or failed, result, the model's short reason),
+the receipt (captured and released only as MeterMCP's receipt states them) and the **model usage, shown apart: it is
+never charged to the PayPal budget**. *Simulate an outage* makes the first `deep_report` of that run fail: never
+charged, and marked **injected** wherever it appears. **Compare** puts two of your runs side by side, step by step.
+The tool outputs are synthetic and say so.
+
+**7. The agent-purchase case.** Open **PP-R-MMC-10190702**: a buyer disputes a payment an AI agent made through
+MeterMCP. The mandate, the per-call receipt and the settlement come from MeterMCP's real ledger ("From MeterMCP ·
+session …"), and, when the case is bound to the run that made the payment, its run record (the agent's own account of its
+goal, steps and reasons, not proof: "From ResolveKit · run …"). The evidence goes to PayPal as digital delivery referenced by the session id,
 with the receipt PDF.
+
+*Three things are kept apart.* **The synthetic example**: the agent case as it opens in the Explore demo (four calls,
+one failure not charged, 1.37 of 5.00 USD), its golden analysis and evals EV-11/EV-12 are invented, labelled **Demo
+data**, and test the analyst, not the agent. **Real agent runs**: on `/agent`, and the bound agent case, whose
+documents and analysis are built only from its own session's receipt and run record, with whatever calls, failures
+and amount really happened; launching a run never opens a dispute. **The settlement state of each run**, as
+MeterMCP's receipt last said it (open, captured, capture pending, declined, voided, failed, not approved, or not
+verified yet), apart from how the run ended (a stopped or interrupted run is never called done).
 
 **More cases.** These open in the Explore demo (`/demo/cases/<id>`), on the simulator: two "not as described" claims
 (PP-R-BLW-10187733, PP-R-PLN-10189901), an agent purchase disputed as "incorrect amount" (PP-R-KDA-10192258), an
 "unauthorised" booking whose evidence is already recorded (PP-R-QZE-10181290: read-back, draft locked) and a closed
 case resolved in the seller's favour (PP-R-HFA-10176021: outcome, what was sent, no actions).
 
-**7. Optional: re-run the AI.** In Test Store, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
+**8. Optional: re-run the AI.** In Test Store, **Re-run with AI** runs the analyst live (about 30–60 s) and shows
 its stages; editing a sentence sends it to the AI verifier, which re-chooses its citations and judges it again.
 
-**8. Optional: MeterMCP from your own MCP client.** MeterMCP is a metered MCP server at **<METERMCP_URL>/mcp**
+**9. Optional: MeterMCP from your own MCP client.** MeterMCP is a metered MCP server at **<METERMCP_URL>/mcp**
 (Streamable HTTP). MCP clients cannot sign in with a browser, so MeterMCP takes a code: add the HTTP header
 **`x-demo-code: <DEMO_CODE>`** in your client (e.g. MCP Inspector:
 Transport "Streamable HTTP", URL above, header under Authentication/Headers). Free tools (`price_list`,
-`get_balance`, `get_receipt`, `close_session`) work without it. The first `deep_report` call of each session fails on purpose (a test switch, so the receipt shows an
-uncharged failure; the receipt says it was injected). Call `quote_lookup`: it answers `payment_required`
+`get_balance`, `get_receipt`, `close_session`) work without it. Call `quote_lookup`: it answers `payment_required`
 with an `approval_url`; open it, log in with the sandbox buyer account and approve the 5.00 USD budget. Then call
 `get_balance` (status `active`), use the paid tools, and `close_session`: MeterMCP captures only the successful calls
 and releases the rest, and `get_receipt` shows each call with its request hash. (If PayPal reports the capture
 `PENDING`, the session says `capture_pending` and claims no charge until PayPal completes it.) Without the header a paid tool answers
-`demo_code_required`. Or from the repo: `METERMCP_URL=<METERMCP_URL>/mcp METERMCP_DEMO_CODE=<DEMO_CODE> npm run demo-agent`.
+`demo_code_required`. Or run the same model-driven agent as `/agent` from the repo: `METERMCP_URL=<METERMCP_URL>/mcp
+METERMCP_DEMO_CODE=<DEMO_CODE> npm run demo-agent -- --goal "<goal>"` (with your own Gemini or Groq key).
 
-**Limits.** To keep the shared demo usable: per day, 60 live AI runs, 200 AI re-checks, 20 evidence sends and 20
-MeterMCP budgets in total; per hour, 6 live runs and 30 re-checks; per IP, request rate limits. A limit answers with
+**Limits.** To keep the shared demo usable: per day, 60 live AI runs, 200 AI re-checks, 20 evidence sends, 20 agent
+runs (5 per person, one at a time) and 20 MeterMCP budgets in total; each agent run has action, time and model-call
+limits; per hour, 6 live runs and 30 re-checks; per IP, request rate limits. A limit answers with
 the time it resets. The services may take a few seconds to answer right after a redeploy.
 
-**Run it yourself** (optional): see the README, sections "Run" and "MeterMCP" (Node 24, a PayPal sandbox app, a
+**Run it yourself** (optional): see the README, sections "Run", "MeterMCP" and "The buying agent" (Node 24, a PayPal sandbox app, a
 Gemini key).

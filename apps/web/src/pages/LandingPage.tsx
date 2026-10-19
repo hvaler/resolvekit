@@ -136,8 +136,11 @@ export function LandingPage() {
           <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,6fr)] items-center gap-10 max-lg:grid-cols-1">
             <div className="flex flex-col gap-3 text-body-lg leading-[1.6] text-ink-2">
               <p className="m-0">
-                MeterMCP is a metered MCP gateway: the buyer approves a budget in PayPal, an AI agent calls paid tools, and only the successful calls are
-                captured.
+                MeterMCP is a metered MCP gateway: the buyer approves a budget in PayPal,{' '}
+                <Link to="/agent" className="text-acc">
+                  an AI agent calls paid tools
+                </Link>
+                , and only the successful calls are captured.
               </p>
               <p className="m-0">
                 If the buyer disputes the charge, the per-call receipt becomes the case file: mandate 5.00 USD, each call with its request hash, the failed

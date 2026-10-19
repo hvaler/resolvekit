@@ -4,9 +4,10 @@
  *
  * Local mode (default): listens on 127.0.0.1 only, keeps its ledger in apps/metermcp/data/ (git-ignored), writes a
  * per-launch admin token for apps/server to apps/metermcp/.runtime-token.
- * Env: METERMCP_PORT (8790) · METERMCP_BUDGET (5.00) · METERMCP_IDLE_MINUTES (15) · METERMCP_PUBLIC_URL
- * (http://127.0.0.1:<port>) · METERMCP_DB · METERMCP_FAIL_FIRST (test switch, e.g. "deep_report") ·
- * METERMCP_ALLOWED_ORIGINS · METERMCP_TOKEN_FILE.
+ * Env: METERMCP_PORT (8790) · METERMCP_BUDGET (5.00, the largest budget) · METERMCP_MIN_BUDGET (0.50, the smallest
+ * open_budget cap) · METERMCP_IDLE_MINUTES (15) · METERMCP_PUBLIC_URL (http://127.0.0.1:<port>) · METERMCP_DB ·
+ * METERMCP_FAIL_FIRST (test switch, e.g. "deep_report") · METERMCP_RETURN_ORIGINS (comma list of origins an
+ * open_budget return_to may point at) · METERMCP_ALLOWED_ORIGINS · METERMCP_TOKEN_FILE.
  *
  * Hosted mode (`METERMCP_MODE=hosted`, e.g. on Render): listens on 0.0.0.0:$PORT; the public URL is
  * METERMCP_PUBLIC_URL or RENDER_EXTERNAL_URL (PayPal return/cancel pages); the admin token is METERMCP_ADMIN_TOKEN
@@ -49,8 +50,29 @@ const failFirst = (process.env.METERMCP_FAIL_FIRST ?? '').split(',').map((s) => 
 const idleMs = Number(process.env.METERMCP_IDLE_MINUTES ?? 15) * 60_000;
 const dataDir = process.env.METERMCP_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
 
-const ledger = new Ledger(process.env.METERMCP_DB ?? join(dataDir, 'metermcp.sqlite'));
-const meter = new Meter({ ledger, paypal, env, publicUrl, budget: process.env.METERMCP_BUDGET ?? '5.00', log, failFirst });
+const returnOrigins = (process.env.METERMCP_RETURN_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+const budget = process.env.METERMCP_BUDGET ?? '5.00';
+const minBudget = process.env.METERMCP_MIN_BUDGET ?? '0.50';
+
+// A ledger that cannot be migrated is left untouched and MeterMCP does not start (the previous deploy keeps serving).
+const ledger = (() => {
+  try {
+    return new Ledger(process.env.METERMCP_DB ?? join(dataDir, 'metermcp.sqlite'), { log });
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : String(e));
+  }
+})();
+const MONEY = /^\d+(\.\d{1,2})?$/;
+if (MONEY.test(minBudget) && MONEY.test(budget) && Number(minBudget) > Number(budget)) {
+  log(`WARNING: METERMCP_MIN_BUDGET ${minBudget} is above METERMCP_BUDGET ${budget}: open_budget will refuse every cap`);
+}
+const meter = (() => {
+  try {
+    return new Meter({ ledger, paypal, env, publicUrl, budget, minBudget, returnOrigins, log, failFirst });
+  } catch (e) {
+    return fail(`invalid METERMCP_BUDGET / METERMCP_MIN_BUDGET / METERMCP_RETURN_ORIGINS (${e instanceof Error ? e.message : String(e)})`);
+  }
+})();
 
 // Admin secret for apps/server (receipts, lookups by capture, admin close). Never logged. Local: per launch, in a
 // file only this machine reads. Hosted: from the environment (render.yaml generates it and gives it to apps/server).
@@ -83,8 +105,8 @@ const allowedOrigins = process.env.METERMCP_ALLOWED_ORIGINS?.split(',').map((o) 
 const app = createApp({ meter, env, port, token, allowedOrigins, log, hosted: hostedOpts });
 const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`));
 server.listen(port, host, () => {
-  log(`MeterMCP on http://${host}:${port}/mcp · public ${publicUrl} · PayPal ${paypal ? env : 'unconfigured'} · budget ${process.env.METERMCP_BUDGET ?? '5.00'} USD · idle close ${idleMs / 60_000} min${hosted ? ' · hosted mode' : ''}`);
-  if (failFirst.length) log(`TEST SWITCH: the first ${failFirst.join(', ')} call of each session fails (not charged)`);
+  log(`MeterMCP on http://${host}:${port}/mcp · public ${publicUrl} · PayPal ${paypal ? env : 'unconfigured'} · budget ${minBudget}–${budget} USD · idle close ${idleMs / 60_000} min${hosted ? ' · hosted mode' : ''}`);
+  if (failFirst.length) log(`TEST SWITCH: the first ${failFirst.join(', ')} call of each payment_required session fails (not charged; open_budget sessions follow their own fail_first)`);
 });
 const sweep = setInterval(() => {
   void meter.sweepIdle(idleMs).catch((e) => log(`idle sweep failed: ${String(e)}`));

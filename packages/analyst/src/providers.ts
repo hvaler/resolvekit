@@ -24,7 +24,8 @@ function retryAfter(r: Response): number | null {
   return Number.isFinite(s) ? s * 1000 : null;
 }
 
-async function post(f: typeof fetch, url: string, headers: Record<string, string>, body: unknown, timeoutMs: number, provider: string): Promise<{ json: any; ms: number }> {
+/** POST JSON to a provider; failures become a ModelError carrying only the status and the provider's short code. */
+export async function postJson(f: typeof fetch, url: string, headers: Record<string, string>, body: unknown, timeoutMs: number, provider: string): Promise<{ json: any; ms: number }> {
   const t = Date.now();
   let r: Response;
   try {
@@ -48,7 +49,7 @@ async function post(f: typeof fetch, url: string, headers: Record<string, string
 }
 
 /** Gemini schemas: strip keys its JSON-schema subset does not take. */
-function geminiSchema(s: JsonSchema): JsonSchema {
+export function geminiSchema(s: JsonSchema): JsonSchema {
   const walk = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(walk);
     if (v && typeof v === 'object') {
@@ -87,7 +88,7 @@ export class GeminiModel implements AnalystModel {
       },
     };
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:generateContent`;
-    const { json, ms } = await post(this.fetch, url, { 'x-goog-api-key': this.key }, body, this.timeoutMs, 'gemini');
+    const { json, ms } = await postJson(this.fetch, url, { 'x-goog-api-key': this.key }, body, this.timeoutMs, 'gemini');
     const cand = json?.candidates?.[0];
     const text = (cand?.content?.parts ?? []).filter((p: any) => typeof p.text === 'string' && !p.thought).map((p: any) => p.text).join('');
     if (!text) throw new ModelError(`gemini returned no text (${cand?.finishReason ?? json?.promptFeedback?.blockReason ?? 'unknown'})`, { retryable: true });
@@ -136,7 +137,7 @@ export class GroqModel implements AnalystModel {
       temperature: 0,
       reasoning_effort: 'low',
     };
-    const { json, ms } = await post(this.fetch, 'https://api.groq.com/openai/v1/chat/completions', { authorization: `Bearer ${this.key}` }, body, this.timeoutMs, 'groq');
+    const { json, ms } = await postJson(this.fetch, 'https://api.groq.com/openai/v1/chat/completions', { authorization: `Bearer ${this.key}` }, body, this.timeoutMs, 'groq');
     const choice = json?.choices?.[0];
     const text: string = choice?.message?.content ?? '';
     if (!text) throw new ModelError(`groq returned no text (${choice?.finish_reason ?? 'unknown'})`, { retryable: true });

@@ -15,7 +15,7 @@ import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type P
 import { workspaceIdFor } from './accounts.ts';
 import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
-import type { AgentReceiptSource, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
+import type { AgentReceiptSource, AgentRunSummary, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
 import { linesToConfirmOf, type Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
 import { hasSellerEvidence, sellerEvidence } from '../../web/src/domain/recorded.ts';
@@ -31,9 +31,11 @@ import { REFUSED_EARLY, acceptsFileBody, createUploadRoutes } from './uploads/ro
 import { uploadDocuments, uploadFileName } from './uploads/documents.ts';
 import { UploadStore, type UploadRecord } from './uploads/store.ts';
 import { PAYPAL_MAX_SEND_BYTES } from './uploads/limits.ts';
+import { createAgentRoutes } from './agent/routes.ts';
+import type { AgentService } from './agent/service.ts';
 
 /** Actions that cost money or quota, or cannot be undone: a hosted demo may refuse them (see {@link CostGate}). */
-export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload';
+export type CostlyAction = 'evidence' | 'live-analysis' | 'recheck' | 'upload' | 'agent-run';
 
 /** A refusal as status + JSON body. */
 export interface Refusal {
@@ -133,6 +135,8 @@ export interface ApiOptions {
   uploadStoredFileBytes?: number;
   /** Total size of the files of one response (default PAYPAL_MAX_SEND_BYTES, uploads/limits.ts). */
   paypalMaxSendBytes?: number;
+  /** The buying agent's runs (/api/agent/runs, agent/routes.ts). null/absent: those routes answer 503. */
+  agent?: AgentService | null;
 }
 
 /** Local mode: the API behind the local guard (Host, Origin, per-launch token, JSON-only POST). */
@@ -413,15 +417,34 @@ export function createApi(opts: ApiOptions): Api {
 
   /**
    * The MeterMCP session behind the dispute's disputed capture. `none` (with the reason) when there is no capture,
-   * no MeterMCP, or no session for it; throws MeterMcpError when MeterMCP cannot be asked.
+   * no MeterMCP, or no session for it; throws MeterMcpError when MeterMCP cannot be asked. The run's summary goes with
+   * it only by {@link boundRun}.
    */
-  const agentReceipt = async (d: Dispute): Promise<AgentReceiptSource> => {
+  const agentReceipt = async (caseId: string, d: Dispute): Promise<AgentReceiptSource> => {
     const capture = d.disputed_transactions?.[0]?.seller_transaction_id;
     if (!capture) return { kind: 'none', reason: 'PayPal reports no disputed capture' };
     if (!opts.meterMcp) return { kind: 'none', reason: 'MeterMCP is not configured on this server' };
     const sessionId = await opts.meterMcp.findByCapture(capture);
     if (!sessionId) return { kind: 'none', reason: `MeterMCP has no session for capture ${capture}` };
-    return { kind: 'metermcp', session: toMeteredSession(await opts.meterMcp.receipt(sessionId)) };
+    const session = toMeteredSession(await opts.meterMcp.receipt(sessionId));
+    const run = boundRun(caseId, d, sessionId);
+    return run ? { kind: 'metermcp', session, run } : { kind: 'metermcp', session };
+  };
+  /**
+   * The run record shown as the agent case's E5 (Ruling A14): only the run the case's active binding names
+   * (`run`, written by demo:prepare: the owner's act of publishing it as evidence), for this dispute, and only when
+   * its session is this capture's session (and the binding's `session`, when given). A run that merely holds the
+   * session is never shown: the case snapshot is shared by every viewer of the case. Only the goal, the steps'
+   * reasons and summaries and the outcome; never the person, the approval link or the order.
+   */
+  const boundRun = (caseId: string, d: Dispute, sessionId: string): AgentRunSummary | null => {
+    const b = bindingOf(caseId);
+    if (!b?.run || b.dispute !== d.dispute_id) return null;
+    const r = opts.agent?.store.get(b.run);
+    if (!r || r.sessionId !== sessionId || (b.session && b.session !== r.sessionId)) return null;
+    log(`agent case ${caseId}: run record ${r.id} attached (E5)`);
+    const steps = r.steps.map((x) => ({ n: x.n, tool: x.tool, state: x.state, reason: x.reason, summary: x.summary }));
+    return { runId: r.id, goal: r.goal, outcome: r.state, stopReason: r.stopReason, steps };
   };
   /** For the analyst: asked right before it would call the model (nothing stored for these documents, or a refresh). */
   const liveGate = (req: Request, action: CostlyAction): LiveGate | undefined => {
@@ -435,7 +458,7 @@ export function createApi(opts: ApiOptions): Api {
     if (isAgentCase(caseId)) {
       let receipt: AgentReceiptSource;
       try {
-        receipt = await agentReceipt(d);
+        receipt = await agentReceipt(caseId, d);
       } catch (e) {
         receipt = { kind: 'none', reason: e instanceof MeterMcpError ? e.message : 'MeterMCP could not be read' };
       }
@@ -1118,6 +1141,14 @@ export function createApi(opts: ApiOptions): Api {
     ...(opts.uploadStoredFileBytes ? { maxStoredBytes: opts.uploadStoredFileBytes } : {}),
   });
 
+  /** The buying agent's runs: signed-in people (local: the operator); hosted, one daily and one per-person unit each. */
+  const agentRoutes = createAgentRoutes({
+    agent: opts.agent ?? null,
+    person: personOf,
+    reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'agent-run') : null,
+    log,
+  });
+
   const route = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -1135,6 +1166,8 @@ export function createApi(opts: ApiOptions): Api {
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
     const up = await uploadRoutes(req, url);
     if (up) return up;
+    const ag = await agentRoutes(req, url);
+    if (ag) return ag;
     const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|intent|audit)(?:\/(int-[0-9a-f]{32})(\/approve|\/cancel)?)?)?$/.exec(path);
     if (!m) return json(404, { error: 'NOT_FOUND' });
     const caseId = m[1]!;

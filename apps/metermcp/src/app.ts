@@ -3,11 +3,14 @@
  *
  * - `POST|GET|DELETE /mcp` — the MCP endpoint (Streamable HTTP) for MCP clients, not browsers.
  * - `GET /approved`, `GET /cancelled` — where PayPal sends the buyer's browser back. They only make MeterMCP re-read
- *   the order from PayPal; nothing there trusts the query string.
+ *   the order from PayPal; nothing there trusts the query string. A session opened by open_budget with an allowed
+ *   return_to is redirected there (303) once the re-read order shows it active.
  * - `GET /health`.
  * - Admin, for apps/server on this machine (header `x-metermcp-token`, the per-launch secret):
  *   `GET /sessions?capture=<id>`, `GET /sessions/<id>/receipt.json|.pdf`, `POST /sessions/<id>/close`.
  *   A session id alone never authorizes anything.
+ * - `POST|GET|DELETE /agent/mcp` — the same MCP endpoint for the ResolveKit server's buying agent (admin token plus
+ *   `x-agent-run: run-<32 hex>`); it may open a budget without a demo code. Private side only in hosted mode.
  *
  * Every request: Host must be this server (DNS rebinding); a present Origin must be an allowed one (browsers on
  * other sites are refused); POST bodies must be application/json.
@@ -23,6 +26,9 @@ import { receiptPdf } from './receipt.ts';
 export const TOKEN_HEADER = 'x-metermcp-token';
 /** Hosted mode: the header an MCP client sends with the demo code to be allowed to open a budget. */
 export const DEMO_CODE_HEADER = 'x-demo-code';
+/** The ResolveKit server's agent run, the key of its limits on /agent/mcp. */
+export const AGENT_RUN_HEADER = 'x-agent-run';
+const AGENT_RUN = /^run-[0-9a-f]{32}$/;
 
 /**
  * Hosted mode (public internet, e.g. Render). Public: `/mcp` (judges' own MCP clients), `/approved`, `/cancelled`,
@@ -42,6 +48,8 @@ export interface HostedMeterOptions {
   proxyTrust?: ProxyTrust;
   /** /mcp requests per IP. */
   mcpPerIp?: { limit: number; windowMs: number };
+  /** /agent/mcp requests per agent run. */
+  agentPerRun?: { limit: number; windowMs: number };
   /** Wrong demo codes per IP before even the right one is refused for a while. */
   badCodesPerIp?: { limit: number; windowMs: number };
   now?: () => number;
@@ -128,6 +136,9 @@ export function createApp(opts: AppOptions): Handler {
       }
     : undefined;
   const mcp = createMcpEndpoint(meter, policy, opts.mcpLimits ?? {});
+  // /agent/mcp (hosted): its own session caps and request limiter, keyed by agent run, apart from the public ones.
+  const agentMcp = h ? createMcpEndpoint(meter, policy, { ...opts.mcpLimits, maxSessions: 10, maxPerIp: 10, bindSessionToKey: true }) : mcp;
+  const agentLimit = new KeyedLimiter({ limit: 600, windowMs: 5 * 60_000, ...h?.agentPerRun, now });
   const admin = (req: Request) => {
     const t = req.headers.get(TOKEN_HEADER);
     return !!opts.token && !!t && sameSecret(t, opts.token);
@@ -159,6 +170,16 @@ export function createApp(opts: AppOptions): Handler {
       }
       return mcp.handle(req, auth, ip);
     }
+    if (path === '/agent/mcp') {
+      if (!h) return mcp.handle(req, undefined, 'local');
+      if (!admin(req)) return json(401, { error: 'MISSING_OR_BAD_TOKEN' });
+      const run = req.headers.get(AGENT_RUN_HEADER) ?? '';
+      if (!AGENT_RUN.test(run)) return json(400, { error: 'AGENT_RUN_REQUIRED', detail: `${AGENT_RUN_HEADER}: run-<32 hex>` });
+      const key = `agent:${run}`;
+      const lim = agentLimit.take(key);
+      if (!lim.ok) return json(429, { jsonrpc: '2.0', error: { code: -32000, message: `Too many requests; retry in ${lim.retryAfterSec} s` }, id: null });
+      return agentMcp.handle(req, { token: 'agent', clientId: 'resolvekit', scopes: ['open_budget'] }, key);
+    }
     if (req.method === 'GET' && path === '/health') {
       const m = mcp.metrics();
       return json(200, { ok: true, paypal: opts.env, mcpSessions: m.live, mcpRejected: m.rejected, mcpExpired: m.expired });
@@ -175,6 +196,9 @@ export function createApp(opts: AppOptions): Handler {
       if (s.status === 'cancelled' && s.settlement_error) {
         return page('Payment method declined', 'PayPal declined the payment method you chose, or the authorization. Nothing was authorized or charged. Return to your agent: its next paid call gives you a new approval link, where you can choose another payment method.');
       }
+      // Opened by open_budget with an allowed return_to: back to the client's page, only once the budget is active.
+      const back = path === '/approved' && s.status === 'active' ? meter.allowedReturn(s.return_to) : null;
+      if (back) return new Response(null, { status: 303, headers: { location: back, 'cache-control': 'no-store' } });
       if (s.status === 'active') return page('Budget approved', 'PayPal authorized the budget. You can close this tab and return to your agent: it is charged only for successful tool calls, and the rest is released when the session closes.');
       return page('Waiting for PayPal', `PayPal reports the order is not approved yet (session ${s.status}). Reload this page in a moment.`);
     }
@@ -221,7 +245,7 @@ export function createApp(opts: AppOptions): Handler {
   const hostedGuard = (req: Request): Response | null => {
     const path = new URL(req.url).pathname;
     const host = hostOf(req);
-    if (path === '/sessions' || path.startsWith('/sessions/')) {
+    if (path === '/sessions' || path.startsWith('/sessions/') || path === '/agent/mcp') {
       if (req.headers.has('x-forwarded-for') || publicHosts.has(host)) return json(404, { error: 'NOT_FOUND' });
     } else if (!publicHosts.has(host)) return json(403, { error: 'FORBIDDEN_HOST' });
     return guard(req, opts, true);
@@ -241,5 +265,13 @@ export function createApp(opts: AppOptions): Handler {
     log(`${req.method} ${new URL(req.url).pathname} → ${res.status} · ${Date.now() - t} ms`);
     return h ? withSecurityHeaders(res, { hsts: h.https }) : res;
   };
-  return Object.assign(handler, { close: mcp.closeAll, sweepMcp: mcp.sweepIdle, metrics: mcp.metrics });
+  return Object.assign(handler, {
+    close: async () => void (await Promise.all([mcp.closeAll(), h ? agentMcp.closeAll() : undefined])),
+    sweepMcp: async () => (h ? [...(await mcp.sweepIdle()), ...(await agentMcp.sweepIdle())] : mcp.sweepIdle()),
+    metrics: (): McpMetrics => {
+      const a = mcp.metrics();
+      const b = h ? agentMcp.metrics() : { live: 0, rejected: 0, expired: 0 };
+      return { live: a.live + b.live, rejected: a.rejected + b.rejected, expired: a.expired + b.expired };
+    },
+  });
 }

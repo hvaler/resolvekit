@@ -1,13 +1,22 @@
 /**
  * Server-to-server client for MeterMCP (apps/metermcp) on this machine: find the session behind a disputed PayPal
- * capture, read its receipt (JSON) and its receipt PDF. MeterMCP's admin routes need its per-launch token, which
+ * capture, read its receipt (JSON) and its receipt PDF, and close or reconcile an agent run's session. MeterMCP's admin routes need its per-launch token, which
  * it writes to apps/metermcp/.runtime-token; the file is read on every call so a restarted MeterMCP just works.
  */
 import { readFileSync } from 'node:fs';
+import type { CloseResult } from '../../metermcp/src/meter.ts';
 import type { Receipt } from '../../metermcp/src/receipt.ts';
 import type { MeteredSession } from '../../web/src/domain/types.ts';
 
-export type { Receipt };
+export type { CloseResult, Receipt };
+
+/** POST /sessions/<id>/reconcile: the session as MeterMCP re-read it from PayPal. */
+export interface ReconcileResult {
+  session_id: string;
+  status: string;
+  capture_id: string | null;
+  capture_status: string | null;
+}
 
 export class MeterMcpError extends Error {
   constructor(message: string) {
@@ -39,24 +48,39 @@ export class MeterMcpClient implements MeterMcpSource {
     this.timeoutMs = opts.timeoutMs ?? 10_000;
   }
 
-  private async get(path: string): Promise<Response> {
-    let token = this.token;
-    if (!token) {
-      try {
-        token = this.tokenFile ? readFileSync(this.tokenFile, 'utf8').trim() : '';
-      } catch {
-        throw new MeterMcpError('MeterMCP is not running (no runtime token)');
-      }
-      if (!token) throw new MeterMcpError('MeterMCP admin token is not configured');
+  /** The private MCP endpoint for the agent's runs (x-metermcp-token + x-agent-run). */
+  get agentMcpUrl(): string {
+    return `${this.base}/agent/mcp`;
+  }
+
+  private adminToken(): string {
+    if (this.token) return this.token;
+    let token: string;
+    try {
+      token = this.tokenFile ? readFileSync(this.tokenFile, 'utf8').trim() : '';
+    } catch {
+      throw new MeterMcpError('MeterMCP is not running (no runtime token)');
     }
+    if (!token) throw new MeterMcpError('MeterMCP admin token is not configured');
+    return token;
+  }
+
+  /** `ok`: the statuses that are an answer (besides 2xx). MeterMCP requires JSON bodies on POST. */
+  private async request(path: string, o: { post?: boolean; ok?: number[] } = {}): Promise<Response> {
+    const headers: Record<string, string> = { 'x-metermcp-token': this.adminToken() };
+    if (o.post) headers['content-type'] = 'application/json';
     let r: Response;
     try {
-      r = await this.fetch(this.base + path, { headers: { 'x-metermcp-token': token }, signal: AbortSignal.timeout(this.timeoutMs) });
+      r = await this.fetch(this.base + path, { method: o.post ? 'POST' : 'GET', headers, ...(o.post ? { body: '{}' } : {}), signal: AbortSignal.timeout(this.timeoutMs) });
     } catch {
       throw new MeterMcpError('MeterMCP unreachable');
     }
-    if (!r.ok) throw new MeterMcpError(`MeterMCP answered ${r.status}`);
+    if (!r.ok && !o.ok?.includes(r.status)) throw new MeterMcpError(`MeterMCP answered ${r.status}`);
     return r;
+  }
+
+  private get(path: string): Promise<Response> {
+    return this.request(path);
   }
 
   async findByCapture(captureId: string): Promise<string | null> {
@@ -70,6 +94,16 @@ export class MeterMcpClient implements MeterMcpSource {
 
   async receiptPdf(sessionId: string): Promise<Uint8Array> {
     return new Uint8Array(await (await this.get(`/sessions/${encodeURIComponent(sessionId)}/receipt.pdf`)).arrayBuffer());
+  }
+
+  /** Close (settle) a session; idempotent in MeterMCP. A 409 (another close in progress: status busy) is an answer. */
+  async close(sessionId: string): Promise<CloseResult> {
+    return (await (await this.request(`/sessions/${encodeURIComponent(sessionId)}/close`, { post: true, ok: [409] })).json()) as CloseResult;
+  }
+
+  /** Re-read a PENDING capture from PayPal now. */
+  async reconcile(sessionId: string): Promise<ReconcileResult> {
+    return (await (await this.request(`/sessions/${encodeURIComponent(sessionId)}/reconcile`, { post: true })).json()) as ReconcileResult;
   }
 }
 
