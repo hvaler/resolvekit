@@ -15,7 +15,7 @@
  * to RENDER_EXTERNAL_URL) for PayPal's return to /agent?run=<id>; neither set: MeterMCP's own approval page.
  */
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,8 +61,15 @@ const fail = (why: string): never => {
   process.exit(1);
 };
 
-// Analysis cache, usage log and (hosted) daily caps. On Render this is the service's persistent disk.
+// Every store of this server (intents, audit, accounts, caps, analyses, uploads, agent runs…). On Render this is the
+// service's persistent disk.
 const dataDir = process.env.RESOLVEKIT_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
+// A crash in the middle of a durable write leaves `<file>.<pid>.<random>.tmp` next to the store file: nothing reads it.
+try {
+  for (const f of readdirSync(dataDir)) if (f.endsWith('.tmp')) rmSync(join(dataDir, f), { force: true });
+} catch {
+  /* no data dir yet */
+}
 
 const bindingsFile = process.env.RESOLVEKIT_BINDINGS ?? (hosted ? join(dataDir, 'bindings.json') : fileURLToPath(new URL('../bindings.json', import.meta.url)));
 
