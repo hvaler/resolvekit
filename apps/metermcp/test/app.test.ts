@@ -163,3 +163,21 @@ test('GET /approved for an active session with return_to redirects 303 to return
   await client.close();
   await app.close();
 });
+
+test('local mode: /agent/mcp is the same MCP endpoint as /mcp, without the admin token or a run id', async () => {
+  const { app, fetch } = setup();
+  const client = new Client({ name: 'resolvekit-agent', version: '1.0.0' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/agent/mcp`), { fetch }));
+  const names = (await client.listTools()).tools.map((t) => t.name);
+  assert.ok(names.includes('open_budget') && names.includes('price_list'), names.join(','));
+  // open_budget needs no demo code locally: it answers an approval URL.
+  const b = json(await client.callTool({ name: 'open_budget', arguments: { cap: '1.00' } }));
+  assert.equal(b.status, 'pending_approval');
+  assert.match(b.approval_url, /^https:\/\//);
+  // The session is shared with /mcp's table: the same id answers there too.
+  const sid = (client.transport as StreamableHTTPClientTransport).sessionId!;
+  const viaMcp = await app(new Request(`${BASE}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-session-id': sid, 'mcp-protocol-version': '2025-06-18' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list' }) }));
+  assert.equal(viaMcp.status, 200);
+  await client.close();
+  await app.close();
+});
