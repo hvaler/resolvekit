@@ -22,7 +22,8 @@ Agreements agreement token with a separate «identity» app (a PayPal API family
 once you approve it, reads which PayPal account approved it. No agreement is created and nothing is charged. Signing in
 does **not** give ResolveKit access to your disputes.
 
-After a PayPal sign-in you land on the start page. If PayPal sign-in fails, `/signin` shows why:
+After a PayPal sign-in you come back to the page you started from (the start page if you opened `/signin` directly).
+If PayPal sign-in fails, `/signin` shows why:
 
 | Message | Meaning |
 |---|---|

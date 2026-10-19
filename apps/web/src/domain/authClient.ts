@@ -85,9 +85,12 @@ export class AuthClient {
     }
   }
 
-  /** PayPal's approval link: the caller sends the browser there; PayPal sends it back signed in. */
-  paypalStart() {
-    return this.call<{ approvalUrl: string }>('POST', '/auth/paypal/start');
+  /**
+   * PayPal's approval link: the caller sends the browser there; PayPal sends it back signed in, to `next` (a same-site
+   * path the server checks again) or, without one, to the start page.
+   */
+  paypalStart(next = '/') {
+    return this.call<{ approvalUrl: string }>('POST', '/auth/paypal/start', next === '/' ? {} : { next });
   }
 
   inspectInvite(token: string) {

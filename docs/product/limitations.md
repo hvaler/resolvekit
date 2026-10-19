@@ -86,7 +86,6 @@ Known gaps:
 - **Continue with PayPal** is an identity check built on a no-charge Billing Agreements v1 agreement token (a PayPal
   API family listed under a deprecated path), not Log in with PayPal or OpenID Connect. It does not give ResolveKit
   access to your disputes.
-- After a PayPal sign-in you land on the start page, not on the page you were going to.
 - «Join for this browser only» lasts one session (12 hours). After that, open an invite link that still has uses
   (this creates a new member entry) or ask the Owner.
 - On the sign-in page, «Explore without signing in» links to `/cases`, which sends a signed-out visitor back to

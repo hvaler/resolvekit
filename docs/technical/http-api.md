@@ -51,8 +51,8 @@ gets 404 `UNKNOWN_CASE` before any work. Unbound ids are demo cases and live onl
 | Method | Path | Auth | Purpose | Main errors |
 |---|---|---|---|---|
 | GET | `/api/auth/me` | — | Session, sign-in methods, workspace connection (`evaluation`, `not_connected`, `checking`) | — |
-| POST | `/api/auth/paypal/start` | — | `{approvalUrl}` and a pending sign-in cookie | 503 `PAYPAL_SIGNIN_OFF`, 502 `PAYPAL_UNAVAILABLE` |
-| GET | `/api/auth/paypal/return/<k>?ba_token=…` | pending cookie + key | Sign in as Owner → 303 `/?signed-in=paypal` | 303 `/signin?error=session_mismatch\|not_approved\|paypal_unavailable\|full\|unavailable\|paypal_off` |
+| POST | `/api/auth/paypal/start` `{next?}` | — | `{approvalUrl}` and a pending sign-in cookie (it carries `next`, signed; an unsafe `next` is ignored) | 503 `PAYPAL_SIGNIN_OFF`, 502 `PAYPAL_UNAVAILABLE` |
+| GET | `/api/auth/paypal/return/<k>?ba_token=…` | pending cookie + key | Sign in as Owner → 303 to `next` (a same-site path), else `/?signed-in=paypal` | 303 `/signin?error=session_mismatch\|not_approved\|paypal_unavailable\|full\|unavailable\|paypal_off` |
 | GET | `/api/auth/paypal/cancel` | — | 303 `/signin?error=cancelled` | — |
 | POST | `/api/auth/invite/inspect`, `/api/auth/invite/join` | invite token | Inspect an invite / join for this browser | 404 `INVITE_UNKNOWN`, 410 `INVITE_*`, 400 `INVALID_NAME`, 409, 503 `ACCOUNTS_UNAVAILABLE` |
 | POST | `/api/auth/passkey/register/options`, `…/register/verify`, `/api/auth/passkey/login/options`, `…/login/verify` | invite (register) / passkey | WebAuthn | 400 `CHALLENGE_UNKNOWN`/`PASSKEY_REJECTED`, 401 `PASSKEY_UNKNOWN`, 403 `ACCESS_REVOKED`/`ACCESS_ENDED` |

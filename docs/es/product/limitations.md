@@ -91,7 +91,6 @@ Carencias conocidas:
 - **Continue with PayPal** es una comprobación de identidad construida sobre un agreement token de Billing Agreements v1
   sin cargo (una familia de APIs de PayPal que figura bajo una ruta obsoleta), no Log in with PayPal ni OpenID
   Connect. No da a ResolveKit acceso a tus disputas.
-- Tras iniciar sesión con PayPal llegas a la página de inicio, no a la página a la que ibas.
 - «Join for this browser only» dura una sesión (12 horas). Después, abre un enlace de invitación que aún tenga usos
   (esto crea una nueva entrada de miembro) o pide ayuda al Owner.
 - En la página de inicio de sesión, «Explore without signing in» enlaza a `/cases`, que devuelve al visitante sin

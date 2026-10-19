@@ -287,6 +287,63 @@ test('paypal: cancelling on PayPal returns to the sign-in page; starts are rate-
   assert.equal(s.platform.state.starts, 10);
 });
 
+/** A whole PayPal sign-in started with `body` (each from its own address: starts are rate-limited); the return's Location. */
+async function paypalSignInFrom(s: Awaited<ReturnType<typeof setup>>, body: unknown, ip: string): Promise<string> {
+  const start = await s.app(req('/api/auth/paypal/start', { body, ip }));
+  assert.equal(start.status, 200);
+  const pending = pair(cookieFrom(start, 'rk_pp'));
+  s.platform.approve(SELLER_ID);
+  const back = await s.app(req(s.platform.redirect(), { cookie: pending, ip }));
+  assert.equal(back.status, 303);
+  assert.ok(cookieFrom(back, SESSION_COOKIE), 'signed in');
+  return back.headers.get('location')!;
+}
+
+test('paypal: the sign-in comes back to the page it started from (`next`, a same-site path)', async () => {
+  const s = await setup();
+  assert.equal(await paypalSignInFrom(s, { next: `/cases/${CASE}` }, '198.51.100.50'), `/cases/${CASE}`);
+  assert.equal(await paypalSignInFrom(s, { next: '/agent?run=r1#log' }, '198.51.100.51'), '/agent?run=r1#log');
+  // Without `next` (or with the start page) it lands where it always did.
+  assert.equal(await paypalSignInFrom(s, {}, '198.51.100.52'), '/?signed-in=paypal');
+  assert.equal(await paypalSignInFrom(s, { next: '/' }, '198.51.100.53'), '/?signed-in=paypal');
+});
+
+test('paypal: an unsafe `next` is ignored — no other origin, scheme, protocol-relative or backslash path, no API path', async () => {
+  const s = await setup();
+  const attempts: unknown[] = [
+    '//evil.example/x',
+    '/\\evil.example',
+    '\\\\evil.example',
+    '/\t/evil.example',
+    '/\n/evil.example',
+    'https://evil.example/',
+    'javascript:alert(1)',
+    'evil.example',
+    '/api/auth/me',
+    `/${'a'.repeat(600)}`,
+    42,
+    ['/cases'],
+  ];
+  let ip = 60;
+  for (const next of attempts) assert.equal(await paypalSignInFrom(s, { next }, `198.51.100.${ip++}`), '/?signed-in=paypal', JSON.stringify(next));
+});
+
+test('paypal: `next` is bound to the pending cookie — changing it in the cookie ends the sign-in', async () => {
+  const s = await setup();
+  const start = await s.app(req('/api/auth/paypal/start', { body: { next: `/cases/${CASE}` } }));
+  const pending = pair(cookieFrom(start, 'rk_pp'));
+  const [name, value] = pending.split('=');
+  const parts = value!.split('.');
+  assert.equal(parts.length, 5);
+  assert.equal(Buffer.from(parts[3]!, 'base64url').toString('utf8'), `/cases/${CASE}`);
+  parts[3] = Buffer.from('//evil.example').toString('base64url');
+  s.platform.approve(SELLER_ID);
+  const r = await s.app(req(s.platform.redirect(), { cookie: `${name}=${parts.join('.')}` }));
+  assert.equal(r.headers.get('location'), '/signin?error=session_mismatch');
+  assert.equal(cookieFrom(r, SESSION_COOKIE), null);
+  assert.equal(s.platform.state.reads, 0);
+});
+
 // ------------------------------------------------------------------------------------------------ invites
 
 test('invites: only the Owner creates them; the token is only in the link’s fragment and only its hash is stored', async (t) => {

@@ -67,7 +67,7 @@ export function SignInPage() {
   const paypal = async () => {
     setBusy('paypal');
     setError(null);
-    const r = await auth.paypalStart();
+    const r = await auth.paypalStart(next);
     if (r.ok) window.location.assign(r.value.approvalUrl);
     else {
       setBusy(null);

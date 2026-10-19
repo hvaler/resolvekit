@@ -23,8 +23,8 @@ Billing Agreements sin cargo con una app de «identidad» aparte (una familia de
 obsoleta) y, una vez que lo apruebas, lee qué cuenta de PayPal lo aprobó. No se crea ningún acuerdo y no se cobra nada.
 Iniciar sesión **no** da a ResolveKit acceso a tus disputas.
 
-Tras iniciar sesión con PayPal llegas a la página de inicio. Si el inicio de sesión con PayPal falla, `/signin` muestra
-el motivo:
+Tras iniciar sesión con PayPal vuelves a la página desde la que empezaste (la página de inicio si abriste `/signin`
+directamente). Si el inicio de sesión con PayPal falla, `/signin` muestra el motivo:
 
 | Mensaje | Significado |
 |---|---|

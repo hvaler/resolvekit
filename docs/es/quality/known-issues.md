@@ -48,7 +48,6 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | Problema | Efecto | Fuente |
 |---|---|---|
 | Health dice `unconfigured` antes del primer contacto con PayPal | `/api/health` informa PayPal como no configurado hasta que la primera comprobación diferida tiene éxito | ENV; `app.ts` |
-| El inicio de sesión con PayPal pierde `next` | Tras **Continue with PayPal** la persona llega a una página fija, no a donde empezó | ENV; `auth.ts` |
 | La pantalla de comprobación relee cada 5 s | Consulta periódica mientras la conexión del espacio de trabajo está en `checking` | ENV; `web/src/domain/environment.ts` |
 | `joinUrl` solo lo usa su test | Función auxiliar muerta | ENV; `environment.ts` |
 | Conexión de comerciantes no construida | No hay código de PayPal Platform / Partner Referrals; los comerciantes nuevos ven la pantalla de espera (**Pendiente**) | ENV; no hay código `partner-referrals` ni `PayPal-Auth-Assertion` en `apps/` ni en `packages/` |

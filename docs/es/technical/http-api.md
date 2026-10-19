@@ -52,8 +52,8 @@ vinculados son casos de demo y solo viven en el navegador.
 | Método | Ruta | Autenticación | Propósito | Errores principales |
 |---|---|---|---|---|
 | GET | `/api/auth/me` | — | Sesión, métodos de inicio de sesión, conexión del espacio de trabajo (`evaluation`, `not_connected`, `checking`) | — |
-| POST | `/api/auth/paypal/start` | — | `{approvalUrl}` y una cookie de inicio de sesión pendiente | 503 `PAYPAL_SIGNIN_OFF`, 502 `PAYPAL_UNAVAILABLE` |
-| GET | `/api/auth/paypal/return/<k>?ba_token=…` | cookie pendiente + clave | Iniciar sesión como Owner → 303 `/?signed-in=paypal` | 303 `/signin?error=session_mismatch\|not_approved\|paypal_unavailable\|full\|unavailable\|paypal_off` |
+| POST | `/api/auth/paypal/start` `{next?}` | — | `{approvalUrl}` y una cookie de inicio de sesión pendiente (lleva `next`, firmado; un `next` inseguro se ignora) | 503 `PAYPAL_SIGNIN_OFF`, 502 `PAYPAL_UNAVAILABLE` |
+| GET | `/api/auth/paypal/return/<k>?ba_token=…` | cookie pendiente + clave | Iniciar sesión como Owner → 303 a `next` (una ruta del mismo sitio); si no, `/?signed-in=paypal` | 303 `/signin?error=session_mismatch\|not_approved\|paypal_unavailable\|full\|unavailable\|paypal_off` |
 | GET | `/api/auth/paypal/cancel` | — | 303 `/signin?error=cancelled` | — |
 | POST | `/api/auth/invite/inspect`, `/api/auth/invite/join` | token de invitación | Inspeccionar una invitación / unirse en este navegador | 404 `INVITE_UNKNOWN`, 410 `INVITE_*`, 400 `INVALID_NAME`, 409, 503 `ACCOUNTS_UNAVAILABLE` |
 | POST | `/api/auth/passkey/register/options`, `…/register/verify`, `/api/auth/passkey/login/options`, `…/login/verify` | invitación (registro) / passkey | WebAuthn | 400 `CHALLENGE_UNKNOWN`/`PASSKEY_REJECTED`, 401 `PASSKEY_UNKNOWN`, 403 `ACCESS_REVOKED`/`ACCESS_ENDED` |

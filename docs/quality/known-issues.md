@@ -48,7 +48,6 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | Issue | Effect | Source |
 |---|---|---|
 | Health says `unconfigured` before the first PayPal reach | `/api/health` reports PayPal unconfigured until the lazy first check succeeds | ENV; `app.ts` |
-| PayPal sign-in loses `next` | After **Continue with PayPal** the person lands on a fixed page, not where they started | ENV; `auth.ts` |
 | The checking screen re-reads every 5 s | Polling while the workspace connection is `checking` | ENV; `web/src/domain/environment.ts` |
 | `joinUrl` used only by its test | Dead helper | ENV; `environment.ts` |
 | Merchant connection not built | No PayPal Platform / Partner Referrals code; new merchants see the waiting screen (**Pending**) | ENV; no `partner-referrals` or `PayPal-Auth-Assertion` code in `apps/` or `packages/` |
