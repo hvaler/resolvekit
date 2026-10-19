@@ -109,6 +109,8 @@ test('demo-agent --no-wait: tools, the first decision and the approval URL, then
   assert.match(out, /#1 quote_lookup · in progress · "the current quote"/);
   assert.match(out, /https:\/\/www\.sandbox\.paypal\.com\/checkoutnow\?token=ORDER1/);
   assert.match(out, /--no-wait/);
+  // PayPal refuses the business (seller) account here: the budget is the buyer's.
+  assert.match(out, /Approve the budget in PayPal with the sandbox personal \(buyer\) account, not the business \(seller\) one/);
   assert.doesNotMatch(out, new RegExp(DEMO_CODE));
   // Closed (MeterMCP cancels a budget never approved), never paid.
   assert.deepEqual(mm.calls.filter((c) => c !== 'get_balance'), ['open_budget', 'close_session', 'get_receipt', '(disconnect)']);

@@ -90,7 +90,7 @@ async function engineStep(o: PrepareOptions, models: { primary: AgentModel; fall
   rule();
   say(`(b) Agent case: the agent engine against MeterMCP at ${o.meterUrl}`);
   const demoCode = process.env.METERMCP_DEMO_CODE?.trim() || undefined;
-  say(`demo code ${demoCode ? 'set (not shown)' : 'not set'} · approve the budget with the sandbox BUYER account when the URL appears`);
+  say(`demo code ${demoCode ? 'set (not shown)' : 'not set'} · approve the budget with the sandbox personal (BUYER) account, not the business (seller) one, when the URL appears`);
   const { result, record } = await runCli({
     input: { goal: o.agentGoal, cap: o.agentCap, failFirst: o.agentFailFirst },
     url: o.meterUrl,

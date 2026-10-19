@@ -279,18 +279,21 @@ export function standardOrder(c: CaseFile, appUrl: string): CreateCaptureOrder {
   };
 }
 
-/** What the sandbox buyer does to open the dispute on a capture. */
+/**
+ * What the sandbox buyer does to open the dispute on a capture. The agent case's claim is what its evidence answers:
+ * the paid tool calls' results not received (the receipt lists each call delivered, the failed ones not charged).
+ */
 export function buyerInstructions(which: 'standard' | 'agent', captureId: string, amount: string): string {
   const what = which === 'standard' ? `the 7.00 USD "Linen tote, natural" payment` : `the ${amount} MeterMCP agent session payment`;
   const lines = [
     `Open the ${which === 'standard' ? 'standard' : 'agent'} dispute (as the sandbox BUYER, personal account):`,
-    `  1. Log in at https://www.sandbox.paypal.com/ with the sandbox personal (buyer) account.`,
+    `  1. Log in at https://www.sandbox.paypal.com/ with the sandbox personal (buyer) account, not the business (seller) account.`,
     `  2. Activity → open ${what} (capture ${captureId}) → "Report a problem"`,
     `     (or https://www.sandbox.paypal.com/resolutioncenter → "Report a problem" → pick that payment).`,
     `  3. Problem: "I didn't receive an item I bought" (not received).`,
     which === 'standard'
       ? `  4. Item type: "Physical product". Describe it in your own words (e.g. "The parcel never arrived.").`
-      : `  4. Item type: "Service". Reason / description: "I didn't receive any confirmation of the service".`,
+      : `  4. Item type: "Service". Reason / description: "My AI agent paid for MeterMCP tool calls and I didn't receive their results".`,
     `  5. Submit. PayPal takes ~5 minutes to list a new dispute, then a few more to open it (UNDER_REVIEW →`,
     `     WAITING_FOR_SELLER_RESPONSE). This script keeps polling.`,
   ];

@@ -175,8 +175,9 @@ PayPal's capture `COMPLETED`, and its session, capture and receipt hash match th
 or an interruption is noted as *not a goal achieved*. A run record kept on the server is swept after 30 days unless
 **Keep** was pressed or it is bound: keep the runs you plan to use.
 
-The script prints what the buyer clicks to open each dispute. One known issue: for the agent case it still asks for
-the «confirmation of the service» text ([Known issues](../quality/known-issues.md)).
+The script prints what the buyer clicks to open each dispute, logged in with the sandbox **personal (buyer)** account.
+For the agent case the claim is what its evidence answers: item type «Service», «My AI agent paid for MeterMCP tool
+calls and I didn't receive their results» (the receipt lists each call delivered; failed ones were not charged).
 
 **Status:** Implemented · Tested locally (`apps/server/test/demo-prepare.test.ts`). Use of `--agent` / `--agent-run`
 for the hosted reserve: **Pending** (planned 25–30/11). No binding names a model-driven run yet; the agent case's

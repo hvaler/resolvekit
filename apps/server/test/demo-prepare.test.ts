@@ -72,14 +72,17 @@ test('demo:prepare standard order: exactly the fixture’s order (1 × Linen tot
   assert.equal(standardCase.summary.amount, '7.00');
 });
 
-test('demo:prepare buyer instructions: not received; physical product for the standard case, service + the exact reason for the agent case', () => {
+test('demo:prepare buyer instructions: not received; physical product for the standard case; for the agent case a service, the paid tool results not received (what the receipt answers), as the personal (buyer) account', () => {
   const s = buyerInstructions('standard', 'CAP1', '7.00 USD');
   assert.match(s, /didn't receive an item/);
   assert.match(s, /"Physical product"/);
   assert.match(s, /CAP1/);
   const a = buyerInstructions('agent', 'CAP2', '1.37 USD');
   assert.match(a, /"Service"/);
-  assert.match(a, /"I didn't receive any confirmation of the service"/);
+  assert.match(a, /"My AI agent paid for MeterMCP tool calls and I didn't receive their results"/);
+  assert.doesNotMatch(a, /confirmation/);
+  assert.match(a, /sandbox personal \(buyer\) account/);
+  assert.match(a, /not the business \(seller\) account/);
   assert.match(a, /1\.37 USD/);
 });
 

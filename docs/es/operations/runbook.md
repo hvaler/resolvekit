@@ -181,8 +181,10 @@ recibo; una ejecución que terminó por un límite o una interrupción se anota 
 logrado). Un registro de ejecución guardado en el servidor se barre a los 30 días salvo que se haya pulsado **Keep**
 o esté vinculado: conserva las ejecuciones que pienses usar.
 
-El script imprime lo que el comprador pulsa para abrir cada disputa. Un problema conocido: para el caso del agente
-todavía pide el texto «confirmation of the service» ([Problemas conocidos](../quality/known-issues.md)).
+El script imprime lo que el comprador pulsa para abrir cada disputa, con la sesión iniciada en la cuenta **personal
+(comprador)** del sandbox. Para el caso del agente la reclamación es la que responde su evidencia: tipo de artículo
+«Service», «My AI agent paid for MeterMCP tool calls and I didn't receive their results» (el recibo lista cada llamada
+entregada; las fallidas no se cobraron).
 
 **Estado:** Implementado · Probado en local (`apps/server/test/demo-prepare.test.ts`). Uso de `--agent` /
 `--agent-run` para la reserva alojada: **Pendiente** (previsto del 25 al 30/11). Ninguna vinculación nombra todavía una

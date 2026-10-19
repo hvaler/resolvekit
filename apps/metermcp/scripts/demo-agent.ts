@@ -197,7 +197,8 @@ export async function runCli(o: CliRunOptions): Promise<{ result: RunResult; rec
         else if (e.type === 'awaiting_approval') {
           approvalUrl = e.approvalUrl;
           say(`budget of ${e.cap} USD asked for · session ${e.sessionId} · PayPal order ${e.orderId}`);
-          say(`Approve the budget in PayPal (sandbox buyer account):\n\n  ${e.approvalUrl}\n`);
+          // PayPal refused the business (seller) account on this page in the 19/10/2026 run.
+          say(`Approve the budget in PayPal with the sandbox personal (buyer) account, not the business (seller) one:\n\n  ${e.approvalUrl}\n`);
           if (o.noWait) {
             say('--no-wait: stopping here; the session is closed now, so nothing stays authorized or charged.');
             controller.abort();
