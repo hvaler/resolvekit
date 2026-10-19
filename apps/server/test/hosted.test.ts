@@ -8,6 +8,7 @@ import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.t
 import { AnalystService } from '../src/analysis.ts';
 import { parseBindings } from '../src/bindings.ts';
 import { createHostedApp, type HostedLimits } from '../src/hosted.ts';
+import { IntentStore } from '../src/intents.ts';
 import { toSnapshot } from '../src/mapping.ts';
 
 import { RESOLVED, STD_CAPTURE, TEST_SECRET, goldenFor, standardDispute, testAccounts } from './kit.ts';
@@ -36,7 +37,7 @@ function routedPayPal(o: { failRead?: () => boolean; delayMs?: number } = {}) {
   return { calls, sends: () => calls.filter((c) => c.endsWith('/provide-evidence')).length, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean } = {}) {
+function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore } = {}) {
   const pp = routedPayPal(o.failRead ? { failRead: o.failRead } : {});
   const fm = fakeModel(standardScript);
   const store = o.store ?? new MemoryAnalysisStore();
@@ -70,6 +71,7 @@ function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?:
     https: true,
     ...(o.limits ? { limits: o.limits } : {}),
     ...(o.now ? { now: o.now } : {}),
+    ...(o.intents ? { intents: o.intents } : {}),
   });
   teams.set(app, people);
   return { app, pp, counters, model: fm, store, lines, people };
@@ -290,6 +292,22 @@ test('caps: a send that fails before reaching PayPal (dispute read failed) is re
   assert.equal(((await r.json()) as { error: string }).error, 'BINDING_UNAVAILABLE');
   assert.equal(pp.sends(), 0);
   assert.equal(counters.state().caps.evidence!.used, 0);
+});
+
+test('B0: an action intent posted to the evidence route is refused before anything changes (no reserve, still approved)', async () => {
+  const intents = new IntentStore();
+  const { app, pp, counters } = setup({ store: await goldenStore(), intents });
+  const { cookie } = await unlock(app);
+  const i = await intentFor(app, cookie!);
+  // No route composes action intents yet: store one as the action route will.
+  intents.peek(i.id)!.request = { action: 'escalate', note: 'Delivered.', attachments: [] };
+  const r = await app(req(evidencePath, { body: { intentId: i.id }, cookie: cookie! }));
+  assert.equal(r.status, 409);
+  assert.equal(((await r.json()) as { error: string }).error, 'WRONG_SEND_ROUTE');
+  assert.equal(intents.peek(i.id)!.status, 'approved');
+  assert.equal(pp.sends(), 0);
+  assert.equal(counters.state().caps.evidence?.used ?? 0, 0);
+  assert.deepEqual(intents.events(CASE).filter((e) => e.intentId === i.id).map((e) => e.kind), ['intent_created', 'intent_approved']);
 });
 
 test('caps: concurrent identical live runs start one model run, counted once (single flight); the cap holds', async () => {

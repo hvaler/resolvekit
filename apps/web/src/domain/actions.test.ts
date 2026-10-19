@@ -27,6 +27,13 @@ describe('action requests', () => {
     expect(problem(parseActionRequest({ action: 'send_message', text: '  \n ' }))).toEqual({ status: 422, error: 'TEXT_REQUIRED' });
     expect(problem(parseActionRequest({ action: 'escalate', note: '' }))).toEqual({ status: 422, error: 'TEXT_REQUIRED' });
     expect(problem(parseActionRequest({ action: 'escalate', note: 'y'.repeat(2001) }))).toEqual({ status: 422, error: 'TEXT_TOO_LONG' });
+    expect(problem(parseActionRequest({ action: 'make_offer', offerType: 'REFUND', note: ' ' }))).toEqual({ status: 422, error: 'TEXT_REQUIRED' });
+    // accept_claim: the note is optional (absent or blank: ''), still checked when given.
+    expect(parseActionRequest({ action: 'accept_claim', acceptType: 'REFUND' })).toEqual({ action: 'accept_claim', acceptType: 'REFUND', note: '', amount: null, attachments: [] });
+    expect(parseActionRequest({ action: 'accept_claim', acceptType: 'REFUND', note: '   ' })).toMatchObject({ note: '' });
+    expect(problem(parseActionRequest({ action: 'accept_claim', acceptType: 'REFUND', note: 'z'.repeat(2001) }))).toEqual({ status: 422, error: 'TEXT_TOO_LONG' });
+    expect(problem(parseActionRequest({ action: 'accept_claim', acceptType: 'REFUND', note: 'ok‮' }))).toEqual({ status: 400, error: 'INVALID_ACTION_REQUEST' });
+    expect(problem(parseActionRequest({ action: 'accept_claim', acceptType: 'REFUND', note: 5 }))).toEqual({ status: 400, error: 'INVALID_ACTION_REQUEST' });
     for (const text of ['Hi\u0000', 'Hi\u0007', 'Hi\u000b', 'Hi\u007f', 'Hi‮', 'Hi⁦'])
       expect(problem(parseActionRequest({ action: 'send_message', text }))).toEqual({ status: 400, error: 'INVALID_ACTION_REQUEST' });
     expect(problem(parseActionRequest({ action: 'send_message', text: 1 }))).toEqual({ status: 400, error: 'INVALID_ACTION_REQUEST' });
@@ -90,6 +97,10 @@ describe('evidence requests: appeal and refunds', () => {
     expect(parseIntentRequest({ evidenceType: 'PROOF_OF_REFUND', refundIds: ['9ZX12345AB678901C', '1AB23456CD789012E', '9ZX12345AB678901C'] })).toMatchObject({
       refundIds: ['1AB23456CD789012E', '9ZX12345AB678901C'],
     });
+    expect(parseIntentRequest({ evidenceType: 'PROOF_OF_REFUND', action: 'provide_evidence', refundIds: ['1AB23456CD789012E'] })).toMatchObject({ refundIds: ['1AB23456CD789012E'] });
+    // Refunds only with PROOF_OF_REFUND evidence, never with an appeal.
+    for (const other of [{ evidenceType: 'OTHER' }, { evidenceType: 'PROOF_OF_FULFILLMENT' }, { evidenceType: 'PROOF_OF_REFUND', action: 'appeal' }])
+      expect(problem(parseIntentRequest({ ...other, refundIds: ['1AB23456CD789012E'] })), JSON.stringify(other)).toEqual({ status: 400, error: 'INVALID_INTENT_REQUEST' });
     for (const action of ['send_message', 'APPEAL', 1, null]) expect(problem(parseIntentRequest({ evidenceType: 'OTHER', action }))).toEqual({ status: 400, error: 'INVALID_INTENT_REQUEST' });
     for (const refundIds of [[], ['1AB2345'], ['1ab23456cd789012e'], ['A'.repeat(33)], [1], 'ABCDEFGH12', Array.from({ length: 6 }, (_, i) => `REFUND0${i}AB`)])
       expect(problem(parseIntentRequest({ evidenceType: 'PROOF_OF_REFUND', refundIds })), JSON.stringify(refundIds)).toEqual({ status: 400, error: 'INVALID_INTENT_REQUEST' });

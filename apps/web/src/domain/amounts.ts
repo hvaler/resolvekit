@@ -8,6 +8,9 @@ import type { Money } from './actions.ts';
 /** Minor-unit exponent by ISO currency code. */
 export const CURRENCY_EXPONENT: Readonly<Record<string, number>> = { USD: 2, EUR: 2, GBP: 2, CAD: 2, AUD: 2, JPY: 0 };
 
+/** At most this many digits before the decimal point (leading zeros not counted). */
+const MAX_WHOLE_DIGITS = 15;
+
 export type AmountResult = { ok: true; value: string; minor: bigint } | { ok: false; error: 'UNKNOWN_CURRENCY' | 'INVALID_AMOUNT'; detail: string };
 
 const exponentOf = (currency: string): number | null => (Object.hasOwn(CURRENCY_EXPONENT, currency) ? CURRENCY_EXPONENT[currency]! : null);
@@ -22,6 +25,7 @@ function canonical(input: string, currency: string): AmountResult {
     return { ok: false, error: 'INVALID_AMOUNT', detail };
   }
   const whole = m[1]!.replace(/^0+(?=\d)/, '');
+  if (whole.length > MAX_WHOLE_DIGITS) return { ok: false, error: 'INVALID_AMOUNT', detail: `The amount must have at most ${MAX_WHOLE_DIGITS} digits before the decimal point` };
   const fraction = (m[2] ?? '').padEnd(e, '0');
   return { ok: true, value: e === 0 ? whole : `${whole}.${fraction}`, minor: BigInt(whole + fraction) };
 }

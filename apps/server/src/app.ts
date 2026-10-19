@@ -956,6 +956,9 @@ export function createApi(opts: ApiOptions): Api {
     // Only the owner session's own intent: anyone else's does not exist for this request.
     const i0 = intents.get(intentId, who.actor);
     if (!i0 || i0.caseId !== caseId) return json(404, { error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case and session' });
+    // This route sends evidence: an action intent is refused before anything is reserved, claimed or invalidated.
+    if (isActionRequest(i0.request)) return json(409, { error: 'WRONG_SEND_ROUTE', detail: 'This intent is not an evidence response; send it from its action' });
+    const evidenceRequest = i0.request;
     if (i0.disputeId !== boundId) {
       intents.invalidate(intentId, 'the case is bound to another dispute now');
       return json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${i0.disputeId ?? 'the simulator'}; the case is bound to ${boundId} now` });
@@ -1008,9 +1011,7 @@ export function createApi(opts: ApiOptions): Api {
       if (intent.files.some((f) => !f.sha256)) {
         return refuse(json(409, { error: 'INTENT_STALE', detail: 'This response was approved before ResolveKit recorded each file’s SHA-256; review it again' }), 'no file hashes', true);
       }
-      // This route sends evidence; an action intent is never composed again as evidence.
-      if (isActionRequest(intent.request)) return refuse(json(409, { error: 'NOT_EVIDENCE', detail: 'This intent is not an evidence response' }), 'not an evidence intent', false);
-      const again = await compose(caseId, st, intent.request, intent.rechecks, intents.analysisPin(intent.analysisHash));
+      const again = await compose(caseId, st, evidenceRequest, intent.rechecks, intents.analysisPin(intent.analysisHash));
       if (again instanceof Response) {
         const b = (await again.clone().json().catch(() => ({}))) as { error?: string };
         // PayPal's or MeterMCP's being unreachable is not a change of content: the intent may be sent later.

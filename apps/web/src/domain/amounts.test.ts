@@ -15,8 +15,16 @@ describe('exact amounts [A3]', () => {
   it('keeps exact values beyond float precision and small values above zero', () => {
     expect(parseAmount('0.01', 'EUR')).toEqual({ ok: true, value: '0.01', minor: 1n });
     expect(parseAmount('0007', 'GBP')).toEqual({ ok: true, value: '7.00', minor: 700n });
-    expect(parseAmount('90071992547409931.99', 'USD')).toEqual({ ok: true, value: '90071992547409931.99', minor: 9007199254740993199n });
+    expect(parseAmount('900719925474099.31', 'USD')).toEqual({ ok: true, value: '900719925474099.31', minor: 90071992547409931n });
     expect(parseAmount('٧', 'USD')).toMatchObject({ ok: false, error: 'INVALID_AMOUNT' });
+  });
+
+  it('the whole part has at most 15 digits (leading zeros not counted)', () => {
+    expect(parseAmount('999999999999999.99', 'USD')).toEqual({ ok: true, value: '999999999999999.99', minor: 99999999999999999n });
+    expect(parseAmount('000999999999999999', 'JPY')).toMatchObject({ ok: true, value: '999999999999999' });
+    expect(parseAmount('1000000000000000', 'USD')).toMatchObject({ ok: false, error: 'INVALID_AMOUNT' });
+    expect(parseAmount('9'.repeat(10_000), 'JPY')).toMatchObject({ ok: false, error: 'INVALID_AMOUNT' });
+    expect(() => minorUnits('1'.repeat(16), 'USD')).toThrow();
   });
 
   it('says what is wrong in words', () => {

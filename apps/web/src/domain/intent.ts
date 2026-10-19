@@ -243,6 +243,7 @@ export function parseIntentRequest(body: unknown): IntentRequest | ComposeProble
   const refunds = new Set<string>();
   if (body.refundIds !== undefined) {
     const v = body.refundIds;
+    if (body.evidenceType !== 'PROOF_OF_REFUND' || body.action === 'appeal') return bad('refundIds go only with PROOF_OF_REFUND evidence');
     if (!Array.isArray(v) || v.length < 1 || v.length > MAX_REFUNDS) return bad(`refundIds must be a list of 1 to ${MAX_REFUNDS} PayPal refund ids`);
     for (const id of v) {
       if (typeof id !== 'string' || !REFUND_ID.test(id)) return bad('refundIds: invalid PayPal refund id');

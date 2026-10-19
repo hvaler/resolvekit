@@ -17,7 +17,10 @@ export interface Money {
   currency: string;
 }
 
-/** At most this many characters in a message or a note (trimmed). */
+/**
+ * At most this many characters in a message or a note (trimmed). Counted in UTF-16 code units (String.length), never
+ * fewer than code points, so it never lets through more than PayPal could count.
+ */
 export const ACTION_TEXT_LIMIT = 2000;
 
 export type ActionRequest =
@@ -86,11 +89,13 @@ export function parseActionRequest(body: unknown): ActionRequest | ComposeProble
   const extra = Object.keys(body).filter((k) => !FIELDS[action].includes(k));
   if (extra.length) return bad(`Unexpected field(s) ${extra.join(', ')} for ${action}`);
 
-  const text = (name: string): string | ComposeProblem => {
+  const text = (name: string, optional = false): string | ComposeProblem => {
     const v = body[name];
+    if (optional && v === undefined) return '';
     if (typeof v !== 'string') return bad(`${name} must be a string`);
     if (CONTROL_CHARS.test(v)) return bad(`${name} must not contain control or bidi characters`);
     const t = v.trim();
+    if (!t && optional) return '';
     if (!t) return { status: 422, error: 'TEXT_REQUIRED', detail: `Type the ${name === 'text' ? 'message' : 'note'}` };
     if (t.length > ACTION_TEXT_LIMIT) return { status: 422, error: 'TEXT_TOO_LONG', detail: `The ${name === 'text' ? 'message' : 'note'} must be at most ${ACTION_TEXT_LIMIT} characters` };
     return t;
@@ -107,6 +112,8 @@ export function parseActionRequest(body: unknown): ActionRequest | ComposeProble
     const r = parseAmount(v.value, v.currency);
     return r.ok ? { value: r.value, currency: v.currency } : { status: 422, error: r.error, detail: r.detail };
   };
+  // The same test as intent.ts's isComposeProblem, kept here so this module imports only types from intent.ts (which
+  // imports this module's values): no value-import cycle.
   const isProblem = (x: unknown): x is ComposeProblem => isRecord(x) && typeof x.error === 'string';
 
   if (action === 'send_message') {
@@ -119,7 +126,8 @@ export function parseActionRequest(body: unknown): ActionRequest | ComposeProble
   if (body.attachments !== undefined && !(Array.isArray(body.attachments) && body.attachments.length === 0)) return bad(`${action} takes no attachments`);
   const kind = action === 'accept_claim' ? code('acceptType') : action === 'make_offer' ? code('offerType') : '';
   if (isProblem(kind)) return kind;
-  const note = text('note');
+  // PayPal's accept-claim note is optional; escalate and make_offer need one.
+  const note = text('note', action === 'accept_claim');
   if (isProblem(note)) return note;
   if (action === 'escalate') return { action, note, attachments: [] };
   const m = amount();
