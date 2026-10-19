@@ -30,15 +30,17 @@ commit `fbe9621`. MeterMCP's routes are in [MCP tools](mcp-tools.md).
 | Ops | `Authorization: Bearer <RESOLVEKIT_OPS_TOKEN>`; without the variable, or with a wrong token, 404 |
 | Webhook | Secret key in the path plus PayPal verification; no session |
 
-**Seller gate (hosted).** Case routes answer only the seller's workspace for evaluation (bound) cases; anyone else
-gets 404 `UNKNOWN_CASE` before any work. Unbound ids are demo cases and live only in the browser.
+**Seller gate (hosted).** Case routes answer a bound (evaluation) case only to the workspace of that case's own
+seller: the merchant id on its dispute as last read, or remembered for the same case and dispute when the read fails.
+Anyone else, including the seller of another bound case, and every request while the seller is unknown, gets 404
+`UNKNOWN_CASE` before any work. Unbound ids are demo cases and live only in the browser.
 
 ## Service and operations
 
 | Method | Path | Mode | Auth | Answer | Main errors |
 |---|---|---|---|---|---|
 | GET, HEAD | `/healthz` | hosted | none | Render health check | 405 |
-| GET | `/api/health` | both | none (bindings listed only for the seller's workspace) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`, only when a store file could not be read at start: the store names in local mode, `true` in hosted mode) | — |
+| GET | `/api/health` | both | none (each binding listed only for its own seller's workspace) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`, only when a store file could not be read at start: the store names in local mode, `true` in hosted mode) | — |
 | GET | `/api/demo` | both | none | hosted `{hosted:true, day, resetsAt, caps, reasons}`; local `{hosted:false}` | 405 |
 | GET | `/api/ops/status[?probe=models]` | hosted | ops Bearer | PayPal state, webhook on/off, each binding verified on a fresh read (may rotate a used case), warm-up, caps, unreadable store files (`storage`, also in `problems`); with `probe=models` one tiny call per configured model | 404, 405, 429 |
 | GET | `/api/ops/agent-run/<run-id>` | hosted | ops Bearer | Run record + receipt, for `demo:prepare --agent-run` | 400 `INVALID_RUN_ID`, 404 |

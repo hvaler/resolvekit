@@ -30,8 +30,10 @@ commit `fbe9621`. Las rutas de MeterMCP están en [herramientas MCP](mcp-tools.m
 | Operaciones | `Authorization: Bearer <RESOLVEKIT_OPS_TOKEN>`; sin la variable, o con un token incorrecto, 404 |
 | Webhook | Clave secreta en la ruta más verificación con PayPal; sin sesión |
 
-**Filtro de vendedor (alojado).** Las rutas de casos solo responden al espacio de trabajo del vendedor para los casos
-de evaluación (vinculados); cualquier otro recibe 404 `UNKNOWN_CASE` antes de hacer ningún trabajo. Los ids no
+**Filtro de vendedor (alojado).** Las rutas de casos responden a un caso vinculado (de evaluación) solo al espacio de
+trabajo del vendedor de ese mismo caso: el id de comerciante de su disputa en la última lectura, o el recordado para el
+mismo caso y disputa cuando la lectura falla. Cualquier otro, incluido el vendedor de otro caso vinculado, y toda
+petición mientras el vendedor es desconocido, recibe 404 `UNKNOWN_CASE` antes de hacer ningún trabajo. Los ids no
 vinculados son casos de demo y solo viven en el navegador.
 
 ## Servicio y operaciones
@@ -39,7 +41,7 @@ vinculados son casos de demo y solo viven en el navegador.
 | Método | Ruta | Modo | Autenticación | Respuesta | Errores principales |
 |---|---|---|---|---|---|
 | GET, HEAD | `/healthz` | alojado | ninguna | Comprobación de salud de Render | 405 |
-| GET | `/api/health` | ambos | ninguna (las vinculaciones solo se listan para el espacio de trabajo del vendedor) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`, solo cuando un archivo de almacén no se pudo leer al arrancar: los nombres de los almacenes en modo local, `true` en modo alojado) | — |
+| GET | `/api/health` | ambos | ninguna (cada vinculación solo se lista para el espacio de trabajo de su propio vendedor) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`, solo cuando un archivo de almacén no se pudo leer al arrancar: los nombres de los almacenes en modo local, `true` en modo alojado) | — |
 | GET | `/api/demo` | ambos | ninguna | alojado `{hosted:true, day, resetsAt, caps, reasons}`; local `{hosted:false}` | 405 |
 | GET | `/api/ops/status[?probe=models]` | alojado | Bearer de operaciones | Estado de PayPal, webhook activado/desactivado, cada vinculación verificada con una lectura fresca (puede rotar un caso usado), precalentamiento, topes, archivos de almacén ilegibles (`storage`, también en `problems`); con `probe=models`, una llamada mínima por cada modelo configurado | 404, 405, 429 |
 | GET | `/api/ops/agent-run/<run-id>` | alojado | Bearer de operaciones | Registro de la ejecución + recibo, para `demo:prepare --agent-run` | 400 `INVALID_RUN_ID`, 404 |

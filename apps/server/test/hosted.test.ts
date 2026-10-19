@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DailyCounters, StaticSite } from '@resolvekit/hosting';
 import { MemoryAnalysisStore, RateLimiter, analysisKey, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst/node';
-import { caseInput, standardCase } from '@resolvekit/cases';
-import { PayPalClient } from '@resolvekit/paypal';
+import { caseInput, notAsDescribedCase, standardCase } from '@resolvekit/cases';
+import { PayPalClient, type Dispute } from '@resolvekit/paypal';
 import { fakeModel, standardScript } from '../../../packages/analyst/test/fake.ts';
 import { AnalystService } from '../src/analysis.ts';
 import { parseBindings } from '../src/bindings.ts';
@@ -23,7 +23,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const boundInput = (): AnalysisInput => caseInput(standardCase, { kind: 'live', snap: toSnapshot(standardDispute(), CASE, 'sandbox', new Date()), failed: null });
 
 /** PayPal by path: every dispute read answers the waiting dispute, every send succeeds; optionally slow or failing reads. */
-function routedPayPal(o: { failRead?: () => boolean; delayMs?: number } = {}) {
+function routedPayPal(o: { failRead?: () => boolean; delayMs?: number; disputes?: Record<string, Dispute> } = {}) {
   const calls: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
@@ -32,13 +32,14 @@ function routedPayPal(o: { failRead?: () => boolean; delayMs?: number } = {}) {
     await sleep(o.delayMs ?? 2);
     if (u.pathname.endsWith('/provide-evidence')) return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     if (o.failRead?.()) return new Response(JSON.stringify({ name: 'INTERNAL_SERVICE_ERROR' }), { status: 500, headers: { 'content-type': 'application/json' } });
-    return new Response(JSON.stringify(standardDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
+    const byId = o.disputes?.[decodeURIComponent(u.pathname.split('/').pop() ?? '')];
+    return new Response(JSON.stringify(byId ?? standardDispute()), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   return { calls, sends: () => calls.filter((c) => c.endsWith('/provide-evidence')).length, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
-function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore } = {}) {
-  const pp = routedPayPal(o.failRead ? { failRead: o.failRead } : {});
+function setup(o: { bindings?: Record<string, { dispute: string; capture: string }>; disputes?: Record<string, Dispute>; slowModelMs?: number; limits?: Partial<HostedLimits>; caps?: Record<string, number>; failRead?: () => boolean; store?: MemoryAnalysisStore; now?: () => Date; model?: boolean; intents?: IntentStore } = {}) {
+  const pp = routedPayPal({ ...(o.failRead ? { failRead: o.failRead } : {}), ...(o.disputes ? { disputes: o.disputes } : {}) });
   const fm = fakeModel(standardScript);
   const store = o.store ?? new MemoryAnalysisStore();
   const lines: string[] = [];
@@ -58,7 +59,7 @@ function setup(o: { slowModelMs?: number; limits?: Partial<HostedLimits>; caps?:
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
-    bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
+    bindings: o.bindings ?? { [CASE]: { dispute: REAL, capture: STD_CAPTURE } },
     log: (l) => lines.push(l),
     analyst,
     site,
@@ -119,6 +120,34 @@ async function intentFor(app: ReturnType<typeof setup>['app'], cookie: string, a
   return i;
 }
 const analysisPath = `/api/cases/${CASE}/analysis`;
+
+test('per case: with two bound disputes of two sellers, each workspace gets 404 on the other seller’s case (snapshot, analysis, intent)', async () => {
+  const OTHER_CASE = notAsDescribedCase.summary.id;
+  const OTHER_SELLER = 'OTHERSELLER0001';
+  const other = standardDispute({ dispute_id: 'PP-R-OTHER-1' });
+  other.disputed_transactions = [{ ...other.disputed_transactions![0]!, seller: { merchant_id: OTHER_SELLER } }];
+  const { app, people } = setup({
+    bindings: { [CASE]: { dispute: REAL, capture: STD_CAPTURE }, [OTHER_CASE]: { dispute: 'PP-R-OTHER-1', capture: STD_CAPTURE } },
+    disputes: { [REAL]: standardDispute(), 'PP-R-OTHER-1': other },
+  });
+  const mine = people.member();
+  const theirs = people.outsider(OTHER_SELLER);
+  const routes = (c: string): Array<[string, Init]> => [
+    [`/api/disputes/${c}`, {}],
+    [`/api/cases/${c}/analysis`, { body: {} }],
+    [`/api/disputes/${c}/intent`, { body: { evidenceType: 'PROOF_OF_FULFILLMENT', resolutions: RESOLVED } }],
+  ];
+  for (const [cookie, own, foreign] of [[mine, CASE, OTHER_CASE], [theirs, OTHER_CASE, CASE]] as const) {
+    for (const [path, init] of routes(foreign)) {
+      const r = await app(req(path, { ...init, cookie }));
+      assert.equal(r.status, 404, `${path} for the other seller`);
+      assert.equal(((await r.json()) as { error: string }).error, 'UNKNOWN_CASE');
+    }
+    assert.equal((await app(req(`/api/disputes/${own}`, { cookie }))).status, 200, `${own} for its own seller`);
+    const bound = ((await (await app(req('/api/health', { cookie }))).json()) as { bound: string[] }).bound;
+    assert.deepEqual(bound, [own]);
+  }
+});
 
 // ------------------------------------------------------------------------------------------------ Host, Origin, headers
 

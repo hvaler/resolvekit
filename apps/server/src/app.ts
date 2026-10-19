@@ -89,6 +89,11 @@ export interface CostGate {
   live?(req: Request): Promise<boolean>;
   /** Hosted: the PayPal merchant id the person acts for; a send is refused unless it is the dispute's seller. */
   merchant?(req: Request): string | null;
+  /**
+   * Hosted: whether this request's workspace is the seller of this bound case (the case's own dispute as last read,
+   * or remembered for the same case and dispute). Absent (local mode): yes.
+   */
+  seesCase?(req: Request, caseId: string): Promise<boolean>;
   /** Hosted: count `pages` PDF page reads against the address's upload limit, all or none. Absent: not metered. */
   meterPages?(req: Request, pages: number): Reservation;
 }
@@ -373,12 +378,14 @@ export function createApi(opts: ApiOptions): Api {
   /** Whether this request sees the real PayPal disputes (hosted: the seller's workspace only; local: always). */
   const viewerLive = async (req?: Request): Promise<boolean> => !req || !opts.gate?.live || (await opts.gate.live(req));
 
+  /** Hosted: whether the request's workspace is this case's seller (snapshots carry the thread's text). Local: yes. */
+  const sellerOfCase = async (req: Request, caseId: string): Promise<boolean> => !opts.gate?.seesCase || (await opts.gate.seesCase(req, caseId));
   /**
    * Whether this request may address the case at all. Local: any fixture case. Hosted: only a bound case, and only
-   * for the seller's workspace; everything else is UNKNOWN_CASE (three-environments plan, task 2).
+   * for the workspace of that case's own seller; everything else is UNKNOWN_CASE (three-environments plan, task 2).
    */
   const caseVisible = async (req: Request, caseId: string): Promise<boolean> =>
-    Object.hasOwn(CASE_FILES, caseId) && (!opts.gate || (!!bindingOf(caseId) && (await viewerLive(req))));
+    Object.hasOwn(CASE_FILES, caseId) && (!opts.gate || (!!bindingOf(caseId) && (await viewerLive(req)) && (await sellerOfCase(req, caseId))));
 
   /** The seller's PayPal merchant id on each bound dispute, from the last read of it. */
   const sellers = new Map<string, { dispute: string; merchant: string | null; name: string | null }>();
@@ -1184,9 +1191,12 @@ export function createApi(opts: ApiOptions): Api {
     if (path === '/api/demo' && req.method === 'GET') return json(200, { hosted: false });
     if (path === '/api/health' && req.method === 'GET') {
       const h = await checkHealth();
-      // Hosted: the real disputes are listed only to the seller's workspace; everyone else runs them on the simulator.
+      // Hosted: each real dispute is listed only to its own seller's workspace; everyone else runs them on the simulator.
       const live = await viewerLive(req);
-      const bound = h.paypal === 'unconfigured' || !live ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
+      const candidates = h.paypal === 'unconfigured' || !live ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
+      // Per case: only the cases whose seller is this workspace.
+      const bound: string[] = [];
+      for (const k of candidates) if (await sellerOfCase(req, k)) bound.push(k);
       // A store file that could not be read. Local: the stores' names. Hosted (public): only `true`, no names. The reason
       // and where it was kept: the operator's check and the log.
       const names = storageProblems().map((p) => p.store);

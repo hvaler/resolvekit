@@ -172,18 +172,20 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   // `api` is created below with this gate.
   const memory = o.sellerMemory ?? new SellerMemory({ file: null, ...(o.log ? { log: o.log } : {}) });
   let sellers: ReadonlySet<string> = new Set<string>();
+  /** The seller of each bound case: from the fresh read, else remembered for the same case and dispute. */
+  let caseSellers: ReadonlyMap<string, string> = new Map<string, string>();
   let api: ReturnType<typeof createApi>;
   const refreshSellers = async () => {
     const read = await api.sellerRead();
     const effective = new Set<string>();
+    const byCase = new Map<string, string>();
     for (const c of read.cases) {
-      if (c.read) {
-        if (c.merchant) effective.add(c.merchant);
-        continue;
-      }
-      const m = memory.remembered().find((e) => e.caseId === c.caseId && e.dispute === c.dispute);
-      if (m) effective.add(m.merchant);
+      const merchant = c.read ? c.merchant : (memory.remembered().find((e) => e.caseId === c.caseId && e.dispute === c.dispute)?.merchant ?? null);
+      if (!merchant) continue;
+      effective.add(merchant);
+      byCase.set(c.caseId, merchant);
     }
+    caseSellers = byCase;
     if (read.complete) memory.confirm(read.cases.flatMap((c) => (c.merchant ? [{ caseId: c.caseId, dispute: c.dispute, merchant: c.merchant }] : [])));
     sellers = effective;
     return { effective, complete: read.complete, none: read.cases.length === 0 };
@@ -275,6 +277,13 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     merchant(req: Request) {
       const s = session(req);
       return s.ok ? s.workspace.payerId : null;
+    },
+    // Per case: the workspace sees a bound case only when it is that case's seller (unknown seller: nobody).
+    async seesCase(req: Request, caseId: string) {
+      const s = session(req);
+      if (!s.ok) return false;
+      await refreshSellers();
+      return caseSellers.get(caseId) === s.workspace.payerId;
     },
     // Each PDF page read is one unit of the address's upload limit, as a redaction is: all of them or none.
     meterPages(req: Request, pages: number): Reservation {
