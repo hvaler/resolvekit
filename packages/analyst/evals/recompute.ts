@@ -1,0 +1,611 @@
+/**
+ * One recompute over every stored result: reads the files under evals/results/, scores them with the current
+ * metrics (metrics.ts, strict.ts) and writes results/summary.json and results/summary.md. Pure over the files: no
+ * provider, no keys, no network; it never writes anything but the two summary files.
+ *
+ *   npm run evals:recompute
+ *
+ * Every file is classified explicitly (ruling B2): the development headline (prompt PROMPT_VERSION, one per provider),
+ * history (earlier prompts), experiments (the `nodetect` ablation and the EV-19 multi-run file
+ * upl-carrier-evidence-runs.json, which the brief called `development.uploadRuns`), held-out attempts
+ * (heldout/<provider>/<case>/<run>.json) and held-out ledgers (heldout/<provider>/budget.json). Anything else is
+ * `unclassified`: listed, never aggregated. A file that cannot be parsed or lacks what its class needs is `unreadable`;
+ * two files with the same bytes, or two attempts for the same provider+case+run, are `duplicates`. All of these are
+ * listed with their reason and left out of every aggregate, never silently and never by picking one.
+ *
+ * Usage per source: development files from the usage stored in their analyses (observed; a failed result stored no
+ * usage, counted as unrecorded), at the list price for Gemini; Groq ran on its free tier, so no cost is given for it.
+ * Held-out attempts and ledgers carry the runner's own observed / estimated / unknown split, reported as stored.
+ *
+ * Held-out scoring (labels, forbidden outcomes, twin pairing) is Task 5: `scoreHeldOut` returns null until then and
+ * the held-out section reports the attempt accounting. The common subset compares providers only on the case+run
+ * pairs where both have an ok attempt.
+ *
+ * Output is deterministic: rows sorted, object keys sorted, no timestamps, so two recomputes give the same bytes.
+ */
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { PROMPT_VERSION } from '../src/prompts.ts';
+import type { CaseAnalysis } from '../src/types.ts';
+import { BUDGET_NOTE, LIST_PRICE, type Ledger } from './budget.ts';
+import { CASES, type EvalCase } from './cases.ts';
+import { HELD_OUT_CASES } from './heldout/cases.ts';
+import type { HeldOutCase } from './heldout/schema.ts';
+import { computeMetrics, metricsTable, type CaseResult, type Metrics, type Ratio } from './metrics.ts';
+import type { Attempt, Provider } from './runs.ts';
+import type { NotEvaluableReason } from './strict.ts';
+
+const PROVIDERS: Provider[] = ['gemini', 'groq'];
+const STATUSES: Attempt['status'][] = ['ok', 'provider_error', 'product_error', 'budget_stopped'];
+/** Written by recompute itself: never read as an input. */
+const OUTPUTS = ['summary.json', 'summary.md'];
+const UPLOAD_RUNS_FILE = 'upl-carrier-evidence-runs.json';
+
+export type FileClass =
+  | 'development-headline'
+  | 'development-history'
+  | 'experiment-ablation'
+  | 'experiment-upload-runs'
+  | 'heldout-attempt'
+  | 'heldout-ledger'
+  | 'unclassified';
+
+export interface StrictSummary {
+  coverage: Ratio;
+  hits: Ratio;
+  notEvaluableByReason: Partial<Record<NotEvaluableReason, number>>;
+}
+
+export interface MetricsRow {
+  label: string;
+  /** The stored file the row is computed from. */
+  file: string;
+  promptVersion: string;
+  provider: string;
+  /** Distinct cases in the row's results (ran or failed). */
+  cases: number;
+  runs: number;
+  /** The strict contradiction result: coverage and hits apart, not evaluable by reason. */
+  strict: StrictSummary;
+  /** The file's own stored metrics against this recompute (the pair metric, notes, citations, usage): absent in older files. */
+  storedMetrics: 'match' | 'differs' | 'absent';
+  metrics: Metrics;
+}
+
+export type StatusCounts = Record<Attempt['status'], number>;
+
+export interface HeldOutUsage {
+  calls: number;
+  httpAttempts: number;
+  refused: number;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
+  observedUsd: number;
+  estimatedUsd: number;
+  unknownUsd: number;
+  costUsdAtListPrice: number;
+}
+
+/** What Task 5 adds to each provider's held-out row (labels, forbidden outcomes, twin pairing); null until then. */
+export interface HeldOutScoring {
+  perRun: MetricsRow[];
+  spread: Record<string, { min: number; median: number; max: number }>;
+  notEvaluable: Partial<Record<string, number>>;
+  injectionPairs: unknown;
+  labelChecks: unknown;
+}
+
+export interface HeldOutRow {
+  /** Attempt files aggregated (readable, classified, not duplicated). */
+  files: number;
+  /** Attempt files of this provider left out: unreadable or duplicated. */
+  excluded: number;
+  attempts: StatusCounts;
+  byRun: Array<{ run: number; attempts: StatusCounts }>;
+  byCase: Array<{ case: string; attempts: StatusCounts }>;
+  /** Attempts for a case the held-out set does not define: counted above, never scored. */
+  unknownCases: string[];
+  stamps: { codeCommits: string[]; freezeCommits: string[]; promptVersions: string[]; requestedModels: string[]; returnedModels: string[] };
+  usage: HeldOutUsage;
+  ledger: Ledger | null;
+  scoring: HeldOutScoring | null;
+}
+
+export interface UsageRow {
+  source: string;
+  kind: 'development' | 'experiment' | 'held-out attempts' | 'held-out ledger';
+  provider: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
+  /** Null where the source has no such split (development files store observed usage only). */
+  observedUsd: number | null;
+  estimatedUsd: number | null;
+  unknownUsd: number | null;
+  costUsdAtListPrice: number | null;
+  /** Failed results that stored no usage (development files). */
+  unrecordedAttempts: number;
+  basis: string;
+}
+
+export interface Summary {
+  /** Every file read, sorted (paths relative to the results directory). */
+  generatedFrom: string[];
+  files: Array<{ file: string; class: FileClass }>;
+  unclassified: string[];
+  unreadable: Array<{ file: string; reason: string }>;
+  duplicates: Array<{ reason: 'same attempt' | 'same content'; key: string; files: string[] }>;
+  development: { headline: Record<Provider, MetricsRow | null>; history: MetricsRow[] };
+  /** The `nodetect` ablation and the EV-19 multi-run file (the brief's `development.uploadRuns`, placed here per B2). */
+  experiments: { ablation: MetricsRow[]; uploadRuns: MetricsRow[] };
+  heldOut: Record<Provider, HeldOutRow> & { commonSubset: { cases: string[]; pairs: string[]; gemini: MetricsRow; groq: MetricsRow } | null };
+  usage: UsageRow[];
+}
+
+export interface RecomputeOptions {
+  devCases?: readonly EvalCase[];
+  heldOutCases?: readonly HeldOutCase[];
+}
+
+const DEV_FILE = /^(gemini|groq)(-nodetect)?-(rk-analyst-[\d-]+\.\d+)\.json$/;
+const ATTEMPT_FILE = /^heldout\/(gemini|groq)\/([^/]+)\/(\d+)\.json$/;
+const LEDGER_FILE = /^heldout\/(gemini|groq)\/budget\.json$/;
+
+/** The prompt's revision number (`rk-analyst-2026-10-09.7` → 7), to order versions. */
+const revision = (v: string) => Number(/\.(\d+)$/.exec(v)?.[1] ?? NaN);
+const datePart = (v: string) => v.replace(/\.\d+$/, '');
+
+export function classify(file: string): FileClass {
+  if (file === UPLOAD_RUNS_FILE) return 'experiment-upload-runs';
+  const d = DEV_FILE.exec(file);
+  if (d) {
+    const v = d[3]!;
+    if (d[2]) return 'experiment-ablation';
+    if (v === PROMPT_VERSION) return 'development-headline';
+    if (datePart(v) === datePart(PROMPT_VERSION) && revision(v) < revision(PROMPT_VERSION)) return 'development-history';
+    return 'unclassified';
+  }
+  if (ATTEMPT_FILE.test(file)) return 'heldout-attempt';
+  if (LEDGER_FILE.test(file)) return 'heldout-ledger';
+  return 'unclassified';
+}
+
+function listFiles(root: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string) => {
+    for (const f of readdirSync(d)) {
+      const p = join(d, f);
+      if (statSync(p).isDirectory()) walk(p);
+      else out.push(relative(root, p).split(sep).join('/'));
+    }
+  };
+  if (existsSync(root)) walk(root);
+  return out.filter((f) => !OUTPUTS.includes(f)).sort();
+}
+
+class Unreadable extends Error {}
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+/** Throws Unreadable naming the first missing or malformed field. */
+function need(ok: boolean, what: string) {
+  if (!ok) throw new Unreadable(`incomplete: ${what}`);
+}
+
+const zeroCounts = (): StatusCounts => ({ ok: 0, provider_error: 0, product_error: 0, budget_stopped: 0 });
+const uniq = (xs: string[]) => [...new Set(xs)].sort();
+
+function strictOf(m: Metrics): StrictSummary {
+  const by: Partial<Record<NotEvaluableReason, number>> = {};
+  for (const x of m.strictContradictions.notEvaluable) by[x.reason] = (by[x.reason] ?? 0) + 1;
+  return { coverage: m.strictContradictions.coverage, hits: m.strictContradictions.hits, notEvaluableByReason: by };
+}
+
+/** The fields an older metrics block also has, compared with this recompute. */
+const COMPARED = ['citationValidity', 'baitRejected', 'baitNotSent', 'falseRejection', 'trueNotesSupported', 'contradictionRecall', 'usage'] as const;
+function compareStored(storedMetrics: unknown, m: Metrics): MetricsRow['storedMetrics'] {
+  if (!isObj(storedMetrics)) return 'absent';
+  return COMPARED.every((k) => JSON.stringify(storedMetrics[k]) === JSON.stringify(m[k])) ? 'match' : 'differs';
+}
+
+function row(o: { label: string; file: string; promptVersion: string; provider: string; runs: number; cases: readonly EvalCase[]; results: CaseResult[]; stored?: unknown }): MetricsRow {
+  const metrics = computeMetrics(o.cases, o.results);
+  return {
+    label: o.label,
+    file: o.file,
+    promptVersion: o.promptVersion,
+    provider: o.provider,
+    cases: new Set(o.results.map((r) => r.name.replace(/#\d+$/, ''))).size,
+    runs: o.runs,
+    strict: strictOf(metrics),
+    storedMetrics: o.stored === undefined ? 'absent' : compareStored(o.stored, metrics),
+    metrics,
+  };
+}
+
+/** Each case once per run, renamed `<case>#<run>` (its clean twin too, so run i is paired with twin run i). */
+function perRunCases<C extends EvalCase>(cases: readonly C[], runs: readonly number[]): C[] {
+  return runs.flatMap((r) =>
+    cases.map((c) => ({ ...c, name: `${c.name}#${r}`, ...(c.injection ? { injection: { ...c.injection, cleanTwin: `${c.injection.cleanTwin}#${r}` } } : {}) })),
+  );
+}
+
+const usd = (inputTokens: number, outputTokens: number, thinkingTokens: number) => (inputTokens * LIST_PRICE.inputPerM + (outputTokens + thinkingTokens) * LIST_PRICE.outputPerM) / 1e6;
+
+function devUsage(source: string, kind: UsageRow['kind'], provider: string, results: CaseResult[]): UsageRow {
+  const u = { calls: 0, inputTokens: 0, outputTokens: 0, thinkingTokens: 0 };
+  for (const r of results) {
+    if (!r.analysis) continue;
+    u.calls += r.analysis.usage.calls.length;
+    u.inputTokens += r.analysis.usage.inputTokens;
+    u.outputTokens += r.analysis.usage.outputTokens;
+    u.thinkingTokens += r.analysis.usage.thinkingTokens;
+  }
+  const priced = provider === 'gemini';
+  const cost = priced ? usd(u.inputTokens, u.outputTokens, u.thinkingTokens) : null;
+  return {
+    source,
+    kind,
+    provider,
+    ...u,
+    observedUsd: cost,
+    estimatedUsd: null,
+    unknownUsd: null,
+    costUsdAtListPrice: cost,
+    unrecordedAttempts: results.filter((r) => !r.analysis).length,
+    basis: priced
+      ? `usage stored in the analyses (observed) at ${LIST_PRICE.inputPerM} / ${LIST_PRICE.outputPerM} USD per 1M input / output tokens, thinking billed as output; failed results stored no usage`
+      : 'usage stored in the analyses (observed); Groq ran on its free tier, so no cost is stated; failed results stored no usage',
+  };
+}
+
+function readDevFile(text: string, file: string, provider: string, version: string): { provider: string; promptVersion: string; results: CaseResult[]; metrics?: unknown } {
+  const j: unknown = JSON.parse(text);
+  need(isObj(j), 'not an object');
+  const o = j as Record<string, unknown>;
+  need(o.provider === provider, `provider (the name says ${provider})`);
+  need(o.promptVersion === version, `promptVersion (the name says ${version})`);
+  need(Array.isArray(o.results), 'results');
+  for (const r of o.results as unknown[]) need(isObj(r) && typeof r.name === 'string' && (isObj(r.analysis) || typeof r.error === 'string'), `results entry in ${file}`);
+  return o as never;
+}
+
+function readUploadRuns(text: string): { case: string; promptVersion: string; runs: Array<{ provider: string; run: number; result: CaseResult }> } {
+  const j: unknown = JSON.parse(text);
+  need(isObj(j) && typeof j.case === 'string' && typeof j.promptVersion === 'string' && Array.isArray(j.runs), 'case, promptVersion, runs');
+  for (const r of (j as { runs: unknown[] }).runs)
+    need(isObj(r) && PROVIDERS.includes(r.provider as Provider) && Number.isInteger(r.run) && isObj(r.result) && (r.result as { name?: unknown }).name === (j as { case: string }).case, 'runs entry');
+  return j as never;
+}
+
+function readAttempt(text: string, m: RegExpExecArray): Attempt {
+  const j: unknown = JSON.parse(text);
+  need(isObj(j), 'not an object');
+  const a = j as Record<string, unknown>;
+  need(PROVIDERS.includes(a.provider as Provider), 'provider');
+  need(typeof a.case === 'string', 'case');
+  need(Number.isInteger(a.run) && (a.run as number) >= 1, 'run');
+  need(STATUSES.includes(a.status as Attempt['status']), 'status');
+  need(isObj(a.stamp) && typeof a.stamp.freezeCommit === 'string' && typeof a.stamp.promptVersion === 'string', 'stamp');
+  const u = a.usage;
+  need(isObj(u) && ['calls', 'httpAttempts', 'refused', 'inputTokens', 'outputTokens', 'thinkingTokens', 'observedUsd', 'unknownUsd', 'estimatedUsd', 'costUsdAtListPrice'].every((k) => isNum(u[k])), 'usage');
+  need(a.status !== 'ok' || isObj(a.analysis), 'analysis (status ok)');
+  if (a.provider !== m[1] || a.case !== m[2] || a.run !== Number(m[3])) throw new Unreadable(`its content (${a.provider}/${a.case}/${a.run}) disagrees with its path`);
+  return a as unknown as Attempt;
+}
+
+function readLedger(text: string, provider: string): Ledger {
+  const j: unknown = JSON.parse(text);
+  need(isObj(j), 'not an object');
+  const l = j as Record<string, unknown>;
+  need(l.provider === provider, `provider (the path says ${provider})`);
+  need(['limitUsd', 'observedUsd', 'estimatedUsd', 'unknownUsd', 'checks', 'refusals'].every((k) => isNum(l[k])), 'limitUsd, observedUsd, estimatedUsd, unknownUsd, checks, refusals');
+  return l as unknown as Ledger;
+}
+
+/**
+ * Held-out scoring for one provider: labels, forbidden outcomes, twin pairing (Task 5). Until then null, and the
+ * held-out row carries the attempt accounting only. Task 5 fills it from the ok attempts (scored per run with
+ * `perRunCases`, so run i pairs with twin run i) and every case × run of the frozen set (missing attempts reported).
+ */
+export function scoreHeldOut(_cases: readonly HeldOutCase[], _attempts: readonly Attempt[], _runs: number): HeldOutScoring | null {
+  return null;
+}
+
+function heldOutRow(attempts: Attempt[], excluded: number, ledger: Ledger | null, cases: readonly HeldOutCase[]): HeldOutRow {
+  const counts = zeroCounts();
+  const runs = new Map<number, StatusCounts>();
+  const byCase = new Map<string, StatusCounts>();
+  const usage: HeldOutUsage = { calls: 0, httpAttempts: 0, refused: 0, inputTokens: 0, outputTokens: 0, thinkingTokens: 0, observedUsd: 0, estimatedUsd: 0, unknownUsd: 0, costUsdAtListPrice: 0 };
+  for (const a of attempts) {
+    counts[a.status]++;
+    if (!runs.has(a.run)) runs.set(a.run, zeroCounts());
+    runs.get(a.run)![a.status]++;
+    if (!byCase.has(a.case)) byCase.set(a.case, zeroCounts());
+    byCase.get(a.case)![a.status]++;
+    for (const k of Object.keys(usage) as Array<keyof HeldOutUsage>) usage[k] += a.usage[k];
+  }
+  const known = new Set(cases.map((c) => c.name));
+  return {
+    files: attempts.length,
+    excluded,
+    attempts: counts,
+    byRun: [...runs].sort(([x], [y]) => x - y).map(([run, attempts]) => ({ run, attempts })),
+    byCase: [...byCase].sort(([x], [y]) => (x < y ? -1 : 1)).map(([c, attempts]) => ({ case: c, attempts })),
+    unknownCases: uniq(attempts.filter((a) => !known.has(a.case)).map((a) => a.case)),
+    stamps: {
+      codeCommits: uniq(attempts.map((a) => a.stamp.codeCommit)),
+      freezeCommits: uniq(attempts.map((a) => a.stamp.freezeCommit)),
+      promptVersions: uniq(attempts.map((a) => a.stamp.promptVersion)),
+      requestedModels: uniq(attempts.map((a) => a.stamp.requestedModel)),
+      returnedModels: uniq(attempts.flatMap((a) => a.stamp.returnedModels ?? [])),
+    },
+    usage,
+    ledger,
+    scoring: scoreHeldOut(cases, attempts, Math.max(0, ...attempts.map((a) => a.run))),
+  };
+}
+
+/** The case+run pairs where both providers have an ok attempt of a case the held-out set defines; null when none. */
+function commonSubset(attempts: Record<Provider, Attempt[]>, cases: readonly HeldOutCase[]): Summary['heldOut']['commonSubset'] {
+  const known = new Map(cases.map((c) => [c.name, c]));
+  const ok = (p: Provider) => new Map(attempts[p].filter((a) => a.status === 'ok' && known.has(a.case)).map((a) => [`${a.case}#${a.run}`, a]));
+  const g = ok('gemini');
+  const q = ok('groq');
+  const pairs = [...g.keys()].filter((k) => q.has(k)).sort();
+  if (!pairs.length) return null;
+  const sub = pairs.map((k) => {
+    const [name, run] = k.split('#') as [string, string];
+    return { k, c: known.get(name)!, run: Number(run) };
+  });
+  const subCases = sub.map((s) => perRunCases([s.c], [s.run])[0]!);
+  const side = (p: Provider, m: Map<string, Attempt>) =>
+    row({
+      label: `held-out common subset, ${p}`,
+      file: `heldout/${p}`,
+      promptVersion: uniq(pairs.map((k) => m.get(k)!.stamp.promptVersion)).join(', '),
+      provider: p,
+      runs: new Set(sub.map((s) => s.run)).size,
+      cases: subCases,
+      results: pairs.map((k) => ({ name: k, analysis: m.get(k)!.analysis as CaseAnalysis })),
+    });
+  return { cases: uniq(sub.map((s) => s.c.name)), pairs, gemini: side('gemini', g), groq: side('groq', q) };
+}
+
+export function recompute(resultsDir: string, o: RecomputeOptions = {}): Summary {
+  const devCases = o.devCases ?? CASES;
+  const heldOutCases = o.heldOutCases ?? HELD_OUT_CASES;
+  const all = listFiles(resultsDir);
+  const files = all.map((file) => ({ file, class: classify(file) }));
+  const unreadable: Summary['unreadable'] = [];
+  const duplicates: Summary['duplicates'] = [];
+  const excluded = new Set<string>();
+
+  // Same bytes under two names: every copy is left out (which one is right cannot be told from the files).
+  const byHash = new Map<string, string[]>();
+  const texts = new Map<string, string>();
+  for (const { file, class: cls } of files) {
+    if (cls === 'unclassified') continue;
+    const bytes = readFileSync(join(resultsDir, file));
+    texts.set(file, bytes.toString('utf8'));
+    const h = createHash('sha256').update(bytes).digest('hex');
+    byHash.set(h, [...(byHash.get(h) ?? []), file]);
+  }
+  for (const [h, fs] of [...byHash].sort(([x], [y]) => (x < y ? -1 : 1))) {
+    if (fs.length < 2) continue;
+    duplicates.push({ reason: 'same content', key: `sha256 ${h.slice(0, 16)}`, files: fs.sort() });
+    fs.forEach((f) => excluded.add(f));
+  }
+
+  /** Parses a file with its reader; an unreadable one is listed with its reason and left out. */
+  const parse = <T>(file: string, read: (text: string) => T): T | null => {
+    if (excluded.has(file)) return null;
+    try {
+      return read(texts.get(file)!);
+    } catch (e) {
+      const reason = e instanceof Unreadable ? e.message : e instanceof SyntaxError ? `not valid JSON (${e.message})` : `could not be read (${e instanceof Error ? e.message : String(e)})`;
+      unreadable.push({ file, reason });
+      excluded.add(file);
+      return null;
+    }
+  };
+  /** A metrics row; a file whose analyses cannot be scored is unreadable, never a crash. */
+  const scored = (file: string, make: () => MetricsRow): MetricsRow | null => {
+    try {
+      return make();
+    } catch (e) {
+      unreadable.push({ file, reason: `could not be scored (${e instanceof Error ? e.message : String(e)})` });
+      excluded.add(file);
+      return null;
+    }
+  };
+
+  const headline: Record<Provider, MetricsRow | null> = { gemini: null, groq: null };
+  const history: MetricsRow[] = [];
+  const ablation: MetricsRow[] = [];
+  const uploadRuns: MetricsRow[] = [];
+  const usage: UsageRow[] = [];
+  const attempts: Record<Provider, Array<{ file: string; a: Attempt }>> = { gemini: [], groq: [] };
+  const ledgers: Record<Provider, Ledger | null> = { gemini: null, groq: null };
+
+  for (const { file, class: cls } of files) {
+    if (cls === 'development-headline' || cls === 'development-history' || cls === 'experiment-ablation') {
+      const [, provider, nodetect, version] = DEV_FILE.exec(file)!;
+      const d = parse(file, (t) => readDevFile(t, file, provider!, version!));
+      if (!d) continue;
+      const label = `${provider} ${version}${nodetect ? ' (detection ignored)' : ''}`;
+      const r = scored(file, () => row({ label, file, promptVersion: version!, provider: provider!, runs: 1, cases: devCases, results: d.results, stored: d.metrics ?? undefined }));
+      if (!r) continue;
+      if (cls === 'development-headline') headline[provider as Provider] = r;
+      else (cls === 'development-history' ? history : ablation).push(r);
+      usage.push(devUsage(file, cls === 'experiment-ablation' ? 'experiment' : 'development', provider!, d.results));
+    } else if (cls === 'experiment-upload-runs') {
+      const d = parse(file, readUploadRuns);
+      if (!d) continue;
+      const kase = devCases.find((c) => c.name === d.case);
+      if (!kase) {
+        unreadable.push({ file, reason: `incomplete: case ${d.case} is not in the development set` });
+        excluded.add(file);
+        continue;
+      }
+      const rows: MetricsRow[] = [];
+      for (const p of PROVIDERS) {
+        const mine = d.runs.filter((r) => r.provider === p).sort((x, y) => x.run - y.run);
+        if (!mine.length) continue;
+        for (const r of mine)
+          rows.push(...[scored(file, () => row({ label: `${d.case} ${p} run ${r.run}`, file, promptVersion: d.promptVersion, provider: p, runs: 1, cases: [kase], results: [r.result] }))].filter((x): x is MetricsRow => !!x));
+        const runs = mine.map((r) => r.run);
+        const all = scored(file, () =>
+          row({ label: `${d.case} ${p}, runs ${runs.join(', ')}`, file, promptVersion: d.promptVersion, provider: p, runs: mine.length, cases: perRunCases([kase], runs), results: mine.map((r) => ({ ...r.result, name: `${r.result.name}#${r.run}` })) }),
+        );
+        if (all) rows.push(all);
+        usage.push(devUsage(`${file} (${p})`, 'experiment', p, mine.map((r) => r.result)));
+      }
+      if (!excluded.has(file)) uploadRuns.push(...rows);
+    } else if (cls === 'heldout-attempt') {
+      const m = ATTEMPT_FILE.exec(file)!;
+      const a = parse(file, (t) => readAttempt(t, m));
+      if (a) attempts[a.provider].push({ file, a });
+    } else if (cls === 'heldout-ledger') {
+      const p = LEDGER_FILE.exec(file)![1] as Provider;
+      ledgers[p] = parse(file, (t) => readLedger(t, p));
+    }
+  }
+
+  // The same provider+case+run in two files (e.g. 1.json and 01.json): every one of them is left out, none is picked.
+  const heldOut = {} as Summary['heldOut'];
+  const kept: Record<Provider, Attempt[]> = { gemini: [], groq: [] };
+  for (const p of PROVIDERS) {
+    const byKey = new Map<string, string[]>();
+    for (const { file, a } of attempts[p]) byKey.set(`${a.provider}/${a.case}/${a.run}`, [...(byKey.get(`${a.provider}/${a.case}/${a.run}`) ?? []), file]);
+    for (const [key, fs] of [...byKey].sort(([x], [y]) => (x < y ? -1 : 1))) {
+      if (fs.length < 2) continue;
+      duplicates.push({ reason: 'same attempt', key, files: fs.sort() });
+      fs.forEach((f) => excluded.add(f));
+    }
+    kept[p] = attempts[p].filter((x) => !excluded.has(x.file)).map((x) => x.a);
+    const out = [...excluded].filter((f) => ATTEMPT_FILE.exec(f)?.[1] === p).length;
+    heldOut[p] = heldOutRow(kept[p], out, ledgers[p], heldOutCases);
+    if (attempts[p].length || out) {
+      const u = heldOut[p].usage;
+      usage.push({ source: `heldout/${p} attempts`, kind: 'held-out attempts', provider: p, calls: u.calls, inputTokens: u.inputTokens, outputTokens: u.outputTokens, thinkingTokens: u.thinkingTokens, observedUsd: u.observedUsd, estimatedUsd: u.estimatedUsd, unknownUsd: u.unknownUsd, costUsdAtListPrice: u.costUsdAtListPrice, unrecordedAttempts: 0, basis: `the runner's per-attempt record at list price (observed + unknown). ${BUDGET_NOTE}` });
+    }
+    const l = ledgers[p];
+    if (l)
+      usage.push({ source: `heldout/${p}/budget.json`, kind: 'held-out ledger', provider: p, calls: l.checks - l.refusals, inputTokens: 0, outputTokens: 0, thinkingTokens: 0, observedUsd: l.observedUsd, estimatedUsd: l.estimatedUsd, unknownUsd: l.unknownUsd, costUsdAtListPrice: l.observedUsd + l.estimatedUsd + l.unknownUsd, unrecordedAttempts: 0, basis: `the batch ledger: HTTP attempts checked by the guard (calls = checks − refusals), tokens not kept there. ${BUDGET_NOTE}` });
+  }
+  heldOut.commonSubset = commonSubset(kept, heldOutCases);
+
+  const byLabel = (x: MetricsRow, y: MetricsRow) => (x.label < y.label ? -1 : x.label > y.label ? 1 : 0);
+  const byFileThenLabel = (x: MetricsRow, y: MetricsRow) => (x.provider < y.provider ? -1 : x.provider > y.provider ? 1 : revision(x.promptVersion) - revision(y.promptVersion) || byLabel(x, y));
+  return {
+    generatedFrom: all,
+    files,
+    unclassified: files.filter((f) => f.class === 'unclassified').map((f) => f.file),
+    unreadable: unreadable.sort((x, y) => (x.file < y.file ? -1 : 1)),
+    duplicates: duplicates.sort((x, y) => (x.files[0]! < y.files[0]! ? -1 : 1)),
+    development: { headline, history: history.sort(byFileThenLabel) },
+    experiments: { ablation: ablation.sort(byFileThenLabel), uploadRuns: uploadRuns.sort((x, y) => (x.provider < y.provider ? -1 : x.provider > y.provider ? 1 : x.runs - y.runs || byLabel(x, y))) },
+    heldOut,
+    usage: usage.sort((x, y) => (x.source < y.source ? -1 : 1)),
+  };
+}
+
+/** JSON with every object's keys sorted, so the bytes depend on the content only. */
+export function serializeSummary(s: Summary): string {
+  const sort = (v: unknown): unknown => (Array.isArray(v) ? v.map(sort) : isObj(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sort(v[k])])) : v);
+  return JSON.stringify(sort(s), null, 2) + '\n';
+}
+
+const pct = (r: Ratio) => (r.rate == null ? '—' : `${(r.rate * 100).toFixed(0)}% (${r.n}/${r.of})`);
+const money = (v: number | null) => (v == null ? '—' : v.toFixed(4));
+const reasons = (s: StrictSummary) =>
+  Object.entries(s.notEvaluableByReason)
+    .sort(([x], [y]) => (x < y ? -1 : 1))
+    .map(([k, n]) => `${k} ${n}`)
+    .join(', ') || 'none';
+const strictLine = (s: StrictSummary) => `coverage ${pct(s.coverage)} · hits ${pct(s.hits)} · not evaluable: ${reasons(s)}`;
+const counts = (c: StatusCounts) => STATUSES.map((k) => `${k} ${c[k]}`).join(' · ');
+
+function rowsTable(rows: MetricsRow[], uploads = false): string[] {
+  if (!rows.length) return ['None stored.'];
+  const head = ['Row', 'Cases', 'Runs', 'Citation validity', 'Bait rejected', 'Kept out', 'False rejection', 'True notes supported', 'Contradiction recall (pair)', 'Strict coverage', 'Strict hits', 'Not evaluable', ...(uploads ? ['Upload citations valid', 'Required facts cited'] : []), 'Stored metrics'];
+  return [
+    `| ${head.join(' | ')} |`,
+    `|${head.map(() => '---').join('|')}|`,
+    ...rows.map((r) => {
+      const m = r.metrics;
+      const up = uploads ? [m.uploads ? pct(m.uploads.uploadCitationsValid) : '—', m.uploads ? pct(m.uploads.requiredCited) : '—'] : [];
+      return `| ${[r.label, r.cases, r.runs, pct(m.citationValidity), pct(m.baitRejected), pct(m.baitNotSent), pct(m.falseRejection), pct(m.trueNotesSupported), pct(m.contradictionRecall), pct(r.strict.coverage), pct(r.strict.hits), reasons(r.strict), ...up, r.storedMetrics].join(' | ')} |`;
+    }),
+  ];
+}
+
+/** The tables docs/evals.md quotes. */
+export function summaryMarkdown(s: Summary): string {
+  const out: string[] = ['# Eval summary', '', 'Generated by `npm run evals:recompute` from the stored results (no model called). Do not edit by hand.', ''];
+  const byClass = new Map<FileClass, number>();
+  for (const f of s.files) byClass.set(f.class, (byClass.get(f.class) ?? 0) + 1);
+  out.push('## Files', '', '| Class | Files |', '|---|---|', ...[...byClass].sort(([x], [y]) => (x < y ? -1 : 1)).map(([c, n]) => `| ${c} | ${n} |`), '');
+  out.push(`Unreadable files (${s.unreadable.length}), left out of every aggregate:`, '', ...(s.unreadable.length ? s.unreadable.map((u) => `- \`${u.file}\`: ${u.reason}`) : ['- none']), '');
+  out.push(`Duplicates (${s.duplicates.length}), every copy left out:`, '', ...(s.duplicates.length ? s.duplicates.map((d) => `- ${d.reason} (${d.key}): ${d.files.map((f) => `\`${f}\``).join(', ')}`) : ['- none']), '');
+  out.push(`Unclassified files (${s.unclassified.length}), never aggregated:`, '', ...(s.unclassified.length ? s.unclassified.map((f) => `- \`${f}\``) : ['- none']), '');
+
+  out.push(`## Development headline (prompt \`${PROMPT_VERSION}\`)`, '');
+  for (const p of PROVIDERS) {
+    const r = s.development.headline[p];
+    out.push(`### ${p}`, '');
+    if (!r) {
+      out.push('No stored file.', '');
+      continue;
+    }
+    out.push(`\`${r.file}\` · ${r.metrics.cases.ran} cases ran, ${r.metrics.cases.failed.length} failed · stored metrics: ${r.storedMetrics}`, '');
+    out.push(metricsTable(r.metrics), `| Strict contradictions (field, both values, verbatim quotes) | ${strictLine(r.strict)} |`, '');
+  }
+  out.push('## Development history (earlier prompts)', '', ...rowsTable(s.development.history), '');
+  out.push('## Experiments', '', '### Ablation: detection ignored', '', ...rowsTable(s.experiments.ablation), '');
+  out.push('### Upload case, repeated runs (EV-19, `upl-carrier-evidence-runs.json`)', '', ...rowsTable(s.experiments.uploadRuns, true), '');
+
+  out.push('## Held-out attempts', '', 'Held-out scoring (labels, forbidden outcomes, twin pairing) is not computed yet; this is the attempt accounting.', '');
+  for (const p of PROVIDERS) {
+    const h = s.heldOut[p];
+    out.push(`### ${p}`, '', `${h.files} attempt files · ${counts(h.attempts)} · ${h.excluded} excluded (unreadable or duplicated)`, '');
+    if (h.byRun.length) out.push('| Run | Attempts |', '|---|---|', ...h.byRun.map((r) => `| ${r.run} | ${counts(r.attempts)} |`), '');
+    if (h.unknownCases.length) out.push(`Attempts for cases not in the held-out set (not scored): ${h.unknownCases.join(', ')}`, '');
+    if (h.files) out.push(`Usage from the attempts: ${h.usage.calls} calls (${h.usage.httpAttempts} HTTP attempts, ${h.usage.refused} refused) · observed ${money(h.usage.observedUsd)} · estimated ${money(h.usage.estimatedUsd)} · unknown ${money(h.usage.unknownUsd)} USD at list price`, '');
+    if (h.ledger) out.push(`Ledger: limit ${money(h.ledger.limitUsd)} · observed ${money(h.ledger.observedUsd)} · estimated ${money(h.ledger.estimatedUsd)} · unknown ${money(h.ledger.unknownUsd)} USD · ${h.ledger.checks} checks, ${h.ledger.refusals} refused, ${h.ledger.exceeded ?? 0} exceeded · stopped ${h.ledger.stopped ? 'yes' : 'no'}`, '');
+  }
+  const c = s.heldOut.commonSubset;
+  out.push('### Common subset (case+run pairs where both providers have an ok attempt)', '');
+  if (c) out.push(`Pairs: ${c.pairs.join(', ')}`, '', ...rowsTable([c.gemini, c.groq]), '');
+  else out.push('None.', '');
+
+  out.push('## Usage by source', '', `List price ${LIST_PRICE.inputPerM} / ${LIST_PRICE.outputPerM} USD per 1M input / output tokens (thinking billed as output). ${BUDGET_NOTE}`, '');
+  out.push('| Source | Kind | Calls | Input | Output | Thinking | Observed USD | Estimated USD | Unknown USD | USD at list price | Unrecorded attempts |', '|---|---|---|---|---|---|---|---|---|---|---|');
+  for (const u of s.usage) out.push(`| \`${u.source}\` | ${u.kind} | ${u.calls} | ${u.inputTokens} | ${u.outputTokens} | ${u.thinkingTokens} | ${money(u.observedUsd)} | ${money(u.estimatedUsd)} | ${money(u.unknownUsd)} | ${money(u.costUsdAtListPrice)} | ${u.unrecordedAttempts} |`);
+  out.push('', ...[...new Set(s.usage.map((u) => u.basis))].sort().map((b) => `- ${b}`), '');
+  return out.join('\n');
+}
+
+export const RESULTS_ROOT = fileURLToPath(new URL('./results/', import.meta.url));
+
+/** Recomputes and writes results/summary.json and results/summary.md; nothing else is written. */
+export function writeSummary(resultsDir = RESULTS_ROOT, o: RecomputeOptions = {}): Summary {
+  const s = recompute(resultsDir, o);
+  writeFileSync(join(resultsDir, 'summary.json'), serializeSummary(s));
+  writeFileSync(join(resultsDir, 'summary.md'), summaryMarkdown(s));
+  return s;
+}
+
+export function main() {
+  const s = writeSummary();
+  console.log(`${s.generatedFrom.length} files read · ${s.unreadable.length} unreadable · ${s.duplicates.length} duplicates · ${s.unclassified.length} unclassified → results/summary.json, results/summary.md`);
+  for (const u of s.unreadable) console.log(`  unreadable ${u.file}: ${u.reason}`);
+  for (const d of s.duplicates) console.log(`  duplicate (${d.reason}): ${d.files.join(', ')}`);
+  for (const f of s.unclassified) console.log(`  unclassified ${f}`);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
