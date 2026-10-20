@@ -1,0 +1,717 @@
+{
+  "variant": "evidence:after_escalation",
+  "request": {
+    "method": "POST",
+    "route": "/v1/customer/disputes/PP-R-NDZ-10193597/provide-evidence",
+    "contentType": "multipart/form-data",
+    "parts": [
+      {
+        "name": "input",
+        "type": "application/json",
+        "filename": "input.json",
+        "body": {
+          "evidences": [
+            {
+              "evidence_type": "PROOF_OF_FULFILLMENT",
+              "evidence_info": {
+                "tracking_info": [
+                  {
+                    "carrier_name": "UPS",
+                    "tracking_number": "1Z999AA10123456784"
+                  }
+                ]
+              },
+              "notes": "ResolveKit contract test W-6: shipped with UPS on 7 October, tracking 1Z999AA10123456784."
+            }
+          ]
+        }
+      },
+      {
+        "name": "evidence-file",
+        "type": "image/png",
+        "filename": "tracking.png",
+        "source": "apps/server/test/fixtures/tracking.png"
+      }
+    ],
+    "requestId": "rk-contract-6"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597",
+          "rel": "detail",
+          "method": "GET"
+        }
+      ]
+    }
+  },
+  "sentStartedAt": "2026-10-20T07:08:14.258Z",
+  "before": {
+    "dispute_id": "PP-R-NDZ-10193597",
+    "create_time": "2026-10-19T19:38:19.809Z",
+    "update_time": "2026-10-20T06:20:23.699Z",
+    "disputed_transactions": [
+      {
+        "buyer_transaction_id": "39096069H9062534W",
+        "seller_transaction_id": "05U49788SG521714Y",
+        "create_time": "2026-10-19T19:21:44.000Z",
+        "transaction_status": "HELD",
+        "gross_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "buyer": {},
+        "seller": {
+          "merchant_id": "JWULA7T75ZA4Q"
+        },
+        "items": [
+          {
+            "item_name": "Linen tote, natural",
+            "item_description": "Linen tote, natural",
+            "item_quantity": "1",
+            "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "item_type": "PRODUCT"
+          }
+        ],
+        "seller_protection_eligible": true,
+        "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+      }
+    ],
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "WAITING_FOR_SELLER_RESPONSE",
+    "dispute_amount": {
+      "currency_code": "USD",
+      "value": "7.00"
+    },
+    "dispute_state": "REQUIRED_ACTION",
+    "fund_movements": [
+      {
+        "party": "RECEIVER",
+        "amount": {
+          "currency_code": "USD",
+          "value": "6.43"
+        },
+        "initiated_time": "2026-10-19T19:41:23.000Z",
+        "type": "DEBIT",
+        "reason": "HOLD_PLACED"
+      }
+    ],
+    "dispute_life_cycle_stage": "CHARGEBACK",
+    "dispute_channel": "INTERNAL",
+    "messages": [
+      {
+        "posted_by": "BUYER",
+        "time_posted": "2026-10-19T19:38:19.809Z",
+        "content": "<buyer message, 11 chars>"
+      }
+    ],
+    "extensions": {
+      "buyer_contacted_time": "2026-10-19T19:38:19.313Z"
+    },
+    "evidences": [
+      {
+        "evidence_type": "CREATE",
+        "notes": "<buyer message, 11 chars>",
+        "source": "SUBMITTED_BY_BUYER",
+        "date": "2026-10-19T19:38:19.809Z",
+        "dispute_life_cycle_stage": "INQUIRY"
+      },
+      {
+        "evidence_type": "OTHER",
+        "notes": "ResolveKit contract test W-5: the parcel was shipped with tracking; we ask PayPal to review.",
+        "source": "SUBMITTED_BY_SELLER",
+        "date": "2026-10-20T06:17:41.810Z",
+        "action_info": {
+          "action": "ESCALATE"
+        },
+        "dispute_life_cycle_stage": "INQUIRY"
+      },
+      {
+        "evidence_type": "PROOF_OF_FULFILLMENT",
+        "source": "REQUESTED_FROM_SELLER",
+        "date": "2026-10-20T06:20:23.699Z"
+      },
+      {
+        "evidence_type": "PROOF_OF_REFUND",
+        "source": "REQUESTED_FROM_SELLER",
+        "date": "2026-10-20T06:20:23.699Z"
+      },
+      {
+        "evidence_type": "OTHER",
+        "source": "REQUESTED_FROM_SELLER",
+        "date": "2026-10-20T06:20:23.699Z"
+      }
+    ],
+    "seller_response_due_date": "2026-10-30T22:59:59.000Z",
+    "offer": {
+      "buyer_requested_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      }
+    },
+    "refund_details": {
+      "allowed_refund_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      }
+    },
+    "allowed_response_options": {
+      "accept_claim": {
+        "accept_claim_types": [
+          "REFUND",
+          "PARTIAL_REFUND"
+        ]
+      }
+    },
+    "links": [
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597",
+        "rel": "self",
+        "method": "GET"
+      },
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597/accept-claim",
+        "rel": "accept_claim",
+        "method": "POST"
+      },
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597/provide-evidence",
+        "rel": "provide_evidence",
+        "method": "POST"
+      }
+    ]
+  },
+  "after": [
+    {
+      "at": "0s",
+      "dispute": {
+        "dispute_id": "PP-R-NDZ-10193597",
+        "create_time": "2026-10-19T19:38:19.809Z",
+        "update_time": "2026-10-20T07:08:17.337Z",
+        "disputed_transactions": [
+          {
+            "buyer_transaction_id": "39096069H9062534W",
+            "seller_transaction_id": "05U49788SG521714Y",
+            "create_time": "2026-10-19T19:21:44.000Z",
+            "transaction_status": "HELD",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "7.00"
+            },
+            "buyer": {},
+            "seller": {
+              "merchant_id": "JWULA7T75ZA4Q"
+            },
+            "items": [
+              {
+                "item_name": "Linen tote, natural",
+                "item_description": "Linen tote, natural",
+                "item_quantity": "1",
+                "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                "item_type": "PRODUCT"
+              }
+            ],
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+          }
+        ],
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "UNDER_REVIEW",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "dispute_state": "UNDER_PAYPAL_REVIEW",
+        "fund_movements": [
+          {
+            "party": "RECEIVER",
+            "amount": {
+              "currency_code": "USD",
+              "value": "6.43"
+            },
+            "initiated_time": "2026-10-19T19:41:23.000Z",
+            "type": "DEBIT",
+            "reason": "HOLD_PLACED"
+          }
+        ],
+        "dispute_life_cycle_stage": "CHARGEBACK",
+        "dispute_channel": "INTERNAL",
+        "messages": [
+          {
+            "posted_by": "BUYER",
+            "time_posted": "2026-10-19T19:38:19.809Z",
+            "content": "<buyer message, 11 chars>"
+          }
+        ],
+        "extensions": {
+          "buyer_contacted_time": "2026-10-19T19:38:19.313Z"
+        },
+        "evidences": [
+          {
+            "evidence_type": "CREATE",
+            "notes": "<buyer message, 11 chars>",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": "2026-10-19T19:38:19.809Z",
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "OTHER",
+            "notes": "ResolveKit contract test W-5: the parcel was shipped with tracking; we ask PayPal to review.",
+            "source": "SUBMITTED_BY_SELLER",
+            "date": "2026-10-20T06:17:41.810Z",
+            "action_info": {
+              "action": "ESCALATE"
+            },
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "PROOF_OF_FULFILLMENT",
+            "evidence_info": {
+              "tracking_info": [
+                {
+                  "carrier_name": "UPS",
+                  "tracking_number": "1Z999AA10123456784"
+                }
+              ]
+            },
+            "documents": [
+              {
+                "url": "<document url (needs PayPal auth), redacted>"
+              }
+            ],
+            "notes": "ResolveKit contract test W-6: shipped with UPS on 7 October, tracking 1Z999AA10123456784.",
+            "source": "SUBMITTED_BY_SELLER",
+            "date": "2026-10-20T07:08:17.337Z",
+            "action_info": {
+              "action": "PROVIDE_EVIDENCE"
+            },
+            "dispute_life_cycle_stage": "CHARGEBACK"
+          }
+        ],
+        "offer": {
+          "buyer_requested_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "refund_details": {
+          "allowed_refund_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "links": [
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597",
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597/provide-supporting-info",
+            "rel": "provide_supporting_info",
+            "method": "POST"
+          }
+        ]
+      }
+    },
+    {
+      "at": "30s",
+      "dispute": {
+        "dispute_id": "PP-R-NDZ-10193597",
+        "create_time": "2026-10-19T19:38:19.809Z",
+        "update_time": "2026-10-20T07:08:17.337Z",
+        "disputed_transactions": [
+          {
+            "buyer_transaction_id": "39096069H9062534W",
+            "seller_transaction_id": "05U49788SG521714Y",
+            "create_time": "2026-10-19T19:21:44.000Z",
+            "transaction_status": "HELD",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "7.00"
+            },
+            "buyer": {},
+            "seller": {
+              "merchant_id": "JWULA7T75ZA4Q"
+            },
+            "items": [
+              {
+                "item_name": "Linen tote, natural",
+                "item_description": "Linen tote, natural",
+                "item_quantity": "1",
+                "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                "item_type": "PRODUCT"
+              }
+            ],
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+          }
+        ],
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "UNDER_REVIEW",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "dispute_state": "UNDER_PAYPAL_REVIEW",
+        "fund_movements": [
+          {
+            "party": "RECEIVER",
+            "amount": {
+              "currency_code": "USD",
+              "value": "6.43"
+            },
+            "initiated_time": "2026-10-19T19:41:23.000Z",
+            "type": "DEBIT",
+            "reason": "HOLD_PLACED"
+          }
+        ],
+        "dispute_life_cycle_stage": "CHARGEBACK",
+        "dispute_channel": "INTERNAL",
+        "messages": [
+          {
+            "posted_by": "BUYER",
+            "time_posted": "2026-10-19T19:38:19.809Z",
+            "content": "<buyer message, 11 chars>"
+          }
+        ],
+        "extensions": {
+          "buyer_contacted_time": "2026-10-19T19:38:19.313Z"
+        },
+        "evidences": [
+          {
+            "evidence_type": "CREATE",
+            "notes": "<buyer message, 11 chars>",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": "2026-10-19T19:38:19.809Z",
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "OTHER",
+            "notes": "ResolveKit contract test W-5: the parcel was shipped with tracking; we ask PayPal to review.",
+            "source": "SUBMITTED_BY_SELLER",
+            "date": "2026-10-20T06:17:41.810Z",
+            "action_info": {
+              "action": "ESCALATE"
+            },
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "PROOF_OF_FULFILLMENT",
+            "evidence_info": {
+              "tracking_info": [
+                {
+                  "carrier_name": "UPS",
+                  "tracking_number": "1Z999AA10123456784"
+                }
+              ]
+            },
+            "documents": [
+              {
+                "url": "<document url (needs PayPal auth), redacted>"
+              }
+            ],
+            "notes": "ResolveKit contract test W-6: shipped with UPS on 7 October, tracking 1Z999AA10123456784.",
+            "source": "SUBMITTED_BY_SELLER",
+            "date": "2026-10-20T07:08:17.337Z",
+            "action_info": {
+              "action": "PROVIDE_EVIDENCE"
+            },
+            "dispute_life_cycle_stage": "CHARGEBACK"
+          }
+        ],
+        "offer": {
+          "buyer_requested_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "refund_details": {
+          "allowed_refund_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "links": [
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597",
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597/provide-supporting-info",
+            "rel": "provide_supporting_info",
+            "method": "POST"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2m",
+      "dispute": {
+        "dispute_id": "PP-R-NDZ-10193597",
+        "create_time": "2026-10-19T19:38:19.809Z",
+        "update_time": "2026-10-20T07:08:17.337Z",
+        "disputed_transactions": [
+          {
+            "buyer_transaction_id": "39096069H9062534W",
+            "seller_transaction_id": "05U49788SG521714Y",
+            "create_time": "2026-10-19T19:21:44.000Z",
+            "transaction_status": "HELD",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "7.00"
+            },
+            "buyer": {},
+            "seller": {
+              "merchant_id": "JWULA7T75ZA4Q"
+            },
+            "items": [
+              {
+                "item_name": "Linen tote, natural",
+                "item_description": "Linen tote, natural",
+                "item_quantity": "1",
+                "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                "item_type": "PRODUCT"
+              }
+            ],
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+          }
+        ],
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "UNDER_REVIEW",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "dispute_state": "UNDER_PAYPAL_REVIEW",
+        "fund_movements": [
+          {
+            "party": "RECEIVER",
+            "amount": {
+              "currency_code": "USD",
+              "value": "6.43"
+            },
+            "initiated_time": "2026-10-19T19:41:23.000Z",
+            "type": "DEBIT",
+            "reason": "HOLD_PLACED"
+          }
+        ],
+        "dispute_life_cycle_stage": "CHARGEBACK",
+        "dispute_channel": "INTERNAL",
+        "messages": [
+          {
+            "posted_by": "BUYER",
+            "time_posted": "2026-10-19T19:38:19.809Z",
+            "content": "<buyer message, 11 chars>"
+          }
+        ],
+        "extensions": {
+          "buyer_contacted_time": "2026-10-19T19:38:19.313Z"
+        },
+        "evidences": [
+          {
+            "evidence_type": "CREATE",
+            "notes": "<buyer message, 11 chars>",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": "2026-10-19T19:38:19.809Z",
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "OTHER",
+            "notes": "ResolveKit contract test W-5: the parcel was shipped with tracking; we ask PayPal to review.",
+            "source": "SUBMITTED_BY_SELLER",
+            "date": "2026-10-20T06:17:41.810Z",
+            "action_info": {
+              "action": "ESCALATE"
+            },
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "PROOF_OF_FULFILLMENT",
+            "evidence_info": {
+              "tracking_info": [
+                {
+                  "carrier_name": "UPS",
+                  "tracking_number": "1Z999AA10123456784"
+                }
+              ]
+            },
+            "documents": [
+              {
+                "url": "<document url (needs PayPal auth), redacted>"
+              }
+            ],
+            "notes": "ResolveKit contract test W-6: shipped with UPS on 7 October, tracking 1Z999AA10123456784.",
+            "source": "SUBMITTED_BY_SELLER",
+            "date": "2026-10-20T07:08:17.337Z",
+            "action_info": {
+              "action": "PROVIDE_EVIDENCE"
+            },
+            "dispute_life_cycle_stage": "CHARGEBACK"
+          }
+        ],
+        "offer": {
+          "buyer_requested_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "refund_details": {
+          "allowed_refund_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "links": [
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597",
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597/provide-supporting-info",
+            "rel": "provide_supporting_info",
+            "method": "POST"
+          }
+        ]
+      }
+    },
+    {
+      "at": "10m",
+      "dispute": {
+        "dispute_id": "PP-R-NDZ-10193597",
+        "create_time": "2026-10-19T19:38:19.809Z",
+        "update_time": "2026-10-20T07:08:17.337Z",
+        "disputed_transactions": [
+          {
+            "buyer_transaction_id": "39096069H9062534W",
+            "seller_transaction_id": "05U49788SG521714Y",
+            "create_time": "2026-10-19T19:21:44.000Z",
+            "transaction_status": "HELD",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "7.00"
+            },
+            "buyer": {},
+            "seller": {
+              "merchant_id": "JWULA7T75ZA4Q"
+            },
+            "items": [
+              {
+                "item_name": "Linen tote, natural",
+                "item_description": "Linen tote, natural",
+                "item_quantity": "1",
+                "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                "item_type": "PRODUCT"
+              }
+            ],
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+          }
+        ],
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "UNDER_REVIEW",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "dispute_state": "UNDER_PAYPAL_REVIEW",
+        "fund_movements": [
+          {
+            "party": "RECEIVER",
+            "amount": {
+              "currency_code": "USD",
+              "value": "6.43"
+            },
+            "initiated_time": "2026-10-19T19:41:23.000Z",
+            "type": "DEBIT",
+            "reason": "HOLD_PLACED"
+          }
+        ],
+        "dispute_life_cycle_stage": "CHARGEBACK",
+        "dispute_channel": "INTERNAL",
+        "messages": [
+          {
+            "posted_by": "BUYER",
+            "time_posted": "2026-10-19T19:38:19.809Z",
+            "content": "<buyer message, 11 chars>"
+          }
+        ],
+        "extensions": {
+          "buyer_contacted_time": "2026-10-19T19:38:19.313Z"
+        },
+        "evidences": [
+          {
+            "evidence_type": "CREATE",
+            "notes": "<buyer message, 11 chars>",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": "2026-10-19T19:38:19.809Z",
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "OTHER",
+            "notes": "ResolveKit contract test W-5: the parcel was shipped with tracking; we ask PayPal to review.",
+            "source": "SUBMITTED_BY_SELLER",
+            "date": "2026-10-20T06:17:41.810Z",
+            "action_info": {
+              "action": "ESCALATE"
+            },
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "PROOF_OF_FULFILLMENT",
+            "evidence_info": {
+              "tracking_info": [
+                {
+                  "carrier_name": "UPS",
+                  "tracking_number": "1Z999AA10123456784"
+                }
+              ]
+            },
+            "documents": [
+              {
+                "url": "<document url (needs PayPal auth), redacted>"
+              }
+            ],
+            "notes": "ResolveKit contract test W-6: shipped with UPS on 7 October, tracking 1Z999AA10123456784.",
+            "source": "SUBMITTED_BY_SELLER",
+            "date": "2026-10-20T07:08:17.337Z",
+            "action_info": {
+              "action": "PROVIDE_EVIDENCE"
+            },
+            "dispute_life_cycle_stage": "CHARGEBACK"
+          }
+        ],
+        "offer": {
+          "buyer_requested_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "refund_details": {
+          "allowed_refund_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "links": [
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597",
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-NDZ-10193597/provide-supporting-info",
+            "rel": "provide_supporting_info",
+            "method": "POST"
+          }
+        ]
+      }
+    }
+  ],
+  "notes": "Owner-approved W-6 (20/10/2026 07:08:14Z) on B after W-5 escalation (stage CHARGEBACK, WAITING_FOR_SELLER_RESPONSE): provide-evidence multipart → 200. New evidences[] entry SUBMITTED_BY_SELLER, PROOF_OF_FULFILLMENT, action_info.action PROVIDE_EVIDENCE, one document, date 07:08:17.337Z (≈3.1 s). Each evidences[] entry carries dispute_life_cycle_stage: the W-5 ESCALATE entry INQUIRY, this one CHARGEBACK — the field that ties evidence to a stage. Afterwards UNDER_REVIEW in CHARGEBACK from +0 s to +10 min with links self and provide_supporting_info (not in this delivery); no adjudicate link, no outcome."
+}

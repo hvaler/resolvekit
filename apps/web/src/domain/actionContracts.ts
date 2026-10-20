@@ -166,7 +166,14 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   'make_offer:withdraw': base('make_offer:withdraw', `${REF}disputes-make-offer`, null, null, null, ev('make-offer'), 'PayPal documents no route to withdraw an offer'),
   appeal: base('appeal', `${REF}disputes-appeal`, 'multipart', route('appeal'), null, ev('appeal')),
   'evidence:PROOF_OF_REFUND': base('evidence:PROOF_OF_REFUND', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('proof-of-refund')),
-  'evidence:after_escalation': base('evidence:after_escalation', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('escalate')),
+  // Recorded 20/10/2026 (owner-approved W-6, after W-5): evidence is accepted again in CHARGEBACK; each evidences[]
+  // entry carries `dispute_life_cycle_stage` (the escalation's INQUIRY, this one CHARGEBACK), which is what ties sent
+  // evidence to a stage. Read back by the existing provide-evidence matcher (no proof here); Task 10 maps the stage.
+  'evidence:after_escalation': {
+    ...base('evidence:after_escalation', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('escalate'), 'Contract recorded; flow not built yet'),
+    absentAfterMs: 60_000,
+    recorded: 'packages/paypal/contracts/evidence-after-escalation.json',
+  },
   // The return types of both accept-claim (REFUND_WITH_RETURN, REFUND_WITH_RETURN_SHIPMENT_LABEL) and make-offer
   // (REFUND_WITH_RETURN): not in this delivery, by the owner's decision.
   return_address: base('return_address', `${REF}disputes-make-offer`, null, null, null, null, 'Not in this delivery (owner decision)'),
