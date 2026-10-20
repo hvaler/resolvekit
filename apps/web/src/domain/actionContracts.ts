@@ -164,7 +164,10 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   'make_offer:REPLACEMENT_WITHOUT_REFUND': base('make_offer:REPLACEMENT_WITHOUT_REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), null, ev('make-offer')),
   // Disputes v1 lists no operation that withdraws an offer (schema read 2026-10-19).
   'make_offer:withdraw': base('make_offer:withdraw', `${REF}disputes-make-offer`, null, null, null, ev('make-offer'), 'PayPal documents no route to withdraw an offer'),
-  appeal: base('appeal', `${REF}disputes-appeal`, 'multipart', route('appeal'), null, ev('appeal')),
+  // 20/10/2026 (owner-approved W-7): the sandbox's adjudicate helper was refused on the escalated dispute B while it was
+  // UNDER_REVIEW (400 ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE; packages/paypal/contracts/appeal-setup-adjudicate.json),
+  // so no appealable state could be produced and no appeal was ever sent.
+  appeal: base('appeal', `${REF}disputes-appeal`, 'multipart', route('appeal'), null, ev('appeal'), 'Not verified with PayPal: the sandbox could not produce an appealable dispute'),
   'evidence:PROOF_OF_REFUND': base('evidence:PROOF_OF_REFUND', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('proof-of-refund')),
   // Recorded 20/10/2026 (owner-approved W-6, after W-5): evidence is accepted again in CHARGEBACK; each evidences[]
   // entry carries `dispute_life_cycle_stage` (the escalation's INQUIRY, this one CHARGEBACK), which is what ties sent

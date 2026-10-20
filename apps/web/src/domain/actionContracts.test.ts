@@ -44,7 +44,8 @@ describe('action contracts', () => {
   it('says why withdraw and return types are not available, and claims a proof only where a read showed it', () => {
     expect(CONTRACTS['make_offer:withdraw'].reason).toBe('PayPal documents no route to withdraw an offer');
     expect(CONTRACTS.return_address.reason).toBe('Not in this delivery (owner decision)');
-    for (const id of IDS.filter((i) => CONTRACTS[i].recorded === null && i !== 'make_offer:withdraw' && i !== 'return_address')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
+    expect(CONTRACTS.appeal).toMatchObject({ status: 'not_available', recorded: null, reason: 'Not verified with PayPal: the sandbox could not produce an appealable dispute' });
+    for (const id of IDS.filter((i) => CONTRACTS[i].recorded === null && i !== 'make_offer:withdraw' && i !== 'return_address' && i !== 'appeal')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
     // A recorded contract whose flow is not built stays Not available, and says so.
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded !== null)) expect(CONTRACTS[id]).toMatchObject({ status: 'not_available', reason: 'Contract recorded; flow not built yet' });
     expect(CONTRACTS.send_message).toMatchObject({ recorded: 'packages/paypal/contracts/send_message.json', absentAfterMs: 60_000, requestIdDedupes: false, body: 'json' });
