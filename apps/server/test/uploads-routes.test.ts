@@ -1006,6 +1006,40 @@ test("only selected, confirmed uploads of the active dispute are attached; an ar
   }
 });
 
+test("a message with a file (send_message:file, W-3): one confirmed upload of the active dispute is attached; a pending, archived, old-dispute or another workspace's id is refused", TIMEOUT, async () => {
+  const s = sendSetup();
+  const cookie = s.people.fullMember('Ana Lopez');
+  const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+  const e8 = await s.confirmText(cookie, 'From: buyer\nIt arrived, thanks.', 'buyer email.txt');
+  const pending = (await pasteText(s.app, cookie, 'not confirmed', 'pending.txt')).body.upload;
+  const mk = (workspaceId: string, boundDisputeId: string, status: 'confirmed' | 'archived') => {
+    const r = s.store.create({ workspaceId, caseId: CASE, boundDisputeId, kind: 'text', name: 'x.txt', uploadedBy: { id: 'x', label: 'x', name: 'x' } }, new TextEncoder().encode('x'));
+    return s.store.update(r.id, { status, evidenceId: 'E9', lines: [{ text: 'x', correctedBy: null, original: null }], sha256: 'c'.repeat(64), mime: 'application/pdf' }).id;
+  };
+  const other = mk('ws-other', REAL, 'confirmed');
+  const archived = mk(s.people.workspace.id, REAL, 'archived');
+  const old = mk(s.people.workspace.id, 'PP-R-OLD-0', 'confirmed');
+  const message = (attachments: string[]) =>
+    call(s.app, `/api/disputes/${CASE}/intent`, { body: { action: 'send_message', text: 'The tracking is attached.', attachments }, cookie }) as unknown as Promise<{ status: number; body: SentIntent & { error?: string; action?: string } }>;
+
+  const ok = await message([e8.id]);
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  assert.equal(ok.body.action, 'send_message');
+  // Only the chosen upload, named by its evidence id and kind, with the hash of the bytes PayPal would receive.
+  assert.deepEqual(ok.body.files.map((f) => [f.name, f.sha256, f.source]), [['E8-pasted.pdf', s.store.get(e8.id)!.sha256, 'upload']]);
+
+  for (const id of [pending.id, other, archived, old, 'upl-0123456789abcdef01234567']) {
+    const r = await message([id]);
+    assert.equal(r.status, 422, id);
+    assert.equal(r.body.error, 'UNKNOWN_UPLOAD', id);
+  }
+  // At most one file per message.
+  const two = await message([e7.id, e8.id]);
+  assert.deepEqual([two.status, two.body.error], [400, 'INVALID_ACTION_REQUEST']);
+  // Nothing went to PayPal: composing only reads.
+  assert.equal(s.sends.length, 0);
+});
+
 test("the uploaded file name never leaves the server: not in PayPal's file names or bytes, not in the model's input; it is still shown to the workspace", TIMEOUT, async () => {
   const s = sendSetup();
   const cookie = s.people.fullMember('Ana Lopez');
