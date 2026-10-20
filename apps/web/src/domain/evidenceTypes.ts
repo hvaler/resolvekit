@@ -1,4 +1,4 @@
-import { CONTRACTS, variantOf } from './actionContracts.ts';
+import { CONTRACTS, unavailableReason, variantOf } from './actionContracts.ts';
 import type { ContractRegistry } from './actions.ts';
 import type { DisputeReason, EvidenceType, EvidenceTypeCandidate } from './types';
 
@@ -51,9 +51,24 @@ export interface EvidenceTypeOption {
 /** The registry's reason when evidence of this type is a variant not available (null: available, or not a variant). */
 export function evidenceTypeUnavailable(type: EvidenceType, contracts: ContractRegistry = CONTRACTS): string | null {
   const v = variantOf('provide_evidence', type);
-  if (!v) return null;
-  const c = contracts[v];
-  return c.status === 'not_available' ? (c.reason ?? 'Contract not recorded yet') : null;
+  return v ? unavailableReason(v, contracts) : null;
+}
+
+const isEvidenceType = (t: string): t is EvidenceType => Object.hasOwn(EVIDENCE_TYPE_LABEL, t);
+
+/**
+ * When PayPal requests evidence and every type it requests is one ResolveKit does not send in this delivery (today:
+ * only PROOF_OF_REFUND requested), what to tell the person; null otherwise (nothing requested, or a requested type
+ * ResolveKit sends). PayPal refuses any other type then (EVIDENCE_TYPE_NOT_REQUESTED), so nothing can be sent.
+ */
+export function requestedOnlyUnavailable(requested: readonly string[] | null | undefined, contracts: ContractRegistry = CONTRACTS): string | null {
+  const types = [...new Set(requested ?? [])];
+  if (!types.length) return null;
+  const reasons = types.map((t) => (isEvidenceType(t) ? evidenceTypeUnavailable(t, contracts) : null));
+  if (reasons.some((r) => r === null)) return null;
+  const labels = types.map((t) => EVIDENCE_TYPE_LABEL[t as EvidenceType]).join(' and ');
+  const why = [...new Set(reasons as string[])].join('; ');
+  return `PayPal asks only for ${labels}, which ${types.length > 1 ? 'are' : 'is'} not available in this delivery: ${why}`;
 }
 
 export function isEvidenceTypeAllowed(reason: DisputeReason, type: EvidenceType): boolean {
@@ -81,10 +96,13 @@ export function evidenceTypeOptions(
 }
 
 /**
- * The type to preselect: PayPal's requested type wins when it is allowed; otherwise the first
- * allowed type whose requirements the case file meets; otherwise null.
+ * The type to preselect: none when every type PayPal requests (`requested`, the fresh read's list) is unavailable;
+ * PayPal's requested type when it is allowed; otherwise the first allowed type whose requirements the case file meets;
+ * otherwise null.
  */
-export function defaultEvidenceType(options: readonly EvidenceTypeOption[]): EvidenceType | null {
+export function defaultEvidenceType(options: readonly EvidenceTypeOption[], requested?: readonly string[] | null): EvidenceType | null {
+  // PayPal asks only for types ResolveKit does not send: preselect nothing (any other type would be refused).
+  if (requestedOnlyUnavailable(requested)) return null;
   const req = options.find((o) => o.requested && o.allowed);
   if (req) return req.type;
   return options.find((o) => o.allowed && o.satisfied)?.type ?? null;

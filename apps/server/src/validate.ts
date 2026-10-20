@@ -3,6 +3,7 @@
  * submission itself is never parsed from a client: it is a server-composed intent (see app.ts and domain/intent.ts).
  */
 import { chooseEvidenceType, requestedEvidence, sellerActions, type Dispute } from '@resolvekit/paypal';
+import { requestedOnlyUnavailable } from '../../web/src/domain/evidenceTypes.ts';
 import type { EvidenceSubmission } from '../../web/src/domain/types.ts';
 
 /** ResolveKit's own cap on the notes (the web app's `NOTES_LIMIT`); PayPal documents no length limit for them. */
@@ -20,6 +21,10 @@ export function checkAgainstDispute(s: EvidenceSubmission, d: Dispute): Problem 
     return { status: 409, error: 'PROVIDE_EVIDENCE_NOT_ALLOWED', detail: `PayPal does not offer provide_evidence on this dispute now (status ${d.status ?? 'unknown'})` };
   }
   const requested = requestedEvidence(d);
+  // Every type PayPal requests is one ResolveKit does not send in this delivery (today: only PROOF_OF_REFUND): nothing
+  // can be sent, and naming the requested type as the one to send would be wrong.
+  const onlyUnavailable = requestedOnlyUnavailable(requested);
+  if (onlyUnavailable) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: onlyUnavailable };
   const expected = chooseEvidenceType(requested, d.disputed_transactions?.[0]?.items?.[0]?.item_type);
   if (requested.length > 0 && !requested.includes(s.evidenceType)) {
     return { status: 422, error: 'EVIDENCE_TYPE_NOT_REQUESTED', detail: `PayPal requests ${requested.join(', ')}; got ${s.evidenceType}. Send ${expected}.` };

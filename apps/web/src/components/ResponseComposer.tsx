@@ -276,6 +276,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
             onSelect={d.selectEvidenceType}
             requested={c.requestedEvidenceType}
             requestedNote={c.requestedNote}
+            notice={d.requestedUnavailable}
           />
         )}
 

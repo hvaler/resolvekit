@@ -258,6 +258,8 @@ export interface BlockerInput {
   submitted: boolean;
   /** Why evidence is not available on this dispute now, e.g. after an escalation outside W-6's state; null: it is. */
   evidenceUnavailable?: string | null;
+  /** PayPal requests only evidence types ResolveKit does not send (requestedOnlyUnavailable); null or absent: not so. */
+  requestedUnavailable?: string | null;
 }
 
 /**
@@ -289,6 +291,7 @@ export function draftBlockers(input: BlockerInput): Blocker[] {
   } else if (input.action === 'provide_evidence' && input.evidenceUnavailable) {
     out.push({ kind: 'action', text: input.evidenceUnavailable });
   }
+  if (input.action === 'provide_evidence' && input.requestedUnavailable) out.push({ kind: 'evidence_type', text: input.requestedUnavailable });
   if (input.action === 'provide_evidence' && input.evidenceType) {
     if (input.evidenceType.unavailable) out.push({ kind: 'evidence_type', text: `"${input.evidenceType.label}" is not available: ${input.evidenceType.unavailable}` });
     else if (!input.evidenceType.allowed) out.push({ kind: 'evidence_type', text: `PayPal won't accept "${input.evidenceType.label}" here` });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agentCase, standardCase } from '../fixtures';
 import { CONTRACTS } from './actionContracts';
-import { NOT_ALLOWED_ERROR, defaultEvidenceType, evidenceTypeOptions, isEvidenceTypeAllowed, selectEvidenceType } from './evidenceTypes';
+import { NOT_ALLOWED_ERROR, defaultEvidenceType, evidenceTypeOptions, isEvidenceTypeAllowed, requestedOnlyUnavailable, selectEvidenceType } from './evidenceTypes';
 
 describe('evidence type choice (docs/sandbox-findings.md)', () => {
   it('disables PROOF_FOR_SOFTWARE_OR_SERVICE_DELIVERED for not-received disputes', () => {
@@ -58,5 +58,16 @@ describe('PROOF_OF_REFUND is not available in this delivery (Task 12, owner deci
     expect(defaultEvidenceType(o)).toBe('PROOF_OF_FULFILLMENT');
     expect(selectEvidenceType(o, 'PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND')).toBe('PROOF_OF_FULFILLMENT');
     expect(selectEvidenceType(o, 'PROOF_OF_FULFILLMENT', 'OTHER')).toBe('OTHER');
+  });
+
+  it('PayPal asking only for it: the reason is given and nothing is preselected; among other types, the others are', () => {
+    const only = `PayPal asks only for Proof of refund, which is not available in this delivery: ${REASON}`;
+    expect(requestedOnlyUnavailable(['PROOF_OF_REFUND'])).toBe(only);
+    expect(requestedOnlyUnavailable(['PROOF_OF_REFUND', 'PROOF_OF_REFUND'])).toBe(only);
+    for (const r of [null, [], ['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER'], ['OTHER'], ['SOMETHING_NEW']]) expect(requestedOnlyUnavailable(r)).toBeNull();
+    const o = evidenceTypeOptions('MERCHANDISE_OR_SERVICE_NOT_RECEIVED', 'PROOF_OF_REFUND', candidates);
+    expect(defaultEvidenceType(o, ['PROOF_OF_REFUND'])).toBeNull();
+    expect(defaultEvidenceType(o, ['PROOF_OF_REFUND', 'OTHER'])).toBe('PROOF_OF_FULFILLMENT');
+    expect(defaultEvidenceType(o)).toBe('PROOF_OF_FULFILLMENT');
   });
 });

@@ -13,6 +13,14 @@ import { EvidenceTypeSelector } from './EvidenceTypeSelector';
 import { evidenceTypeOptions } from '../domain/evidenceTypes';
 import { SIM_TRANSITIONS } from '../domain/simulatedActions';
 import appSource from '../App.tsx?raw';
+import type { AnalysisInput } from '@resolvekit/analyst';
+import { HighlightProvider } from '../app/highlight';
+import type { AnalysisHandle } from '../app/useAnalysis';
+import { useCaseDraft } from '../app/useCaseDraft';
+import { goldenAnalyses } from '../fixtures/golden';
+import { standardCase } from '../fixtures';
+import type { CaseFile } from '../domain/types';
+import { ResponseComposer } from './ResponseComposer';
 
 const snap: DisputeSnapshot = {
   id: 'CASE-1',
@@ -527,5 +535,45 @@ describe('appeal and PROOF_OF_REFUND: a non-sendable preview (Task 12, owner dec
     expect(appSource).not.toMatch(/appeal|adjudicat|rules for the buyer/i);
     expect(Object.keys(SIM_TRANSITIONS)).not.toContain('appeal');
     expect(Object.keys(SIM_TRANSITIONS)).not.toContain('evidence:PROOF_OF_REFUND');
+  });
+});
+
+describe('PayPal asks only for PROOF_OF_REFUND (Task 12 review)', () => {
+  const ONLY = 'PayPal asks only for Proof of refund, which is not available in this delivery: Not verified with PayPal: pending sandbox test (W-11)';
+  // A draft that is ready to review: supported sentences only, nothing to resolve.
+  const ready: CaseFile = { ...standardCase, contradictions: [], checklist: null, sentences: standardCase.sentences.filter((s) => s.verdict === 'supported') };
+  const analysis: AnalysisHandle = {
+    state: { kind: 'ready', analysis: goldenAnalyses[standardCase.summary.id]!, origin: 'live', input: { documents: [] } as unknown as AnalysisInput },
+    live: null,
+    rerunBlocked: null,
+    rerunError: null,
+    rerun: noop,
+    recheck: async () => {
+      throw new Error('not used');
+    },
+  };
+  function Harness({ requested }: { requested: string[] }) {
+    const d = useCaseDraft(ready, { allowedActions: ['provide_evidence'], submitted: false, requestedEvidence: requested, onAudit: noop, actor: 'x', scope: 'test', analysis });
+    return <ResponseComposer c={{ ...ready, requestedEvidenceType: requested.includes('PROOF_OF_FULFILLMENT') ? 'PROOF_OF_FULFILLMENT' : 'PROOF_OF_REFUND' }} d={d} allowedActions={['provide_evidence']} checkedAt={null} submitted={false} onReview={noop} />;
+  }
+  const html = (requested: string[]) => renderToString(<HighlightProvider><Harness requested={requested} /></HighlightProvider>);
+  const types = (h: string) => h.slice(h.indexOf('aria-label="Evidence type to send"'), h.indexOf('</section>', h.indexOf('aria-label="Evidence type to send"')));
+  const footerButton = (h: string) => h.slice(h.lastIndexOf('<button'), h.lastIndexOf('</button>'));
+
+  it('the composer says why, preselects no type and keeps Review disabled', () => {
+    const h = html(['PROOF_OF_REFUND']);
+    expect(h).toContain(ONLY);
+    expect(h).toContain(`To continue: ${ONLY}.`);
+    expect(types(h)).not.toContain('aria-checked="true"');
+    expect(footerButton(h)).toContain('disabled=""');
+    expect(footerButton(h)).not.toContain('Review what will be sent');
+  });
+
+  it('PROOF_OF_REFUND among other requested types: a type is preselected, no notice, Review enabled', () => {
+    const h = html(['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER']);
+    expect(h).not.toContain('PayPal asks only for');
+    expect(types(h)).toContain('aria-checked="true"');
+    expect(footerButton(h)).toContain('Review what will be sent');
+    expect(footerButton(h)).not.toContain('disabled');
   });
 });

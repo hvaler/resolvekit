@@ -118,7 +118,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
   // After the seller's escalation, evidence only in the state W-6 recorded (not during the review's flickering links).
   const evidenceUnavailable = snap ? evidenceAfterEscalationRefusal(snap) : null;
-  const d = useCaseDraft(c, { allowedActions: allowed, submitted, evidenceUnavailable, onAudit, actor: actorName(demoLock), scope: draftScope(area, demoLock?.person?.id ?? null), analysis, corrections });
+  const d = useCaseDraft(c, { allowedActions: allowed, submitted, evidenceUnavailable, requestedEvidence: snap?.requestedEvidence ?? null, onAudit, actor: actorName(demoLock), scope: draftScope(area, demoLock?.person?.id ?? null), analysis, corrections });
   // Confirmed evidence no analysis on screen has read yet: said so, never shown as if it were included.
   const unread = notAnalysed(up.uploads, an.kind === 'ready' ? an.input : null);
 

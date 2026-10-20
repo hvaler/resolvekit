@@ -12,12 +12,15 @@ export function EvidenceTypeSelector({
   onSelect,
   requested,
   requestedNote,
+  notice = null,
 }: {
   options: EvidenceTypeOption[];
   selected: EvidenceType | null;
   onSelect: (t: EvidenceType) => void;
   requested: EvidenceType | null;
   requestedNote: string;
+  /** Why no type can be sent (PayPal asks only for types not available in this delivery); null: none. */
+  notice?: string | null;
 }) {
   return (
     <section aria-label="Evidence type" className="flex flex-col gap-[7px]">
@@ -35,6 +38,11 @@ export function EvidenceTypeSelector({
         <span className="flex-1" />
         <span className="text-[11.5px] text-ink-3">{requestedNote}</span>
       </div>
+      {notice && (
+        <p role="note" className="m-0 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
+          {notice}
+        </p>
+      )}
       <div role="radiogroup" aria-label="Evidence type to send" className="flex flex-col gap-1.5">
         {options.map((o) => {
           const sel = o.type === selected && o.allowed;

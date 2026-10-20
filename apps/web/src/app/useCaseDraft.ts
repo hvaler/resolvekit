@@ -2,7 +2,7 @@ import { PENDING_STEPS, STAGES, toCitations } from '@resolvekit/analyst';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { actionableBlockers, checklistState, citationUse, correctionPair, deriveSentences, draftBlockers, draftCounts, lineRef, notesText, type Correction, type Recheck } from '../domain/draft';
 import { browserStorage, draftKey, loadDraft, saveDraft } from '../domain/draftStore';
-import { defaultEvidenceType, evidenceTypeOptions, selectEvidenceType } from '../domain/evidenceTypes';
+import { defaultEvidenceType, evidenceTypeOptions, requestedOnlyUnavailable, selectEvidenceType } from '../domain/evidenceTypes';
 import type { ActionCode, CaseFile, ContradictionResolution, EvidenceType, SentenceView } from '../domain/types';
 import { correctionsToConfirm, dropPairsOf, effectivePairs } from '../domain/uploads';
 import { replayStepMs, useRecording } from './recording';
@@ -46,6 +46,8 @@ export interface CaseDraftOptions {
   submitted: boolean;
   /** Why evidence is not available now (after an escalation, outside the recorded state); null or absent: it is. */
   evidenceUnavailable?: string | null;
+  /** The evidence types PayPal requests in the latest read (REQUESTED_FROM_SELLER); null or absent: not known. */
+  requestedEvidence?: readonly string[] | null;
   onAudit: (who: string, what: string) => void;
   /** Who is acting in this browser (actorName): named on what they edit and resolve here. */
   actor: string;
@@ -83,7 +85,13 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
   const corrections = opts.corrections ?? NO_CORRECTIONS;
   const [action, setAction] = useState<ActionCode>('provide_evidence');
   const options = useMemo(() => evidenceTypeOptions(c.summary.reason, c.requestedEvidenceType, c.evidenceTypes), [c]);
-  const [evidenceType, setEvidenceType] = useState<EvidenceType | null>(() => defaultEvidenceType(options));
+  const requestedEvidence = opts.requestedEvidence ?? null;
+  /** PayPal asks only for types ResolveKit does not send: nothing is preselected and the draft says why it cannot go. */
+  const requestedUnavailable = requestedOnlyUnavailable(requestedEvidence);
+  const [evidenceType, setEvidenceType] = useState<EvidenceType | null>(() => defaultEvidenceType(options, requestedEvidence));
+  useEffect(() => {
+    if (requestedUnavailable) setEvidenceType(null);
+  }, [requestedUnavailable]);
   const onAudit = opts.onAudit;
   const actor = opts.actor;
   const recheckSeq = useRef(0);
@@ -106,8 +114,8 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     setResolutions({});
     setConfirmed([]);
     setAction('provide_evidence');
-    setEvidenceType(defaultEvidenceType(options));
-  }, [options]);
+    setEvidenceType(defaultEvidenceType(options, requestedEvidence));
+  }, [options, requestedEvidence]);
 
   // A different analysis (re-run, other documents) has different sentences: start the draft over.
   const lastIdentity = useRef(identity);
@@ -131,7 +139,7 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     setResolutions(saved.resolutions);
     setConfirmed(saved.confirmedCorrections ?? []);
     setAction(saved.action);
-    if (saved.evidenceType) setEvidenceType(saved.evidenceType);
+    if (saved.evidenceType && !requestedUnavailable) setEvidenceType(saved.evidenceType);
   }, [storeKey]);
   useEffect(() => {
     if (!storeKey || hydrated.current !== storeKey) return;
@@ -232,6 +240,7 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     evidenceType: selected ? { allowed: selected.allowed, satisfied: selected.satisfied, label: selected.label, unavailable: selected.unavailable } : null,
     submitted: opts.submitted,
     evidenceUnavailable: opts.evidenceUnavailable ?? null,
+    requestedUnavailable,
   });
   const actionable = actionableBlockers(blockers);
   const notes = notesText(views);
@@ -265,6 +274,8 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     action,
     setAction,
     options,
+    /** Why nothing can be sent as evidence: PayPal asks only for types not available in this delivery; null: not so. */
+    requestedUnavailable,
     evidenceType,
     selectEvidenceType: (t: EvidenceType) => setEvidenceType((cur) => selectEvidenceType(options, cur, t)),
     blockers,

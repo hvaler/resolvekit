@@ -492,11 +492,12 @@ test('Task 12: when PayPal requests PROOF_OF_REFUND among other types, the other
   const s = await app(post(evidencePath, { intentId: i.id }));
   assert.equal(s.status, 202, JSON.stringify(await s.clone().json()));
   assert.equal(pp.sends.length, 1);
-  // Unchanged rule (validate.ts, before this feature): PayPal requesting PROOF_OF_REFUND only refuses another type.
+  // PayPal requesting PROOF_OF_REFUND only: nothing can be sent (PayPal refuses another type), said with the reason.
   const only = asking(['PROOF_OF_REFUND']);
   const o = await setup({ dispute: only, analysedAs: only });
   const r = await o.app(post(intentPath, request()));
-  assert.deepEqual([r.status, (await r.json()).error], [422, 'EVIDENCE_TYPE_NOT_REQUESTED']);
+  const rb = await r.json();
+  assert.deepEqual([r.status, rb.error, rb.detail], [409, 'VARIANT_NOT_AVAILABLE', 'PayPal asks only for Proof of refund, which is not available in this delivery: Not verified with PayPal: pending sandbox test (W-11)']);
   const refund = await o.app(post(intentPath, request({ evidenceType: 'PROOF_OF_REFUND' })));
   assert.deepEqual([refund.status, (await refund.json()).error], [409, 'VARIANT_NOT_AVAILABLE']);
   assert.equal(o.pp.sends.length, 0);
