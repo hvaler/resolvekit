@@ -20,7 +20,7 @@ const VARIANT_LABEL: Partial<Record<string, string>> = {
  * accept, the type (full or partial refund), the partial amount and the note, with what PayPal does then; for an
  * escalation, the note and what PayPal does then; for an offer, the amount offered and the note, with what PayPal does
  * then (the buyer is offered it; nothing moves unless they accept); for every action, whether PayPal offers it now and each variant's
- * status as the contract registry gives it («Tested locally», «Not available: <reason>»). Only a sendable message,
+ * status as the contract registry gives it («Verified in sandbox», «Tested locally», «Not available: <reason>»). Only a sendable message,
  * accept or escalation can be reviewed; anyone else (a reviewer or a member, for an owner-only action) sees the preview
  * only.
  */

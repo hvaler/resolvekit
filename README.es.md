@@ -53,9 +53,10 @@ Detalles: [visión general del producto](docs/es/product/overview.md) · [pipeli
 | Código determinista | Comprobación de citas literales, comprobación de números, reglas para la acción y el tipo de evidencia, comprobaciones de presupuesto y límites para el agente | Implementado · Probado en local · Desplegado |
 
 Solo `provide-evidence` está verificado de extremo a extremo a través de la app y desplegado. Enviar un mensaje,
-aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial y escalar están **Probados
-en local** desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato de sandbox aprobado por el propietario;
-aún no están verificados a través de la app en el sandbox ni desplegados. Las ofertas de sustitución, retirar una
+aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial, escalar y enviar evidencia
+tras un escalado están construidos desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato de sandbox
+aprobado por el propietario, y **Verificados en sandbox** a través de la app el 20/10/2026 (un envío cada uno, en un
+servidor local); no están desplegados. Un mensaje con adjunto solo está Probado en local en el servidor. Las ofertas de sustitución, retirar una
 oferta, las apelaciones, la prueba de reembolso y los tipos con devolución están **No disponibles**, cada uno con su
 motivo. ResolveKit nunca crea un reembolso. Estado por variante:
 [especificación funcional](docs/es/product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
@@ -167,7 +168,7 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 
 - Conexión del comerciante a sus propias disputas: Pendiente (ver arriba).
 - Solo `provide-evidence` está verificado a través de la app y desplegado; mensaje, aceptación, oferta y escalado están
-  Probados en local (no desplegados); nunca se crea un reembolso.
+  Verificados en sandbox a través de la app (no desplegados); nunca se crea un reembolso.
 - Solo sandbox; PayPal live nunca se ha probado. Los tiempos y comportamientos del sandbox pueden
   diferir en live.
 - La reserva de disputas nuevas del sandbox del caso de evaluación estándar estaba vacía el 19/10/2026: hasta que se

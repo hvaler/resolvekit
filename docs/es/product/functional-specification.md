@@ -92,8 +92,8 @@ Notas:
 | UC-11 | Comparar dos ejecuciones; Keep de una ejecución; ver Workspace runs | Autor / Owner | Implementado · Probado en local · Verificado en sandbox (Compare y Keep, 19/10/2026) |
 | UC-12 | Detener una ejecución del agente en curso | Autor | Implementado · Probado en local; en sandbox **Pendiente** |
 | UC-13 | Conectar las disputas de PayPal propias de un comerciante | Comerciante | **Pendiente** (no está en la app) |
-| UC-14 | Enviar un mensaje al comprador | Espacio del vendedor | Probado en local; Verificado en sandbox y Desplegado: **Pendiente** |
-| UC-15 | Aceptar una reclamación (total o parcial), hacer una oferta, escalar | Owner | Probado en local; Verificado en sandbox y Desplegado: **Pendiente** |
+| UC-14 | Enviar un mensaje al comprador | Espacio del vendedor | Probado en local · Verificado en sandbox a través de la app (20/10/2026); Desplegado: **Pendiente** |
+| UC-15 | Aceptar una reclamación (total o parcial), hacer una oferta, escalar | Owner | Probado en local · Verificado en sandbox a través de la app (20/10/2026); Desplegado: **Pendiente** |
 
 ## 5. Estados y reglas de negocio
 
@@ -195,31 +195,35 @@ evidencia. Detalles: [Agente comprador](../user-guide/buying-agent.md).
 
 ### 5.6 Acciones de disputa distintas de la evidencia
 
-Comprobado contra el commit `076c74f` (20/10/2026). Cada variante de acción tiene un único estado, tomado del registro
+Comprobado contra el commit `076c74f` (20/10/2026); estados actualizados tras las ejecuciones a través de la app en el
+sandbox del 20/10/2026 (V-1 a V-6). Cada variante de acción tiene un único estado, tomado del registro
 de contratos (`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); el producto muestra la misma etiqueta junto a cada
-variante (**Tested locally**, o **Not available: <motivo>**, «No disponible»). Una variante solo está disponible cuando
+variante (**Verified in sandbox**, **Tested locally**, o **Not available: <motivo>**, «No disponible»). Una variante solo está disponible cuando
 su contrato está registrado: la documentación de PayPal, lecturas de solo lectura en el sandbox y una escritura que el
 propietario aprobó petición a petición, con su respuesta y su relectura (`packages/paypal/contracts/`).
 
-| Variante | Qué es | Estado | Escritura de contrato (sandbox, 20/10/2026) |
-|---|---|---|---|
-| `send_message` | Un mensaje de texto al comprador (1–2,000 caracteres) | Probado en local | Registrada (W-1, W-2) |
-| `send_message:file` | Un mensaje con una subida confirmada adjunta | Probado en local: la ruta del servidor. El editor web aún no puede adjuntar una subida, así que la interfaz no lo ofrece | Registrada (W-3) |
-| `accept_claim:REFUND` | Aceptar la reclamación con un reembolso total | Probado en local | Registrada (W-10) |
-| `accept_claim:PARTIAL_REFUND` | Aceptar la reclamación con un reembolso parcial, que PayPal registra como una oferta al comprador | Probado en local | Registrada (W-9) |
-| `escalate` | Escalar una consulta a reclamación | Probado en local | Registrada (W-5) |
-| `evidence:after_escalation` | Evidencia en la fase de reclamación tras un escalado | Probado en local | Registrada (W-6) |
-| `make_offer:REFUND` | Ofrecer al comprador un reembolso parcial | Probado en local | Registrada (W-4) |
-| `make_offer:REPLACEMENT_WITHOUT_REFUND` | — | No disponible: «Not verified with PayPal: never offered on a sandbox dispute» | No enviada (W-12) |
-| `make_offer:withdraw` | — | No disponible: «PayPal documents no route to withdraw an offer» | — |
-| `appeal` | — | No disponible: «Not verified with PayPal: the sandbox could not produce an appealable dispute» | Preparación rechazada (W-7); no enviada (W-8) |
-| `evidence:PROOF_OF_REFUND` | — | No disponible: «Not verified with PayPal: pending sandbox test (W-11)» | No enviada (W-11, decisión del propietario) |
-| `return_address` | Los tipos de aceptación y de oferta con devolución (`REFUND_WITH_RETURN`, `REFUND_WITH_RETURN_SHIPMENT_LABEL`) | No disponible: «Not in this delivery (owner decision)» | — |
+| Variante | Qué es | Estado | Escritura de contrato (sandbox, 20/10/2026) | A través de la app (sandbox, 20/10/2026) |
+|---|---|---|---|---|
+| `send_message` | Un mensaje de texto al comprador (1–2,000 caracteres) | Verificado en sandbox | Registrada (W-1, W-2) | Registrada (V-1) |
+| `send_message:file` | Un mensaje con una subida confirmada adjunta | Probado en local: la ruta del servidor. El editor web aún no puede adjuntar una subida, así que la interfaz no lo ofrece | Registrada (W-3) | No ejecutada |
+| `accept_claim:REFUND` | Aceptar la reclamación con un reembolso total | Verificado en sandbox | Registrada (W-10) | Registrada (V-4): resuelta a favor del comprador, 7.00 USD reembolsados |
+| `accept_claim:PARTIAL_REFUND` | Aceptar la reclamación con un reembolso parcial, que PayPal registra como una oferta al comprador | Verificado en sandbox | Registrada (W-9) | Registrada como oferta pendiente (V-3); no se movió dinero |
+| `escalate` | Escalar una consulta a reclamación | Verificado en sandbox | Registrada (W-5) | Registrada (V-5); reclamación unos 10 min después |
+| `evidence:after_escalation` | Evidencia en la fase de reclamación tras un escalado | Verificado en sandbox | Registrada (W-6) | Registrada en la fase de reclamación (V-6) |
+| `make_offer:REFUND` | Ofrecer al comprador un reembolso parcial | Verificado en sandbox | Registrada (W-4) | Registrada (V-2); no se movió dinero |
+| `make_offer:REPLACEMENT_WITHOUT_REFUND` | — | No disponible: «Not verified with PayPal: never offered on a sandbox dispute» | No enviada (W-12) | — |
+| `make_offer:withdraw` | — | No disponible: «PayPal documents no route to withdraw an offer» | — | — |
+| `appeal` | — | No disponible: «Not verified with PayPal: the sandbox could not produce an appealable dispute» | Preparación rechazada (W-7); no enviada (W-8) | — |
+| `evidence:PROOF_OF_REFUND` | — | No disponible: «Not verified with PayPal: pending sandbox test (W-11)» | No enviada (W-11, decisión del propietario) | — |
+| `return_address` | Los tipos de aceptación y de oferta con devolución (`REFUND_WITH_RETURN`, `REFUND_WITH_RETURN_SHIPMENT_LABEL`) | No disponible: «Not in this delivery (owner decision)» | — | — |
 
-Ninguna variante está **Verificada en sandbox** ni **Desplegada**. Las escrituras de contrato del 20/10/2026 fueron
-peticiones preparadas que el propietario aprobó una a una, enviadas fuera del flujo propio de la app; muestran lo que
-hace PayPal (ver [Integración con PayPal](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)), no
-que el flujo de la app funcione de extremo a extremo contra el sandbox, lo cual está **Pendiente**. El commit
+Seis variantes están **Verificadas en sandbox**: el 20/10/2026 cada una se envió una vez por el flujo propio de la app
+(componer, aprobar por hash, una segunda confirmación cuando la acción tiene términos, un envío, una relectura
+atribuible), con el servidor de la rama sin fusionar ejecutado en local contra el sandbox (V-1 a V-6, ver
+[Integración con PayPal](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)). Solo V-4, la
+aceptación total, movió dinero (un reembolso de sandbox de 7.00 USD). Aparte, las escrituras de contrato del 20/10/2026
+(W-1 a W-12) fueron peticiones preparadas que el propietario aprobó una a una, enviadas fuera del flujo propio de la
+app; muestran lo que hace PayPal y son la base de cada contrato. Ninguna variante está **Desplegada**: el commit
 desplegado (`fbe9621`) es anterior a las acciones de disputa.
 
 **Quién puede hacer qué.** Aceptar la reclamación, hacer una oferta, escalar y apelar son **solo del Owner**: solo el
@@ -371,7 +375,7 @@ Más: [Solución de problemas](../user-guide/troubleshooting.md).
 | Análisis de IA | análisis golden incluidos en el código, sin llamada al modelo | guardados + en directo (con límites) | — | en directo con una clave de modelo |
 | **+ Add evidence** | desactivado con su motivo | sí | — | sí, con el servidor |
 | Envío | solo simulador | `provide-evidence` al sandbox | — | sandbox para los casos vinculados |
-| Acciones de disputa ([5.6](#56-acciones-de-disputa-distintas-de-la-evidencia)) | simulador, solo transiciones registradas | no están en el commit desplegado (**Pendiente**) | — | las rutas de acciones del servidor (Probado en local con fakes; contra el sandbox a través de la app: **Pendiente**) |
+| Acciones de disputa ([5.6](#56-acciones-de-disputa-distintas-de-la-evidencia)) | simulador, solo transiciones registradas | no están en el commit desplegado (**Pendiente**) | — | las rutas de acciones del servidor (Probado en local con fakes; Verificado en sandbox a través de la app en un servidor local, 20/10/2026) |
 | Agente comprador | no está en la zona de demo | `/agent` (espacio del vendedor) | inicio rechazado | `/agent` como operador |
 | Límites diarios | — | sí | — | ninguno |
 
@@ -381,6 +385,6 @@ Más: [Solución de problemas](../user-guide/troubleshooting.md).
 - No disponible: conectar las disputas propias de un comerciante; las variantes de acciones de disputa marcadas «Not
   available» en [5.6](#56-acciones-de-disputa-distintas-de-la-evidencia) (oferta de sustitución, retirar una oferta,
   apelación, prueba de reembolso, los tipos con devolución); crear reembolsos; el entorno live (producción) de PayPal;
-  borrado de la cuenta o del espacio de trabajo por el propio usuario. El mensaje, la aceptación, la oferta y el
-  escalado están Probados en local, aún no Verificados en sandbox a través de la app ni Desplegados. Ver
-  [Limitaciones](limitations.md).
+  borrado de la cuenta o del espacio de trabajo por el propio usuario. El mensaje, la aceptación, la oferta, el
+  escalado y la evidencia tras un escalado están Verificados en sandbox a través de la app (20/10/2026), no
+  Desplegados; un mensaje con adjunto está Probado en local (servidor). Ver [Limitaciones](limitations.md).

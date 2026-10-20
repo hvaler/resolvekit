@@ -51,7 +51,7 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | Appeal not testable in the sandbox | The sandbox refused to produce an appealable dispute (W-7), so appeal stays «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
 | `provide_supporting_info` not supported | Offered by PayPal after evidence in a claim; ResolveKit shows nothing to send | DA; `apps/web/src/domain/simulatedActions.ts` |
 | Proof of refund not sent | If PayPal asks only for it, no evidence can be sent on that dispute in this delivery; W-11 is a pending sandbox test | DA; `actionContracts.ts` |
-| The app's flow not run against the sandbox | The statuses stop at Tested locally until the app sends and reads back each variant in the sandbox (**Pending**) | DA |
+| The app's flow verified once per variant, not deployed | Each verified variant was sent once through the app on a local server (20/10/2026, V-1 to V-6): single observations. The message with a file and the Not-available variants were not run through the app; nothing is deployed (**Pending**) | DA |
 
 ## Environments, sign-in and health
 

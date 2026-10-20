@@ -134,7 +134,8 @@ sequenceDiagram
 Solo `provide-evidence` está verificado de extremo a extremo y desplegado. Desde el commit `076c74f` (20/10/2026, no
 desplegado) el servidor también envía mensajes, aceptaciones, ofertas y escalados por la misma cadena (componer,
 aprobar por hash, una segunda confirmación para las acciones del Owner, una lectura fresca, `send_started` en disco, un
-único POST, una relectura atribuible), solo para las variantes cuyo contrato está registrado; estado: Probado en local
+único POST, una relectura atribuible), solo para las variantes cuyo contrato está registrado; estado: Verificado en sandbox a través de la app (20/10/2026,
+servidor local), no desplegado
 ([especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
 No hay código que cree reembolsos. Detalles: [integración con PayPal](../technical/paypal-integration.md),
 [API HTTP](../technical/http-api.md).

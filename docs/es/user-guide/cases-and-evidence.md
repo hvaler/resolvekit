@@ -65,8 +65,8 @@ cronología muestra una tarjeta **Contradiction** con ambos valores lado a lado,
 
 El cuadro **What to do** muestra las acciones que PayPal permite ahora para esta disputa, leídas hace unos segundos,
 cada una con «✓ allowed». En el commit desplegado (`fbe9621`) solo se puede enviar **Provide evidence**: cualquier otra
-acción muestra «only "Provide evidence" can be sent from this screen for now». Desde el commit `076c74f` (Probado en
-local, no desplegado), elegir «Send message», «Accept claim», «Make an offer» o «Escalate» abre su propio flujo: ver
+acción muestra «only "Provide evidence" can be sent from this screen for now». Desde el commit `076c74f` (Verificado en
+sandbox a través de la app el 20/10/2026, no desplegado), elegir «Send message», «Accept claim», «Make an offer» o «Escalate» abre su propio flujo: ver
 [Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa). «PayPal is asking for:» muestra la evidencia que ha pedido PayPal.
 
 ## Añadir tu propia evidencia

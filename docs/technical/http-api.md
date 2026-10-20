@@ -83,7 +83,7 @@ sent. Accepted ≠ recorded ≠ dispute resolved.
 ## Dispute actions
 
 Message, accept claim, make offer and escalate use the same intent chain as evidence, with their own send route.
-Status: Tested locally; not deployed (per-variant status:
+Status: Tested locally; Verified in sandbox through the app (20/10/2026, local server); not deployed (per-variant status:
 [Functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)). The role is
 checked at compose, approve, confirm and send: `accept_claim`, `make_offer` and `escalate` answer `403 OWNER_ONLY` to
 anyone but the workspace's Owner (a reviewer never passes).

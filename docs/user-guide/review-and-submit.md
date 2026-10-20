@@ -8,7 +8,7 @@ a fresh PayPal read at the moment of sending. Afterwards it reads the dispute ba
 
 Status of evidence: Implemented · Tested locally · Verified in sandbox (two reviewers' submissions recorded by PayPal,
 17/10/2026; an image upload, 18/10/2026) · Deployed. The other dispute actions (message, accept, offer, escalate) are
-**Tested locally** only: see [Other dispute actions](#other-dispute-actions) and
+**Verified in sandbox** through the app (20/10/2026) and not deployed: see [Other dispute actions](#other-dispute-actions) and
 [Limitations](../product/limitations.md).
 
 Three things are different and the app keeps them apart: **the submission was accepted** (PayPal answered the send),
@@ -89,12 +89,12 @@ read, **only if** one is left (as of 19/10/2026 the standard case has none).
 
 ## Other dispute actions
 
-Status: **Tested locally** (with fakes built from recorded PayPal responses). Not yet Verified in sandbox through the
-app, not Deployed. Per-variant status and rules:
+Status: **Tested locally** (with fakes built from recorded PayPal responses) · **Verified in sandbox** through the
+app (20/10/2026, one send each on a local server; the message with a file excepted). Not Deployed. Per-variant status and rules:
 [Functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence).
 
 Choose the action in **What to do**. Only what PayPal offers on the dispute right now can be composed, and each variant
-shows its status («Tested locally», or «Not available: <reason>»).
+shows its status («Verified in sandbox», «Tested locally», or «Not available: <reason>»).
 
 | Action | Who | What you write | What PayPal does |
 |---|---|---|---|

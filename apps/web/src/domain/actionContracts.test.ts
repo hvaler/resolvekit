@@ -4,6 +4,9 @@ import { CONTRACTS, STATUS_LABEL, statusLabel, unavailableReason, variantOf, typ
 /** The variants whose flow is built (Task 8 onwards). */
 const BUILT: VariantId[] = ['send_message', 'send_message:file', 'accept_claim:REFUND', 'accept_claim:PARTIAL_REFUND', 'escalate', 'evidence:after_escalation', 'make_offer:REFUND'];
 
+/** Verified through ResolveKit's own flow in the sandbox, 20/10/2026 (V-1..V-6): every built variant but the file message. */
+const VERIFIED: VariantId[] = ['send_message', 'make_offer:REFUND', 'accept_claim:PARTIAL_REFUND', 'accept_claim:REFUND', 'escalate', 'evidence:after_escalation'];
+
 const IDS: VariantId[] = [
   'send_message',
   'send_message:file',
@@ -53,11 +56,25 @@ describe('action contracts', () => {
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded === null && i !== 'make_offer:withdraw' && i !== 'return_address' && i !== 'appeal' && i !== 'make_offer:REPLACEMENT_WITHOUT_REFUND' && i !== 'evidence:PROOF_OF_REFUND')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
     // A recorded contract whose flow is not built stays Not available, and says so.
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded !== null && !BUILT.includes(i))) expect(CONTRACTS[id]).toMatchObject({ status: 'not_available', reason: 'Contract recorded; flow not built yet' });
-    // Built and tested on this machine (Tasks 8–11): the message, accept, escalate, evidence-after-escalation and offer variants.
-    for (const id of BUILT) expect(CONTRACTS[id]).toMatchObject({ status: 'tested_locally', reason: null });
+    // Built (Tasks 8–11); verified in the sandbox through the app flow (V-1..V-6), except the file message, which the
+    // web composer cannot attach yet and stays tested locally.
+    for (const id of BUILT) expect(CONTRACTS[id]).toMatchObject({ status: VERIFIED.includes(id) ? 'verified_in_sandbox' : 'tested_locally', reason: null });
+    expect(CONTRACTS['send_message:file'].status).toBe('tested_locally');
+    expect(IDS.filter((i) => CONTRACTS[i].status === 'verified_in_sandbox').sort()).toEqual([...VERIFIED].sort());
+    // Nothing is deployed: the branch is neither merged nor deployed.
+    expect(IDS.filter((i) => CONTRACTS[i].status === 'deployed')).toEqual([]);
     expect(CONTRACTS.send_message).toMatchObject({ recorded: 'packages/paypal/contracts/send_message.json', absentAfterMs: 60_000, requestIdDedupes: false, body: 'json' });
     const withProof = IDS.filter((i) => CONTRACTS[i].proof !== null).sort();
     expect(withProof).toEqual(['accept_claim:PARTIAL_REFUND', 'accept_claim:REFUND', 'escalate', 'make_offer:REFUND', 'send_message', 'send_message:file']);
+  });
+
+  it('a variant verified in sandbox has its recorded contract and its evidence', () => {
+    for (const c of Object.values(CONTRACTS)) {
+      if (c.status !== 'verified_in_sandbox') continue;
+      expect(c.recorded).toMatch(/^packages\/paypal\/contracts\/.+\.json$/);
+      expect(c.evidence).toMatch(/\.md$/);
+      expect(c.reason).toBeNull();
+    }
   });
 
   it('only the built variants are available (no «Not available» reason)', () => {
@@ -65,7 +82,8 @@ describe('action contracts', () => {
   });
 
   it('status labels: «Not available: reason» or the status by name', () => {
-    expect(statusLabel(CONTRACTS.send_message)).toBe('Tested locally');
+    expect(statusLabel(CONTRACTS.send_message)).toBe('Verified in sandbox');
+    expect(statusLabel(CONTRACTS['send_message:file'])).toBe('Tested locally');
     expect(statusLabel(CONTRACTS.appeal)).toBe('Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute');
     expect(statusLabel({ ...CONTRACTS.escalate, status: 'not_available', reason: null })).toBe('Not available');
     expect(Object.values(STATUS_LABEL)).toEqual(['Not available', 'Implemented', 'Tested locally', 'Verified in sandbox', 'Deployed']);

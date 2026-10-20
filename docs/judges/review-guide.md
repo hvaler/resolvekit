@@ -45,18 +45,19 @@ in-browser simulator instead of PayPal.
 | Buying agent (same models, function calling) | Picks one MeterMCP tool per turn; code validates tool, arguments, price and limits before each call | Verified in sandbox (two runs, 19/10/2026, examples) · Deployed |
 | MeterMCP | A metered MCP gateway: paid tools (`quote_lookup` 0.05, `deep_report` 0.40, `bulk_export` 0.92 USD), failed calls never charged, receipts with request hashes | Verified in sandbox · Deployed |
 
-Only `provide-evidence` is verified end to end through the app and deployed. The other dispute actions are in the
-code at a lower status, one per variant ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)):
+Only `provide-evidence` is verified end to end through the app **and** deployed. The other dispute actions are in
+the code, not deployed, one status per variant ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)):
 
 | Dispute action | Status |
 |---|---|
-| Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Tested locally**. Not Verified in sandbox through the app, not Deployed (the deployed commit `fbe9621` predates them) |
+| Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Verified in sandbox** through the app (20/10/2026: the branch's server run locally, one send each, read back). Not Deployed (the deployed commit `fbe9621` predates them) |
 | A message with an attachment | Tested locally on the server; the UI cannot attach an upload yet |
 | Replacement offer · offer withdrawal · appeal · proof of refund · return types | **Not available**, each with its reason in the product |
 
-Each Tested-locally variant rests on one write the owner approved in the sandbox on 20/10/2026 and its read-back
+Each available variant rests on one write the owner approved in the sandbox on 20/10/2026 and its read-back
 ([dispute action contracts](../technical/paypal-integration.md#dispute-action-contracts)); those writes were made
-outside the app's flow, so they show PayPal's behaviour, not the app's. Reviewers may send messages only; accept, offer
+outside the app's flow, so they show PayPal's behaviour. The app's own flow was then run once per verified variant
+(V-1 to V-6, same page); only the full accept (V-4) moved money, a 7.00 USD sandbox refund. Reviewers may send messages only; accept, offer
 and escalate are the Owner's, with a second confirmation, and others see a preview. ResolveKit never creates a refund.
 
 ## What is real, synthetic, simulated or stored

@@ -88,8 +88,8 @@ Notes:
 | UC-11 | Compare two runs; Keep a run; view Workspace runs | Author / Owner | Implemented · Tested locally · Verified in sandbox (Compare and Keep, 19/10/2026) |
 | UC-12 | Stop a running agent run | Author | Implemented · Tested locally; in sandbox **Pending** |
 | UC-13 | Connect a merchant's own PayPal disputes | Merchant | **Pending** (not in the app) |
-| UC-14 | Send a message to the buyer | Seller workspace | Tested locally; Verified in sandbox and Deployed: **Pending** |
-| UC-15 | Accept a claim (full or partial), make an offer, escalate | Owner | Tested locally; Verified in sandbox and Deployed: **Pending** |
+| UC-14 | Send a message to the buyer | Seller workspace | Tested locally · Verified in sandbox through the app (20/10/2026); Deployed: **Pending** |
+| UC-15 | Accept a claim (full or partial), make an offer, escalate | Owner | Tested locally · Verified in sandbox through the app (20/10/2026); Deployed: **Pending** |
 
 ## 5. States and business rules
 
@@ -185,30 +185,34 @@ Details: [Buying agent](../user-guide/buying-agent.md).
 
 ### 5.6 Dispute actions other than evidence
 
-Checked against commit `076c74f` (20/10/2026). Each action variant has one status, taken from the contract registry
+Checked against commit `076c74f` (20/10/2026); statuses updated after the runs through the app in the sandbox on
+20/10/2026 (V-1 to V-6). Each action variant has one status, taken from the contract registry
 (`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); the product shows the same label next to each variant. A
 variant is available only when its contract is recorded: PayPal's documentation, read-only sandbox reads, and one write
 the owner approved request by request, with its response and read-back (`packages/paypal/contracts/`).
 
-| Variant | What it is | Status | Contract write (sandbox, 20/10/2026) |
-|---|---|---|---|
-| `send_message` | A text message to the buyer (1–2,000 characters) | Tested locally | Recorded (W-1, W-2) |
-| `send_message:file` | A message with one confirmed upload attached | Tested locally: the server path. The web composer cannot attach an upload yet, so the UI does not offer it | Recorded (W-3) |
-| `accept_claim:REFUND` | Accept the claim with a full refund | Tested locally | Recorded (W-10) |
-| `accept_claim:PARTIAL_REFUND` | Accept the claim with a partial refund, which PayPal records as an offer to the buyer | Tested locally | Recorded (W-9) |
-| `escalate` | Escalate an inquiry to a claim | Tested locally | Recorded (W-5) |
-| `evidence:after_escalation` | Evidence in the claim stage after an escalation | Tested locally | Recorded (W-6) |
-| `make_offer:REFUND` | Offer the buyer a partial refund | Tested locally | Recorded (W-4) |
-| `make_offer:REPLACEMENT_WITHOUT_REFUND` | — | Not available: Not verified with PayPal: never offered on a sandbox dispute | Not sent (W-12) |
-| `make_offer:withdraw` | — | Not available: PayPal documents no route to withdraw an offer | — |
-| `appeal` | — | Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute | Set-up refused (W-7); not sent (W-8) |
-| `evidence:PROOF_OF_REFUND` | — | Not available: Not verified with PayPal: pending sandbox test (W-11) | Not sent (W-11, owner decision) |
-| `return_address` | The accept and offer types with a return (`REFUND_WITH_RETURN`, `REFUND_WITH_RETURN_SHIPMENT_LABEL`) | Not available: Not in this delivery (owner decision) | — |
+| Variant | What it is | Status | Contract write (sandbox, 20/10/2026) | Through the app (sandbox, 20/10/2026) |
+|---|---|---|---|---|
+| `send_message` | A text message to the buyer (1–2,000 characters) | Verified in sandbox | Recorded (W-1, W-2) | Recorded (V-1) |
+| `send_message:file` | A message with one confirmed upload attached | Tested locally: the server path. The web composer cannot attach an upload yet, so the UI does not offer it | Recorded (W-3) | Not run |
+| `accept_claim:REFUND` | Accept the claim with a full refund | Verified in sandbox | Recorded (W-10) | Recorded (V-4): resolved in the buyer's favour, 7.00 USD refunded |
+| `accept_claim:PARTIAL_REFUND` | Accept the claim with a partial refund, which PayPal records as an offer to the buyer | Verified in sandbox | Recorded (W-9) | Recorded as a pending offer (V-3); no money moved |
+| `escalate` | Escalate an inquiry to a claim | Verified in sandbox | Recorded (W-5) | Recorded (V-5); a claim about 10 min later |
+| `evidence:after_escalation` | Evidence in the claim stage after an escalation | Verified in sandbox | Recorded (W-6) | Recorded in the claim stage (V-6) |
+| `make_offer:REFUND` | Offer the buyer a partial refund | Verified in sandbox | Recorded (W-4) | Recorded (V-2); no money moved |
+| `make_offer:REPLACEMENT_WITHOUT_REFUND` | — | Not available: Not verified with PayPal: never offered on a sandbox dispute | Not sent (W-12) | — |
+| `make_offer:withdraw` | — | Not available: PayPal documents no route to withdraw an offer | — | — |
+| `appeal` | — | Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute | Set-up refused (W-7); not sent (W-8) | — |
+| `evidence:PROOF_OF_REFUND` | — | Not available: Not verified with PayPal: pending sandbox test (W-11) | Not sent (W-11, owner decision) | — |
+| `return_address` | The accept and offer types with a return (`REFUND_WITH_RETURN`, `REFUND_WITH_RETURN_SHIPMENT_LABEL`) | Not available: Not in this delivery (owner decision) | — | — |
 
-No variant is **Verified in sandbox** or **Deployed**. The contract writes of 20/10/2026 were prepared requests that
-the owner approved one by one, sent outside the app's own flow; they show what PayPal does (see
-[PayPal integration](../technical/paypal-integration.md#dispute-action-contracts)), not that the app's flow works end
-to end against the sandbox, which is **Pending**. The deployed commit (`fbe9621`) predates the dispute actions.
+Six variants are **Verified in sandbox**: on 20/10/2026 each was sent once through the app's own flow (compose, approve
+by hash, a second confirmation when the action has terms, one send, an attributable read-back), by the server of the
+unmerged branch running locally against the sandbox (V-1 to V-6, see
+[PayPal integration](../technical/paypal-integration.md#dispute-action-contracts)). Only V-4, the full accept, moved
+money (a 7.00 USD sandbox refund). Separately, the contract writes of 20/10/2026 (W-1 to W-12) were prepared requests
+that the owner approved one by one, sent outside the app's own flow; they show what PayPal does and are what each
+contract rests on. No variant is **Deployed**: the deployed commit (`fbe9621`) predates the dispute actions.
 
 **Who may do what.** Accept claim, make offer, escalate and appeal are **owner-only**: only the workspace's Owner (not a
 reviewer) composes, approves, confirms and sends them. Members and reviewers may send **messages only** (and evidence,
@@ -352,7 +356,7 @@ More: [Troubleshooting](../user-guide/troubleshooting.md).
 | AI analysis | committed golden analyses, no model call | stored + live (caps) | — | live with a model key |
 | **+ Add evidence** | disabled with its reason | yes | — | yes, with the server |
 | Submit | simulator only | `provide-evidence` to the sandbox | — | sandbox for bound cases |
-| Dispute actions ([5.6](#56-dispute-actions-other-than-evidence)) | simulator, recorded transitions only | not in the deployed commit (**Pending**) | — | the server's action routes (Tested locally with fakes; against the sandbox through the app: **Pending**) |
+| Dispute actions ([5.6](#56-dispute-actions-other-than-evidence)) | simulator, recorded transitions only | not in the deployed commit (**Pending**) | — | the server's action routes (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026) |
 | Buying agent | not in the demo area | `/agent` (seller workspace) | start refused | `/agent` as operator |
 | Daily caps | — | yes | — | none |
 
@@ -362,5 +366,5 @@ More: [Troubleshooting](../user-guide/troubleshooting.md).
 - Not available: connecting a merchant's own disputes; the dispute-action variants marked «Not available» in
   [5.6](#56-dispute-actions-other-than-evidence) (replacement offer, offer withdrawal, appeal, proof of refund, the
   return types); creating refunds; the live (production) PayPal environment; account or workspace deletion by the
-  user. Message, accept, offer and escalate are Tested locally, not yet Verified in sandbox through the app nor
-  Deployed. See [Limitations](limitations.md).
+  user. Message, accept, offer, escalate and evidence after an escalation are Verified in sandbox through the app
+  (20/10/2026), not Deployed; a message with an attachment is Tested locally (server). See [Limitations](limitations.md).

@@ -51,9 +51,10 @@ Details: [product overview](docs/product/overview.md) · [AI pipeline](docs/tech
 | Deterministic code | Verbatim-quote check, numbers check, rules for action and evidence type, budget and limit checks for the agent | Implemented · Tested locally · Deployed |
 
 Only `provide-evidence` is verified end to end through the app and deployed. Sending a message, accepting a claim
-(full, or partial as an offer), making a partial-refund offer and escalating are **Tested locally** from commit
-`076c74f` (20/10/2026), each on a sandbox contract the owner approved; they are not yet verified through the app in
-the sandbox nor deployed. Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
+(full, or partial as an offer), making a partial-refund offer, escalating and sending evidence after an escalation are
+built from commit `076c74f` (20/10/2026), each on a sandbox contract the owner approved, and **Verified in sandbox**
+through the app on 20/10/2026 (one send each, on a local server); they are not deployed. A message with an attachment
+is Tested locally on the server only. Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
 **Not available**, each with its reason. ResolveKit never creates a refund. Per-variant status:
 [functional specification](docs/product/functional-specification.md#56-dispute-actions-other-than-evidence). Nothing
 has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).
@@ -156,8 +157,8 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 ## Current limitations
 
 - Merchant connection to their own disputes: Pending (see above).
-- Only `provide-evidence` is verified through the app and deployed; messages, accept, offer and escalate are Tested
-  locally (not deployed); no refund is ever created.
+- Only `provide-evidence` is verified through the app and deployed; messages, accept, offer and escalate are Verified
+  in sandbox through the app (not deployed); no refund is ever created.
 - Sandbox only; live PayPal never exercised. Sandbox timings and behaviours may differ in live.
 - The standard evaluation case's reserve of fresh sandbox disputes was empty on 19/10/2026: until it is refilled, new
   sends there are refused and the case shows the earlier read-back.

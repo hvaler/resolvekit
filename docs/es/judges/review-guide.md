@@ -47,19 +47,21 @@ pero se envía al simulador del navegador en lugar de a PayPal.
 | Agente comprador (mismos modelos, function calling) | Elige una herramienta de MeterMCP por turno; el código valida la herramienta, los argumentos, el precio y los límites antes de cada llamada | Verificado en sandbox (dos ejecuciones, 19/10/2026, ejemplos) · Desplegado |
 | MeterMCP | Una pasarela MCP de pago por uso: herramientas de pago (`quote_lookup` 0.05, `deep_report` 0.40, `bulk_export` 0.92 USD), las llamadas fallidas nunca se cobran, recibos con hashes de las peticiones | Verificado en sandbox · Desplegado |
 
-Solo `provide-evidence` está verificado de extremo a extremo a través de la app y desplegado. Las demás acciones de
-disputa están en el código con un estado menor, uno por variante
+Solo `provide-evidence` está verificado de extremo a extremo a través de la app **y** desplegado. Las demás acciones
+de disputa están en el código, no desplegadas, con un estado por variante
 ([especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)):
 
 | Acción de disputa | Estado |
 |---|---|
-| Enviar mensaje; aceptar la reclamación (reembolso total, o parcial, que PayPal registra como oferta); hacer una oferta de reembolso parcial; escalar; evidencia tras un escalado | **Probado en local**. No Verificado en sandbox a través de la app, no Desplegado (el commit desplegado `fbe9621` es anterior a ellas) |
+| Enviar mensaje; aceptar la reclamación (reembolso total, o parcial, que PayPal registra como oferta); hacer una oferta de reembolso parcial; escalar; evidencia tras un escalado | **Verificado en sandbox** a través de la app (20/10/2026: el servidor de la rama ejecutado en local, un envío cada una, releído). No Desplegado (el commit desplegado `fbe9621` es anterior a ellas) |
 | Un mensaje con adjunto | Probado en local en el servidor; la interfaz aún no puede adjuntar una subida |
 | Oferta de sustitución · retirar una oferta · apelación · prueba de reembolso · tipos con devolución | **No disponible**, cada una con su motivo en el producto |
 
-Cada variante Probada en local se apoya en una escritura que el propietario aprobó en el sandbox el 20/10/2026 y en su
+Cada variante disponible se apoya en una escritura que el propietario aprobó en el sandbox el 20/10/2026 y en su
 relectura ([contratos de las acciones de disputa](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa));
-esas escrituras se hicieron fuera del flujo de la app, así que muestran el comportamiento de PayPal, no el de la app.
+esas escrituras se hicieron fuera del flujo de la app, así que muestran el comportamiento de PayPal. Después se ejecutó
+el flujo propio de la app una vez por variante verificada (V-1 a V-6, misma página); solo la aceptación total (V-4)
+movió dinero, un reembolso de sandbox de 7.00 USD.
 Los revisores solo pueden enviar mensajes; aceptar, ofertar y escalar son del Owner, con una segunda confirmación, y los
 demás ven una vista previa. ResolveKit nunca crea un reembolso.
 

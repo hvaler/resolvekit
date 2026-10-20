@@ -9,7 +9,7 @@ lo que registró PayPal.
 
 Estado de la evidencia: Implementado · Probado en local · Verificado en sandbox (envíos de dos revisores registrados
 por PayPal, 17/10/2026; una subida de imagen, 18/10/2026) · Desplegado. Las demás acciones de disputa (mensaje,
-aceptación, oferta, escalado) solo están **Probadas en local**: ver [Otras acciones de disputa](#otras-acciones-de-disputa)
+aceptación, oferta, escalado) están **Verificadas en sandbox** a través de la app (20/10/2026) y no desplegadas: ver [Otras acciones de disputa](#otras-acciones-de-disputa)
 y [Limitaciones](../product/limitations.md).
 
 Hay tres cosas distintas y la app las mantiene separadas: **el envío fue aceptado** (PayPal respondió al envío), **la
@@ -93,12 +93,13 @@ después, en su siguiente lectura, **solo si** queda alguna (a 19/10/2026 el cas
 
 ## Otras acciones de disputa
 
-Estado: **Probado en local** (con fakes construidos a partir de respuestas registradas de PayPal). Aún no Verificado en
-sandbox a través de la app, no Desplegado. Estado y reglas por variante:
+Estado: **Probado en local** (con fakes construidos a partir de respuestas registradas de PayPal) · **Verificado en
+sandbox** a través de la app (20/10/2026, un envío cada una en un servidor local; salvo el mensaje con archivo). No
+Desplegado. Estado y reglas por variante:
 [Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
 
 Elige la acción en **What to do**. Solo se puede componer lo que PayPal ofrece ahora mismo en la disputa, y cada
-variante muestra su estado («Tested locally», o «Not available: <motivo>»).
+variante muestra su estado («Verified in sandbox», «Tested locally», o «Not available: <motivo>»).
 
 | Acción | Quién | Qué escribes | Qué hace PayPal |
 |---|---|---|---|

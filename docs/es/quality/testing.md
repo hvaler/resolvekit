@@ -111,9 +111,10 @@ Todas en el **sandbox** de PayPal; nada se ha ejecutado contra PayPal live. Las 
 | `demo:check` READY excepto la reserva estándar vacía | 19/10 |
 | Un pago con una disputa abierta apareció retenido; las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso | 19/10 |
 | Escrituras de contrato de acciones de disputa W-1 a W-12 aprobadas por el propietario, enviadas fuera del flujo de la app (a nivel de contrato, no la app): W-1 a W-6, W-9 y W-10 registradas, W-7 rechazada, W-8, W-11 y W-12 no enviadas ([detalles](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)) | 20/10 |
+| Seis variantes de acciones de disputa enviadas una vez cada una por el flujo propio de la app (el servidor de la rama ejecutado en local) y releídas «Recorded by PayPal», V-1 a V-6; solo V-4 movió dinero, un reembolso de 7.00 USD ([detalles](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)) | 20/10 |
 
-**No observado en el sandbox (Pendiente):** el flujo propio de la app para las acciones de disputa de extremo a
-extremo (mensaje, aceptación, oferta, escalado enviados a través de ResolveKit y releídos); un timeout de PayPal o un
+**No observado en el sandbox (Pendiente):** un mensaje con adjunto enviado a través de la app (la interfaz aún no
+puede adjuntar); las acciones de disputa en el servicio desplegado; un timeout de PayPal o un
 envío incierto; `capture_pending` de MeterMCP; la
 recuperación del agente tras un reinicio; **Stop** en una ejecución real; el respaldo con Groq para el agente; subidas de
 texto pegado y de PDF enviadas a PayPal; creación de passkeys en el servicio desplegado; el registro de ejecución E5 en
@@ -161,6 +162,7 @@ anterior cliente con guion (scripted), no el agente dirigido por el modelo.
   Render no medida.
 - Comportamiento contra PayPal live: ninguno.
 - Acciones de disputa: probadas con fakes y una escritura de contrato registrada por variante; el flujo de la app contra
-  el sandbox está Pendiente.
+  el sandbox se ejecutó una vez por variante verificada (20/10/2026, un servidor local), no para el mensaje con archivo;
+  nada desplegado.
 
 La lista completa, con fuentes, está en [Problemas conocidos](known-issues.md).

@@ -106,9 +106,10 @@ evidence). An observation is one example, not a guarantee.
 | `demo:check` READY except the empty standard reserve | 19/10 |
 | A payment with an open dispute showed as held; the seller's sandbox web pages offered no refund outside the case | 19/10 |
 | Owner-approved dispute-action contract writes W-1 to W-12, sent outside the app's flow (contract level, not the app): W-1 to W-6, W-9 and W-10 recorded, W-7 refused, W-8, W-11 and W-12 not sent ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 20/10 |
+| Six dispute-action variants sent once each through the app's own flow (the branch's server run locally) and read back «Recorded by PayPal», V-1 to V-6; only V-4 moved money, a 7.00 USD refund ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 20/10 |
 
-**Not observed in the sandbox (Pending):** the app's own dispute-action flow end to end (message, accept, offer,
-escalate sent through ResolveKit and read back); a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
+**Not observed in the sandbox (Pending):** a message with an attachment sent through the app (the UI cannot attach
+yet); the dispute actions on the deployed service; a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
 restart recovery; **Stop** on a real run; the Groq fallback for the agent; pasted-text and PDF uploads sent to PayPal;
 passkey creation on the deployed service; the E5 run record on a bound case; `npm run demo-agent` against the hosted
 MeterMCP.
@@ -153,6 +154,6 @@ not by the model-driven agent.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
 - Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
-  is Pending.
+  was run once per verified variant (20/10/2026, a local server), not for the message with a file; nothing deployed.
 
 The full list, with sources, is in [Known issues](known-issues.md).

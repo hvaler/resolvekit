@@ -51,7 +51,7 @@ en `076c74f` (20/10/2026).
 | Apelación no comprobable en el sandbox | El sandbox se negó a producir una disputa apelable (W-7), así que la apelación sigue «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
 | `provide_supporting_info` no soportado | PayPal lo ofrece tras evidencia en una reclamación; ResolveKit no muestra nada que enviar | DA; `apps/web/src/domain/simulatedActions.ts` |
 | Prueba de reembolso no enviada | Si PayPal solo pide esa, en esta entrega no se puede enviar evidencia en esa disputa; W-11 es una prueba de sandbox pendiente | DA; `actionContracts.ts` |
-| El flujo de la app no se ha ejecutado contra el sandbox | Los estados se quedan en Probado en local hasta que la app envíe y relea cada variante en el sandbox (**Pendiente**) | DA |
+| El flujo de la app, verificado una vez por variante, no desplegado | Cada variante verificada se envió una vez a través de la app en un servidor local (20/10/2026, V-1 a V-6): observaciones únicas. El mensaje con archivo y las variantes No disponibles no se ejecutaron a través de la app; nada está desplegado (**Pendiente**) | DA |
 
 ## Entornos, inicio de sesión y health
 

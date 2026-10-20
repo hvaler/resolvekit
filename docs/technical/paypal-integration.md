@@ -35,7 +35,7 @@ refreshes it 60 s before expiry. Requests time out after 30 s (the servers' sett
 | `GET /v1/customer/disputes/{id}` | server: case read, compose, send, bindings check, webhook re-read; `demo:prepare` | seller app |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | `demo:prepare` only | seller app |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | server, `POST /api/disputes/:case/evidence` | seller app |
-| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` with a file), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | server, `POST /api/disputes/:case/send` (Tested locally with fakes; not deployed) | seller app |
+| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` with a file), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | server, `POST /api/disputes/:case/send` (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026; not deployed) | seller app |
 | `GET /v2/payments/refunds/{id}` | `npm run contract:read -- --refund <id>` only (read-only contract reads) | seller app |
 | `POST /v1/notifications/verify-webhook-signature` | server webhook handler | seller app (the webhook is registered on it) |
 | `POST /v1/billing-agreements/agreement-tokens`, `GET /v1/billing-agreements/agreement-tokens/{id}` | server sign-in | identity app |
@@ -113,8 +113,8 @@ write per variant that the owner approved request by request, recorded with its 
 +0 s, +30 s, +2 min and +10 min (`packages/paypal/contracts/*.json`). The registry is
 `apps/web/src/domain/actionContracts.ts`.
 
-**Observed in sandbox, contract level (20/10/2026).** These writes were sent outside the app's own flow; the app's
-flow end to end against the sandbox is **Pending**. Single observations, not PayPal rules and not production.
+**Observed in sandbox, contract level (20/10/2026).** These writes were sent outside the app's own flow (the runs
+through the app come after this table). Single observations, not PayPal rules and not production.
 
 | Write | Variant | Sandbox dispute | Observed |
 |---|---|---|---|
@@ -135,6 +135,24 @@ What ResolveKit takes from them: the proof of each action is the entry the write
 also for a partial accept; the `ACCEPT_CLAIM` entry; the `ESCALATE` entry), never a state change alone; an action is
 taken as absent only after 60 s without proof; every action is composed only in `INQUIRY`, on not-received disputes for
 accept, offer and escalate, because that is all the writes covered.
+
+**Verified in sandbox through the app (20/10/2026).** After the contract writes, six variants were sent through
+ResolveKit's own flow: the server of the unmerged branch `feat/dispute-actions` (head `9f93ba0`) running locally
+against the sandbox, each run approved by the owner beforehand, each going compose → approve by hash → second
+confirmation (when the action has terms) → one send → attributable read-back. One POST to PayPal per run, with GET
+reads before and after (private evidence, 20/10/2026). Not deployed. Single observations, not PayPal rules.
+
+| Run | Variant | Sandbox dispute | Observed through the app |
+|---|---|---|---|
+| V-1 | `send_message` | PP-R-GCV-10193596 | «Recorded by PayPal» about 1.5 s after the send; one seller message with the exact text; then `WAITING_FOR_BUYER_RESPONSE` without `make_offer`. The brief `UNDER_REVIEW` with no actions right after the send was not taken as a closure |
+| V-2 | `make_offer:REFUND`, 2.00 of 7.00 USD | PP-R-BBF-10193789 | The second confirmation bound to the approved terms; «Recorded by PayPal»; one `offer.history` seller `PROPOSED` entry, `REFUND`, 2.00 USD; the note echoed as a seller message; no money moved |
+| V-3 | `accept_claim:PARTIAL_REFUND`, 2.00 of 7.00 USD | PP-R-MDW-10193788 | «Recorded by PayPal» as a pending offer (`offer.history` seller `PROPOSED`, 2.00 USD); no `ACCEPT_CLAIM` entry, no outcome, no refund: no money moved |
+| V-4 | `accept_claim:REFUND` | PP-R-TYE-10193787 | «Recorded by PayPal» from the attributable `ACCEPT_CLAIM` entry (`response_option: REFUND`, the note), not from the state change; `UNDER_REVIEW`, then `RESOLVED` in the buyer's favour (`SELLER_ISSUED_REFUND`) by about +2 min; a 7.00 USD sandbox refund. The only run that moved money |
+| V-5 | `escalate` | PP-R-JHY-10193786 | «Recorded by PayPal» from the `ESCALATE` entry (the note, stage `INQUIRY`) about 1.5 s after; `UNDER_REVIEW` for about 10 min with `provide_evidence` flickering, never shown as closed; then `CHARGEBACK` · `WAITING_FOR_SELLER_RESPONSE` |
+| V-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | After one live analysis of the bound case, an edited sentence re-checked and a contradiction resolved by the owner: one `provide-evidence`, recorded as a `PROVIDE_EVIDENCE` entry in stage `CHARGEBACK` with 2 documents, next to the inquiry-stage `ESCALATE` entry |
+
+Not verified through the app: `send_message:file` (the web composer cannot attach an upload yet; Tested locally on the
+server, contract write W-3) and every «Not available» variant.
 
 **W-11, the pending proof-of-refund test.** A disputed payment showed as held in the sandbox on 19/10/2026, and the
 seller's sandbox web pages offered no refund outside the case. The planned sequence is therefore: a new sandbox
@@ -255,6 +273,7 @@ in `WAITING_FOR_SELLER_RESPONSE` through `apps/server`, with our own `PayPal-Req
 | 19/10 | Two model-driven agent runs settled in the sandbox: [buying agent](buying-agent.md) |
 | 19/10 | A payment with an open dispute showed as held; the seller's sandbox web pages offered no refund outside the case |
 | 20/10 | Owner-approved contract writes W-1 to W-12: [dispute action contracts](#dispute-action-contracts) |
+| 20/10 | Six variants sent once each through ResolveKit's own flow (local server of the unmerged branch) and read back, V-1 to V-6; only V-4 moved money (a 7.00 USD refund): [dispute action contracts](#dispute-action-contracts) |
 
 ## Unknown and not claimed
 

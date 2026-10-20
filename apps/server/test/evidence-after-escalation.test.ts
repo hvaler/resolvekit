@@ -97,7 +97,7 @@ async function sendOne(app: App): Promise<[number, string | undefined]> {
 const NOT_RECORDED: ContractRegistry = { ...CONTRACTS, 'evidence:after_escalation': { ...CONTRACTS['evidence:after_escalation'], status: 'not_available', reason: 'Contract not recorded yet' } };
 
 test('evidence after escalation follows the registry: the claim with no seller evidence at all takes evidence once', async () => {
-  assert.equal(CONTRACTS['evidence:after_escalation'].status, 'tested_locally');
+  assert.equal(CONTRACTS['evidence:after_escalation'].status, 'verified_in_sandbox');
   // W-6: the claim after the seller's escalation, no seller evidence (the ESCALATE entry is not evidence).
   const { app, state, sends } = await setup(claim());
   assert.deepEqual(await sendOne(app), [202, undefined]);

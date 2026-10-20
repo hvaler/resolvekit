@@ -98,7 +98,7 @@ test, no varios comerciantes reales.
   un TTL de 30 minutos; cualquier edición, un intent más nuevo o un cambio de vinculación lo invalidan; el envío vuelve
   a leer PayPal y rechaza ante cualquier diferencia; un `PayPal-Request-Id` por intent; un bloqueo por disputa; una
   entrada de auditoría duradera antes de que nada vaya a PayPal. Detalles: [API HTTP](../technical/http-api.md).
-- Acciones de disputa (Probadas en local, no desplegadas): la misma cadena, más el rol comprobado al componer, aprobar,
+- Acciones de disputa (Verificadas en sandbox a través de la app, no desplegadas): la misma cadena, más el rol comprobado al componer, aprobar,
   confirmar y enviar (aceptar, ofertar y escalar son solo del Owner, `403 OWNER_ONLY`); una segunda confirmación ligada
   al id del intent, el hash del contenido, la acción, el importe canónico, la moneda y la consecuencia; importes como
   cadenas decimales exactas, nunca números de coma flotante; una disputa retenida tras cualquier envío cuyo resultado

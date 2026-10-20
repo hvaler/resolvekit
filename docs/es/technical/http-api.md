@@ -84,7 +84,8 @@ coincide con lo enviado. Aceptado ≠ registrado ≠ disputa resuelta.
 ## Acciones de disputa
 
 Mensaje, aceptar la reclamación, hacer una oferta y escalar usan la misma cadena de intents que la evidencia, con su
-propia ruta de envío. Estado: Probado en local; no desplegado (estado por variante:
+propia ruta de envío. Estado: Probado en local; Verificado en sandbox a través de la app (20/10/2026, servidor local); no desplegado (estado
+por variante:
 [Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
 El rol se comprueba al componer, aprobar, confirmar y enviar: `accept_claim`, `make_offer` y `escalate` responden
 `403 OWNER_ONLY` a cualquiera que no sea el Owner del espacio de trabajo (un revisor nunca pasa).

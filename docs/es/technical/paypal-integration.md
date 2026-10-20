@@ -36,7 +36,7 @@ y lo renueva 60 s antes de que caduque. Las peticiones expiran a los 30 s (ajust
 | `GET /v1/customer/disputes/{id}` | servidor: lectura del caso, composición, envío, comprobación de vinculaciones, relectura tras webhook; `demo:prepare` | app del vendedor |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | solo `demo:prepare` | app del vendedor |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | servidor, `POST /api/disputes/:case/evidence` | app del vendedor |
-| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` con un archivo), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | servidor, `POST /api/disputes/:case/send` (Probado en local con fakes; no desplegado) | app del vendedor |
+| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` con un archivo), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | servidor, `POST /api/disputes/:case/send` (Probado en local con fakes; Verificado en sandbox a través de la app en un servidor local, 20/10/2026; no desplegado) | app del vendedor |
 | `GET /v2/payments/refunds/{id}` | solo `npm run contract:read -- --refund <id>` (lecturas de contrato de solo lectura) | app del vendedor |
 | `POST /v1/notifications/verify-webhook-signature` | manejador del webhook en el servidor | app del vendedor (el webhook está registrado en ella) |
 | `POST /v1/billing-agreements/agreement-tokens`, `GET /v1/billing-agreements/agreement-tokens/{id}` | inicio de sesión en el servidor | app de identidad |
@@ -119,8 +119,8 @@ relecturas a +0 s, +30 s, +2 min y +10 min (`packages/paypal/contracts/*.json`).
 `apps/web/src/domain/actionContracts.ts`.
 
 **Observado en sandbox, a nivel de contrato (20/10/2026).** Estas escrituras se enviaron fuera del flujo propio de la
-app; el flujo de la app de extremo a extremo contra el sandbox está **Pendiente**. Son observaciones únicas, no reglas de
-PayPal ni producción.
+app (las ejecuciones a través de la app vienen después de esta tabla). Son observaciones únicas, no reglas de PayPal ni
+producción.
 
 | Escritura | Variante | Disputa de sandbox | Observado |
 |---|---|---|---|
@@ -142,6 +142,25 @@ oferta, también para una aceptación parcial; la entrada `ACCEPT_CLAIM`; la ent
 estado por sí solo; una acción solo se da por ausente tras 60 s sin prueba; toda acción se compone solo en `INQUIRY`, y
 la aceptación, la oferta y el escalado solo en disputas de artículo no recibido, porque es todo lo que cubrieron las
 escrituras.
+
+**Verificado en sandbox a través de la app (20/10/2026).** Tras las escrituras de contrato, seis variantes se enviaron
+por el flujo propio de ResolveKit: el servidor de la rama sin fusionar `feat/dispute-actions` (head `9f93ba0`) ejecutado
+en local contra el sandbox, cada ejecución aprobada antes por el propietario, y cada una por componer → aprobar por
+hash → segunda confirmación (cuando la acción tiene términos) → un envío → relectura atribuible. Un POST a PayPal por
+ejecución, con lecturas GET antes y después (evidencia privada, 20/10/2026). No desplegado. Son observaciones únicas, no
+reglas de PayPal.
+
+| Ejecución | Variante | Disputa de sandbox | Observado a través de la app |
+|---|---|---|---|
+| V-1 | `send_message` | PP-R-GCV-10193596 | «Recorded by PayPal» unos 1.5 s después del envío; un mensaje del vendedor con el texto exacto; después `WAITING_FOR_BUYER_RESPONSE` sin `make_offer`. El `UNDER_REVIEW` breve sin acciones justo después del envío no se tomó como cierre |
+| V-2 | `make_offer:REFUND`, 2.00 de 7.00 USD | PP-R-BBF-10193789 | La segunda confirmación ligada a los términos aprobados; «Recorded by PayPal»; una entrada `PROPOSED` del vendedor en `offer.history`, `REFUND`, 2.00 USD; la nota repetida como mensaje del vendedor; no se movió dinero |
+| V-3 | `accept_claim:PARTIAL_REFUND`, 2.00 de 7.00 USD | PP-R-MDW-10193788 | «Recorded by PayPal» como oferta pendiente (`PROPOSED` del vendedor en `offer.history`, 2.00 USD); ninguna entrada `ACCEPT_CLAIM`, ningún resultado ni reembolso: no se movió dinero |
+| V-4 | `accept_claim:REFUND` | PP-R-TYE-10193787 | «Recorded by PayPal» por la entrada atribuible `ACCEPT_CLAIM` (`response_option: REFUND`, la nota), no por el cambio de estado; `UNDER_REVIEW` y después `RESOLVED` a favor del comprador (`SELLER_ISSUED_REFUND`) hacia los +2 min; un reembolso de sandbox de 7.00 USD. La única ejecución que movió dinero |
+| V-5 | `escalate` | PP-R-JHY-10193786 | «Recorded by PayPal» por la entrada `ESCALATE` (la nota, fase `INQUIRY`) unos 1.5 s después; `UNDER_REVIEW` durante unos 10 min con `provide_evidence` intermitente, nunca mostrado como cerrado; después `CHARGEBACK` · `WAITING_FOR_SELLER_RESPONSE` |
+| V-6 | `evidence:after_escalation` | la misma, en `CHARGEBACK` | Tras un análisis en directo del caso vinculado, una frase editada recomprobada y una contradicción resuelta por el propietario: un único `provide-evidence`, registrado como entrada `PROVIDE_EVIDENCE` en la fase `CHARGEBACK` con 2 documentos, junto a la entrada `ESCALATE` de la fase de consulta |
+
+No verificado a través de la app: `send_message:file` (el editor web aún no puede adjuntar una subida; Probado en local
+en el servidor, escritura de contrato W-3) y todas las variantes «Not available».
 
 **W-11, la prueba pendiente de la prueba de reembolso.** El 19/10/2026 un pago en disputa apareció retenido en el
 sandbox, y las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso. La secuencia prevista es,
@@ -269,6 +288,7 @@ envío tardó unos 1.9 s (lectura y POST multipart); PayPal lo aceptó, y la rel
 | 19/10 | Dos ejecuciones del agente dirigido por el modelo se liquidaron en el sandbox: [agente comprador](buying-agent.md) |
 | 19/10 | Un pago con una disputa abierta apareció retenido; las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso |
 | 20/10 | Escrituras de contrato W-1 a W-12 aprobadas por el propietario: [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
+| 20/10 | Seis variantes enviadas una vez cada una por el flujo propio de ResolveKit (servidor local de la rama sin fusionar) y releídas, V-1 a V-6; solo V-4 movió dinero (un reembolso de 7.00 USD): [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
 
 ## Desconocido y no afirmado
 

@@ -139,7 +139,7 @@ test('the escalate proof on the recorded reads, read for read (mapping + matcher
   assert.ok(!('error' in c), JSON.stringify(c));
   const intent = { ...(c as object), id: 'int-1', contentHash: 'c'.repeat(64), requestId: 'rk-1', status: 'sent' } as SubmissionIntent;
   const contract = CONTRACTS.escalate;
-  assert.equal(contract.status, 'tested_locally');
+  assert.equal(contract.status, 'verified_in_sandbox');
   const base = readBackBase(before, contract.proof!, W5.sentStartedAt);
   for (const a of ['0s', '30s', '2m', '10m']) assert.equal(proveSend(intent, base, at(a), contract, Date.parse(W5.sentStartedAt) + 1_000).state, 'recorded', a);
   // The entry is the seller's, ESCALATE, in the inquiry stage (mapped from dispute_life_cycle_stage).

@@ -94,7 +94,8 @@ describe('ActionComposer and MessageThread', () => {
     const a = actionAvailability(snap, 'send_message', { role: 'member', reviewer: true });
     const html = renderToString(<ActionComposer action="send_message" text={TEXT} onText={noop} availability={a} locked={null} onReview={noop} />);
     expect(html).toContain(`${TEXT.length} / 2,000`);
-    expect(html).toContain('Tested locally');
+    expect(html).toContain('Verified in sandbox');
+    expect(html).not.toContain('Tested locally');
     expect(html).toContain('Review the message');
     // Attaching is not wired in the composer yet: the file variant is not offered there.
     expect(html).not.toContain('Message with a file');
@@ -261,7 +262,7 @@ describe('accept_claim: full and partial are never presented alike (Task 9)', ()
     );
     expect(owner).toContain('Full refund');
     expect(owner).toContain('Partial refund');
-    expect(owner).toContain('Tested locally');
+    expect(owner).toContain('Verified in sandbox');
     expect(owner).toContain('PayPal refunds 7.00 USD to the buyer');
     expect(owner).toContain('Review the accept');
     // The note is required: no «(optional)», and nothing to review while it is empty.
@@ -356,7 +357,7 @@ describe('escalate: owner only, a note, MOVES_TO_CLAIM, never shown as closed (T
 
   it('the composer: the owner writes the note and reviews; a reviewer or member sees the preview only', () => {
     const owner = renderToString(<ActionComposer action="escalate" text="" onText={noop} availability={actionAvailability(waiting, 'escalate', { role: 'owner', reviewer: false })} locked={null} onReview={noop} onRequest={noop} />);
-    expect(owner.replace(/<!-- -->/g, '')).toContain('Escalate to a claim · Tested locally');
+    expect(owner.replace(/<!-- -->/g, '')).toContain('Escalate to a claim · Verified in sandbox');
     expect(owner).toContain('Note to PayPal');
     expect(owner).toContain(CONSEQUENCE);
     expect(owner).toMatch(/<button[^>]*disabled[^>]*>Review the escalation/);
@@ -448,7 +449,7 @@ describe('make_offer: owner only, an amount and a note, OFFERS_SETTLEMENT, an of
   it('the composer: the owner sets the amount and note and reviews; a reviewer or member sees the preview only', () => {
     const owner = renderToString(<ActionComposer action="make_offer" text="" onText={noop} availability={actionAvailability(waiting, 'make_offer', { role: 'owner', reviewer: false })} locked={null} onReview={noop} onRequest={noop} disputeAmount={waiting.amount!} />);
     const flat = owner.replace(/<!-- -->/g, '');
-    expect(flat).toContain('Refund offer · Tested locally');
+    expect(flat).toContain('Refund offer · Verified in sandbox');
     expect(flat).toContain('Amount offered (USD, below 7.00)');
     expect(owner).toContain('Note to PayPal');
     expect(flat).toContain('The buyer is offered the amount you set; no money moves unless the buyer accepts.');

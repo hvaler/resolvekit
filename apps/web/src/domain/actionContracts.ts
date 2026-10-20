@@ -128,9 +128,10 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // message PayPal stopped offering make_offer (WAITING_FOR_BUYER_RESPONSE); a brief UNDER_REVIEW with no links came
   // first. PayPal-Request-Id does NOT dedupe (W-2: the same request id posted a second message).
   // Tested locally (Task 8): the server route, the web flow and the simulator's recorded transitions.
+  // Verified through the app flow 20/10/2026 (V-1).
   send_message: {
     ...base('send_message', `${REF}disputes-send-message`, 'json', route('send-message'), MESSAGE_PROOF, ev('send-message')),
-    status: 'tested_locally',
+    status: 'verified_in_sandbox',
     reason: null,
     absentAfterMs: 60_000,
     requestIdDedupes: false,
@@ -140,7 +141,8 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // file) accepted; the entry is a seller message with the exact content and one `documents[]` item, ≈3.5 s after the
   // send started. Same proof as a text message (the content is matched; the attachment's presence is not).
   // Tested locally (Task 8), like the text message; the simulator plays it only from WAITING_FOR_BUYER_RESPONSE (W-3).
-  // The web composer cannot attach an upload yet, so the UI does not offer it; the server path is tested.
+  // The web composer cannot attach an upload yet, so the UI does not offer it; the server path is tested. Not verified
+  // through the app flow (20/10/2026): it stays tested locally.
   'send_message:file': {
     ...base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), MESSAGE_PROOF, ev('send-message')),
     status: 'tested_locally',
@@ -154,9 +156,10 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // SELLER_ISSUED_REFUND) by +2 min after UNDER_REVIEW. Irreversible: money moved and the dispute closed.
   // Tested locally (Task 9): owner only, the bound second confirmation (REFUNDS_BUYER, the dispute amount), the
   // recorded body, the ACCEPT_CLAIM proof and the simulator's recorded transition.
+  // Verified through the app flow 20/10/2026 (V-4).
   'accept_claim:REFUND': {
     ...base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim')),
-    status: 'tested_locally',
+    status: 'verified_in_sandbox',
     reason: null,
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/accept_claim-refund.json',
@@ -168,9 +171,10 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // 'REFUND' and offer_amount from the accept payload.
   // Tested locally (Task 9): owner only, its own consequence (OFFERS_PARTIAL_REFUND, the partial amount), the recorded
   // body, the offer proof and the simulator's recorded transition (a pending offer, never a closed dispute).
+  // Verified through the app flow 20/10/2026 (V-3).
   'accept_claim:PARTIAL_REFUND': {
     ...base('accept_claim:PARTIAL_REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), OFFER_PROOF, ev('accept-claim')),
-    status: 'tested_locally',
+    status: 'verified_in_sandbox',
     reason: null,
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/accept_claim-partial_refund.json',
@@ -183,9 +187,10 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // Tested locally (Task 10): owner only, the bound second confirmation (MOVES_TO_CLAIM, no amount), a note required,
   // only from the recorded state (INQUIRY, a not-received dispute), the recorded body, the ESCALATE proof and the
   // simulator's recorded transition (the transient UNDER_REVIEW, the claim stage after a delay). No closure lock.
+  // Verified through the app flow 20/10/2026 (V-5).
   escalate: {
     ...base('escalate', `${REF}disputes-escalate`, 'json', route('escalate'), ESCALATE_PROOF, ev('escalate')),
-    status: 'tested_locally',
+    status: 'verified_in_sandbox',
     reason: null,
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/escalate.json',
@@ -199,9 +204,10 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // and an amount below the dispute amount and within PayPal's refundable amount, only from the recorded state (INQUIRY,
   // a not-received dispute), refused while a seller offer is pending, the recorded body, the offer proof and the
   // simulator's recorded transition (a pending offer, never a refund or a closed dispute).
+  // Verified through the app flow 20/10/2026 (V-2).
   'make_offer:REFUND': {
     ...base('make_offer:REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), OFFER_PROOF, ev('make-offer')),
-    status: 'tested_locally',
+    status: 'verified_in_sandbox',
     reason: null,
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/make_offer-refund.json',
@@ -225,9 +231,10 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // Tested locally (Task 10): the evidence memory by (dispute, stage) from each entry's dispute_life_cycle_stage
   // (recorded.ts), evidence after an escalation only in the recorded state (the claim waiting for the seller), and the
   // simulator's recorded transition (UNDER_REVIEW in the claim, no seller action).
+  // Verified through the app flow 20/10/2026 (V-6).
   'evidence:after_escalation': {
     ...base('evidence:after_escalation', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('escalate')),
-    status: 'tested_locally',
+    status: 'verified_in_sandbox',
     reason: null,
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/evidence-after-escalation.json',

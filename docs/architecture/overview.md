@@ -133,7 +133,8 @@ sequenceDiagram
 Only `provide-evidence` is verified end to end and deployed. Since commit `076c74f` (20/10/2026, not deployed) the
 server also sends messages, accepts, offers and escalations through the same chain (compose, approve by hash, a
 second confirmation for the Owner's actions, a fresh read, `send_started` on disk, one POST, an attributable
-read-back), only for the variants whose contract is recorded; status: Tested locally
+read-back), only for the variants whose contract is recorded; status: Verified in sandbox through the app (20/10/2026, local
+server), not deployed
 ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)). There is
 no refund-creating code. Details: [PayPal integration](../technical/paypal-integration.md),
 [HTTP API](../technical/http-api.md).

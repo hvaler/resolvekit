@@ -161,7 +161,7 @@ test('the offer proof on the recorded reads, read for read (mapping + matcher, p
   assert.ok(!('error' in c), JSON.stringify(c));
   const intent = { ...(c as object), id: 'int-1', contentHash: 'c'.repeat(64), requestId: 'rk-1', status: 'sent' } as SubmissionIntent;
   const contract = CONTRACTS['make_offer:REFUND'];
-  assert.equal(contract.status, 'tested_locally');
+  assert.equal(contract.status, 'verified_in_sandbox');
   assert.equal(contract.reason, null);
   const base = readBackBase(before, contract.proof!, W4.sentStartedAt);
   for (const a of ['0s', '30s', '2m', '10m']) assert.equal(proveSend(intent, base, at(a), contract, Date.parse(W4.sentStartedAt) + 1_000).state, 'recorded', a);
