@@ -189,3 +189,101 @@ describe('ActionFlowController (the container’s steps)', () => {
     expect(t.audits.filter((a) => a.startsWith('ResolveKit: Sending send_message to PayPal sandbox'))).toHaveLength(2);
   });
 });
+
+describe('accept_claim: full and partial are never presented alike (Task 9)', () => {
+  const waiting: DisputeSnapshot = {
+    ...snap,
+    allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'],
+    amount: { value: '7.00', currency: 'USD' },
+    responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND', 'REFUND'], offerTypes: ['REFUND'] },
+  };
+  const acceptIntent = (acceptType: string, amount: { value: string; currency: string } | null, note = 'Refund accepted.') =>
+    ({
+      ...(composeAction({ caseId: 'CASE-1', req: { action: 'accept_claim', acceptType, note, amount, attachments: [] }, snap: waiting, disputeId: 'PP-R-1', seller: 'S', files: [] }) as object),
+      id: 'int-9',
+      contentHash: 'd'.repeat(64),
+      requestId: 'rk-int-9',
+      status: 'approved',
+    }) as SubmissionIntent;
+  const full = acceptIntent('REFUND', null);
+  const partial = acceptIntent('PARTIAL_REFUND', { value: '2.00', currency: 'USD' }, 'Partial refund offered.');
+  const termsOf = (i: SubmissionIntent, amount: string, consequence: string) => ({ intentId: i.id, contentHash: i.contentHash, action: 'accept_claim' as const, amount, currency: 'USD', consequence });
+
+  it('the confirmation names the amount, the currency and the consequence code of each', () => {
+    const f = view({ step: 'confirm', intent: full, terms: termsOf(full, '7.00', 'REFUNDS_BUYER') });
+    expect(f).toContain('PayPal refunds 7.00 USD to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.');
+    expect(f).toContain('REFUNDS_BUYER');
+    expect(f).toContain('7.00 USD');
+    const p = view({ step: 'confirm', intent: partial, terms: termsOf(partial, '2.00', 'OFFERS_PARTIAL_REFUND') });
+    expect(p).toContain('OFFERS_PARTIAL_REFUND');
+    expect(p).toContain('2.00 USD');
+    expect(p).toContain('The buyer has to agree to it');
+    expect(p).not.toMatch(/PayPal refunds|closes the dispute|cannot be undone/);
+  });
+
+  it('recorded: a full accept says the claim was accepted; a partial one is an offer waiting for the buyer, never refunded or closed', () => {
+    const closed = { ...waiting, status: 'RESOLVED' as const, allowedActions: [], outcome: { code: 'RESOLVED_BUYER_FAVOUR', closedAt: null }, refunds: [{ id: null, amount: { value: '7.00', currency: 'USD' }, time: null }] };
+    const f = view({ step: 'result', intent: full, result: { kind: 'recorded', detail: 'Recorded by the simulator', snapshot: closed, base: null } }, { kind: 'simulator' });
+    expect(f).toContain('Recorded by the simulator: claim accepted');
+    expect(f).toContain('Refund of 7.00 USD');
+    expect(f).toContain('Resolved in the buyer’s favour');
+    const p = view({ step: 'result', intent: partial, result: { kind: 'recorded', detail: 'Recorded by PayPal', snapshot: { ...waiting, status: 'WAITING_FOR_BUYER_RESPONSE' }, base: null } });
+    expect(p).toContain('Recorded by PayPal: offer waiting for the buyer');
+    expect(p).not.toMatch(/[Rr]efunded|[Cc]losed|claim accepted/);
+    // Pending stays pending, whatever the action.
+    const pending = view({ step: 'result', intent: full, result: { kind: 'pending', detail: 'Outcome pending confirmation', snapshot: closed, base: null } });
+    expect(pending).toContain('Outcome pending confirmation');
+    expect(pending).not.toContain('claim accepted');
+  });
+
+  it('the composer: the owner picks a variant and reviews; a reviewer or member sees the preview only', () => {
+    const owner = renderToString(
+      <ActionComposer action="accept_claim" text="" onText={noop} availability={actionAvailability(waiting, 'accept_claim', { role: 'owner', reviewer: false })} locked={null} onReview={noop} onRequest={noop} disputeAmount={waiting.amount!} />,
+    );
+    expect(owner).toContain('Full refund');
+    expect(owner).toContain('Partial refund');
+    expect(owner).toContain('Tested locally');
+    expect(owner).toContain('PayPal refunds 7.00 USD to the buyer');
+    expect(owner).toContain('Review the accept');
+    for (const who of [{ role: 'member' as const, reviewer: true }, { role: 'member' as const, reviewer: false }]) {
+      const html = renderToString(
+        <ActionComposer action="accept_claim" text="" onText={noop} availability={actionAvailability(waiting, 'accept_claim', who)} locked={null} onReview={noop} onRequest={noop} disputeAmount={waiting.amount!} />,
+      );
+      expect(html).toContain('Only the workspace owner can send this action');
+      expect(html).toContain('PayPal refunds 7.00 USD to the buyer');
+      expect(html).not.toContain('Review the accept');
+    }
+  });
+
+  it('controller, simulator: the owner confirms the bound terms; a full accept records, a partial one is an offer', async () => {
+    const T0 = Date.UTC(2026, 9, 20, 10, 23, 26);
+    for (const [req, consequence, title] of [
+      [{ action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.', amount: null, attachments: [] }, 'REFUNDS_BUYER', 'claim accepted'],
+      [{ action: 'accept_claim', acceptType: 'PARTIAL_REFUND', note: 'Partial.', amount: { value: '2.00', currency: 'USD' }, attachments: [] }, 'OFFERS_PARTIAL_REFUND', 'offer waiting for the buyer'],
+    ] as const) {
+      const clock = { t: T0 };
+      const gateway = new SimulatedDisputeGateway([waiting], { outcome: () => 'waiting_for_buyer', now: () => new Date(clock.t) });
+      const audits: string[] = [];
+      const f = new ActionFlowController({
+        caseId: 'CASE-1',
+        request: req as unknown as ActionFlowDeps['request'],
+        source: new LocalIntentClient(),
+        gateway,
+        mode: { kind: 'simulator' },
+        onState: () => {},
+        audit: (who, what) => audits.push(`${who}: ${what}`),
+        applySnapshot: () => {},
+        now: () => new Date(clock.t),
+      });
+      await f.start();
+      await f.approve();
+      expect(f.state).toMatchObject({ step: 'confirm', terms: { action: 'accept_claim', currency: 'USD', consequence } });
+      expect(gateway.sentActions).toEqual([]);
+      await f.confirm();
+      expect(f.state).toMatchObject({ step: 'result', result: { kind: 'recorded' } });
+      const html = view(f.state, { kind: 'simulator' });
+      expect(html).toContain(title);
+      expect(audits[0]).toMatch(/^ResolveKit: Sending accept_claim to the simulator/);
+    }
+  });
+});

@@ -28,7 +28,7 @@ import { STUCK_COPY, thumbsReady } from '../domain/pdfReview';
 import { PdfSelect } from '../components/PdfSelect';
 import { MessageThread } from '../components/MessageThread';
 import { MiniButton } from '../components/ui';
-import { actionAvailability, type Viewer } from '../domain/actions';
+import { actionAvailability, type ActionRequest, type Viewer } from '../domain/actions';
 import { onSimulator } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
@@ -161,7 +161,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
 
   // Another action than evidence: what PayPal offers now (the latest read), for this person, by the contract registry.
   const [message, setMessage] = useState('');
-  const [actionOpen, setActionOpen] = useState(false);
+  /** The action being reviewed and sent (its flow is open), exactly as the server will compose it. */
+  const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
   const viewer: Viewer = demoLock?.person ? { role: demoLock.person.role, reviewer: demoLock.person.reviewer } : { role: 'owner', reviewer: false };
   const readNow: DisputeSnapshot = snap ? { ...snap, allowedActions: [...allowed] } : { id, status, stage: demo.summary.stage, allowedActions: [...allowed], evidences: [], readAt: '' };
   const otherAction = d.action === 'provide_evidence' ? null : d.action;
@@ -378,14 +379,29 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             onReview={() => navigate(approvePath(area, id))}
             actionPanel={
               otherAction && availability ? (
-                <ActionComposer action={otherAction} text={message} onText={setMessage} availability={availability} locked={actionLocked} onReview={() => setActionOpen(true)} />
+                <ActionComposer
+                  action={otherAction}
+                  text={message}
+                  onText={setMessage}
+                  availability={availability}
+                  locked={actionLocked}
+                  onReview={() => setActionRequest({ action: 'send_message', text: message, attachments: [] })}
+                  onRequest={setActionRequest}
+                  disputeAmount={readNow.amount ?? null}
+                />
               ) : undefined
             }
           />
         </main>
       </div>
-      {actionOpen && otherAction === 'send_message' && (
-        <ActionFlow caseId={id} request={{ action: 'send_message', text: message, attachments: [] }} onClose={() => setActionOpen(false)} onEdit={() => setActionOpen(false)} onRecorded={() => setMessage('')} />
+      {actionRequest && actionRequest.action === otherAction && (
+        <ActionFlow
+          caseId={id}
+          request={actionRequest}
+          onClose={() => setActionRequest(null)}
+          onEdit={() => setActionRequest(null)}
+          {...(actionRequest.action === 'send_message' ? { onRecorded: () => setMessage('') } : {})}
+        />
       )}
       {showFlow && submission && (
         <ApproveFlow

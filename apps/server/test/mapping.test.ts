@@ -177,7 +177,11 @@ test('a seller message, the options after evidence and a resolved outcome are ma
   assert.deepEqual(tvh.responseOptions, { acceptClaimTypes: ['REFUND'], offerTypes: [] });
   const gfc = toSnapshot(readContract('reads/resolved-GFC.json'), 'C', 'sandbox', NOW);
   assert.equal(gfc.status, 'RESOLVED');
-  assert.deepEqual(gfc.outcome, { code: 'RESOLVED_BUYER_FAVOUR', closedAt: '2026-10-08T18:27:03.605Z' });
+  assert.deepEqual(gfc.outcome, { code: 'RESOLVED_BUYER_FAVOUR', closedAt: '2026-10-08T18:27:03.605Z', amountRefunded: { value: '8.00', currency: 'USD' } });
+  // The accept entry keeps its type and stage; the refund PayPal issued is listed (Task 9).
+  assert.deepEqual(gfc.evidences.filter((e) => e.action === 'ACCEPT_CLAIM').map((e) => e.responseOption), ['REFUND']);
+  assert.equal(gfc.refunds?.length, 1);
+  assert.deepEqual(gfc.refunds?.[0]?.amount, { value: '8.00', currency: 'USD' });
   assert.deepEqual(gfc.responseOptions, { acceptClaimTypes: [], offerTypes: [] });
   assert.deepEqual(gfc.allowedActions, []);
 });

@@ -1,15 +1,23 @@
+import { useState } from 'react';
 import { CONTRACTS, statusLabel } from '../domain/actionContracts';
-import { ACTION_TEXT_LIMIT, type ActionAvailability, type IntentAction } from '../domain/actions';
+import { ACTION_TEXT_LIMIT, acceptConsequenceText, type ActionAvailability, type ActionRequest, type IntentAction, type Money } from '../domain/actions';
+import { parseAmount } from '../domain/amounts';
 import { formatCount } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
 import { PrimaryAction, cx } from './ui';
 
-const VARIANT_LABEL: Partial<Record<string, string>> = { send_message: 'Message' };
+const VARIANT_LABEL: Partial<Record<string, string>> = {
+  send_message: 'Message',
+  'accept_claim:REFUND': 'Full refund',
+  'accept_claim:PARTIAL_REFUND': 'Partial refund',
+};
 
 /**
- * An action other than evidence, as the merchant writes it: for a message, the text with its `n / 2,000` count; for
+ * An action other than evidence, as the merchant writes it: for a message, the text with its `n / 2,000` count; for an
+ * accept, the type (full or partial refund), the partial amount and an optional note, with what PayPal does then; for
  * every action, whether PayPal offers it now and each variant's status as the contract registry gives it
- * («Tested locally», «Not available: <reason>»). Only a sendable message can be reviewed.
+ * («Tested locally», «Not available: <reason>»). Only a sendable message or accept can be reviewed; anyone else (a
+ * reviewer or a member, for an owner-only accept) sees the preview only.
  */
 export function ActionComposer({
   action,
@@ -18,6 +26,8 @@ export function ActionComposer({
   availability,
   locked,
   onReview,
+  onRequest,
+  disputeAmount = null,
 }: {
   action: Exclude<IntentAction, 'provide_evidence'>;
   text: string;
@@ -26,6 +36,10 @@ export function ActionComposer({
   /** Why this person cannot send it here (signed out, another workspace), or null. */
   locked: string | null;
   onReview: () => void;
+  /** An accept to review (the exact request the server composes). */
+  onRequest?: (req: ActionRequest) => void;
+  /** The dispute amount as last read: what a full accept refunds. */
+  disputeAmount?: Money | null;
 }) {
   const isMessage = action === 'send_message';
   const len = text.trim().length;
@@ -73,6 +87,98 @@ export function ActionComposer({
           </PrimaryAction>
         </>
       )}
+      {action === 'accept_claim' && <AcceptComposer availability={availability} locked={locked} disputeAmount={disputeAmount} onRequest={onRequest} />}
     </section>
+  );
+}
+
+/** The accept types ResolveKit can send, in the order offered here. */
+const ACCEPT_TYPES: readonly string[] = ['REFUND', 'PARTIAL_REFUND'];
+
+/**
+ * An accept: full refund (PayPal refunds the disputed amount and closes the dispute) or partial refund (PayPal offers
+ * the amount to the buyer, who must agree). The two are shown apart, each with its own consequence; the preview is
+ * shown to everyone, the review button only to whoever may send it.
+ */
+function AcceptComposer({
+  availability,
+  locked,
+  disputeAmount,
+  onRequest,
+}: {
+  availability: ActionAvailability;
+  locked: string | null;
+  disputeAmount: Money | null;
+  onRequest: ((req: ActionRequest) => void) | undefined;
+}) {
+  // Variants PayPal allows now and the registry has recorded; for a viewer who may not send, the same choice as a preview.
+  const types = ACCEPT_TYPES.filter((t) => availability.variants.some((v) => v.type === t && v.available));
+  const [picked, setPicked] = useState<string | null>(null);
+  const [value, setValue] = useState('');
+  const [note, setNote] = useState('');
+  const type = picked && types.includes(picked) ? picked : (types[0] ?? null);
+  if (!type) return null;
+  const owner = availability.sendable;
+  const currency = disputeAmount?.currency ?? null;
+  const parsed = type === 'PARTIAL_REFUND' && currency && value.trim() ? parseAmount(value.trim(), currency) : null;
+  const partialAmount: Money | null = parsed?.ok && currency ? { value: parsed.value, currency } : null;
+  const amount = type === 'REFUND' ? disputeAmount : partialAmount;
+  const noteLen = note.trim().length;
+  const noteOver = noteLen > ACTION_TEXT_LIMIT;
+  const ready = owner && !locked && !noteOver && (type === 'REFUND' ? !!disputeAmount : !!partialAmount);
+  return (
+    <>
+      <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+        <legend className="mb-1 text-[12.5px] font-medium">How to accept</legend>
+        {types.map((t) => (
+          <label key={t} className="flex items-center gap-2 text-[12.5px]">
+            <input type="radio" name="accept-type" value={t} checked={t === type} onChange={() => setPicked(t)} />
+            {t === 'REFUND'
+              ? `Full refund${disputeAmount ? ` of ${disputeAmount.value} ${disputeAmount.currency}` : ''}: the dispute closes`
+              : 'Partial refund: an offer the buyer must agree to'}
+          </label>
+        ))}
+      </fieldset>
+      {type === 'PARTIAL_REFUND' && (
+        <label className="flex flex-col gap-1 text-[12.5px]">
+          <span className="font-medium">Amount offered{disputeAmount ? ` (${disputeAmount.currency}, below ${disputeAmount.value})` : ''}</span>
+          <input
+            aria-label="Amount offered"
+            inputMode="decimal"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={!owner}
+            className="rounded-[7px] border border-line-2 bg-surface px-2.5 py-1.5 font-mono text-body text-ink disabled:opacity-60"
+          />
+          {parsed && !parsed.ok && <span className="text-[12px] text-bad">{parsed.detail}</span>}
+        </label>
+      )}
+      <label className="flex flex-col gap-1">
+        <span className="flex justify-between text-[12.5px]">
+          <span className="font-medium">Note to PayPal (optional)</span>
+          <span className={cx('font-mono text-[12px]', noteOver ? 'text-bad' : 'text-ink-2')}>{`${formatCount(noteLen)} / ${formatCount(ACTION_TEXT_LIMIT)}`}</span>
+        </span>
+        <textarea
+          aria-label="Note to PayPal"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          disabled={!owner}
+          className="resize-y rounded-[7px] border border-line-2 bg-surface px-2.5 py-2 text-body leading-normal text-ink disabled:opacity-60"
+        />
+      </label>
+      <p data-testid="accept-consequence" className="m-0 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
+        {acceptConsequenceText(type, amount)}
+      </p>
+      {locked && <span className="text-[12px] text-warn">{locked}</span>}
+      {owner && (
+        <PrimaryAction
+          enabled={ready && !!onRequest}
+          onClick={() => onRequest?.({ action: 'accept_claim', acceptType: type, note: note.trim(), amount: type === 'PARTIAL_REFUND' ? partialAmount : null, attachments: [] })}
+        >
+          Review the accept →
+        </PrimaryAction>
+      )}
+    </>
   );
 }

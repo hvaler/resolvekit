@@ -11,6 +11,8 @@ export interface Evidence {
   evidence_info?: { tracking_info?: TrackingInfo[]; refund_ids?: string[] };
   documents?: Array<{ name: string; url?: string }>;
   action_info?: { action?: string; response_option?: string; mandatory?: boolean };
+  /** Seen in the sandbox reads (W-6, W-10): the stage the entry was made in. */
+  dispute_life_cycle_stage?: string;
 }
 /** A message in the dispute thread. Seen in the sandbox reads: `posted_by` (BUYER, SELLER), `time_posted`, `content`. */
 export interface ThreadMessage {

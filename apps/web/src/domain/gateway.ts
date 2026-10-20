@@ -5,7 +5,7 @@ import type { SubmissionIntent } from './intent';
 import { hasSellerEvidence, newSellerEvidence, submissionMismatch } from './recorded';
 import { SIM_TRANSITIONS, transitionFrom, type SimStep, type SimTransition } from './simulatedActions';
 import { utcStamp } from './time';
-import type { ActionCode, DisputeMessage, DisputeSnapshot, DisputeStatus, EvidenceSubmission, RecordedEvidence } from './types';
+import type { ActionCode, DisputeMessage, DisputeSnapshot, DisputeStatus, EvidenceSubmission, OfferEvent, RecordedEvidence } from './types';
 
 /**
  * Everything the web app needs from PayPal. The browser never talks to PayPal: the real implementation
@@ -159,12 +159,17 @@ export interface SimulatedGatewayOptions {
   contracts?: ContractRegistry;
 }
 
+/** The entry an action leaves, in the list the recorded reads show it in. */
+type PlayEntry = { kind: 'message'; message: DisputeMessage } | { kind: 'evidence'; evidence: RecordedEvidence } | { kind: 'offer'; offer: OfferEvent };
+
 /** An action the simulator is playing: the recorded reads still to come, and the entry they show. */
 interface Play {
   answeredAt: number;
   steps: SimStep[];
-  entry: DisputeMessage;
+  entry: PlayEntry;
   shown: boolean;
+  /** What a recorded refund or outcome shows (a full accept: the disputed amount, refunded to the buyer). */
+  refund: { value: string; currency: string } | null;
 }
 
 /**
@@ -240,8 +245,14 @@ export class SimulatedDisputeGateway implements DisputeGateway {
       d.stage = s.stage;
       d.allowedActions = [...s.allowedActions];
       d.responseOptions = { acceptClaimTypes: [...s.responseOptions.acceptClaimTypes], offerTypes: [...s.responseOptions.offerTypes] };
+      const at = new Date(play.answeredAt + s.afterMs).toISOString();
+      if (s.refunded && play.refund && !d.refunds?.length) d.refunds = [{ id: null, amount: { ...play.refund }, time: new Date(play.answeredAt).toISOString() }];
+      if (s.outcome && !d.outcome) d.outcome = { code: s.outcome, closedAt: s.status === 'RESOLVED' ? at : null, amountRefunded: play.refund ? { ...play.refund } : null };
       if (s.entryVisible && !play.shown) {
-        (d.messages ??= []).push({ ...play.entry });
+        const e = play.entry;
+        if (e.kind === 'message') (d.messages ??= []).push({ ...e.message });
+        else if (e.kind === 'evidence') d.evidences.push({ ...e.evidence });
+        else (d.offerHistory ??= []).push({ ...e.offer, amount: e.offer.amount ? { ...e.offer.amount } : null });
         play.shown = true;
       }
     }
@@ -260,10 +271,12 @@ export class SimulatedDisputeGateway implements DisputeGateway {
   }
 
   /**
-   * Play a message exactly as a recorded contract shows it ([A7]): the seller entry with the approved text, timed when
-   * the simulator answered, and the recorded reads that follow (status, stage, links, response options), each from the
-   * time it was read after PayPal answered. A variant with no recorded transition, or a dispute in a state no write was
-   * recorded from, is refused: nothing is invented to complete the demo.
+   * Play an action exactly as a recorded contract shows it ([A7]): its entry (a seller message with the approved text;
+   * for a full accept, the ACCEPT_CLAIM entry with the type and the note; for a partial accept, the seller's offer with
+   * the amount), timed when the simulator answered, and the recorded reads that follow (status, stage, links, response
+   * options, a refund and an outcome where recorded), each from the time it was read after PayPal answered. A variant
+   * with no recorded transition, or a dispute in a state no write was recorded from, is refused: nothing is invented to
+   * complete the demo.
    */
   async sendAction(intent: SubmissionIntent, opts: { requestId: string }): Promise<ActionSendAnswer> {
     await sleep(this.opts.latencyMs);
@@ -272,17 +285,17 @@ export class SimulatedDisputeGateway implements DisputeGateway {
     if (!d) throw new Error(`RESOURCE_NOT_FOUND: ${intent.caseId}`);
     const variant = variantOfContent(intent);
     const transitions = variant && this.contracts[variant]?.status !== 'not_available' ? (this.transitions[variant] ?? []) : [];
-    const p = intent.payload;
-    if (!transitions.length || p?.kind !== 'send_message') throw new Error(NOT_IN_SIMULATOR);
+    if (!transitions.length) throw new Error(NOT_IN_SIMULATOR);
     this.beforeWrite(d);
     const action = intentAction(intent);
     if (!d.allowedActions.includes(action)) throw new Error(`NOT_AUTHORIZED: ${action} is not allowed for this dispute`);
     const t = transitionFrom(transitions, d);
     if (!t) throw new Error(NOT_IN_SIMULATOR);
     const now = this.opts.now();
+    const played = playEntry(t, intent, d, now);
+    if (!played) throw new Error(NOT_IN_SIMULATOR);
     this.sentActions.push({ intentId: intent.id, requestId: opts.requestId });
-    // PayPal gives the document back without a name, so the thread names no file (as the server's mapping does).
-    this.plays.set(d.id, { answeredAt: now.getTime(), steps: t.steps.map((s) => ({ ...s })), entry: { postedBy: 'SELLER', time: now.toISOString(), content: p.text, files: [] }, shown: false });
+    this.plays.set(d.id, { answeredAt: now.getTime(), steps: t.steps.map((s) => ({ ...s })), entry: played.entry, shown: false, refund: played.refund });
     return { sent: true };
   }
 
@@ -323,5 +336,39 @@ export class SimulatedDisputeGateway implements DisputeGateway {
       files: submission.files.map((f) => f.name),
       storedAt: utcStamp(now),
     });
+  }
+}
+
+/**
+ * The entry a recorded transition shows for this intent, or null when the intent is not what the transition recorded
+ * (the simulator then refuses it). A full accept refunds the disputed amount (W-10); a partial one is an offer (W-9).
+ */
+function playEntry(t: SimTransition, intent: SubmissionIntent, d: DisputeSnapshot, now: Date): { entry: PlayEntry; refund: { value: string; currency: string } | null } | null {
+  const p = intent.payload;
+  const time = now.toISOString();
+  switch (t.entry) {
+    case 'message':
+      // PayPal gives the document back without a name, so the thread names no file (as the server's mapping does).
+      return p?.kind === 'send_message' ? { entry: { kind: 'message', message: { postedBy: 'SELLER', time, content: p.text, files: [] } }, refund: null } : null;
+    case 'accept_claim': {
+      if (p?.kind !== 'accept_claim' || p.acceptType !== 'REFUND' || p.amount || !d.amount) return null;
+      const evidence: RecordedEvidence = {
+        evidenceType: 'OTHER',
+        source: 'SUBMITTED_BY_SELLER',
+        action: 'ACCEPT_CLAIM',
+        responseOption: p.acceptType,
+        stage: d.stage ?? null,
+        date: time,
+        carrier: '',
+        tracking: '',
+        notes: p.note,
+        files: [],
+        storedAt: utcStamp(now),
+      };
+      return { entry: { kind: 'evidence', evidence }, refund: { value: d.amount.value, currency: d.amount.currency } };
+    }
+    case 'offer':
+      if (p?.kind !== 'accept_claim' || p.acceptType !== 'PARTIAL_REFUND' || !p.amount) return null;
+      return { entry: { kind: 'offer', offer: { time, actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { ...p.amount } } }, refund: null };
   }
 }

@@ -661,6 +661,28 @@ test('roles at every step', async () => {
   assert.equal(pp.calls.filter((c) => c.endsWith('/escalate')).length, 0);
 });
 
+test('accept_claim is the owner’s only, at compose, approve, confirm and send (Task 9)', async () => {
+  const intents = new IntentStore();
+  const disputes: Record<string, Dispute> = { [REAL]: { ...standardDispute(), allowed_response_options: { accept_claim: { accept_claim_types: ['PARTIAL_REFUND', 'REFUND'] } } } };
+  const { app, pp, people } = setup({ intents, actions: true, disputes });
+  const reviewer = people.member();
+  const ACCEPT = { action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.' };
+  for (const who of [reviewer, people.fullMember()]) assert.equal((await actionReq(app, intentPath, ACCEPT, who)).body.error, 'OWNER_ONLY');
+  const a = await actionReq(app, intentPath, ACCEPT, people.ownerCookie);
+  assert.equal(a.status, 201, JSON.stringify(a.body));
+  const id = a.body.id as string;
+  // The reviewer's session holds the intent now: every later step is still refused by role.
+  const m = await actionReq(app, intentPath, MESSAGE, reviewer);
+  const stored = intents.peek(id)!;
+  stored.createdBy = intents.peek(m.body.id as string)!.createdBy;
+  assert.equal((await actionReq(app, `${intentPath}/${id}/approve`, { contentHash: a.body.contentHash }, reviewer)).body.error, 'OWNER_ONLY');
+  stored.status = 'approved';
+  const terms = { intentId: id, contentHash: a.body.contentHash, action: 'accept_claim', amount: '7.00', currency: 'USD', consequence: 'REFUNDS_BUYER' };
+  assert.equal((await actionReq(app, `${intentPath}/${id}/confirm`, { terms }, reviewer)).body.error, 'OWNER_ONLY');
+  assert.equal((await actionReq(app, sendPath, { intentId: id }, reviewer)).body.error, 'OWNER_ONLY');
+  assert.equal(pp.calls.filter((c) => c.endsWith('/accept-claim')).length, 0);
+});
+
 test('caps message and settle', async () => {
   const disputes: Record<string, Dispute> = { [REAL]: standardDispute() };
   const { app, pp, people, counters } = setup({ caps: { message: 1, settle: 0 }, disputes, actions: true });

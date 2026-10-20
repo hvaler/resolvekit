@@ -433,7 +433,7 @@ test('server: send_message through the real registry entry, body format from the
   // The actions whose flows are not built yet are still refused.
   for (const body of [
     { action: 'escalate', note: 'Delivered.' },
-    { action: 'accept_claim', acceptType: 'REFUND' },
+    { action: 'make_offer', offerType: 'REFUND', note: 'Half back.', amount: { value: '3.50', currency: 'USD' } },
   ]) {
     const r = await answer(await app(postRaw(intentPath, body)));
     assert.equal(r.status, 409, JSON.stringify(r.body));
@@ -504,8 +504,7 @@ test('DUPLICATE_ACTION stays for the other actions: the same accept PayPal alrea
   };
   const one = await sendAccept();
   assert.equal(one.s.status, 202, JSON.stringify(one.s.body));
-  // A read-back proved it recorded. Set through the store: the snapshot does not map the accept proof's
-  // `action_info.response_option` yet (Task 9), so no route read-back can prove an accept today.
+  // A read-back proved it recorded (set through the store here; accept-claim.test.ts proves it from the recorded reads).
   state.t += 2_000;
   assert.equal(intents.recordReadBack(one.i.id, { state: 'recorded', detail: 'Recorded by PayPal' }), true);
   assert.equal(intents.isUncertain(REAL), null);

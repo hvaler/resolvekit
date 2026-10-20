@@ -27,6 +27,8 @@ import type { DisputeSnapshot } from './types';
 import w1 from '../../../../packages/paypal/contracts/send_message.json';
 import w2 from '../../../../packages/paypal/contracts/send_message-request-id.json';
 import w3 from '../../../../packages/paypal/contracts/send_message-file.json';
+import w9 from '../../../../packages/paypal/contracts/accept_claim-partial_refund.json';
+import w10 from '../../../../packages/paypal/contracts/accept_claim-refund.json';
 
 const upl = (n: number) => `upl-${String(n).padStart(24, '0')}`;
 const problem = (r: unknown) => (isComposeProblem(r) ? { status: r.status, error: r.error } : null);
@@ -202,7 +204,11 @@ describe('availability', () => {
     const reg = { ...CONTRACTS, send_message: testContract('send_message') };
     expect(actionAvailabilityWith(khh(), 'send_message', REVIEWER, reg)).toMatchObject({ offered: true, sendable: true, why: null });
     expect(actionAvailabilityWith(khh({ allowedActions: [] }), 'send_message', OWNER, reg)).toMatchObject({ offered: false, sendable: false });
-    const acc = { ...CONTRACTS, 'accept_claim:REFUND': testContract('accept_claim:REFUND') };
+    const acc = {
+      ...CONTRACTS,
+      'accept_claim:REFUND': testContract('accept_claim:REFUND'),
+      'accept_claim:PARTIAL_REFUND': { ...CONTRACTS['accept_claim:PARTIAL_REFUND'], status: 'not_available' as const, reason: 'Contract not recorded yet' },
+    };
     expect(actionAvailabilityWith(khh(), 'accept_claim', OWNER, acc)).toMatchObject({ sendable: true, why: null });
     expect(actionAvailabilityWith(khh(), 'accept_claim', REVIEWER, acc)).toMatchObject({ sendable: false, why: 'Only the workspace owner can send this action' });
     // PayPal no longer allows REFUND: the recorded variant is not offered.
@@ -223,7 +229,7 @@ describe('compose', () => {
     expect(err(composeAction({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh({ allowedActions: [] }) }))).toBe('409 ACTION_NOT_OFFERED');
     const r = composeActionWith({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh() }, UNRECORDED);
     expect(r).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: Contract not recorded yet' });
-    expect(err(composeAction({ ...base, req: { action: 'accept_claim', acceptType: 'REFUND', note: '', amount: null, attachments: [] }, snap: khh() }))).toBe('409 VARIANT_NOT_AVAILABLE');
+    expect(err(composeAction({ ...base, req: { action: 'escalate', note: 'Delivered.', attachments: [] }, snap: khh() }))).toBe('409 VARIANT_NOT_AVAILABLE');
     // PayPal does not allow the type now.
     const acc = { ...CONTRACTS, 'accept_claim:REFUND': testContract('accept_claim:REFUND') };
     const onlyPartial = khh({ responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND'], offerTypes: [] } });
@@ -400,5 +406,66 @@ describe('send_message rules (Task 8, from the recorded contract)', () => {
     expect(composeActionWith({ ...base, req: msg('Screenshot attached.', [upl(1)]), snap: khh(), files: [file] }, noFile)).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: Contract not recorded yet' });
     // The text alone is still available then.
     expect(err(composeActionWith({ ...base, req: msg(), snap: khh() }, noFile))).toBe('ok');
+  });
+});
+
+describe('accept_claim rules (Task 9, from the recorded contracts W-9 and W-10)', () => {
+  const base = { caseId: 'case-1', disputeId: 'PP-R-PAU-10193600', seller: 'JWULA7T75ZA4Q', files: [] };
+  const accept = (acceptType: string, amount: { value: string; currency: string } | null = null, note = w10.request.body.note) => ({ action: 'accept_claim' as const, acceptType, note, amount, attachments: [] as [] });
+  const err = (r: unknown) => (isComposeProblem(r) ? `${r.status} ${r.error}` : 'ok');
+  const approved = (c: unknown): SubmissionIntent => ({ ...(c as SubmissionIntent), id: 'int-9', contentHash: 'b'.repeat(64), requestId: 'rk-int-9', status: 'approved' });
+
+  it('accept variants: REFUND and PARTIAL_REFUND available as recorded; return-address types follow the registry', () => {
+    expect(actionAvailability(khh(), 'accept_claim', OWNER)).toMatchObject({
+      offered: true,
+      sendable: true,
+      why: null,
+      variants: [
+        { variant: 'accept_claim:PARTIAL_REFUND', type: 'PARTIAL_REFUND', available: true, why: null },
+        { variant: 'accept_claim:REFUND', type: 'REFUND', available: true, why: null },
+      ],
+    });
+    for (const who of [REVIEWER, MEMBER]) expect(actionAvailability(khh(), 'accept_claim', who)).toMatchObject({ sendable: false, why: 'Only the workspace owner can send this action' });
+    const ret = khh({ responseOptions: { acceptClaimTypes: ['REFUND_WITH_RETURN', 'REFUND'], offerTypes: [] } });
+    expect(actionAvailability(ret, 'accept_claim', OWNER).variants[0]).toEqual({ variant: 'return_address', type: 'REFUND_WITH_RETURN', available: false, why: CONTRACTS.return_address.reason });
+    expect(composeAction({ ...base, req: accept('REFUND_WITH_RETURN'), snap: ret })).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${CONTRACTS.return_address.reason}` });
+    // Only the types PayPal allows now: after a partial accept, REFUND only (W-9 +30 s).
+    const after = khh({ status: 'WAITING_FOR_BUYER_RESPONSE', responseOptions: { acceptClaimTypes: w9.after[1]!.dispute.allowed_response_options!.accept_claim.accept_claim_types, offerTypes: [] } });
+    expect(err(composeAction({ ...base, req: accept('PARTIAL_REFUND', { value: '2.00', currency: 'USD' }), snap: after }))).toBe('409 VARIANT_NOT_AVAILABLE');
+  });
+
+  it('the stage rule is the stage both contracts recorded: INQUIRY only', () => {
+    const stages = new Set([w9, w10].flatMap((c) => [c.before.dispute_life_cycle_stage, ...c.after.map((a) => a.dispute.dispute_life_cycle_stage)]));
+    expect([...stages]).toEqual(['INQUIRY']);
+    expect(err(composeAction({ ...base, req: accept('REFUND'), snap: khh({ stage: 'CHARGEBACK' }) }))).toBe('409 ACTION_STAGE');
+  });
+
+  it('REFUND: no amount for not-received (W-10 passed none); the terms name the dispute amount and REFUNDS_BUYER', () => {
+    expect(w10.before.reason).toBe('MERCHANDISE_OR_SERVICE_NOT_RECEIVED');
+    expect(Object.keys(w10.request.body)).toEqual(['note', 'accept_claim_type']);
+    expect(composeAction({ ...base, req: accept('REFUND', { value: '7.00', currency: 'USD' }), snap: khh() })).toMatchObject({ status: 422, error: 'AMOUNT_NOT_ALLOWED' });
+    const c = composeAction({ ...base, req: accept('REFUND'), snap: khh() });
+    expect(c).toMatchObject({ action: 'accept_claim', payload: { kind: 'accept_claim', acceptType: 'REFUND', note: w10.request.body.note, amount: null } });
+    const i = approved(c);
+    expect(confirmationTerms(i, false)).toEqual({ intentId: 'int-9', contentHash: 'b'.repeat(64), action: 'accept_claim', amount: '7.00', currency: 'USD', consequence: 'REFUNDS_BUYER' });
+    expect(consequenceText(i)).toBe('PayPal refunds 7.00 USD to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.');
+    // The note is optional.
+    expect(err(composeAction({ ...base, req: accept('REFUND', null, ''), snap: khh() }))).toBe('ok');
+  });
+
+  it('PARTIAL_REFUND: an amount below the dispute amount; an offer to the buyer, never presented as a refund', () => {
+    expect(w9.request.body).toEqual({ note: w9.request.body.note, accept_claim_type: 'PARTIAL_REFUND', refund_amount: { currency_code: 'USD', value: '2.00' } });
+    expect(err(composeAction({ ...base, req: accept('PARTIAL_REFUND'), snap: khh() }))).toBe('422 AMOUNT_REQUIRED');
+    expect(err(composeAction({ ...base, req: accept('PARTIAL_REFUND', { value: '7.00', currency: 'USD' }), snap: khh() }))).toBe('422 AMOUNT_ABOVE_DISPUTE');
+    expect(err(composeAction({ ...base, req: accept('PARTIAL_REFUND', { value: '2.00', currency: 'EUR' }), snap: khh() }))).toBe('422 CURRENCY_MISMATCH');
+    const c = composeAction({ ...base, req: accept('PARTIAL_REFUND', { value: '2', currency: 'USD' }, w9.request.body.note), snap: khh() });
+    expect(c).toMatchObject({ payload: { kind: 'accept_claim', acceptType: 'PARTIAL_REFUND', note: w9.request.body.note, amount: { value: '2.00', currency: 'USD' } } });
+    const i = approved(c);
+    expect(confirmationTerms(i, false)).toEqual({ intentId: 'int-9', contentHash: 'b'.repeat(64), action: 'accept_claim', amount: '2.00', currency: 'USD', consequence: 'OFFERS_PARTIAL_REFUND' });
+    const text = consequenceText(i);
+    expect(text).toContain('2.00 USD');
+    expect(text).toContain('buyer');
+    expect(text).toMatch(/agree/);
+    expect(text).not.toMatch(/PayPal refunds|closes the dispute|cannot be undone/);
   });
 });

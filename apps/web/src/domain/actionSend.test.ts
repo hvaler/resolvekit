@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import w1 from '../../../../packages/paypal/contracts/send_message.json';
+import w9 from '../../../../packages/paypal/contracts/accept_claim-partial_refund.json';
+import w10 from '../../../../packages/paypal/contracts/accept_claim-refund.json';
 import { checkAgain, sendActionWithReadBack } from './actionSend';
 import { proveSend, readBackBase } from './actionReadback';
 import { CONTRACTS } from './actionContracts';
@@ -91,11 +93,12 @@ describe('the simulator only plays recorded transitions', () => {
       variant: 'send_message',
       recorded: 'test-only (a contract with lag)',
       from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim'] },
+      entry: 'message',
       actionLagReads: 1,
       documents: 0,
       steps: [
-        { at: '0s', afterMs: 0, status: 'UNDER_REVIEW', stage: 'INQUIRY', allowedActions: [], responseOptions: { acceptClaimTypes: [], offerTypes: [] }, entryVisible: false },
-        { at: '30s', afterMs: 30_000, status: 'WAITING_FOR_BUYER_RESPONSE', stage: 'INQUIRY', allowedActions: ['send_message'], responseOptions: { acceptClaimTypes: [], offerTypes: [] }, entryVisible: true },
+        { at: '0s', afterMs: 0, status: 'UNDER_REVIEW', stage: 'INQUIRY', allowedActions: [], responseOptions: { acceptClaimTypes: [], offerTypes: [] }, entryVisible: false, outcome: null, refunded: false },
+        { at: '30s', afterMs: 30_000, status: 'WAITING_FOR_BUYER_RESPONSE', stage: 'INQUIRY', allowedActions: ['send_message'], responseOptions: { acceptClaimTypes: [], offerTypes: [] }, entryVisible: true, outcome: null, refunded: false },
       ],
     };
     const { g, clock } = sim({}, { send_message: [lagged] });
@@ -128,6 +131,63 @@ describe('the simulator only plays recorded transitions', () => {
     await expect(g3.sendAction(fake({}), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
     expect(g.sentActions).toEqual([]);
     expect(g3.sentActions).toEqual([]);
+  });
+});
+
+describe('the simulator plays the recorded accept transitions (W-10, W-9)', () => {
+  /** The recorded starting state of both writes: waiting for the seller, 7.00 USD, accept PARTIAL_REFUND or REFUND. */
+  const waitingSeller = (): Partial<DisputeSnapshot> => ({
+    allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'],
+    amount: { value: w10.before.dispute_amount.value, currency: w10.before.dispute_amount.currency_code },
+    responseOptions: { acceptClaimTypes: [...w10.before.allowed_response_options.accept_claim.accept_claim_types], offerTypes: [...w10.before.allowed_response_options.make_offer.offer_types] },
+  });
+  const accept = (acceptType: string, note: string, amount: { value: string; currency: string } | null = null) => ({ action: 'accept_claim' as const, acceptType, note, amount, attachments: [] as [] });
+
+  it('a full accept: the ACCEPT_CLAIM entry and the refund at once, then RESOLVED in the buyer’s favour (money moved, closed)', async () => {
+    const { g, clock } = sim(waitingSeller());
+    const intents = new LocalIntentClient();
+    const before = await g.getDispute('CASE-1');
+    const i = await intents.approve(await intents.createAction('CASE-1', accept('REFUND', w10.request.body.note), { snapshot: before }));
+    const r = await sendActionWithReadBack({ intent: i, gateway: g, intents, mode: { kind: 'simulator' }, now: () => new Date(clock.t) });
+    expect(r).toMatchObject({ kind: 'recorded', detail: 'Recorded by the simulator' });
+    expect(r.snapshot).toMatchObject({ status: 'UNDER_REVIEW', allowedActions: [], refunds: [{ id: null, amount: { value: '7.00', currency: 'USD' } }] });
+    expect(r.snapshot!.evidences.at(-1)).toMatchObject({ source: 'SUBMITTED_BY_SELLER', action: 'ACCEPT_CLAIM', responseOption: 'REFUND', notes: w10.request.body.note, stage: 'INQUIRY' });
+    expect(r.snapshot!.outcome ?? null).toBeNull();
+    // +2 min: RESOLVED, as recorded; the proof stays the entry, not the status.
+    clock.t += 120_000;
+    const closed = await g.getDispute('CASE-1');
+    expect(closed).toMatchObject({ status: 'RESOLVED', allowedActions: [], outcome: { code: w10.after[2]!.dispute.dispute_outcome!.outcome_code, amountRefunded: { value: '7.00', currency: 'USD' } } });
+    expect(proveSend(i, r.base!, closed, CONTRACTS['accept_claim:REFUND'], clock.t).state).toBe('recorded');
+    // Nothing more can be done there: the next fresh read offers no action.
+    expect(composeAction({ caseId: 'CASE-1', req: { action: 'send_message', text: TEXT, attachments: [] }, snap: closed, disputeId: null, seller: null, files: [] })).toMatchObject({ status: 409, error: 'ACTION_NOT_OFFERED' });
+  });
+
+  it('a partial accept: an offer waiting for the buyer; nothing closes and no refund is shown', async () => {
+    const { g, clock } = sim(waitingSeller());
+    const intents = new LocalIntentClient();
+    const before = await g.getDispute('CASE-1');
+    const i = await intents.approve(await intents.createAction('CASE-1', accept('PARTIAL_REFUND', w9.request.body.note, { value: '2.00', currency: 'USD' }), { snapshot: before }));
+    const r = await sendActionWithReadBack({ intent: i, gateway: g, intents, mode: { kind: 'simulator' }, now: () => new Date(clock.t) });
+    expect(r).toMatchObject({ kind: 'recorded' });
+    expect(r.snapshot!.offerHistory).toEqual([{ time: new Date(T0).toISOString(), actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } }]);
+    expect(r.snapshot!.evidences.filter((e) => e.action === 'ACCEPT_CLAIM')).toEqual([]);
+    for (const step of [30_000, 90_000, 480_000]) {
+      clock.t += step;
+      const later = await g.getDispute('CASE-1');
+      expect(later).toMatchObject({ status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'], responseOptions: { acceptClaimTypes: ['REFUND'], offerTypes: [] } });
+      expect(later.outcome ?? null).toBeNull();
+      expect(later.refunds ?? []).toEqual([]);
+    }
+  });
+
+  it('anything else is NOT_AUTHORIZED: another starting state, or a partial accept on the full accept’s state', async () => {
+    // Waiting for the buyer (no accept was recorded from there).
+    const { g } = sim({ ...waitingSeller(), status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'], responseOptions: { acceptClaimTypes: ['REFUND'], offerTypes: [] } });
+    const intents = new LocalIntentClient();
+    const snap = await g.getDispute('CASE-1');
+    const i = await intents.approve(await intents.createAction('CASE-1', accept('REFUND', 'x'), { snapshot: snap }));
+    await expect(g.sendAction(i, { requestId: i.requestId })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
+    expect(g.sentActions).toEqual([]);
   });
 });
 

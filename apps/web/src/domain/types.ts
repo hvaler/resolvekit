@@ -397,6 +397,10 @@ export interface RecordedEvidence {
   source: EvidenceSource;
   /** `action_info.action` when PayPal reports it, e.g. PROVIDE_EVIDENCE. */
   action?: string | null;
+  /** `action_info.response_option` when PayPal reports it: the accept type of an ACCEPT_CLAIM entry (W-10: REFUND). */
+  responseOption?: string | null;
+  /** `dispute_life_cycle_stage` of the entry when PayPal reports it (W-6: INQUIRY, CHARGEBACK). */
+  stage?: string | null;
   /** PayPal's date for the entry (ISO 8601), used to tell entries apart. */
   date?: string | null;
   carrier: string;
@@ -454,7 +458,9 @@ export interface DisputeSnapshot {
   buyerRespondBy?: string | null;
   /** The disputed transaction as PayPal reports it: the seller-side id (the capture), its time, gross amount and status. */
   /** PayPal's `dispute_outcome` once the dispute is resolved (e.g. RESOLVED_SELLER_FAVOUR), with the time it closed. */
-  outcome?: { code: string; closedAt: string | null } | null;
+  outcome?: { code: string; closedAt: string | null; amountRefunded?: { value: string; currency: string } | null } | null;
+  /** PayPal's `refund_details.transactions[]`: the refunds made on this dispute (W-10: one, at once after the accept). */
+  refunds?: Array<{ id: string | null; amount: { value: string; currency: string } | null; time: string | null }>;
   /** The thread as last read (seller's workspace only: never persisted, never given to the analyst). */
   messages?: DisputeMessage[];
   /** PayPal's offer history as last read. */

@@ -23,6 +23,9 @@ export function mapEvidence(e: Evidence): RecordedEvidence {
     evidenceType: e.evidence_type,
     source: e.source ?? 'UNKNOWN',
     action: e.action_info?.action ?? null,
+    // Only when PayPal gives them (an accept's type, W-10; the entry's stage, W-6): other entries stay as they were.
+    ...(e.action_info?.response_option ? { responseOption: e.action_info.response_option } : {}),
+    ...(e.dispute_life_cycle_stage ? { stage: e.dispute_life_cycle_stage } : {}),
     date,
     carrier: t?.carrier_name ?? '',
     tracking: t?.tracking_number ?? '',
@@ -106,7 +109,10 @@ export function toSnapshot(d: Dispute, caseId: string, env: PayPalEnv, readAt: D
       offerTypes: [...(d.allowed_response_options?.make_offer?.offer_types ?? [])],
     },
     // PayPal gives no closing time; a resolved dispute's last update is when it closed.
-    outcome: d.dispute_outcome?.outcome_code ? { code: d.dispute_outcome.outcome_code, closedAt: d.status === 'RESOLVED' ? (d.update_time ?? null) : null } : null,
+    outcome: d.dispute_outcome?.outcome_code
+      ? { code: d.dispute_outcome.outcome_code, closedAt: d.status === 'RESOLVED' ? (d.update_time ?? null) : null, amountRefunded: money(d.dispute_outcome.amount_refunded) }
+      : null,
+    refunds: (d.refund_details?.transactions ?? []).map((t) => ({ id: t.id ?? null, amount: money(t.gross_amount), time: t.create_time ?? null })),
     ...(entries ? { proofEntries: entries } : {}),
     readAt: utcStamp(readAt),
     origin: { kind: 'paypal', env, disputeId: d.dispute_id ?? '' },

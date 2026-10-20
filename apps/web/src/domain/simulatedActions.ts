@@ -25,7 +25,17 @@ export interface SimStep {
   responseOptions: { acceptClaimTypes: string[]; offerTypes: string[] };
   /** The action's new entry (e.g. the seller's message) was in that read. */
   entryVisible: boolean;
+  /** PayPal's `dispute_outcome.outcome_code` in that read (W-10 from +2 min: RESOLVED_BUYER_FAVOUR); null: none. */
+  outcome: string | null;
+  /** `refund_details.transactions[]` listed a refund in that read (W-10: at once). */
+  refunded: boolean;
 }
+
+/**
+ * What the action's new entry is, as the recorded reads show it: a seller message (W-1–W-3), an ACCEPT_CLAIM evidence
+ * entry with the accept type and the note (W-10), or a SELLER PROPOSED offer with the partial amount (W-9).
+ */
+export type SimEntry = 'message' | 'accept_claim' | 'offer';
 
 export interface SimTransition {
   variant: VariantId;
@@ -36,6 +46,7 @@ export interface SimTransition {
    * this stage and status, on a dispute that offers no link the recorded one did not.
    */
   from: { stage: string; status: DisputeStatus; allowedActions: ActionCode[] };
+  entry: SimEntry;
   /** How many reads after the POST did not show the entry yet (0: the first read showed it). */
   actionLagReads: number;
   /** Documents on the new entry (a message with a file: 1, with no name PayPal gives back). */
@@ -48,16 +59,26 @@ const NONE = { acceptClaimTypes: [], offerTypes: [] };
 const WAITING_BUYER_ACTIONS: ActionCode[] = ['provide_evidence', 'send_message', 'accept_claim', 'escalate'];
 const ACCEPT_REFUND = { acceptClaimTypes: ['REFUND'], offerTypes: [] };
 
-const step = (at: string, status: DisputeStatus, allowedActions: ActionCode[], responseOptions: SimStep['responseOptions'], entryVisible = true): SimStep => ({
+const step = (
+  at: string,
+  status: DisputeStatus,
+  allowedActions: ActionCode[],
+  responseOptions: SimStep['responseOptions'],
+  o: { entryVisible?: boolean; outcome?: string | null; refunded?: boolean } = {},
+): SimStep => ({
   at,
   afterMs: AFTER_MS[at]!,
   status,
   stage: 'INQUIRY',
   allowedActions,
   responseOptions,
-  entryVisible,
+  entryVisible: o.entryVisible ?? true,
+  outcome: o.outcome ?? null,
+  refunded: o.refunded ?? false,
 });
 const waitingBuyer = (at: string) => step(at, 'WAITING_FOR_BUYER_RESPONSE', WAITING_BUYER_ACTIONS, ACCEPT_REFUND);
+const WAITING_SELLER_ACTIONS: ActionCode[] = ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'];
+const BUYER_FAVOUR = 'RESOLVED_BUYER_FAVOUR';
 
 export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTransition[]>>> = Object.freeze({
   send_message: [
@@ -66,7 +87,8 @@ export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTra
     {
       variant: 'send_message',
       recorded: 'packages/paypal/contracts/send_message.json (W-1)',
-      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'] },
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: WAITING_SELLER_ACTIONS },
+      entry: 'message',
       actionLagReads: 0,
       documents: 0,
       steps: [step('0s', 'UNDER_REVIEW', [], NONE), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
@@ -76,6 +98,7 @@ export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTra
       variant: 'send_message',
       recorded: 'packages/paypal/contracts/send_message-request-id.json (W-2)',
       from: { stage: 'INQUIRY', status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: WAITING_BUYER_ACTIONS },
+      entry: 'message',
       actionLagReads: 0,
       documents: 0,
       steps: [waitingBuyer('0s'), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
@@ -87,9 +110,42 @@ export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTra
       variant: 'send_message:file',
       recorded: 'packages/paypal/contracts/send_message-file.json (W-3)',
       from: { stage: 'INQUIRY', status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: WAITING_BUYER_ACTIONS },
+      entry: 'message',
       actionLagReads: 0,
       documents: 1,
       steps: [waitingBuyer('0s'), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
+    },
+  ],
+  'accept_claim:REFUND': [
+    // W-10: the ACCEPT_CLAIM entry and the refund at once, UNDER_REVIEW (the provide_evidence link flickered at +30 s),
+    // then RESOLVED in the buyer's favour from +2 min with no links. Money moved and the dispute closed.
+    {
+      variant: 'accept_claim:REFUND',
+      recorded: 'packages/paypal/contracts/accept_claim-refund.json (W-10)',
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: WAITING_SELLER_ACTIONS },
+      entry: 'accept_claim',
+      actionLagReads: 0,
+      documents: 0,
+      steps: [
+        step('0s', 'UNDER_REVIEW', [], NONE, { refunded: true }),
+        step('30s', 'UNDER_REVIEW', ['provide_evidence'], NONE, { refunded: true }),
+        step('2m', 'RESOLVED', [], NONE, { refunded: true, outcome: BUYER_FAVOUR }),
+        step('10m', 'RESOLVED', [], NONE, { refunded: true, outcome: BUYER_FAVOUR }),
+      ],
+    },
+  ],
+  'accept_claim:PARTIAL_REFUND': [
+    // W-9: PayPal records a partial accept as the seller's offer (SELLER PROPOSED, type REFUND, the amount); nothing
+    // closes and no money moves. UNDER_REVIEW with no links at +0 s, then it waits for the buyer: accept REFUND only,
+    // make_offer no longer offered.
+    {
+      variant: 'accept_claim:PARTIAL_REFUND',
+      recorded: 'packages/paypal/contracts/accept_claim-partial_refund.json (W-9)',
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: WAITING_SELLER_ACTIONS },
+      entry: 'offer',
+      actionLagReads: 0,
+      documents: 0,
+      steps: [step('0s', 'UNDER_REVIEW', [], NONE), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
     },
   ],
 });

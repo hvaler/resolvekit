@@ -9,6 +9,9 @@
  *
  * Pinned (Task 8): send-message is JSON `{ "message": <the approved text, as approved> }` (W-1), or multipart with the
  * same JSON in `input` and the file in `message_document` (W-3) — packages/paypal/contracts/send_message*.json.
+ * Pinned (Task 9): accept-claim is JSON `{ "note", "accept_claim_type": "REFUND" }` (W-10) or, for a partial accept,
+ * `{ "note", "accept_claim_type": "PARTIAL_REFUND", "refund_amount": { currency_code, value } }` (W-9) —
+ * packages/paypal/contracts/accept_claim-*.json.
  */
 import { PayPalError, type EvidenceFile, type PayPalClient } from '@resolvekit/paypal';
 import { CONTRACTS, variantOf, type VariantContract } from '../../../web/src/domain/actionContracts.ts';
@@ -68,8 +71,10 @@ export async function callPayPal(
       return paypal.disputes.sendMessage(disputeId, p.text, files[0] ?? null, opts);
     case 'accept_claim': {
       if (p?.kind !== 'accept_claim') break;
+      // As recorded (W-10, W-9): `{ note, accept_claim_type }`, plus `refund_amount` for a partial accept only. The
+      // note is optional at PayPal: without one, the field is left out.
       const amount = amountOf(p.amount);
-      return paypal.disputes.acceptClaim(disputeId, { accept_claim_type: p.acceptType, ...(p.note ? { note: p.note } : {}), ...(amount ? { refund_amount: amount } : {}) }, opts);
+      return paypal.disputes.acceptClaim(disputeId, { ...(p.note ? { note: p.note } : {}), accept_claim_type: p.acceptType, ...(amount ? { refund_amount: amount } : {}) }, opts);
     }
     case 'make_offer': {
       if (p?.kind !== 'make_offer') break;

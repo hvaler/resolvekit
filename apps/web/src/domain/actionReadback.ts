@@ -42,7 +42,15 @@ function entriesOf(s: DisputeSnapshot, list: NonNullable<ProofFields['list']>): 
     case 'evidences':
       return s.evidences.map((e) => ({
         key: evidenceKey(e),
-        fields: { source: e.source, date: e.date ?? null, notes: e.notes, evidence_type: e.evidenceType, 'action_info.action': e.action ?? null },
+        fields: {
+          source: e.source,
+          date: e.date ?? null,
+          notes: e.notes,
+          evidence_type: e.evidenceType,
+          'action_info.action': e.action ?? null,
+          'action_info.response_option': e.responseOption ?? null,
+          dispute_life_cycle_stage: e.stage ?? null,
+        },
       }));
     case 'offerHistory':
       return (s.offerHistory ?? []).map((o) => {
@@ -78,10 +86,15 @@ function approvedValue(c: IntentContent, field: string): string | undefined {
     case 'escalate':
       return field === 'notes' ? p.note : undefined;
     case 'accept_claim':
-      // Seen in reads/resolved-GFC.json: the accept entry carries action_info { action, response_option } and notes.
+      // W-9: PayPal records a partial accept as the seller's offer (offer.history SELLER PROPOSED, type REFUND, the
+      // partial amount; the accept type is not echoed and no ACCEPT_CLAIM entry appears). Only those fields answer.
+      if (p.acceptType === 'PARTIAL_REFUND') {
+        return ({ event_type: 'PROPOSED', offer_type: 'REFUND', 'offer_amount.value': p.amount?.value, 'offer_amount.currency_code': p.amount?.currency } as Record<string, string | undefined>)[field];
+      }
+      // W-10 (and reads/resolved-GFC.json): the accept entry carries action_info { action, response_option } and notes.
       return ({ notes: p.note, 'action_info.action': 'ACCEPT_CLAIM', 'action_info.response_option': p.acceptType } as Record<string, string>)[field];
     case 'make_offer':
-      return ({ notes: p.note, offer_type: p.offerType, 'offer_amount.value': p.amount?.value, 'offer_amount.currency_code': p.amount?.currency } as Record<string, string | undefined>)[field];
+      return ({ event_type: 'PROPOSED', notes: p.note, offer_type: p.offerType, 'offer_amount.value': p.amount?.value, 'offer_amount.currency_code': p.amount?.currency } as Record<string, string | undefined>)[field];
   }
 }
 

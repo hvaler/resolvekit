@@ -79,6 +79,14 @@ export const CONSEQUENCE: Readonly<Record<Exclude<IntentAction, 'provide_evidenc
 };
 /** The consequence code of a message whose exact text PayPal already recorded on this dispute and stage. */
 export const REPEATS_MESSAGE = 'REPEATS_MESSAGE';
+/**
+ * The consequence code of a partial accept (W-9): PayPal records it as an offer the buyer must agree to, so it is never
+ * confirmed as REFUNDS_BUYER (nothing is refunded or closed unless the buyer accepts).
+ */
+export const OFFERS_PARTIAL_REFUND = 'OFFERS_PARTIAL_REFUND';
+
+/** A partial accept: an offer to the buyer at PayPal (W-9), not a refund. */
+const isPartialAccept = (c: Pick<IntentContent, 'payload'>): boolean => c.payload?.kind === 'accept_claim' && c.payload.acceptType === 'PARTIAL_REFUND';
 
 /**
  * The duplicate guard's key ([A1]): the same simple action with the same content on the same stage (the dispute is the
@@ -264,6 +272,8 @@ export type RulesOf = (req: ActionRequest, snap: DisputeSnapshot) => ActionRules
  */
 export const RECORDED_STAGES: Readonly<Partial<Record<SimpleAction, readonly string[]>>> = Object.freeze({
   send_message: Object.freeze(['INQUIRY']),
+  // W-9 and W-10 (packages/paypal/contracts/accept_claim-*.json): INQUIRY before and after.
+  accept_claim: Object.freeze(['INQUIRY']),
 });
 
 /**
@@ -273,6 +283,15 @@ export const RECORDED_STAGES: Readonly<Partial<Record<SimpleAction, readonly str
  */
 export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Object.freeze({
   send_message: (): ActionRules => ({ stages: RECORDED_STAGES.send_message!, amount: 'not_allowed', text: 'required' }),
+  // accept_claim, as recorded: REFUND takes no amount (W-10, a not-received dispute: PayPal refunds the disputed
+  // amount); PARTIAL_REFUND takes `refund_amount`, below the dispute amount (W-9: 2.00 of 7.00). The note is optional.
+  // Any other type has no rules (VARIANT_NOT_AVAILABLE; the registry refuses it first).
+  accept_claim: (req): ActionRules | null => {
+    if (req.action !== 'accept_claim') return null;
+    if (req.acceptType === 'REFUND') return { stages: RECORDED_STAGES.accept_claim!, amount: 'not_allowed', text: 'optional' };
+    if (req.acceptType === 'PARTIAL_REFUND') return { stages: RECORDED_STAGES.accept_claim!, amount: 'required', belowDispute: true, text: 'optional' };
+    return null;
+  },
 });
 
 const requestType = (req: ActionRequest): string | null =>
@@ -414,8 +433,16 @@ export function confirmationTerms(i: SubmissionIntent, repeat: boolean): Confirm
     action,
     amount: m ? canonicalValue(m) : null,
     currency: m ? m.currency : null,
-    consequence: action === 'send_message' ? REPEATS_MESSAGE : CONSEQUENCE[action],
+    consequence: consequenceCode(i),
   };
+}
+
+/** The consequence code an intent is confirmed with: a partial accept is an offer, never REFUNDS_BUYER. */
+function consequenceCode(c: IntentContent): string {
+  const action = intentAction(c);
+  if (action === 'send_message') return REPEATS_MESSAGE;
+  if (isPartialAccept(c)) return OFFERS_PARTIAL_REFUND;
+  return CONSEQUENCE[action as Exclude<IntentAction, 'provide_evidence'>];
 }
 
 const TERM_KEYS: readonly (keyof ConfirmationTerms)[] = ['intentId', 'contentHash', 'action', 'amount', 'currency', 'consequence'];
@@ -434,7 +461,7 @@ export function consequenceText(c: IntentContent): string {
     case 'send_message':
       return 'The buyer sees this message in PayPal.';
     case 'accept_claim':
-      return `PayPal refunds ${amount} to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.`;
+      return acceptConsequenceText(c.payload?.kind === 'accept_claim' ? c.payload.acceptType : 'REFUND', m);
     case 'escalate':
       return 'The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.';
     case 'make_offer':
@@ -443,6 +470,38 @@ export function consequenceText(c: IntentContent): string {
       return 'PayPal reviews its decision again with this appeal.';
     case 'provide_evidence':
       return 'PayPal receives this evidence for the dispute.';
+  }
+}
+
+/**
+ * What an accept does at PayPal, by its type, with the amount it moves (a full accept: the disputed amount; a partial
+ * one: the amount offered). A partial accept is an offer the buyer must agree to (W-9), never a refund or a closure.
+ */
+export function acceptConsequenceText(acceptType: string, amount: Money | null): string {
+  const a = amount ? formatMoney(amount) : 'the disputed amount';
+  if (acceptType === 'PARTIAL_REFUND') {
+    return `PayPal offers the buyer a partial refund of ${amount ? a : 'the amount you set'}. The buyer has to agree to it: until then no money moves and the dispute stays open.`;
+  }
+  return `PayPal refunds ${a} to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.`;
+}
+
+/** The action of an intent or a request in a few words, telling a full accept from a partial one (titles, audit). */
+export function actionTitle(x: { action?: IntentAction; payload?: ActionPayload } | ActionRequest): string {
+  const action = x.action ?? 'provide_evidence';
+  const acceptType = 'acceptType' in x ? x.acceptType : 'payload' in x && x.payload?.kind === 'accept_claim' ? x.payload.acceptType : null;
+  switch (action) {
+    case 'send_message':
+      return 'Send message';
+    case 'accept_claim':
+      return acceptType === 'PARTIAL_REFUND' ? 'Accept claim · partial refund offer' : 'Accept claim · full refund';
+    case 'escalate':
+      return 'Escalate';
+    case 'make_offer':
+      return 'Make offer';
+    case 'appeal':
+      return 'Appeal';
+    case 'provide_evidence':
+      return 'Provide evidence';
   }
 }
 

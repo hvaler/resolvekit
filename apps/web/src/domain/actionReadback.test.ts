@@ -146,8 +146,49 @@ describe('read-back proof', () => {
     const sellerEv = { ...buyerEv, evidenceType: 'OTHER', source: 'SUBMITTED_BY_SELLER', action: 'ACCEPT_CLAIM', date: '2026-10-19T10:00:02.892Z', notes: 'Refunding.' };
     expect(proveSend(ac, base, snap([], { evidences: [buyerEv, sellerEv], status: 'RESOLVED' }), c, SENT_MS).state).toBe('recorded');
     expect(proveSend(ac, base, snap([], { evidences: [buyerEv, { ...sellerEv, action: 'PROVIDE_EVIDENCE' }] }), c, SENT_MS).state).toBe('pending');
-    // A field the snapshot does not carry (the accept type) cannot be matched: pending.
+    // A field the snapshot does not carry (here the accept type, when PayPal gives none) cannot be matched: pending.
     const withType = contract({ ...c, proof: { ...accept, matchFields: [...accept.matchFields, 'action_info.response_option'] } });
     expect(proveSend(ac, base, snap([], { evidences: [buyerEv, sellerEv] }), withType, SENT_MS).state).toBe('pending');
+  });
+
+  // Task 9: the production proofs of accept_claim (packages/paypal/contracts/accept_claim-*.json).
+  const buyerCreate = { evidenceType: 'CREATE', source: 'SUBMITTED_BY_BUYER', date: '2026-10-19T19:39:45.831Z', carrier: '', tracking: '', notes: '<buyer message>', files: [], storedAt: '', stage: 'INQUIRY' };
+  const acceptOf = (acceptType: string, note: string, amount: { value: string; currency: string } | null = null): IntentContent => ({
+    ...content(''),
+    action: 'accept_claim',
+    payload: { kind: 'accept_claim', acceptType, note, amount },
+    pin: { disputeId: 'PP-R-PAU-10193600', seller: 'S', stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', amount: { value: '7.00', currency: 'USD' } },
+  });
+
+  it('accept REFUND: the ACCEPT_CLAIM entry with response_option REFUND and the note; RESOLVED alone is pending', () => {
+    const c = CONTRACTS['accept_claim:REFUND'];
+    const ac = acceptOf('REFUND', 'Full refund accepted.');
+    const before = snap([], { evidences: [buyerCreate] });
+    const base = readBackBase(before, c.proof!, SENT);
+    const entry = { ...buyerCreate, evidenceType: 'OTHER', source: 'SUBMITTED_BY_SELLER', action: 'ACCEPT_CLAIM', responseOption: 'REFUND', date: '2026-10-19T10:00:05.035Z', notes: 'Full refund accepted.' };
+    expect(proveSend(ac, base, snap([], { evidences: [buyerCreate, entry], status: 'UNDER_REVIEW', allowedActions: [] }), c, SENT_MS + 5_000).state).toBe('recorded');
+    // RESOLVED in the buyer's favour, with a refund, but no attributable entry: never proof.
+    const resolved = snap([], { evidences: [buyerCreate], status: 'RESOLVED', allowedActions: [], outcome: { code: 'RESOLVED_BUYER_FAVOUR', closedAt: null } });
+    expect(proveSend(ac, base, resolved, c, SENT_MS + 120_000)).toEqual({ state: 'pending', detail: 'Outcome pending confirmation' });
+    // Another accept type, another note, an entry before send_started: not this send.
+    for (const other of [{ ...entry, responseOption: 'PARTIAL_REFUND' }, { ...entry, notes: 'Other note.' }, { ...entry, date: '2026-10-19T09:59:59.000Z' }, { ...entry, responseOption: null }])
+      expect(proveSend(ac, base, snap([], { evidences: [buyerCreate, other] }), c, SENT_MS + 5_000).state).toBe('pending');
+    // Without a note: PayPal's notes absent ('' once mapped) matches the empty note, nothing else.
+    expect(proveSend(acceptOf('REFUND', ''), base, snap([], { evidences: [buyerCreate, { ...entry, notes: '' }] }), c, SENT_MS + 5_000).state).toBe('recorded');
+  });
+
+  it('accept PARTIAL_REFUND: the SELLER PROPOSED offer entry (type REFUND, the partial amount); no ACCEPT_CLAIM entry is expected', () => {
+    const c = CONTRACTS['accept_claim:PARTIAL_REFUND'];
+    const ac = acceptOf('PARTIAL_REFUND', 'Partial refund offered.', { value: '2.00', currency: 'USD' });
+    const before = snap([], { evidences: [buyerCreate], offerHistory: [] });
+    const base = readBackBase(before, c.proof!, SENT);
+    const offer = { time: '2026-10-19T10:00:04.000Z', actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } };
+    expect(proveSend(ac, base, snap([], { evidences: [buyerCreate], offerHistory: [offer] }), c, SENT_MS + 5_000).state).toBe('recorded');
+    for (const other of [{ ...offer, amount: { value: '3.00', currency: 'USD' } }, { ...offer, event: 'ACCEPTED' }, { ...offer, actor: 'BUYER' }, { ...offer, type: 'REPLACEMENT' }])
+      expect(proveSend(ac, base, snap([], { offerHistory: [other] }), c, SENT_MS + 5_000).state).toBe('pending');
+    // A full accept is not proven by an offer entry, nor a partial one by an ACCEPT_CLAIM entry.
+    expect(proveSend(acceptOf('REFUND', 'Partial refund offered.'), base, snap([], { offerHistory: [offer] }), CONTRACTS['accept_claim:REFUND'], SENT_MS + 5_000).state).toBe('pending');
+    const acceptEntry = { ...buyerCreate, evidenceType: 'OTHER', source: 'SUBMITTED_BY_SELLER', action: 'ACCEPT_CLAIM', responseOption: 'PARTIAL_REFUND', date: '2026-10-19T10:00:05.035Z', notes: 'Partial refund offered.' };
+    expect(proveSend(ac, base, snap([], { evidences: [buyerCreate, acceptEntry] }), c, SENT_MS + 5_000).state).toBe('pending');
   });
 });

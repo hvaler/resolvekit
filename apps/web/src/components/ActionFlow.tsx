@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useServices } from '../app/services';
 import { checkAgain, sendActionWithReadBack, type ActionPhase, type ActionResult } from '../domain/actionSend';
-import { consequenceText, type ActionRequest, type ConfirmationTerms } from '../domain/actions';
+import { actionTitle, consequenceText, type ActionRequest, type ConfirmationTerms } from '../domain/actions';
+import { formatMoney } from '../domain/amounts';
+import { outcomeText } from '../domain/inbox';
 import type { DisputeGateway } from '../domain/gateway';
 import type { GatewayMode } from '../domain/httpGateway';
 import type { SubmissionIntent } from '../domain/intent';
@@ -31,21 +33,36 @@ const CONSEQUENCE_TEXT: Readonly<Record<string, string>> = {
 
 const where = (mode: GatewayMode) => (mode.kind === 'paypal' ? `PayPal ${mode.env}` : 'the simulator');
 
-function resultTitle(r: ActionResult, mode: GatewayMode): string {
-  if (r.kind === 'recorded') return mode.kind === 'paypal' ? 'Recorded by PayPal' : 'Recorded by the simulator';
+type Accept = { kind: 'accept_claim'; acceptType: string; note: string; amount: { value: string; currency: string } | null };
+const acceptOf = (i: SubmissionIntent): Accept | null => (i.payload?.kind === 'accept_claim' ? i.payload : null);
+const isPartial = (i: SubmissionIntent) => acceptOf(i)?.acceptType === 'PARTIAL_REFUND';
+/** What is being sent, in the words of the review and of the pending note. */
+const nounOf = (i: SubmissionIntent | null) => (i?.payload?.kind === 'accept_claim' ? (isPartial(i) ? 'the partial refund offer' : 'the accept') : 'the message');
+
+/**
+ * The result's title. Recorded: what the proof shows, by action — a full accept is the accepted claim; a partial accept
+ * is an offer waiting for the buyer (PayPal records it as an offer, W-9), never «refunded» or «closed».
+ */
+function resultTitle(r: ActionResult, mode: GatewayMode, intent: SubmissionIntent | null = null): string {
+  const by = mode.kind === 'paypal' ? 'PayPal' : 'the simulator';
+  if (r.kind === 'recorded') {
+    const base = `Recorded by ${by}`;
+    if (intent && acceptOf(intent)) return `${base}: ${isPartial(intent) ? 'offer waiting for the buyer' : 'claim accepted'}`;
+    return base;
+  }
   if (r.kind === 'pending') return 'Outcome pending confirmation';
-  if (r.kind === 'absent') return mode.kind === 'paypal' ? 'Not recorded by PayPal' : 'Not recorded by the simulator';
+  if (r.kind === 'absent') return `Not recorded by ${by}`;
   return 'Not sent';
 }
 
 function title(s: ActionFlowState, mode: GatewayMode): string {
   switch (s.step) {
     case 'composing':
-      return 'Review the message';
+      return 'Composing exactly what will be sent';
     case 'refused':
       return 'Nothing can be sent yet';
     case 'review':
-      return 'Review the message';
+      return acceptOf(s.intent) ? 'Review the accept' : 'Review the message';
     case 'confirm':
       return 'Confirm before sending';
     case 'sending':
@@ -53,7 +70,7 @@ function title(s: ActionFlowState, mode: GatewayMode): string {
     case 'needs_review':
       return 'The buyer wrote since you approved this';
     case 'result':
-      return resultTitle(s.result, mode);
+      return resultTitle(s.result, mode, s.intent);
   }
 }
 
@@ -70,10 +87,14 @@ export interface ActionFlowViewProps {
   onSendAnyway: () => void;
   onEdit: () => void;
   onClose: () => void;
+  /** What the flow sends, in a few words (the header), before an intent exists. */
+  label?: string;
 }
 
-/** The message as it will be sent, quoted exactly. */
+/** The message as it will be sent, quoted exactly; for an accept, its type, amount and note. */
 function Quoted({ intent }: { intent: SubmissionIntent }) {
+  const a = acceptOf(intent);
+  if (a) return <AcceptTerms intent={intent} accept={a} />;
   const text = intent.payload?.kind === 'send_message' ? intent.payload.text : '';
   return (
     <blockquote data-testid="approved-message" className="m-0 whitespace-pre-wrap rounded-xl border border-line bg-surface-2 px-4 py-3 text-body-lg leading-normal [overflow-wrap:anywhere]">
@@ -82,10 +103,52 @@ function Quoted({ intent }: { intent: SubmissionIntent }) {
   );
 }
 
+/** An accept as it will be sent: full refund of the disputed amount, or a partial refund offered; the note, exactly. */
+function AcceptTerms({ intent, accept }: { intent: SubmissionIntent; accept: Accept }) {
+  const disputed = intent.pin?.amount ?? null;
+  return (
+    <div data-testid="approved-accept" className="flex flex-col gap-1.5 rounded-xl border border-line bg-surface-2 px-4 py-3 text-body">
+      <strong className="font-semibold">
+        {accept.acceptType === 'PARTIAL_REFUND'
+          ? `Partial refund offered: ${accept.amount ? formatMoney(accept.amount) : '—'}${disputed ? ` of ${formatMoney(disputed)}` : ''}`
+          : `Full refund: ${disputed ? formatMoney(disputed) : 'the disputed amount'}`}
+      </strong>
+      {accept.note ? (
+        <blockquote className="m-0 whitespace-pre-wrap text-body-lg leading-normal [overflow-wrap:anywhere]">{accept.note}</blockquote>
+      ) : (
+        <span className="text-ink-3">No note.</span>
+      )}
+    </div>
+  );
+}
+
+/** What PayPal (or the simulator) shows after a recorded full accept: the refund and the outcome, as read. */
+function AcceptAftermath({ result }: { result: ActionResult }) {
+  const s = result.snapshot;
+  if (!s) return null;
+  const refunds = (s.refunds ?? []).filter((r) => r.amount);
+  if (!refunds.length && !s.outcome) return null;
+  return (
+    <ul className="m-0 list-none p-0 text-body">
+      {refunds.map((r, i) => (
+        <li key={r.id ?? i}>{`Refund of ${formatMoney(r.amount!)} shown on the dispute${r.id ? ` (${r.id})` : ''}.`}</li>
+      ))}
+      {s.outcome && (
+        <li>
+          {outcomeText(s.outcome.code)} <span className="font-mono text-caption text-ink-3">({s.outcome.code})</span>
+        </li>
+      )}
+    </ul>
+  );
+}
+
 /** The flow's screens, from its state alone (no effects): what each step shows and offers. */
-export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, onConfirm, onCheckAgain, onSendAnyway, onEdit, onClose }: ActionFlowViewProps) {
+export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, onConfirm, onCheckAgain, onSendAnyway, onEdit, onClose, label }: ActionFlowViewProps) {
   const idx = stepIndex(state);
   const closable = state.step !== 'sending';
+  const intent = 'intent' in state ? state.intent : null;
+  const what = intent ? actionTitle(intent) : (label ?? 'Send message');
+  const isMessage = !intent || intent.payload?.kind === 'send_message';
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--scrim)] px-6 pt-[34px] max-md:px-0 max-md:pt-0">
       <div role="dialog" aria-modal="true" aria-labelledby="action-title" className="flex w-[min(720px,100%)] flex-col overflow-hidden rounded-3xl bg-surface shadow-modal max-md:h-[100dvh] max-md:rounded-none">
@@ -95,7 +158,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
               {title(state, mode)}
             </h2>
             <span className="font-mono text-caption leading-[1.3] text-ink-3">
-              {caseId} · Send message · {where(mode)}
+              {caseId} · {what} · {where(mode)}
             </span>
           </div>
           <span className="flex-1" />
@@ -137,6 +200,11 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
               <Quoted intent={state.intent} />
               <div role="note" className="flex flex-col gap-1 rounded-2xl border border-warn-line bg-warn-soft px-[18px] py-3 text-body">
                 <strong className="font-semibold">{CONSEQUENCE_TEXT[state.terms.consequence] ?? consequenceText(state.intent)}</strong>
+                {state.terms.amount && state.terms.currency && (
+                  <span data-testid="confirm-amount">
+                    Amount: {state.terms.amount} {state.terms.currency}
+                  </span>
+                )}
                 <span className="font-mono text-caption text-ink-3">
                   {state.terms.consequence} · intent {state.terms.intentId.slice(0, 12)}… · sha256 {state.terms.contentHash.slice(0, 12)}…
                 </span>
@@ -151,7 +219,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
           )}
           {state.step === 'needs_review' && (
             <>
-              <p className="m-0 text-body text-ink-2">Read the new message first: your message may answer an outdated one. Nothing was sent.</p>
+              <p className="m-0 text-body text-ink-2">Read the new message first: {isMessage ? 'your message' : nounOf(intent)} may answer an outdated one. Nothing was sent.</p>
               <MessageThread messages={state.messages} title="New from the buyer" />
               <Quoted intent={state.intent} />
             </>
@@ -167,12 +235,15 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
                     : 'flex flex-col gap-1 rounded-2xl border border-bad-line bg-bad-soft px-[18px] py-4'
               }
             >
-              <strong className="text-[15px] font-semibold">{resultTitle(state.result, mode)}</strong>
+              <strong className="text-[15px] font-semibold">{resultTitle(state.result, mode, state.intent)}</strong>
               <span className="text-body leading-normal">
                 {state.result.kind === 'pending'
-                  ? `${state.result.detail}. Nothing more is sent on this dispute until a read-back proves the message recorded or absent; it is never sent again blindly.`
-                  : state.result.detail}
+                  ? `${state.result.detail}. Nothing more is sent on this dispute until a read-back proves ${nounOf(state.intent)} recorded or absent; it is never sent again blindly.`
+                  : state.result.kind === 'recorded' && isPartial(state.intent)
+                    ? 'PayPal shows your offer to the buyer. No money moves and the dispute stays open unless the buyer accepts it.'
+                    : state.result.detail}
               </span>
+              {state.result.kind === 'recorded' && acceptOf(state.intent) && !isPartial(state.intent) && <AcceptAftermath result={state.result} />}
             </div>
           )}
           {error && (
@@ -183,7 +254,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
         </div>
 
         <div className="flex flex-none flex-wrap items-center gap-2 border-t border-line px-[26px] py-3.5 max-md:px-4">
-          {(state.step === 'review' || state.step === 'confirm' || state.step === 'refused') && <Button onClick={onEdit}>← Edit the message</Button>}
+          {(state.step === 'review' || state.step === 'confirm' || state.step === 'refused') && <Button onClick={onEdit}>{isMessage ? '← Edit the message' : '← Edit'}</Button>}
           <span className="flex-1" />
           {state.step === 'review' && (
             <Button variant="primary" disabled={busy} onClick={onApprove}>
@@ -197,7 +268,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
           )}
           {state.step === 'needs_review' && (
             <>
-              <Button onClick={onEdit}>Edit the message</Button>
+              <Button onClick={onEdit}>{isMessage ? 'Edit the message' : 'Edit'}</Button>
               <Button variant="primary" disabled={busy} onClick={onSendAnyway}>
                 Send it anyway
               </Button>
@@ -228,7 +299,7 @@ export interface ActionFlowDeps {
   onState: (s: ActionFlowState) => void;
   audit: (who: string, what: string) => void;
   applySnapshot: (s: DisputeSnapshot) => void;
-  /** PayPal (or the simulator) proved the message recorded. */
+  /** PayPal (or the simulator) proved the action recorded. */
   onRecorded?: () => void;
   /** Whether the flow is still on screen (answers after it closed are dropped). */
   live?: () => boolean;
@@ -277,7 +348,7 @@ export class ActionFlowController {
     if (r.kind === 'not_sent' && r.refusal?.code === 'CONFIRMATION_REQUIRED' && r.refusal.terms) return this.put({ step: 'confirm', intent, terms: r.refusal.terms });
     if (r.kind === 'not_sent' && r.refusal?.code === 'NEEDS_REVIEW' && r.refusal.messages) return this.put({ step: 'needs_review', intent, messages: r.refusal.messages, messageKeys: r.refusal.messageKeys ?? [] });
     const outcome = r.kind === 'recorded' ? 'recorded' : r.kind === 'pending' ? 'outcome pending confirmation' : r.kind === 'absent' ? 'not recorded' : `not sent (${r.detail})`;
-    this.d.audit(this.d.mode.kind === 'paypal' ? 'PayPal re-read' : 'Simulator re-read', `Send message · ${outcome}`);
+    this.d.audit(this.d.mode.kind === 'paypal' ? 'PayPal re-read' : 'Simulator re-read', `${actionTitle(intent)} · ${outcome}`);
     if (r.kind === 'recorded') this.d.onRecorded?.();
     this.put({ step: 'result', intent, result: r });
   }
@@ -285,7 +356,7 @@ export class ActionFlowController {
   private async send(intent: SubmissionIntent): Promise<void> {
     const { gateway, source, mode } = this.d;
     this.put({ step: 'sending', intent, phase: null });
-    this.d.audit('ResolveKit', `Sending send_message${mode.kind === 'paypal' ? ` to PayPal ${mode.env}` : ' to the simulator'} · request ${intent.requestId}`);
+    this.d.audit('ResolveKit', `Sending ${intent.action ?? 'provide_evidence'}${mode.kind === 'paypal' ? ` to PayPal ${mode.env}` : ' to the simulator'} · request ${intent.requestId}`);
     const r = await sendActionWithReadBack({ intent, gateway, intents: source, mode, ...(this.d.now ? { now: this.d.now } : {}), onPhase: (p) => this.put({ step: 'sending', intent, phase: p }) });
     this.finish(intent, r);
   }
@@ -321,8 +392,8 @@ export class ActionFlowController {
 }
 
 /**
- * Send a message through the same chain as every action, composed against a fresh read (the server for real PayPal,
- * this browser for the simulator). Real PayPal and the simulator are fixed when the flow opens.
+ * Send an action (a message, an accept) through the same chain as every action, composed against a fresh read (the
+ * server for real PayPal, this browser for the simulator). Real PayPal and the simulator are fixed when the flow opens.
  */
 export function ActionFlow({ caseId, request, onClose, onEdit, onRecorded }: { caseId: string; request: ActionRequest; onClose: () => void; onEdit: () => void; onRecorded?: () => void }) {
   const { intents, gatewayFor, modeOf, applySnapshot, addAudit } = useServices();
@@ -391,6 +462,7 @@ export function ActionFlow({ caseId, request, onClose, onEdit, onRecorded }: { c
       onSendAnyway={step(() => flow.sendAnyway())}
       onEdit={onEdit}
       onClose={onClose}
+      label={actionTitle(request)}
     />
   );
 }
