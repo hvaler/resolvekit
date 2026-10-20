@@ -2,7 +2,7 @@
 
 # Known issues
 
-Open follow-ups, checked against the code at `5111b88` (deployed 20/10/2026). Each item names its source: the follow-up file
+Open follow-ups, updated for the code at `5111b88` (deployed 20/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source: the follow-up file
 under [`docs/superpowers/plans/`](../superpowers/plans/) and, where relevant, the code location. Items marked
 **by design** are kept on purpose but worth knowing. Product limits (what ResolveKit does not do) are in
 [Limitations](../product/limitations.md).

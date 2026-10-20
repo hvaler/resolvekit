@@ -2,7 +2,7 @@
 
 # Problemas conocidos
 
-Seguimientos abiertos, comprobados contra el código en `5111b88` (desplegado el 20/10/2026). Cada punto indica su fuente: el
+Seguimientos abiertos, actualizados para el código en `5111b88` (desplegado el 20/10/2026); revisados línea a línea por primera vez en `fbe9621` (19/10/2026). Cada punto indica su fuente: el
 archivo de seguimiento en [`docs/superpowers/plans/`](../../superpowers/plans/) y, cuando procede, la ubicación en el
 código. Los puntos marcados **por diseño** se mantienen a propósito, pero conviene conocerlos. Los límites del producto
 (lo que ResolveKit no hace) están en [Limitaciones](../product/limitations.md).
