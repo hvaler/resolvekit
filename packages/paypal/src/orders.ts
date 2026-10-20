@@ -34,7 +34,6 @@ export interface Capture {
 }
 
 /** A Payments v2 refund (reads/refund-3H730369N6162525E.json): its `up` link is the refunded capture. Read only. */
-export interface Refund { id?: string; status?: string; amount?: Money; links?: Array<{ rel: string; href: string }> }
 
 export interface Order {
   id: string;
@@ -182,11 +181,6 @@ export class PaymentsApi {
   /** A capture as PayPal reports it now: PENDING settles later as COMPLETED, or ends DECLINED / FAILED. */
   getCapture(captureId: string): Promise<Capture> {
     return this.client.request<Capture>('GET', `/v2/payments/captures/${encodeURIComponent(captureId)}`);
-  }
-
-  /** Read only: ResolveKit never creates a refund (PROOF_OF_REFUND cites one the seller already made). */
-  getRefund(refundId: string): Promise<Refund> {
-    return this.client.request<Refund>('GET', `/v2/payments/refunds/${encodeURIComponent(refundId)}`);
   }
 
   getAuthorization(authorizationId: string): Promise<Authorization> {

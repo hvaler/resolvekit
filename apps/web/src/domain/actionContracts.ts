@@ -265,9 +265,6 @@ export function variantOf(action: IntentAction, type?: string | null): VariantId
   }
 }
 
-/** Available means its contract is recorded: any status but «Not available». */
-export const available = (v: VariantId): boolean => CONTRACTS[v].status !== 'not_available';
-
 /** The registry's reason when a variant is «Not available» (its own reason, or that its contract is not recorded); null otherwise. */
 export function unavailableReason(v: VariantId, contracts: Readonly<Record<VariantId, Pick<VariantContract, 'status' | 'reason'>>> = CONTRACTS): string | null {
   const c = contracts[v];

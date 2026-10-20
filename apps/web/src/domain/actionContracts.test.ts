@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONTRACTS, STATUS_LABEL, available, statusLabel, variantOf, type VariantId } from './actionContracts';
+import { CONTRACTS, STATUS_LABEL, statusLabel, unavailableReason, variantOf, type VariantId } from './actionContracts';
 
 /** The variants whose flow is built (Task 8 onwards). */
 const BUILT: VariantId[] = ['send_message', 'send_message:file', 'accept_claim:REFUND', 'accept_claim:PARTIAL_REFUND', 'escalate', 'evidence:after_escalation', 'make_offer:REFUND'];
@@ -60,8 +60,8 @@ describe('action contracts', () => {
     expect(withProof).toEqual(['accept_claim:PARTIAL_REFUND', 'accept_claim:REFUND', 'escalate', 'make_offer:REFUND', 'send_message', 'send_message:file']);
   });
 
-  it('only the built variants are available', () => {
-    for (const id of IDS) expect(available(id)).toBe(BUILT.includes(id));
+  it('only the built variants are available (no «Not available» reason)', () => {
+    for (const id of IDS) expect(unavailableReason(id) === null).toBe(BUILT.includes(id));
   });
 
   it('status labels: «Not available: reason» or the status by name', () => {
