@@ -44,11 +44,11 @@ function routedPayPal(o: { dispute?: () => Dispute; sendStatus?: () => number; s
 
 const boundInput = (d: Dispute = standardDispute()) => caseInput(standardCase, { kind: 'live', snap: toSnapshot(d, CASE, 'sandbox', NOW), failed: null });
 
-async function setup(o: Parameters<typeof routedPayPal>[0] & { bound?: boolean; binding?: string | Binding; recheck?: Record<string, unknown>; intents?: IntentStore; verdicts?: RecheckVerdicts; stage?: string } = {}) {
+async function setup(o: Parameters<typeof routedPayPal>[0] & { analysedAs?: () => Dispute; bound?: boolean; binding?: string | Binding; recheck?: Record<string, unknown>; intents?: IntentStore; verdicts?: RecheckVerdicts; stage?: string } = {}) {
   // A dispute in a given stage (PayPal's dispute_life_cycle_stage), read and analysed as such.
   const staged = o.stage ? (): Dispute => ({ ...standardDispute(), dispute_life_cycle_stage: o.stage }) : null;
   const pp = routedPayPal(staged ? { ...o, dispute: staged } : o);
-  const { analyst, model } = await analystFor([[CASE, boundInput(staged ? staged() : undefined)], [CASE, caseInput(standardCase, { kind: 'simulated' })]], o.recheck);
+  const { analyst, model } = await analystFor([[CASE, boundInput(staged ? staged() : o.analysedAs?.())], [CASE, caseInput(standardCase, { kind: 'simulated' })]], o.recheck);
   const lines: string[] = [];
   const app = createApp({
     paypal: pp.client,
@@ -447,4 +447,57 @@ test('[A1] evidence memory by stage: the send log records the stage read at send
   const seeded = new IntentStore(files);
   assert.equal(seeded.evidenceSentIn(REAL, 'INQUIRY'), true);
   assert.equal(seeded.evidenceSentIn(REAL, 'CHARGEBACK'), false);
+});
+
+test('Task 12: PROOF_OF_REFUND evidence and an appeal are refused at compose and at send with the registry reason; PayPal is never called', async () => {
+  const intents = new IntentStore();
+  const { app, pp } = await setup({ intents });
+  const REFUND = 'Not available: Not verified with PayPal: pending sandbox test (W-11)';
+  const APPEAL = 'Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute';
+  // Compose: PROOF_OF_REFUND evidence (also with refund ids) and an appeal body.
+  for (const [body, detail] of [
+    [request({ evidenceType: 'PROOF_OF_REFUND' }), REFUND],
+    [request({ evidenceType: 'PROOF_OF_REFUND', refundIds: ['9ZX12345AB678901C'] }), REFUND],
+    [request({ action: 'appeal' }), APPEAL],
+  ] as const) {
+    const r = await app(post(intentPath, body));
+    const b = await r.json();
+    assert.deepEqual([r.status, b.error, b.detail], [409, 'VARIANT_NOT_AVAILABLE', detail], JSON.stringify(body));
+  }
+  // The other evidence types compose and send as before.
+  const i = await propose(app);
+  assert.equal((await approve(app, i)).status, 200);
+  // Send: an approved intent whose type is PROOF_OF_REFUND (as one stored before this delivery would be) is composed
+  // again on the send-time read and refused; nothing reaches PayPal.
+  const stored = intents.peek(i.id)!;
+  (stored.request as { evidenceType: string }).evidenceType = 'PROOF_OF_REFUND';
+  (stored as { evidenceType: string }).evidenceType = 'PROOF_OF_REFUND';
+  const s = await app(post(evidencePath, { intentId: i.id }));
+  const sb = await s.json();
+  assert.deepEqual([s.status, sb.error, sb.detail], [409, 'VARIANT_NOT_AVAILABLE', REFUND], JSON.stringify(sb));
+  assert.equal(pp.sends.length, 0);
+  assert.ok(!pp.reads.some((p) => p.endsWith('/appeal')));
+});
+
+test('Task 12: when PayPal requests PROOF_OF_REFUND among other types, the other types compose and send as before', async () => {
+  const asking = (types: string[]) => (): Dispute => ({
+    ...standardDispute(),
+    evidences: types.map((t) => ({ evidence_type: t, source: 'REQUESTED_FROM_SELLER', date: '2026-10-08T10:00:00.000Z' })) as unknown as Dispute['evidences'],
+  });
+  // As the claim requested after W-5: PROOF_OF_FULFILLMENT, PROOF_OF_REFUND, OTHER.
+  const several = asking(['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER']);
+  const { app, pp } = await setup({ dispute: several, analysedAs: several });
+  const i = await propose(app);
+  assert.equal((await approve(app, i)).status, 200);
+  const s = await app(post(evidencePath, { intentId: i.id }));
+  assert.equal(s.status, 202, JSON.stringify(await s.clone().json()));
+  assert.equal(pp.sends.length, 1);
+  // Unchanged rule (validate.ts, before this feature): PayPal requesting PROOF_OF_REFUND only refuses another type.
+  const only = asking(['PROOF_OF_REFUND']);
+  const o = await setup({ dispute: only, analysedAs: only });
+  const r = await o.app(post(intentPath, request()));
+  assert.deepEqual([r.status, (await r.json()).error], [422, 'EVIDENCE_TYPE_NOT_REQUESTED']);
+  const refund = await o.app(post(intentPath, request({ evidenceType: 'PROOF_OF_REFUND' })));
+  assert.deepEqual([refund.status, (await refund.json()).error], [409, 'VARIANT_NOT_AVAILABLE']);
+  assert.equal(o.pp.sends.length, 0);
 });

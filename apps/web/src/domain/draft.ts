@@ -253,7 +253,8 @@ export interface BlockerInput {
   analysisText?: string;
   action: ActionCode;
   allowedActions: readonly ActionCode[];
-  evidenceType: { allowed: boolean; satisfied: boolean; label: string } | null;
+  /** `unavailable`: the registry's reason when ResolveKit does not send this type in this delivery (evidenceTypes.ts). */
+  evidenceType: { allowed: boolean; satisfied: boolean; label: string; unavailable?: string | null } | null;
   submitted: boolean;
   /** Why evidence is not available on this dispute now, e.g. after an escalation outside W-6's state; null: it is. */
   evidenceUnavailable?: string | null;
@@ -289,7 +290,8 @@ export function draftBlockers(input: BlockerInput): Blocker[] {
     out.push({ kind: 'action', text: input.evidenceUnavailable });
   }
   if (input.action === 'provide_evidence' && input.evidenceType) {
-    if (!input.evidenceType.allowed) out.push({ kind: 'evidence_type', text: `PayPal won't accept "${input.evidenceType.label}" here` });
+    if (input.evidenceType.unavailable) out.push({ kind: 'evidence_type', text: `"${input.evidenceType.label}" is not available: ${input.evidenceType.unavailable}` });
+    else if (!input.evidenceType.allowed) out.push({ kind: 'evidence_type', text: `PayPal won't accept "${input.evidenceType.label}" here` });
     else if (!input.evidenceType.satisfied) out.push({ kind: 'evidence_type', text: `the case file lacks what "${input.evidenceType.label}" needs` });
   }
   const notes = notesText(input.sentences);

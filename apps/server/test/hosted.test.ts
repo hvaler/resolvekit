@@ -862,3 +862,17 @@ test('ops report names a send in flight (before PayPal answers), then the unprov
   assert.equal(intents.isUncertain(REAL)?.intentId, m.body.id);
   assert.equal((await ops())?.intentId, m.body.id);
 });
+
+test('appeal (Task 12): a non-sendable preview — members get OWNER_ONLY, the owner the registry reason, even with the appeal link; nothing is posted', async () => {
+  const base = standardDispute();
+  const withAppeal: Dispute = { ...base, links: [...(base.links ?? []), { rel: 'appeal' }] };
+  const { app, pp, people } = setup({ intents: new IntentStore(), disputes: { [REAL]: withAppeal } });
+  const APPEAL = { evidenceType: 'OTHER', edits: {}, resolutions: {}, action: 'appeal' };
+  for (const who of [people.member(), people.fullMember()]) {
+    const r = await actionReq(app, intentPath, APPEAL, who);
+    assert.deepEqual([r.status, r.body.error], [403, 'OWNER_ONLY'], JSON.stringify(r.body));
+  }
+  const o = await actionReq(app, intentPath, APPEAL, people.ownerCookie);
+  assert.deepEqual([o.status, o.body.error, o.body.detail], [409, 'VARIANT_NOT_AVAILABLE', 'Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute']);
+  assert.equal(pp.calls.filter((c) => c.endsWith('/appeal')).length, 0);
+});

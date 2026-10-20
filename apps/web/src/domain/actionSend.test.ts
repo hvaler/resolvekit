@@ -422,3 +422,26 @@ describe('sendActionWithReadBack', () => {
     }
   });
 });
+
+describe('appeal and PROOF_OF_REFUND are not available in this delivery (Task 12, owner decision 20/10/2026)', () => {
+  it('the simulator refuses an appeal, even when the dispute offers the appeal link, and plays nothing', async () => {
+    const { g } = sim({ allowedActions: ['provide_evidence', 'send_message', 'appeal'] });
+    const snap = await g.getDispute('CASE-1');
+    const base = { ...(composeAction({ caseId: 'CASE-1', req: { action: 'send_message', text: 'x', attachments: [] }, snap: { ...snap, allowedActions: ['send_message'] }, disputeId: null, seller: null, files: [] }) as SubmissionIntent) };
+    const pin = { disputeId: null, seller: null, stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', amount: null };
+    const { payload: _p, ...rest } = base;
+    const appeal: SubmissionIntent = { ...rest, action: 'appeal', pin, id: 'int-a', contentHash: 'a'.repeat(64), requestId: 'rk-a', status: 'approved', createdAt: '', expiresAt: '', approvedBy: 'x', approvedAt: '', sentAt: null, reason: null };
+    await expect(g.sendAction(appeal, { requestId: 'rk-a' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
+    expect(g.sentActions).toEqual([]);
+    expect((await g.getDispute('CASE-1')).allowedActions).toContain('appeal');
+  });
+
+  it('the simulator refuses PROOF_OF_REFUND evidence and records nothing; other evidence types still go', async () => {
+    const sub = (evidenceType: 'PROOF_OF_REFUND' | 'PROOF_OF_FULFILLMENT') => ({ disputeId: 'CASE-1', action: 'provide_evidence' as const, evidenceType, carrier: 'UPS', tracking: '1Z', notes: 'Delivered.', files: [] });
+    const { g } = sim({ requestedEvidence: ['PROOF_OF_REFUND'] });
+    await expect(g.provideEvidence(sub('PROOF_OF_REFUND'), { requestId: 'rk-r' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
+    expect((await g.getDispute('CASE-1')).evidences).toEqual([]);
+    await g.provideEvidence(sub('PROOF_OF_FULFILLMENT'), { requestId: 'rk-f' });
+    expect((await g.getDispute('CASE-1')).evidences.map((e) => e.evidenceType)).toEqual(['PROOF_OF_FULFILLMENT']);
+  });
+});

@@ -8,7 +8,8 @@
  */
 import { canonicalJson, sha256Hex } from '@resolvekit/analyst';
 import { deriveSentences, draftBlockers, notesText, type Correction, type Recheck } from './draft.ts';
-import { evidenceTypeOptions } from './evidenceTypes.ts';
+import { CONTRACTS } from './actionContracts.ts';
+import { evidenceTypeOptions, evidenceTypeUnavailable } from './evidenceTypes.ts';
 import { isSimpleAction, parseActionRequest, type ActionPayload, type ActionRequest, type DisputePin, type IntentAction, type Money } from './actions.ts';
 import type { ActionCode, CaseFile, ContradictionResolution, EvidenceSubmission, EvidenceType, SentenceView, SubmissionFile } from './types';
 
@@ -283,6 +284,12 @@ export interface ComposeInput {
   corrections?: ReadonlyMap<string, Correction>;
 }
 
+/** The registry's reason when a variant is not available; null when it is. */
+function variantUnavailable(v: 'appeal'): string | null {
+  const c = CONTRACTS[v];
+  return c.status === 'not_available' ? (c.reason ?? 'Contract not recorded yet') : null;
+}
+
 /**
  * Compose the submission from the analysis: supported sentences only (an edit counts only with a verdict from the
  * verifier), every contradiction resolved, the evidence type allowed and satisfied, within PayPal's limits. The same
@@ -290,6 +297,11 @@ export interface ComposeInput {
  */
 export function composeSubmission(x: ComposeInput): Composed | ComposeProblem {
   const { c, req } = x;
+  // A variant the registry has not recorded is never composed ([A2]): an appeal (the sandbox could not produce an
+  // appealable dispute) and PROOF_OF_REFUND evidence (pending sandbox test W-11), in this delivery.
+  // An appeal has no flow of its own yet, so it is refused even once its contract is recorded (never composed as evidence).
+  const notAvailable = req.action === 'appeal' ? (variantUnavailable('appeal') ?? 'not implemented yet') : evidenceTypeUnavailable(req.evidenceType);
+  if (notAvailable) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${notAvailable}` };
   const rechecks: Record<string, Recheck> = {};
   for (const [id, text] of Object.entries(req.edits)) {
     const s = c.sentences.find((y) => y.id === id);

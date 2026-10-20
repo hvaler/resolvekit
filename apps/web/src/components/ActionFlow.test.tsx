@@ -9,6 +9,10 @@ import { SimulatedDisputeGateway } from '../domain/gateway';
 import { HttpDisputeGateway } from '../domain/httpGateway';
 import { HttpIntentClient, LocalIntentClient } from '../domain/intentClient';
 import { MessageThread } from './MessageThread';
+import { EvidenceTypeSelector } from './EvidenceTypeSelector';
+import { evidenceTypeOptions } from '../domain/evidenceTypes';
+import { SIM_TRANSITIONS } from '../domain/simulatedActions';
+import appSource from '../App.tsx?raw';
 
 const snap: DisputeSnapshot = {
   id: 'CASE-1',
@@ -484,5 +488,44 @@ describe('make_offer: owner only, an amount and a note, OFFERS_SETTLEMENT, an of
     expect(html).toContain('Recorded by the simulator: offer waiting for the buyer');
     expect(html).toContain('The simulator shows your refund offer to the buyer.');
     expect(audits.at(-1)).toBe('Simulator re-read: Make offer · refund offer · recorded');
+  });
+});
+
+describe('appeal and PROOF_OF_REFUND: a non-sendable preview (Task 12, owner decision 20/10/2026)', () => {
+  const APPEAL_REASON = 'Not verified with PayPal: the sandbox could not produce an appealable dispute';
+  const REFUND_REASON = 'Not verified with PayPal: pending sandbox test (W-11)';
+
+  it('PayPal offers the appeal link: the owner and anyone else see «Not available: <reason>» and no review or send button', () => {
+    const offered: DisputeSnapshot = { ...snap, status: 'RESOLVED', allowedActions: ['appeal'] };
+    for (const who of [{ role: 'owner' as const, reviewer: false }, { role: 'member' as const, reviewer: true }, { role: 'member' as const, reviewer: false }]) {
+      const a = actionAvailability(offered, 'appeal', who);
+      expect(a).toMatchObject({ offered: true, sendable: false, variants: [{ variant: 'appeal', type: null, available: false, why: APPEAL_REASON }] });
+      const html = renderToString(<ActionComposer action="appeal" text="" onText={noop} availability={a} locked={null} onReview={noop} onRequest={noop} />);
+      expect(html).toContain(`Not available: ${APPEAL_REASON}`);
+      expect(html).not.toMatch(/Review|Send|<textarea/);
+      expect(html).not.toMatch(/<button/);
+    }
+  });
+
+  it('the evidence selector shows PROOF_OF_REFUND disabled with its reason when PayPal requests it', () => {
+    const o = evidenceTypeOptions('MERCHANDISE_OR_SERVICE_NOT_RECEIVED', 'PROOF_OF_REFUND', [
+      { type: 'PROOF_OF_FULFILLMENT', label: 'Proof of fulfillment', requirement: 'Carrier and tracking.', satisfied: true },
+      { type: 'PROOF_OF_REFUND', label: 'Proof of refund', requirement: 'Refund id found.', satisfied: true },
+    ]);
+    const html = renderToString(<EvidenceTypeSelector options={o} selected="PROOF_OF_FULFILLMENT" onSelect={noop} requested="PROOF_OF_REFUND" requestedNote="" />);
+    const at = html.indexOf('PROOF_OF_REFUND</span></span>');
+    const refund = html.slice(html.lastIndexOf('<button', at), html.indexOf('</button>', at));
+    expect(refund).toContain('aria-disabled="true"');
+    expect(refund).toContain('aria-checked="false"');
+    expect(refund).toContain(`Not available: ${REFUND_REASON}`);
+    const fulfil = html.slice(html.indexOf('<button'), html.indexOf('</button>'));
+    expect(fulfil).toContain('aria-checked="true"');
+    expect(fulfil).toContain('aria-disabled="false"');
+  });
+
+  it('the Dev control plays no appeal and the simulator has no appeal or PROOF_OF_REFUND transition', () => {
+    expect(appSource).not.toMatch(/appeal|adjudicat|rules for the buyer/i);
+    expect(Object.keys(SIM_TRANSITIONS)).not.toContain('appeal');
+    expect(Object.keys(SIM_TRANSITIONS)).not.toContain('evidence:PROOF_OF_REFUND');
   });
 });

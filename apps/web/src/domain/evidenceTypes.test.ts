@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentCase, standardCase } from '../fixtures';
+import { CONTRACTS } from './actionContracts';
 import { NOT_ALLOWED_ERROR, defaultEvidenceType, evidenceTypeOptions, isEvidenceTypeAllowed, selectEvidenceType } from './evidenceTypes';
 
 describe('evidence type choice (docs/sandbox-findings.md)', () => {
@@ -31,6 +32,31 @@ describe('evidence type choice (docs/sandbox-findings.md)', () => {
   it('ignores a selection PayPal would reject', () => {
     const o = evidenceTypeOptions(standardCase.summary.reason, standardCase.requestedEvidenceType, standardCase.evidenceTypes);
     expect(selectEvidenceType(o, 'PROOF_OF_FULFILLMENT', 'PROOF_FOR_SOFTWARE_OR_SERVICE_DELIVERED')).toBe('PROOF_OF_FULFILLMENT');
-    expect(selectEvidenceType(o, 'PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND')).toBe('PROOF_OF_REFUND');
+    // PROOF_OF_REFUND is not available in this delivery (registry): choosing it is ignored too.
+    expect(selectEvidenceType(o, 'PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND')).toBe('PROOF_OF_FULFILLMENT');
+  });
+});
+
+describe('PROOF_OF_REFUND is not available in this delivery (Task 12, owner decision 20/10/2026)', () => {
+  const REASON = 'Not verified with PayPal: pending sandbox test (W-11)';
+  const candidates = [
+    { type: 'PROOF_OF_FULFILLMENT' as const, label: 'pof', requirement: 'Carrier and tracking.', satisfied: true },
+    { type: 'PROOF_OF_REFUND' as const, label: 'refund', requirement: 'Refund id found.', satisfied: true },
+    { type: 'OTHER' as const, label: 'other', requirement: 'Notes.', satisfied: true },
+  ];
+
+  it('is shown disabled with the registry reason, even when the case file would satisfy it', () => {
+    const o = evidenceTypeOptions('MERCHANDISE_OR_SERVICE_NOT_RECEIVED', null, candidates);
+    expect(CONTRACTS['evidence:PROOF_OF_REFUND'].reason).toBe(REASON);
+    expect(o.find((x) => x.type === 'PROOF_OF_REFUND')).toMatchObject({ allowed: false, satisfied: false, detail: `Not available: ${REASON}`, unavailable: REASON });
+    for (const t of ['PROOF_OF_FULFILLMENT', 'OTHER'] as const) expect(o.find((x) => x.type === t)).toMatchObject({ allowed: true, satisfied: true, unavailable: null });
+  });
+
+  it('when PayPal requests it, it stays requested but is never preselected nor selectable; the other types still are', () => {
+    const o = evidenceTypeOptions('MERCHANDISE_OR_SERVICE_NOT_RECEIVED', 'PROOF_OF_REFUND', candidates);
+    expect(o.find((x) => x.type === 'PROOF_OF_REFUND')).toMatchObject({ requested: true, allowed: false });
+    expect(defaultEvidenceType(o)).toBe('PROOF_OF_FULFILLMENT');
+    expect(selectEvidenceType(o, 'PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND')).toBe('PROOF_OF_FULFILLMENT');
+    expect(selectEvidenceType(o, 'PROOF_OF_FULFILLMENT', 'OTHER')).toBe('OTHER');
   });
 });

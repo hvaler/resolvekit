@@ -154,6 +154,8 @@ describe('draftBlockers', () => {
     const ready = { sentences: deriveSentences(S, { ...done, edits: { S4: 'Apt 4B' }, rechecks: explainedOk }), resolutions: explained };
     expect(draftBlockers(base({ ...ready, evidenceType: { allowed: false, satisfied: false, label: 'X' } }))[0]!.kind).toBe('evidence_type');
     expect(draftBlockers(base({ ...ready, evidenceType: { allowed: true, satisfied: false, label: 'Proof of refund' } }))[0]!.kind).toBe('evidence_type');
+    // A type the registry does not send in this delivery says so, with the reason (Task 12).
+    expect(draftBlockers(base({ ...ready, evidenceType: { allowed: false, satisfied: false, label: 'Proof of refund', unavailable: 'Not verified with PayPal: pending sandbox test (W-11)' } }))[0]).toEqual({ kind: 'evidence_type', text: '"Proof of refund" is not available: Not verified with PayPal: pending sandbox test (W-11)' });
   });
 
   it('blocks actions PayPal does not allow and anything after submission', () => {

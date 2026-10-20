@@ -1,3 +1,5 @@
+import { CONTRACTS, variantOf } from './actionContracts.ts';
+import type { ContractRegistry } from './actions.ts';
 import type { DisputeReason, EvidenceType, EvidenceTypeCandidate } from './types';
 
 /**
@@ -39,6 +41,19 @@ export interface EvidenceTypeOption {
   satisfied: boolean;
   /** PayPal asks for this type (source REQUESTED_FROM_SELLER). */
   requested: boolean;
+  /**
+   * The registry's reason when ResolveKit does not send this type in this delivery ([A2], [A7]; e.g. PROOF_OF_REFUND,
+   * pending sandbox test W-11); null when it does. Such a type is shown disabled, never preselected nor selectable.
+   */
+  unavailable: string | null;
+}
+
+/** The registry's reason when evidence of this type is a variant not available (null: available, or not a variant). */
+export function evidenceTypeUnavailable(type: EvidenceType, contracts: ContractRegistry = CONTRACTS): string | null {
+  const v = variantOf('provide_evidence', type);
+  if (!v) return null;
+  const c = contracts[v];
+  return c.status === 'not_available' ? (c.reason ?? 'Contract not recorded yet') : null;
 }
 
 export function isEvidenceTypeAllowed(reason: DisputeReason, type: EvidenceType): boolean {
@@ -51,14 +66,16 @@ export function evidenceTypeOptions(
   candidates: readonly EvidenceTypeCandidate[],
 ): EvidenceTypeOption[] {
   return candidates.map((c) => {
-    const allowed = isEvidenceTypeAllowed(reason, c.type);
+    const unavailable = evidenceTypeUnavailable(c.type);
+    const allowed = !unavailable && isEvidenceTypeAllowed(reason, c.type);
     return {
       type: c.type,
       label: c.label,
-      detail: allowed ? c.requirement : `PayPal won’t accept this type for a not-received dispute · ${NOT_ALLOWED_ERROR}`,
+      detail: unavailable ? `Not available: ${unavailable}` : allowed ? c.requirement : `PayPal won’t accept this type for a not-received dispute · ${NOT_ALLOWED_ERROR}`,
       allowed,
       satisfied: allowed && c.satisfied,
       requested: c.type === requested,
+      unavailable,
     };
   });
 }

@@ -229,7 +229,7 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     ...(an.kind === 'unavailable' ? { analysisText: 'there is no analysis of these documents yet' } : {}),
     action,
     allowedActions: opts.allowedActions,
-    evidenceType: selected ? { allowed: selected.allowed, satisfied: selected.satisfied, label: selected.label } : null,
+    evidenceType: selected ? { allowed: selected.allowed, satisfied: selected.satisfied, label: selected.label, unavailable: selected.unavailable } : null,
     submitted: opts.submitted,
     evidenceUnavailable: opts.evidenceUnavailable ?? null,
   });

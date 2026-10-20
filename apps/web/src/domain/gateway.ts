@@ -1,4 +1,4 @@
-import { CONTRACTS, type VariantId } from './actionContracts';
+import { CONTRACTS, variantOf, type VariantId } from './actionContracts';
 import { variantOfContent, type ProofState } from './actionReadback';
 import { intentAction, offerOutsideContract, pendingSellerOffer, type ContractRegistry } from './actions';
 import { minorUnits } from './amounts';
@@ -312,6 +312,9 @@ export class SimulatedDisputeGateway implements DisputeGateway {
     if (!d) throw new Error(`RESOURCE_NOT_FOUND: ${submission.disputeId}`);
     this.beforeWrite(d);
     if (!d.allowedActions.includes('provide_evidence')) throw new Error('NOT_AUTHORIZED: provide_evidence is not allowed for this dispute');
+    // A type the registry has not recorded (PROOF_OF_REFUND in this delivery) is never played ([A7]).
+    const typed = variantOf('provide_evidence', submission.evidenceType);
+    if (typed && this.contracts[typed]?.status === 'not_available') throw new Error(NOT_IN_SIMULATOR);
     // After the seller's escalation, evidence is played only as W-6 recorded it (the claim waiting for the seller).
     if (sellerEscalated(d)) return this.evidenceAfterEscalation(d, submission, opts);
     const outcome = this.opts.outcome();

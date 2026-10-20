@@ -64,6 +64,25 @@ describe('composeSubmission (shared by the server and the web app)', () => {
     expect(isComposeProblem(blocked) && blocked.error).toBe('DRAFT_BLOCKED');
   });
 
+  it('PROOF_OF_REFUND and an appeal are refused 409 VARIANT_NOT_AVAILABLE with the registry reason, even when ready (Task 12)', () => {
+    // A draft that would compose: one supported sentence, no contradiction, every type satisfied.
+    const ready: CaseFile = {
+      ...c,
+      sentences: [c.sentences[0]!],
+      contradictions: [],
+      evidenceTypes: c.evidenceTypes.map((t) => ({ ...t, satisfied: true })),
+      requestedEvidenceType: 'PROOF_OF_REFUND',
+    };
+    const req = (over: Partial<ComposeInput['req']> = {}): ComposeInput['req'] => ({ evidenceType: 'PROOF_OF_FULFILLMENT', edits: {}, resolutions: {}, confirmedCorrections: [], attachments: [], ...over });
+    expect(isComposeProblem(composeSubmission(base({ c: ready, req: req() })))).toBe(false);
+    expect(composeSubmission(base({ c: ready, req: req({ evidenceType: 'PROOF_OF_REFUND' }) }))).toEqual({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: Not verified with PayPal: pending sandbox test (W-11)' });
+    expect(composeSubmission(base({ c: ready, allowedActions: ['provide_evidence', 'appeal'], req: req({ action: 'appeal' }) }))).toEqual({
+      status: 409,
+      error: 'VARIANT_NOT_AVAILABLE',
+      detail: 'Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute',
+    });
+  });
+
   it('the server releases a sentence held back only by a contradiction the request resolves, as the draft does', () => {
     const contested = { ...c.sentences[1]!, reason: 'Why: it relies on E3 ("Apt 4B"), which E1 contradicts ("Apt 4"). State both or resolve the contradiction.' };
     const cc = { ...c, sentences: [c.sentences[0]!, contested, c.sentences[2]!] };
