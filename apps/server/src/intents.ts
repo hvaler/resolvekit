@@ -687,6 +687,11 @@ export class IntentStore {
     return this.recordedKeys.get(disputeId)?.has(sha256(key)) ?? false;
   }
 
+  /** Whether PayPal recorded any action (not evidence) of this store on this dispute (read back, proven). */
+  hasRecordedAction(disputeId: string): boolean {
+    return (this.recordedKeys.get(disputeId)?.size ?? 0) > 0;
+  }
+
   /** Whether this intent is the one holding its dispute as uncertain. */
   private holds(i: StoredIntent): boolean {
     return !!i.disputeId && this.uncertain.get(i.disputeId)?.intentId === i.id;

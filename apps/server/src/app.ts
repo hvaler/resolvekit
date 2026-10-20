@@ -566,6 +566,13 @@ export function createApi(opts: ApiOptions): Api {
     const docs = uploadDocuments(recs);
     return docs.length ? { ...input, documents: [...input.documents, ...docs] } : input;
   };
+  /**
+   * Whether the seller has acted on the dispute: seller evidence, a seller message in the thread, or an action this
+   * server's send log proved recorded. Then PayPal's links have moved on but the documents have not, so the analyst's
+   * input stays the pinned one of the same documents (no new analysis, the same key).
+   */
+  const sellerActed = (snap: DisputeSnapshot, disputeId: string | null | undefined): boolean =>
+    hasSellerEvidence(snap) || (snap.messages ?? []).some((m) => m.postedBy === 'SELLER') || (!!disputeId && intents.hasRecordedAction(disputeId));
   /** The analyst's input and the ids of the uploads in it. */
   const serverInputWith = async (caseId: string, req?: Request): Promise<{ input: AnalysisInput; uploadIds: string[] } | Response> => {
     const demo = CASE_FILES[caseId]!;
@@ -580,7 +587,7 @@ export function createApi(opts: ApiOptions): Api {
         if ((await checkHealth()).paypal !== 'unconfigured') return fromPayPalError(e);
       }
     }
-    const submitted = source.kind === 'live' && hasSellerEvidence(source.snap);
+    const submitted = source.kind === 'live' && sellerActed(source.snap, disputeId);
     const recs = await confirmedUploads(caseId, disputeId ?? null, req);
     const input = withUploads(pins.resolve(caseId, caseInput(demo, source), submitted), recs);
     return { input, uploadIds: recs.map((r) => r.id) };
@@ -631,7 +638,7 @@ export function createApi(opts: ApiOptions): Api {
     reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
     const source: PayPalSource = { kind: 'live', snap, failed: null };
     const recs = await confirmedUploads(caseId, disputeId, req);
-    const state = { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), hasSellerEvidence(snap)), recs), dispute, snap, disputeId, uploads: recs };
+    const state = { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), sellerActed(snap, disputeId)), recs), dispute, snap, disputeId, uploads: recs };
     // This request goes on with what it read; the next one reads the next dispute of the reserve, if this one is used.
     rotateIfUsed(caseId, binding, snap);
     return state;

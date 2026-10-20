@@ -4,7 +4,7 @@ import { formatCount } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
 import { PrimaryAction, cx } from './ui';
 
-const VARIANT_LABEL: Partial<Record<string, string>> = { send_message: 'Message', 'send_message:file': 'Message with a file' };
+const VARIANT_LABEL: Partial<Record<string, string>> = { send_message: 'Message' };
 
 /**
  * An action other than evidence, as the merchant writes it: for a message, the text with its `n / 2,000` count; for
@@ -36,7 +36,8 @@ export function ActionComposer({
     <section aria-label={label} className="flex flex-col gap-2">
       <h3 className="m-0 text-[12.5px] font-semibold">{label}</h3>
       <ul aria-label={`${label}: availability`} className="m-0 flex list-none flex-col gap-1 p-0 text-[11.5px]">
-        {availability.variants.map((v) => (
+        {/* The composer cannot attach an upload yet: the file variant (tested on the server) is not offered here. */}
+        {availability.variants.filter((v) => v.variant !== 'send_message:file').map((v) => (
           <li key={`${v.variant}|${v.type}`} className={v.available ? 'text-ok' : 'text-ink-3'}>
             {(v.variant && VARIANT_LABEL[v.variant]) ?? v.type ?? label} · {v.variant ? statusLabel(CONTRACTS[v.variant]) : `Not available: ${v.why ?? ''}`}
           </li>

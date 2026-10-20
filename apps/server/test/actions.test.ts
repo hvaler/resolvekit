@@ -654,3 +654,32 @@ test('acknowledge: repeated shown keys count once', async () => {
   assert.equal(r.status, 409, JSON.stringify(r.body));
   assert.equal(r.body.error, 'NEEDS_REVIEW');
 });
+
+// ------------------------------------------------------------------------------------------------ review fixes (Task 8)
+
+test('a recorded seller message keeps the analysis pinned: same input, same key, no new analysis', async () => {
+  const { app, state, intents } = await setupActions();
+  const analysis = async () => answer(await app(postRaw(`/api/cases/${CASE}/analysis`, {})));
+  const before = await analysis();
+  assert.equal(before.status, 200, JSON.stringify(before.body).slice(0, 200));
+  const i = await compose(app);
+  await approve(app, i);
+  state.t += 1_000;
+  assert.equal((await send(app, i)).status, 202);
+  // PayPal shows the seller's message and its links move on (W-1: make_offer gone, waiting for the buyer).
+  state.dispute = {
+    ...withMessage(state.dispute, 'SELLER', state.t + 2_000, TEXT),
+    status: 'WAITING_FOR_BUYER_RESPONSE',
+    links: (state.dispute.links ?? []).filter((l) => l.rel !== 'make_offer'),
+  };
+  state.t += 5_000;
+  assert.equal(((await readBack(app, i)).body.readBack as { state: string }).state, 'recorded');
+  assert.ok(intents.hasRecordedAction(REAL));
+  // A later load, after the read cache expired: the pinned input of the same documents, the same stored analysis
+  // (200 from the store; a new analysis would be a 202 live run).
+  state.t += 120_000;
+  const after = await analysis();
+  assert.equal(after.status, 200, JSON.stringify(after.body).slice(0, 200));
+  assert.equal(after.body.key, before.body.key);
+  assert.deepEqual(after.body.input, before.body.input);
+});

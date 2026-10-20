@@ -9,6 +9,7 @@
  * files, so this table cannot drift from what was recorded.
  */
 import type { VariantId } from './actionContracts';
+import type { ActionAvailability } from './actions';
 import type { ActionCode, DisputeStatus } from './types';
 
 /** One recorded read after the POST answered. */
@@ -30,8 +31,11 @@ export interface SimTransition {
   variant: VariantId;
   /** The contract file and write it comes from. */
   recorded: string;
-  /** The state the write was sent from: the simulator plays it only from this state. */
-  from: { stage: string; status: DisputeStatus };
+  /**
+   * The state the write was sent from: its stage, status and links (as action codes). The simulator plays it only from
+   * this stage and status, on a dispute that offers no link the recorded one did not.
+   */
+  from: { stage: string; status: DisputeStatus; allowedActions: ActionCode[] };
   /** How many reads after the POST did not show the entry yet (0: the first read showed it). */
   actionLagReads: number;
   /** Documents on the new entry (a message with a file: 1, with no name PayPal gives back). */
@@ -62,7 +66,7 @@ export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTra
     {
       variant: 'send_message',
       recorded: 'packages/paypal/contracts/send_message.json (W-1)',
-      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE' },
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'] },
       actionLagReads: 0,
       documents: 0,
       steps: [step('0s', 'UNDER_REVIEW', [], NONE), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
@@ -71,7 +75,7 @@ export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTra
     {
       variant: 'send_message',
       recorded: 'packages/paypal/contracts/send_message-request-id.json (W-2)',
-      from: { stage: 'INQUIRY', status: 'WAITING_FOR_BUYER_RESPONSE' },
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: WAITING_BUYER_ACTIONS },
       actionLagReads: 0,
       documents: 0,
       steps: [waitingBuyer('0s'), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
@@ -82,10 +86,42 @@ export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTra
     {
       variant: 'send_message:file',
       recorded: 'packages/paypal/contracts/send_message-file.json (W-3)',
-      from: { stage: 'INQUIRY', status: 'WAITING_FOR_BUYER_RESPONSE' },
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: WAITING_BUYER_ACTIONS },
       actionLagReads: 0,
       documents: 1,
       steps: [waitingBuyer('0s'), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
     },
   ],
 });
+
+/**
+ * The recorded transition the simulator plays from this dispute: the same stage and status as a recorded write, and
+ * no link the recorded dispute did not offer (a subset, not equality: the demo cases' links are fixed by their
+ * analysis keys, e.g. the standard case offers no escalate). Null: the simulator refuses it.
+ */
+export function transitionFrom(list: readonly SimTransition[] | undefined, d: Pick<DisputeSnapshotLike, 'stage' | 'status' | 'allowedActions'>): SimTransition | null {
+  return (list ?? []).find((x) => x.from.stage === (d.stage ?? null) && x.from.status === d.status && d.allowedActions.every((a) => x.from.allowedActions.includes(a))) ?? null;
+}
+
+interface DisputeSnapshotLike {
+  stage?: string | null;
+  status: string;
+  allowedActions: readonly ActionCode[];
+}
+
+/** Why the simulator would refuse this variant on this dispute now, or null when it plays a recorded transition. */
+export function simulatorRefusal(variant: VariantId, d: DisputeSnapshotLike): string | null {
+  return transitionFrom(SIM_TRANSITIONS[variant], d) ? null : 'the simulator plays this only from a state PayPal’s sandbox recorded it from';
+}
+
+/**
+ * The availability on the simulator: also refused where the simulator would refuse it (no recorded transition from
+ * this state), so the person is never let compose what the simulator will not play.
+ */
+export function onSimulator(a: ActionAvailability, d: DisputeSnapshotLike): ActionAvailability {
+  if (!a.sendable) return a;
+  const playable = a.variants.filter((v) => v.available && v.variant && !simulatorRefusal(v.variant, d));
+  if (playable.length) return a;
+  const first = a.variants.find((v) => v.available && v.variant);
+  return { ...a, sendable: false, why: first?.variant ? simulatorRefusal(first.variant, d) : 'the simulator does not play this action' };
+}

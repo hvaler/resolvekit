@@ -79,14 +79,18 @@ describe('the simulator only plays recorded transitions', () => {
     // overwrite them.
     await g.provideEvidence({ disputeId: 'CASE-1', action: 'provide_evidence', evidenceType: 'PROOF_OF_FULFILLMENT', carrier: 'UPS', tracking: '1Z', notes: 'n', files: [] }, { requestId: 'rk-e' });
     clock.t += 600_000;
-    expect((await g.getDispute('CASE-1')).allowedActions).not.toContain('provide_evidence');
+    const after = await g.getDispute('CASE-1');
+    expect(after.allowedActions).not.toContain('provide_evidence');
+    // After a seller message PayPal no longer offers make_offer, and accept is REFUND only (W-1).
+    expect(after.allowedActions).toEqual(['send_message', 'accept_claim']);
+    expect(after.responseOptions).toEqual({ acceptClaimTypes: ['REFUND'], offerTypes: [] });
   });
 
   it('with lag recorded, the first read does not show the entry: Outcome pending confirmation, then recorded', async () => {
     const lagged: SimTransition = {
       variant: 'send_message',
       recorded: 'test-only (a contract with lag)',
-      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE' },
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim'] },
       actionLagReads: 1,
       documents: 0,
       steps: [
@@ -119,7 +123,11 @@ describe('the simulator only plays recorded transitions', () => {
     // A link PayPal does not give.
     const { g: g2 } = sim({ allowedActions: ['provide_evidence'] });
     await expect(g2.sendAction(fake({}), { requestId: 'rk-x' })).rejects.toThrow(/^NOT_AUTHORIZED/);
+    // The same stage and status, but links the recorded state did not have (here appeal): not that state.
+    const { g: g3 } = sim({ allowedActions: ['provide_evidence', 'send_message', 'appeal'] });
+    await expect(g3.sendAction(fake({}), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
     expect(g.sentActions).toEqual([]);
+    expect(g3.sentActions).toEqual([]);
   });
 });
 
@@ -181,5 +189,27 @@ describe('sendActionWithReadBack', () => {
     // A send the server reconciled as recorded.
     replies.push([200, { reconciled: true, intent: i, readBack: { state: 'recorded', detail: 'Recorded by PayPal', at: 'z' } }], [200, { readBack: { state: 'recorded', detail: 'Recorded by PayPal', at: 'z' }, snapshot: snap }]);
     expect(await sendActionWithReadBack({ intent: i, gateway, intents, mode })).toMatchObject({ kind: 'recorded' });
+    // A 5xx, or a 4xx with no code ResolveKit gives before PayPal, proves nothing: read back, never «Not sent».
+    for (const [status, body] of [
+      [500, { error: 'INTERNAL' }],
+      [502, {}],
+      [409, { error: 'INTENT_SENDING' }],
+      [400, {}],
+    ] as Array<[number, unknown]>) {
+      const before = calls.length;
+      replies.push([status, body], [200, { readBack: { state: 'pending', detail: 'Outcome pending confirmation', at: 'p' }, snapshot: snap }]);
+      expect(await sendActionWithReadBack({ intent: i, gateway, intents, mode }), String(status)).toMatchObject({ kind: 'pending' });
+      expect(calls[before + 1]).toBe('GET /api/disputes/CASE-1/intent/int-1/readback');
+    }
+    // Definite refusals before PayPal (a cap, a stale intent, PayPal's own refusal with its issue): not sent.
+    for (const [status, error] of [
+      [429, 'DAILY_CAP'],
+      [409, 'INTENT_STALE'],
+      [403, 'OWNER_ONLY'],
+      [422, 'PAYPAL_REFUSED'],
+    ] as Array<[number, string]>) {
+      replies.push([status, { error, detail: 'refused', ...(error === 'PAYPAL_REFUSED' ? { paypalIssue: 'X' } : {}) }]);
+      expect(await sendActionWithReadBack({ intent: i, gateway, intents, mode }), error).toMatchObject({ kind: 'not_sent', refusal: { code: error } });
+    }
   });
 });

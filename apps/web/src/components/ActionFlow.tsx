@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useServices } from '../app/services';
 import { checkAgain, sendActionWithReadBack, type ActionPhase, type ActionResult } from '../domain/actionSend';
 import { consequenceText, type ActionRequest, type ConfirmationTerms } from '../domain/actions';
+import type { DisputeGateway } from '../domain/gateway';
 import type { GatewayMode } from '../domain/httpGateway';
 import type { SubmissionIntent } from '../domain/intent';
 import { IntentError, LocalIntentClient, type IntentSource } from '../domain/intentClient';
-import type { DisputeMessage } from '../domain/types';
+import type { DisputeMessage, DisputeSnapshot } from '../domain/types';
 import { MessageThread } from './MessageThread';
 import { Button, Spinner } from './ui';
 
@@ -217,104 +218,157 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
 const browserIntents = new LocalIntentClient();
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+export interface ActionFlowDeps {
+  caseId: string;
+  request: ActionRequest;
+  source: IntentSource;
+  gateway: DisputeGateway;
+  mode: GatewayMode;
+  /** Every state the flow moves to (the view renders it). */
+  onState: (s: ActionFlowState) => void;
+  audit: (who: string, what: string) => void;
+  applySnapshot: (s: DisputeSnapshot) => void;
+  /** PayPal (or the simulator) proved the message recorded. */
+  onRecorded?: () => void;
+  /** Whether the flow is still on screen (answers after it closed are dropped). */
+  live?: () => boolean;
+  /** The clock the simulator runs on (tests); the real clock otherwise. */
+  now?: () => Date;
+}
+
 /**
- * Send a message through the same chain as every action: composed against a fresh read (the server for real PayPal,
- * this browser for the simulator), approved by its exact hash, confirmed when the server issues terms, sent once, then
- * read back. Real PayPal and the simulator are fixed when the flow opens.
+ * The flow's steps, without React: compose against a fresh read → approve the exact hash → confirm the server's terms
+ * (when it issues them) → send once → read back; NEEDS_REVIEW → acknowledge the shown keys → send; «Check again» only
+ * reads back. ActionFlow renders it; tests drive it directly.
  */
-export function ActionFlow({ caseId, request, onClose, onEdit }: { caseId: string; request: ActionRequest; onClose: () => void; onEdit: () => void }) {
+export class ActionFlowController {
+  state: ActionFlowState = { step: 'composing' };
+  constructor(private readonly d: ActionFlowDeps) {}
+
+  get mode(): GatewayMode {
+    return this.d.mode;
+  }
+
+  private put(s: ActionFlowState): void {
+    if (this.d.live && !this.d.live()) return;
+    this.state = s;
+    this.d.onState(s);
+  }
+
+  async start(): Promise<void> {
+    const { caseId, request, source, gateway, mode } = this.d;
+    try {
+      // A fresh read decides what is possible ([A1]); the server reads PayPal itself.
+      const snapshot = mode.kind === 'paypal' ? null : await gateway.getDispute(caseId);
+      const i = await source.createAction(caseId, request, { snapshot });
+      if ((i.disputeId != null) !== (mode.kind === 'paypal')) {
+        this.put({ step: 'refused', detail: 'The PayPal connection changed while you were writing. Close this and open the case again.' });
+        return;
+      }
+      this.put({ step: 'review', intent: i, repeat: !!i.repeat });
+    } catch (e) {
+      this.put({ step: 'refused', detail: e instanceof IntentError ? `${e.message}${e.code ? ` (${e.code})` : ''}` : errorText(e) });
+    }
+  }
+
+  private finish(intent: SubmissionIntent, r: ActionResult): void {
+    if (r.snapshot) this.d.applySnapshot(r.snapshot);
+    // Refusals that ask the person for a step are not an outcome: no re-read entry, the flow asks.
+    if (r.kind === 'not_sent' && r.refusal?.code === 'CONFIRMATION_REQUIRED' && r.refusal.terms) return this.put({ step: 'confirm', intent, terms: r.refusal.terms });
+    if (r.kind === 'not_sent' && r.refusal?.code === 'NEEDS_REVIEW' && r.refusal.messages) return this.put({ step: 'needs_review', intent, messages: r.refusal.messages, messageKeys: r.refusal.messageKeys ?? [] });
+    const outcome = r.kind === 'recorded' ? 'recorded' : r.kind === 'pending' ? 'outcome pending confirmation' : r.kind === 'absent' ? 'not recorded' : `not sent (${r.detail})`;
+    this.d.audit(this.d.mode.kind === 'paypal' ? 'PayPal re-read' : 'Simulator re-read', `Send message · ${outcome}`);
+    if (r.kind === 'recorded') this.d.onRecorded?.();
+    this.put({ step: 'result', intent, result: r });
+  }
+
+  private async send(intent: SubmissionIntent): Promise<void> {
+    const { gateway, source, mode } = this.d;
+    this.put({ step: 'sending', intent, phase: null });
+    this.d.audit('ResolveKit', `Sending send_message${mode.kind === 'paypal' ? ` to PayPal ${mode.env}` : ' to the simulator'} · request ${intent.requestId}`);
+    const r = await sendActionWithReadBack({ intent, gateway, intents: source, mode, ...(this.d.now ? { now: this.d.now } : {}), onPhase: (p) => this.put({ step: 'sending', intent, phase: p }) });
+    this.finish(intent, r);
+  }
+
+  async approve(): Promise<void> {
+    const s = this.state;
+    if (s.step !== 'review') return;
+    const { confirmation, ...intent } = await this.d.source.approve(s.intent);
+    if (confirmation) this.put({ step: 'confirm', intent, terms: confirmation });
+    else await this.send(intent);
+  }
+
+  async confirm(): Promise<void> {
+    const s = this.state;
+    if (s.step !== 'confirm') return;
+    const confirmed = await this.d.source.confirm(s.intent, s.terms);
+    await this.send({ ...s.intent, ...confirmed });
+  }
+
+  async sendAnyway(): Promise<void> {
+    const s = this.state;
+    if (s.step !== 'needs_review') return;
+    const ok = await this.d.source.acknowledge(s.intent, s.messageKeys);
+    await this.send({ ...s.intent, ...ok });
+  }
+
+  async checkAgain(): Promise<void> {
+    const s = this.state;
+    if (s.step !== 'result') return;
+    const r = await checkAgain({ intent: s.intent, gateway: this.d.gateway, intents: this.d.source, mode: this.d.mode, base: s.result.base, ...(this.d.now ? { now: this.d.now } : {}) });
+    this.finish(s.intent, r);
+  }
+}
+
+/**
+ * Send a message through the same chain as every action, composed against a fresh read (the server for real PayPal,
+ * this browser for the simulator). Real PayPal and the simulator are fixed when the flow opens.
+ */
+export function ActionFlow({ caseId, request, onClose, onEdit, onRecorded }: { caseId: string; request: ActionRequest; onClose: () => void; onEdit: () => void; onRecorded?: () => void }) {
   const { intents, gatewayFor, modeOf, applySnapshot, addAudit } = useServices();
-  const [{ gateway, mode, source }] = useState(() => {
-    const m = modeOf(caseId);
-    // The server composes and sends only for real PayPal; simulated actions are played in this browser.
-    const s: IntentSource = m.kind === 'paypal' ? intents : browserIntents;
-    return { gateway: gatewayFor(caseId), mode: m, source: s };
-  });
   const [state, setState] = useState<ActionFlowState>({ step: 'composing' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const [flow] = useState(() => {
+    const mode = modeOf(caseId);
+    // The server composes and sends only for real PayPal; simulated actions are played in this browser.
+    const source: IntentSource = mode.kind === 'paypal' ? intents : browserIntents;
+    return new ActionFlowController({
+      caseId,
+      request,
+      source,
+      gateway: gatewayFor(caseId),
+      mode,
+      onState: setState,
+      audit: (who, what) => addAudit(caseId, who, what),
+      applySnapshot,
+      ...(onRecorded ? { onRecorded } : {}),
+      live: () => mounted.current,
+    });
+  });
   useEffect(() => {
     mounted.current = true;
+    void flow.start();
     return () => {
       mounted.current = false;
     };
-  }, []);
-  const safe = (f: () => void) => mounted.current && f();
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        // A fresh read decides what is possible ([A1]); the server reads PayPal itself.
-        const snapshot = mode.kind === 'paypal' ? null : await gateway.getDispute(caseId);
-        const i = await source.createAction(caseId, request, { snapshot });
-        if ((i.disputeId != null) !== (mode.kind === 'paypal')) {
-          safe(() => setState({ step: 'refused', detail: 'The PayPal connection changed while you were writing. Close this and open the case again.' }));
-          return;
-        }
-        safe(() => setState({ step: 'review', intent: i, repeat: !!i.repeat }));
-      } catch (e) {
-        safe(() => setState({ step: 'refused', detail: e instanceof IntentError ? `${e.message}${e.code ? ` (${e.code})` : ''}` : errorText(e) }));
-      }
-    })();
     // Composed once when the flow opens; editing closes it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const finish = (intent: SubmissionIntent, r: ActionResult) => {
-    if (r.snapshot) applySnapshot(r.snapshot);
-    addAudit(caseId, mode.kind === 'paypal' ? 'PayPal re-read' : 'Simulator re-read', `Send message · ${r.kind === 'recorded' ? 'recorded' : r.kind === 'pending' ? 'outcome pending confirmation' : r.kind === 'absent' ? 'not recorded' : 'not sent'}`);
-    if (r.kind === 'not_sent' && r.refusal?.code === 'CONFIRMATION_REQUIRED' && r.refusal.terms) return setState({ step: 'confirm', intent, terms: r.refusal.terms });
-    if (r.kind === 'not_sent' && r.refusal?.code === 'NEEDS_REVIEW' && r.refusal.messages) return setState({ step: 'needs_review', intent, messages: r.refusal.messages, messageKeys: r.refusal.messageKeys ?? [] });
-    setState({ step: 'result', intent, result: r });
-  };
-
-  const send = async (intent: SubmissionIntent) => {
-    setState({ step: 'sending', intent, phase: null });
-    addAudit(caseId, 'ResolveKit', `Sent send_message${mode.kind === 'paypal' ? ` to PayPal ${mode.env}` : ' to the simulator'} · request ${intent.requestId}`);
-    const r = await sendActionWithReadBack({ intent, gateway, intents: source, mode, onPhase: (p) => safe(() => setState({ step: 'sending', intent, phase: p })) });
-    safe(() => finish(intent, r));
-  };
-
-  const step = async (f: () => Promise<void>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await f();
-    } catch (e) {
-      safe(() => setError(errorText(e)));
-    } finally {
-      safe(() => setBusy(false));
-    }
-  };
-
-  const onApprove = () =>
-    void step(async () => {
-      if (state.step !== 'review') return;
-      const approved = await source.approve(state.intent);
-      const { confirmation, ...intent } = approved;
-      if (confirmation) safe(() => setState({ step: 'confirm', intent, terms: confirmation }));
-      else await send(intent);
-    });
-  const onConfirm = () =>
-    void step(async () => {
-      if (state.step !== 'confirm') return;
-      const confirmed = await source.confirm(state.intent, state.terms);
-      await send({ ...state.intent, ...confirmed });
-    });
-  const onSendAnyway = () =>
-    void step(async () => {
-      if (state.step !== 'needs_review') return;
-      const ok = await source.acknowledge(state.intent, state.messageKeys);
-      await send({ ...state.intent, ...ok });
-    });
-  const onCheckAgain = () =>
-    void step(async () => {
-      if (state.step !== 'result') return;
-      const { intent, result } = state;
-      const r = await checkAgain({ intent, gateway, intents: source, mode, base: result.base });
-      safe(() => finish(intent, r));
-    });
+  const step = (f: () => Promise<void>) => () =>
+    void (async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        await f();
+      } catch (e) {
+        if (mounted.current) setError(errorText(e));
+      } finally {
+        if (mounted.current) setBusy(false);
+      }
+    })();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -327,14 +381,14 @@ export function ActionFlow({ caseId, request, onClose, onEdit }: { caseId: strin
   return (
     <ActionFlowView
       state={state}
-      mode={mode}
+      mode={flow.mode}
       caseId={caseId}
       busy={busy}
       error={error}
-      onApprove={onApprove}
-      onConfirm={onConfirm}
-      onCheckAgain={onCheckAgain}
-      onSendAnyway={onSendAnyway}
+      onApprove={step(() => flow.approve())}
+      onConfirm={step(() => flow.confirm())}
+      onCheckAgain={step(() => flow.checkAgain())}
+      onSendAnyway={step(() => flow.sendAnyway())}
       onEdit={onEdit}
       onClose={onClose}
     />

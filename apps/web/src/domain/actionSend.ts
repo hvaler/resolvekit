@@ -55,12 +55,54 @@ const contractOf = (o: ActionSendOptions) => {
   return v ? (o.contracts ?? CONTRACTS)[v] : null;
 };
 
-/** A refusal the server gave before anything reached PayPal; null when the outcome may be anything. */
+/**
+ * The codes with which the server refuses a send before anything reaches PayPal (apps/server/src/actions/routes.ts,
+ * intents.ts, hosted.ts), plus PAYPAL_REFUSED (422: PayPal refused it with an issue code, proving nothing was done).
+ * Anything else — a 5xx, a 4xx without one of these codes, a network error — proves nothing and is read back.
+ */
+const NOT_SENT_CODES: ReadonlySet<string> = new Set([
+  'CONFIRMATION_REQUIRED',
+  'NEEDS_REVIEW',
+  'INTENT_STALE',
+  'ACTION_STAGE',
+  'ACTION_NOT_OFFERED',
+  'VARIANT_NOT_AVAILABLE',
+  'DUPLICATE_ACTION',
+  'OWNER_ONLY',
+  'NOT_THE_SELLER',
+  'BINDING_CHANGED',
+  'BINDING_INVALID',
+  'BINDING_UNAVAILABLE',
+  'NOT_BOUND',
+  'SIMULATED_CASE',
+  'UNKNOWN_INTENT',
+  'UNKNOWN_CASE',
+  'WRONG_SEND_ROUTE',
+  'INVALID_SUBMISSION',
+  'INVALID_JSON',
+  'UPLOAD_CHANGED',
+  'DISPUTE_BUSY',
+  'SELLER_EVIDENCE_EXISTS',
+  'INTENT_PROPOSED',
+  'INTENT_INVALIDATED',
+  'INTENT_EXPIRED',
+  'INTENT_CANCELLED',
+  'TEXT_REQUIRED',
+  'TEXT_TOO_LONG',
+  'DAILY_CAP',
+  'PERSON_CAP',
+  'RATE_LIMITED',
+  'TOO_MANY_INTENTS',
+]);
+
+/** A refusal the server gave before anything reached PayPal; null when the outcome may be anything (read back). */
 function refusalOf(e: unknown): ActionResult | null {
   if (!(e instanceof GatewayRequestError)) return null;
   const b = e.body;
   // An uncertain dispute is never «not sent»: an earlier send is not proven yet.
   if (e.code === 'DISPUTE_UNCERTAIN') return { kind: 'pending', detail: typeof b.detail === 'string' ? b.detail : PENDING, snapshot: null, base: null };
+  const definite = e.status >= 400 && e.status < 500 && (NOT_SENT_CODES.has(e.code) || (e.code === 'PAYPAL_REFUSED' && e.status === 422));
+  if (!definite) return null;
   const refusal: ActionRefusal = { code: e.code };
   if (e.code === 'NEEDS_REVIEW' && Array.isArray(b.messages)) {
     refusal.messages = b.messages as DisputeMessage[];

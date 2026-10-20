@@ -4,7 +4,10 @@ import { actionAvailability, composeAction } from '../domain/actions';
 import type { SubmissionIntent } from '../domain/intent';
 import type { DisputeSnapshot } from '../domain/types';
 import { ActionComposer } from './ActionComposer';
-import { ActionFlowView, type ActionFlowState } from './ActionFlow';
+import { ActionFlowController, ActionFlowView, type ActionFlowDeps, type ActionFlowState } from './ActionFlow';
+import { SimulatedDisputeGateway } from '../domain/gateway';
+import { HttpDisputeGateway } from '../domain/httpGateway';
+import { HttpIntentClient, LocalIntentClient } from '../domain/intentClient';
 import { MessageThread } from './MessageThread';
 
 const snap: DisputeSnapshot = {
@@ -81,6 +84,8 @@ describe('ActionComposer and MessageThread', () => {
     expect(html).toContain(`${TEXT.length} / 2,000`);
     expect(html).toContain('Tested locally');
     expect(html).toContain('Review the message');
+    // Attaching is not wired in the composer yet: the file variant is not offered there.
+    expect(html).not.toContain('Message with a file');
     // A variant without a contract gives its reason as the registry labels it.
     const off = actionAvailability({ ...snap, allowedActions: ['make_offer'], responseOptions: { acceptClaimTypes: [], offerTypes: ['REPLACEMENT_WITHOUT_REFUND'] } }, 'make_offer', { role: 'owner', reviewer: false });
     const offer = renderToString(<ActionComposer action="make_offer" text="" onText={noop} availability={off} locked={null} onReview={noop} />);
@@ -97,5 +102,90 @@ describe('ActionComposer and MessageThread', () => {
     expect(html).toContain('Where is my parcel?');
     expect(html).toContain(TEXT);
     expect(renderToString(<MessageThread messages={[]} />)).toContain('No messages on this dispute yet.');
+  });
+});
+
+describe('ActionFlowController (the container’s steps)', () => {
+  const T0 = Date.UTC(2026, 9, 20, 5, 7, 17);
+  const start = (): DisputeSnapshot => ({ ...snap, allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim'] });
+  const deps = (o: Partial<ActionFlowDeps> & Pick<ActionFlowDeps, 'source' | 'gateway' | 'mode'>) => {
+    const audits: string[] = [];
+    const states: string[] = [];
+    let recorded = 0;
+    const d: ActionFlowDeps = {
+      caseId: 'CASE-1',
+      request: { action: 'send_message', text: TEXT, attachments: [] },
+      onState: (s) => states.push(s.step),
+      audit: (who, what) => audits.push(`${who}: ${what}`),
+      applySnapshot: () => {},
+      onRecorded: () => (recorded += 1),
+      ...o,
+    };
+    return { d, audits, states, recorded: () => recorded };
+  };
+
+  it('simulator: send, then the same text again → confirm REPEATS_MESSAGE → send → recorded', async () => {
+    const clock = { t: T0 };
+    const gateway = new SimulatedDisputeGateway([start()], { outcome: () => 'waiting_for_buyer', now: () => new Date(clock.t) });
+    const source = new LocalIntentClient();
+    const one = deps({ source, gateway, mode: { kind: 'simulator' }, now: () => new Date(clock.t) });
+    const f1 = new ActionFlowController(one.d);
+    await f1.start();
+    expect(f1.state).toMatchObject({ step: 'review', repeat: false });
+    await f1.approve();
+    expect(f1.state).toMatchObject({ step: 'result', result: { kind: 'recorded', detail: 'Recorded by the simulator' } });
+    expect(one.recorded()).toBe(1);
+    expect(one.audits).toEqual(['ResolveKit: Sending send_message to the simulator · request ' + (f1.state as { intent: SubmissionIntent }).intent.requestId, 'Simulator re-read: Send message · recorded']);
+    // +30 s: PayPal waits for the buyer again (W-1); the same text is a repeat.
+    clock.t += 30_000;
+    const two = deps({ source, gateway, mode: { kind: 'simulator' }, now: () => new Date(clock.t) });
+    const f2 = new ActionFlowController(two.d);
+    await f2.start();
+    expect(f2.state).toMatchObject({ step: 'review', repeat: true });
+    await f2.approve();
+    expect(f2.state).toMatchObject({ step: 'confirm', terms: { consequence: 'REPEATS_MESSAGE' } });
+    expect(two.audits).toEqual([]);
+    await f2.confirm();
+    expect(f2.state).toMatchObject({ step: 'result', result: { kind: 'recorded' } });
+    expect(gateway.sentActions).toHaveLength(2);
+  });
+
+  it('real PayPal: NEEDS_REVIEW → acknowledge the shown keys → send → pending → check again → recorded', async () => {
+    const calls: string[] = [];
+    const replies: Array<[number, unknown]> = [];
+    const fetch = (async (url: string | URL, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? 'GET'} ${String(url)}${init.body ? ` ${String(init.body)}` : ''}`);
+      const [status, body] = replies.shift() ?? [500, {}];
+      return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    }) as typeof globalThis.fetch;
+    const fresh = { postedBy: 'BUYER', time: '2026-10-20T06:00:00.000Z', content: 'Any news?', files: [] };
+    const keys = ['BUYER|2026-10-20T06:00:00.000Z|9'];
+    const live = { ...snap, origin: { kind: 'paypal' as const, env: 'sandbox' as const, disputeId: 'PP-R-1' } };
+    replies.push(
+      [201, { ...intent, status: 'proposed', repeat: false }],
+      [200, { ...intent, confirmation: null }],
+      [409, { error: 'NEEDS_REVIEW', detail: 'The buyer wrote since you approved this', messages: [fresh], messageKeys: keys }],
+      [200, { ...intent, snapshot: live }],
+      [202, { sent: true, intent }],
+      [200, { readBack: { state: 'pending', detail: 'Outcome pending confirmation', at: 'a' }, snapshot: live }],
+      [200, { readBack: { state: 'recorded', detail: 'Recorded by PayPal', at: 'b' }, snapshot: live }],
+    );
+    const t = deps({ source: new HttpIntentClient({ fetch }), gateway: new HttpDisputeGateway({ fetch }), mode: paypal });
+    const f = new ActionFlowController(t.d);
+    await f.start();
+    await f.approve();
+    expect(f.state).toMatchObject({ step: 'needs_review', messages: [fresh], messageKeys: keys });
+    // A refusal that asks the person for a step is no outcome: no re-read entry.
+    expect(t.audits.filter((a) => a.includes('re-read'))).toEqual([]);
+    await f.sendAnyway();
+    expect(calls[3]).toBe(`POST /api/disputes/CASE-1/intent/int-1/acknowledge ${JSON.stringify({ contentHash: intent.contentHash, shownMessageKeys: keys })}`);
+    expect(calls[4]).toBe('POST /api/disputes/CASE-1/send {"intentId":"int-1"}');
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'pending' } });
+    expect(t.recorded()).toBe(0);
+    await f.checkAgain();
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'recorded', detail: 'Recorded by PayPal' } });
+    expect(t.recorded()).toBe(1);
+    expect(t.audits.at(-1)).toBe('PayPal re-read: Send message · recorded');
+    expect(t.audits.filter((a) => a.startsWith('ResolveKit: Sending send_message to PayPal sandbox'))).toHaveLength(2);
   });
 });

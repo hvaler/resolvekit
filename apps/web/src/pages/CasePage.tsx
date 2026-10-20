@@ -29,9 +29,10 @@ import { PdfSelect } from '../components/PdfSelect';
 import { MessageThread } from '../components/MessageThread';
 import { MiniButton } from '../components/ui';
 import { actionAvailability, type Viewer } from '../domain/actions';
+import { onSimulator } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
-import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
+import { hasSellerEvidence, payPalEvents, startsFurtherOn } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
@@ -106,7 +107,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const analysis = useAnalysis(id, input, analysisClient, locked);
   const an = analysis.state;
   // A case that starts further on (evidence recorded, closed) also shows what happened at PayPal after the documents.
-  const later = demo.simulatedPayPal && snap ? payPalEvents(snap, snap.origin?.kind === 'paypal' ? 'PayPal' : 'the simulator') : [];
+  const later = startsFurtherOn(demo) && snap ? payPalEvents(snap, snap.origin?.kind === 'paypal' ? 'PayPal' : 'the simulator') : [];
   const c = useMemo(() => {
     if (an.kind !== 'ready') return docs;
     const withA = withAnalysis(docs, an.analysis, an.input);
@@ -164,7 +165,9 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const viewer: Viewer = demoLock?.person ? { role: demoLock.person.role, reviewer: demoLock.person.reviewer } : { role: 'owner', reviewer: false };
   const readNow: DisputeSnapshot = snap ? { ...snap, allowedActions: [...allowed] } : { id, status, stage: demo.summary.stage, allowedActions: [...allowed], evidences: [], readAt: '' };
   const otherAction = d.action === 'provide_evidence' ? null : d.action;
-  const availability = otherAction ? actionAvailability(readNow, otherAction, viewer) : null;
+  // On the simulator, also what the simulator would refuse (no recorded transition from this state) is not composable.
+  const offered = otherAction ? actionAvailability(readNow, otherAction, viewer) : null;
+  const availability = offered && source.kind === 'simulated' ? onSimulator(offered, readNow) : offered;
   // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
   const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
 
@@ -382,7 +385,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
         </main>
       </div>
       {actionOpen && otherAction === 'send_message' && (
-        <ActionFlow caseId={id} request={{ action: 'send_message', text: message, attachments: [] }} onClose={() => setActionOpen(false)} onEdit={() => setActionOpen(false)} />
+        <ActionFlow caseId={id} request={{ action: 'send_message', text: message, attachments: [] }} onClose={() => setActionOpen(false)} onEdit={() => setActionOpen(false)} onRecorded={() => setMessage('')} />
       )}
       {showFlow && submission && (
         <ApproveFlow

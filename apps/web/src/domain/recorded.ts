@@ -1,4 +1,4 @@
-import type { DisputeSnapshot, EvidenceSubmission, RecordedEvidence, TimelineItem } from './types';
+import type { CaseFile, DisputeSnapshot, EvidenceSubmission, RecordedEvidence, TimelineItem } from './types';
 
 /**
  * Evidence the merchant submitted, as PayPal reports it. A real dispute also lists the buyer's own entry
@@ -67,4 +67,14 @@ export function payPalEvents(s: DisputeSnapshot, by: 'PayPal' | 'the simulator')
   const closed = s.status === 'RESOLVED' && s.outcome?.closedAt ? dayTime(s.outcome.closedAt) : null;
   if (closed) out.push({ kind: 'event', time: closed, title: 'Dispute closed', sub: `${s.outcome!.code} · ${by}`, tag: 'PP', evidenceId: null });
   return out;
+}
+
+/**
+ * Whether a case starts further on at PayPal (evidence already on the dispute, or an outcome): only then does the
+ * case page add PayPal's later events to its timeline. A thread alone (the standard case's buyer message) is not that,
+ * so a fresh case's timeline is the analysis's, as before.
+ */
+export function startsFurtherOn(c: Pick<CaseFile, 'simulatedPayPal'>): boolean {
+  const s = c.simulatedPayPal;
+  return !!s && (s.evidences.length > 0 || !!s.outcome);
 }

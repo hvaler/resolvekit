@@ -3,7 +3,8 @@ import w1 from '../../../../packages/paypal/contracts/send_message.json';
 import w2 from '../../../../packages/paypal/contracts/send_message-request-id.json';
 import w3 from '../../../../packages/paypal/contracts/send_message-file.json';
 import { CONTRACTS } from './actionContracts';
-import { SIM_TRANSITIONS } from './simulatedActions';
+import { actionAvailability } from './actions';
+import { SIM_TRANSITIONS, onSimulator, simulatorRefusal } from './simulatedActions';
 
 interface RecordedDispute {
   status: string;
@@ -45,7 +46,7 @@ describe('simulator transitions come from the recorded contracts only', () => {
       const c = FILES[file];
       expect(c, file).toBeDefined();
       expect(CONTRACTS[t.variant].recorded).toBe(file === 'packages/paypal/contracts/send_message-request-id.json' ? 'packages/paypal/contracts/send_message.json' : file);
-      expect(t.from).toEqual({ stage: c!.before.dispute_life_cycle_stage, status: c!.before.status });
+      expect(t.from).toEqual({ stage: c!.before.dispute_life_cycle_stage, status: c!.before.status, allowedActions: actionsOf(c!.before) });
       expect(t.steps.map((s) => s.at)).toEqual(c!.after.map((a) => a.at));
       const text = messageOf(c!);
       c!.after.forEach((a, i) => {
@@ -68,5 +69,21 @@ describe('simulator transitions come from the recorded contracts only', () => {
     for (const v of Object.keys(SIM_TRANSITIONS) as Array<keyof typeof CONTRACTS>) expect(CONTRACTS[v].recorded).not.toBeNull();
     // After the first seller message PayPal no longer offers make_offer (W-1, +30 s on).
     expect(SIM_TRANSITIONS.send_message![0]!.steps.slice(1).every((s) => !s.allowedActions.includes('make_offer'))).toBe(true);
+  });
+});
+
+describe('what the simulator would refuse is not composable there', () => {
+  const owner = { role: 'owner' as const, reviewer: false };
+  const standard = { id: 'S', stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE' as const, allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim'] as Array<'provide_evidence' | 'send_message' | 'make_offer' | 'accept_claim'>, evidences: [], readAt: '' };
+  it('the standard case plays a message; another state or a file from it does not', () => {
+    expect(simulatorRefusal('send_message', standard)).toBeNull();
+    expect(simulatorRefusal('send_message:file', standard)).toMatch(/recorded/);
+    const a = actionAvailability(standard, 'send_message', owner);
+    expect(onSimulator(a, standard)).toBe(a);
+    // Same stage and status, a link the recorded dispute never had: refused, with the reason.
+    const odd = { ...standard, allowedActions: [...standard.allowedActions, 'appeal' as const] };
+    const b = onSimulator(actionAvailability(odd, 'send_message', owner), odd);
+    expect(b).toMatchObject({ sendable: false });
+    expect(b.why).toMatch(/simulator/);
   });
 });

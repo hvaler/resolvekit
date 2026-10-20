@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { safeRetry, submitWithReadBack, type DisputeGateway } from './gateway';
-import { hasSellerEvidence, newSellerEvidence } from './recorded';
+import { resolvedCase, standardCase } from '@resolvekit/cases';
+import { hasSellerEvidence, newSellerEvidence, startsFurtherOn } from './recorded';
 import type { DisputeSnapshot, EvidenceSubmission, RecordedEvidence } from './types';
 
 // Evidence entries shaped like a real sandbox dispute read (2026-10-08): the buyer's own entry and PayPal's request
@@ -161,5 +162,13 @@ describe('PayPal events after the documents', () => {
       ['26 Sep 11:05', 'Evidence sent', 'PROOF_OF_FULFILLMENT · recorded by the simulator'],
       ['2 Oct 16:00', 'Dispute closed', 'RESOLVED_SELLER_FAVOUR · the simulator'],
     ]);
+  });
+});
+
+describe('the timeline after a send (Task 8 review)', () => {
+  it('a thread alone does not make a case start further on: the standard case’s timeline stays the analysis’s', () => {
+    expect(standardCase.simulatedPayPal?.messages?.length).toBe(1);
+    expect(startsFurtherOn(standardCase)).toBe(false);
+    expect(startsFurtherOn(resolvedCase)).toBe(true);
   });
 });

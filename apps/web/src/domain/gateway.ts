@@ -3,7 +3,7 @@ import { variantOfContent, type ProofState } from './actionReadback';
 import { intentAction, type ContractRegistry } from './actions';
 import type { SubmissionIntent } from './intent';
 import { hasSellerEvidence, newSellerEvidence, submissionMismatch } from './recorded';
-import { SIM_TRANSITIONS, type SimStep, type SimTransition } from './simulatedActions';
+import { SIM_TRANSITIONS, transitionFrom, type SimStep, type SimTransition } from './simulatedActions';
 import { utcStamp } from './time';
 import type { ActionCode, DisputeMessage, DisputeSnapshot, DisputeStatus, EvidenceSubmission, RecordedEvidence } from './types';
 
@@ -277,7 +277,7 @@ export class SimulatedDisputeGateway implements DisputeGateway {
     this.beforeWrite(d);
     const action = intentAction(intent);
     if (!d.allowedActions.includes(action)) throw new Error(`NOT_AUTHORIZED: ${action} is not allowed for this dispute`);
-    const t = transitions.find((x) => x.from.stage === (d.stage ?? null) && x.from.status === d.status);
+    const t = transitionFrom(transitions, d);
     if (!t) throw new Error(NOT_IN_SIMULATOR);
     const now = this.opts.now();
     this.sentActions.push({ intentId: intent.id, requestId: opts.requestId });
@@ -304,9 +304,13 @@ export class SimulatedDisputeGateway implements DisputeGateway {
     // stage), so the dispute goes to review with no seller actions, as the sandbox shows right after a submission.
     const claim = !!d.stage && d.stage !== 'INQUIRY';
     const status: DisputeStatus = claim || outcome === 'under_review' ? 'UNDER_REVIEW' : 'WAITING_FOR_BUYER_RESPONSE';
-    const allowed: ActionCode[] = claim ? [] : status === 'UNDER_REVIEW' ? ['send_message'] : ['send_message', 'make_offer', 'accept_claim'];
+    // After a seller message PayPal no longer offers make_offer and accepts REFUND only (W-1, send_message.json).
+    const messaged = (d.messages ?? []).some((m) => m.postedBy === 'SELLER');
+    const waiting: ActionCode[] = messaged ? ['send_message', 'accept_claim'] : ['send_message', 'make_offer', 'accept_claim'];
+    const allowed: ActionCode[] = claim ? [] : status === 'UNDER_REVIEW' ? ['send_message'] : waiting;
     d.status = status;
     d.allowedActions = allowed;
+    if (messaged && status === 'WAITING_FOR_BUYER_RESPONSE' && !claim) d.responseOptions = { acceptClaimTypes: ['REFUND'], offerTypes: [] };
     const now = this.opts.now();
     d.evidences.push({
       evidenceType: submission.evidenceType,
