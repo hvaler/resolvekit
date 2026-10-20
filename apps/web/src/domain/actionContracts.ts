@@ -99,7 +99,15 @@ const ACCEPT_PROOF: ProofFields = {
 const ev = (action: string) => `contrato-${action}-2026-10-19.md`;
 
 export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.freeze({
-  send_message: base('send_message', `${REF}disputes-send-message`, 'json', route('send-message'), MESSAGE_PROOF, ev('send-message')),
+  // Recorded 20/10/2026 (owner-approved W-1, PP-R-VQD-10193598): JSON accepted, the entry visible ≈3 s after the send
+  // started, content stored byte-identical. absentAfterMs: that lag rounded up to the 30 s read step, ×2. After a seller
+  // message PayPal stopped offering make_offer (WAITING_FOR_BUYER_RESPONSE); a brief UNDER_REVIEW with no links came
+  // first. PayPal-Request-Id dedupe: not known yet (W-2).
+  send_message: {
+    ...base('send_message', `${REF}disputes-send-message`, 'json', route('send-message'), MESSAGE_PROOF, ev('send-message'), 'Contract recorded; flow not built yet'),
+    absentAfterMs: 60_000,
+    recorded: 'packages/paypal/contracts/send_message.json',
+  },
   'send_message:file': base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), null, ev('send-message')),
   'accept_claim:REFUND': base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim')),
   'accept_claim:PARTIAL_REFUND': base('accept_claim:PARTIAL_REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), null, ev('accept-claim')),
