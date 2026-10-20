@@ -8,9 +8,25 @@ A variant becomes available (`apps/web/src/domain/actionContracts.ts`) only when
 
 1. **Documentation**: route, fields, body format, limits.
 2. **GET reads** of sandbox disputes in the relevant states (this folder, `reads/`).
-3. **One write approved by the owner**, request by request, with its response and its read-back. None has been sent yet:
-   every variant is «Not available»: «Contract not recorded yet», except offer withdrawal («PayPal documents no route to
-   withdraw an offer») and the return-address types («Not in this delivery (owner decision)»).
+3. **One write approved by the owner**, request by request, with its response and its read-back.
+
+## Recorded writes (owner-approved, 20/10/2026)
+
+| Write | Variant | File | Result |
+|---|---|---|---|
+| W-1 | `send_message` | `send_message.json` | 200; seller message, exact text; then WAITING_FOR_BUYER_RESPONSE, no make_offer |
+| W-2 | `send_message` (same Request-Id) | `send_message-request-id.json` | 200 and a second message: no dedupe by PayPal-Request-Id |
+| W-3 | `send_message:file` | `send_message-file.json` | 200; message with one document |
+| W-4 | `make_offer:REFUND` | `make_offer-refund.json` | 200; offer history PROPOSED; note echoed as a seller message; nothing closes |
+| W-5 | `escalate` | `escalate.json` | 200; attributable ESCALATE entry; CHARGEBACK ≈2 min 46 s later |
+| W-6 | `evidence:after_escalation` | `evidence-after-escalation.json` | 200; evidence in CHARGEBACK; entries carry their stage |
+| W-7 | `appeal` (sandbox adjudicate) | `appeal-setup-adjudicate.json` | 400 ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE; nothing changed; W-8 not sent |
+| W-9 | `accept_claim:PARTIAL_REFUND` | `accept_claim-partial_refund.json` | 200; recorded as a pending offer; note echoed; nothing closes |
+| W-10 | `accept_claim:REFUND` | `accept_claim-refund.json` | 200; ACCEPT_CLAIM entry; 7.00 USD refund; RESOLVED by +2 min |
+| W-11 | `evidence:PROOF_OF_REFUND` | — | not sent (owner decision; pending test) |
+| W-12 | `make_offer:REPLACEMENT_WITHOUT_REFUND` | `reads/W-12-pre.json` | not sent: PayPal never offered the type |
+
+The follow-up reads of each write are `reads/W-<n>-{pre,0s,30s,2m,10m}.json` (document download URLs redacted).
 
 ## Reads (`reads/`)
 
