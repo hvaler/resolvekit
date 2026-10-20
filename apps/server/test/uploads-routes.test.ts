@@ -18,7 +18,7 @@ import { closeOcr, ocrPng } from '../src/uploads/ocr.ts';
 import { canDeleteUpload, canEditUpload } from '../src/uploads/permissions.ts';
 import { UploadStore, type UploadRecord } from '../src/uploads/store.ts';
 import { STD_CAPTURE } from './kit.ts';
-import { CASE, P, REAL, TIMEOUT, call, fileBytes, pasteText, req, sendSetup, setup, sha, type Answer, type App, type View } from './uploads-kit.ts';
+import { CASE, P, REAL, TIMEOUT, call, fileBytes, pasteText, req, sendSetup, setup, sha, type Answer, type App, type SentIntent, type View } from './uploads-kit.ts';
 
 after(() => closeOcr());
 
