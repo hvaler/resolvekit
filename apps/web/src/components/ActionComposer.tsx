@@ -4,10 +4,12 @@ import { ACTION_TEXT_LIMIT, ESCALATE_CONSEQUENCE, acceptConsequenceText, offerCo
 import { minorUnits, parseAmount } from '../domain/amounts';
 import { formatCount } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
+import { confirmedUploads, type UploadRecordView } from '../domain/uploads';
 import { PrimaryAction, cx } from './ui';
 
 const VARIANT_LABEL: Partial<Record<string, string>> = {
   send_message: 'Message',
+  'send_message:file': 'Message with a file',
   'accept_claim:REFUND': 'Full refund',
   'accept_claim:PARTIAL_REFUND': 'Partial refund',
   escalate: 'Escalate to a claim',
@@ -15,8 +17,21 @@ const VARIANT_LABEL: Partial<Record<string, string>> = {
   'make_offer:REPLACEMENT_WITHOUT_REFUND': 'Replacement offer',
 };
 
+/** Why a message cannot carry a file here: the uploads live on the ResolveKit server. */
+const FILE_NEEDS_SERVER = 'attaching a file needs the ResolveKit server';
+
 /**
- * An action other than evidence, as the merchant writes it: for a message, the text with its `n / 2,000` count; for an
+ * The message request as the server composes it: the text, and the chosen upload while it is still a confirmed upload
+ * of the case (deleted or no longer confirmed since it was chosen: none). At most one (send_message:file, W-3).
+ */
+export function messageRequest(text: string, attachment: string | null, uploads: readonly UploadRecordView[] | null | undefined): ActionRequest {
+  const ok = !!attachment && confirmedUploads(uploads ?? []).some((u) => u.id === attachment);
+  return { action: 'send_message', text, attachments: ok ? [attachment] : [] };
+}
+
+/**
+ * An action other than evidence, as the merchant writes it: for a message, the text with its `n / 2,000` count and, when
+ * the file variant is available, at most one of the case's confirmed uploads to attach; for an
  * accept, the type (full or partial refund), the partial amount and the note, with what PayPal does then; for an
  * escalation, the note and what PayPal does then; for an offer, the amount offered and the note, with what PayPal does
  * then (the buyer is offered it; nothing moves unless they accept); for every action, whether PayPal offers it now and each variant's
@@ -34,6 +49,9 @@ export function ActionComposer({
   onRequest,
   disputeAmount = null,
   refundable = null,
+  uploads,
+  attachment = null,
+  onAttachment,
 }: {
   action: Exclude<IntentAction, 'provide_evidence'>;
   text: string;
@@ -48,20 +66,35 @@ export function ActionComposer({
   disputeAmount?: Money | null;
   /** PayPal's refundable amount as last read (an offer may not exceed it). */
   refundable?: Money | null;
+  /** The case's uploads (only the confirmed ones are offered); null or absent: no server, so no file can be attached. */
+  uploads?: readonly UploadRecordView[] | null;
+  /** The upload chosen for the message (its id), or null. */
+  attachment?: string | null;
+  onAttachment?: (uploadId: string | null) => void;
 }) {
   const isMessage = action === 'send_message';
   const len = text.trim().length;
   const over = len > ACTION_TEXT_LIMIT;
   const canReview = isMessage && availability.sendable && !locked && len > 0 && !over;
   const label = ACTION_LABEL[action];
+  const fileVariant = availability.variants.find((v) => v.variant === 'send_message:file');
+  const offerFile = isMessage && availability.sendable && !!fileVariant?.available && uploads != null;
+  const files = offerFile ? confirmedUploads(uploads) : [];
+  const chosen = files.some((u) => u.id === attachment) ? attachment : null;
+  const variantText = (v: ActionAvailability['variants'][number]): string => {
+    if (!v.variant) return `Not available: ${v.why ?? ''}`;
+    // The file variant needs the server's uploads, and says why it is not available (e.g. the simulator's state).
+    if (v.variant === 'send_message:file' && uploads == null) return `Not available: ${FILE_NEEDS_SERVER}`;
+    if (v.variant === 'send_message:file' && !v.available) return `Not available: ${v.why ?? ''}`;
+    return statusLabel(CONTRACTS[v.variant]);
+  };
   return (
     <section aria-label={label} className="flex flex-col gap-2">
       <h3 className="m-0 text-[12.5px] font-semibold">{label}</h3>
       <ul aria-label={`${label}: availability`} className="m-0 flex list-none flex-col gap-1 p-0 text-[11.5px]">
-        {/* The composer cannot attach an upload yet: the file variant (tested on the server) is not offered here. */}
-        {availability.variants.filter((v) => v.variant !== 'send_message:file').map((v) => (
-          <li key={`${v.variant}|${v.type}`} className={v.available ? 'text-ok' : 'text-ink-3'}>
-            {(v.variant && VARIANT_LABEL[v.variant]) ?? v.type ?? label} · {v.variant ? statusLabel(CONTRACTS[v.variant]) : `Not available: ${v.why ?? ''}`}
+        {availability.variants.map((v) => (
+          <li key={`${v.variant}|${v.type}`} className={v.available && (v.variant !== 'send_message:file' || uploads != null) ? 'text-ok' : 'text-ink-3'}>
+            {`${(v.variant && VARIANT_LABEL[v.variant]) ?? v.type ?? label} · ${variantText(v)}`}
           </li>
         ))}
       </ul>
@@ -89,6 +122,30 @@ export function ActionComposer({
             />
           </label>
           <span className="text-[11.5px] text-ink-3">The buyer sees exactly this text in PayPal. You review it before it is sent.</span>
+          {offerFile && (
+            <fieldset className="m-0 flex flex-col gap-1 border-0 p-0" aria-label="Attach a file">
+              <legend className="mb-1 text-[12.5px] font-medium">Attach a file (optional, at most one)</legend>
+              {files.length === 0 ? (
+                <span className="text-[12px] text-ink-3">No confirmed upload of this case to attach. Confirmed evidence uploads can be attached here.</span>
+              ) : (
+                <>
+                  <label className="flex items-center gap-2 text-[12.5px]">
+                    <input type="radio" name="message-file" value="" checked={chosen === null} disabled={!!locked} onChange={() => onAttachment?.(null)} />
+                    No file
+                  </label>
+                  {files.map((u) => (
+                    <label key={u.id} className="flex items-center gap-2 text-[12.5px]">
+                      <input type="radio" name="message-file" value={u.id} checked={chosen === u.id} disabled={!!locked} onChange={() => onAttachment?.(u.id)} />
+                      <span>
+                        <span className="font-mono text-mono-frag">{u.evidenceId}</span> {u.name} · Uploaded by {u.uploadedBy.name}
+                      </span>
+                    </label>
+                  ))}
+                  <span className="text-[11.5px] text-ink-3">The file goes to PayPal as the covered file you confirmed. You see it again in the review.</span>
+                </>
+              )}
+            </fieldset>
+          )}
           {locked && <span className="text-[12px] text-warn">{locked}</span>}
           <PrimaryAction enabled={canReview} onClick={onReview}>
             Review the message →

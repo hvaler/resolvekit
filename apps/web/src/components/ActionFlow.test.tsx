@@ -97,8 +97,8 @@ describe('ActionComposer and MessageThread', () => {
     expect(html).toContain('Verified in sandbox');
     expect(html).not.toContain('Tested locally');
     expect(html).toContain('Review the message');
-    // Attaching is not wired in the composer yet: the file variant is not offered there.
-    expect(html).not.toContain('Message with a file');
+    // Without the server's uploads, the file variant is «Not available» with the reason (MessageFile.test.tsx: with them).
+    expect(html).toContain('Message with a file · Not available: attaching a file needs the ResolveKit server');
     // A variant without a contract gives its reason as the registry labels it.
     const off = actionAvailability({ ...snap, allowedActions: ['make_offer'], responseOptions: { acceptClaimTypes: [], offerTypes: ['REPLACEMENT_WITHOUT_REFUND'] } }, 'make_offer', { role: 'owner', reviewer: false });
     const offer = renderToString(<ActionComposer action="make_offer" text="" onText={noop} availability={off} locked={null} onReview={noop} />);

@@ -12,7 +12,7 @@ import { useUploads } from '../app/useUploads';
 import { AddEvidencePanel, PendingUploads } from '../components/AddEvidence';
 import { AnalysisBar, analysisLabel } from '../components/AnalysisBar';
 import { AppBar } from '../components/AppBar';
-import { ActionComposer } from '../components/ActionComposer';
+import { ActionComposer, messageRequest } from '../components/ActionComposer';
 import { ActionFlow } from '../components/ActionFlow';
 import { HeldSendNotice, useHeldSend } from '../components/HeldSend';
 import { ApproveFlow } from '../components/ApproveFlow';
@@ -30,7 +30,7 @@ import { PdfSelect } from '../components/PdfSelect';
 import { MessageThread } from '../components/MessageThread';
 import { MiniButton } from '../components/ui';
 import { actionAvailability, type ActionRequest, type Viewer } from '../domain/actions';
-import { onSimulator } from '../domain/simulatedActions';
+import { onSimulator, onSimulatorFile } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
 import { evidenceAfterEscalationRefusal, payPalEvents, sellerEvidenceBlocks, startsFurtherOn } from '../domain/recorded';
@@ -165,6 +165,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
 
   // Another action than evidence: what PayPal offers now (the latest read), for this person, by the contract registry.
   const [message, setMessage] = useState('');
+  /** The confirmed upload chosen for the message (send_message:file), or none. */
+  const [messageFile, setMessageFile] = useState<string | null>(null);
   /** The action being reviewed and sent (its flow is open), exactly as the server will compose it. */
   const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
   // A send still holding the dispute (e.g. before a reload): found again from the server, read again when a flow closes.
@@ -174,7 +176,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const otherAction = d.action === 'provide_evidence' ? null : d.action;
   // On the simulator, also what the simulator would refuse (no recorded transition from this state) is not composable.
   const offered = otherAction ? actionAvailability(readNow, otherAction, viewer) : null;
-  const availability = offered && source.kind === 'simulated' ? onSimulator(offered, readNow) : offered;
+  // A message with a file only from the state W-3 was recorded from; elsewhere it is «Not available» with the reason.
+  const availability = offered && source.kind === 'simulated' ? onSimulatorFile(onSimulator(offered, readNow), readNow) : offered;
   // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
   const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
 
@@ -392,7 +395,11 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                   onText={setMessage}
                   availability={availability}
                   locked={actionLocked}
-                  onReview={() => setActionRequest({ action: 'send_message', text: message, attachments: [] })}
+                  // The file only while its variant is offered here (the composer hides the choice otherwise).
+                  onReview={() => setActionRequest(messageRequest(message, availability.variants.some((v) => v.variant === 'send_message:file' && v.available) ? messageFile : null, up.uploads))}
+                  uploads={uploadsClient ? up.uploads : null}
+                  attachment={messageFile}
+                  onAttachment={setMessageFile}
                   onRequest={setActionRequest}
                   disputeAmount={readNow.amount ?? null}
                   refundable={readNow.allowedRefund ?? null}
@@ -408,7 +415,15 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           request={actionRequest}
           onClose={() => setActionRequest(null)}
           onEdit={() => setActionRequest(null)}
-          {...(actionRequest.action === 'send_message' ? { onRecorded: () => setMessage('') } : {})}
+          uploads={confirmedUps}
+          {...(actionRequest.action === 'send_message'
+            ? {
+                onRecorded: () => {
+                  setMessage('');
+                  setMessageFile(null);
+                },
+              }
+            : {})}
         />
       )}
       {showFlow && submission && (

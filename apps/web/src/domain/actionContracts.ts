@@ -141,8 +141,8 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // file) accepted; the entry is a seller message with the exact content and one `documents[]` item, ≈3.5 s after the
   // send started. Same proof as a text message (the content is matched; the attachment's presence is not).
   // Tested locally (Task 8), like the text message; the simulator plays it only from WAITING_FOR_BUYER_RESPONSE (W-3).
-  // The web composer cannot attach an upload yet, so the UI does not offer it; the server path is tested. Not verified
-  // through the app flow (20/10/2026): it stays tested locally.
+  // The web composer offers one confirmed upload of the case (follow-up B2); the server path and the UI are tested
+  // locally. Not verified through the app flow with PayPal: it stays tested locally.
   'send_message:file': {
     ...base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), MESSAGE_PROOF, ev('send-message')),
     status: 'tested_locally',

@@ -238,6 +238,20 @@ export function simulatorRefusal(variant: VariantId, d: DisputeSnapshotLike): st
 }
 
 /**
+ * The message-with-a-file variant on the simulator: «Not available», with the simulator's reason, from any state W-3
+ * was not recorded from (it was sent from WAITING_FOR_BUYER_RESPONSE). The text-only message keeps its own transitions;
+ * the action stays sendable as {@link onSimulator} decided.
+ */
+export function onSimulatorFile(a: ActionAvailability, d: DisputeSnapshotLike): ActionAvailability {
+  const variants = a.variants.map((v) => {
+    if (v.variant !== 'send_message:file' || !v.available) return v;
+    const why = simulatorRefusal(v.variant, d);
+    return why ? { ...v, available: false, why } : v;
+  });
+  return variants.some((v, i) => v !== a.variants[i]) ? { ...a, variants } : a;
+}
+
+/**
  * The availability on the simulator: also refused where the simulator would refuse it (no recorded transition from
  * this state), so the person is never let compose what the simulator will not play.
  */

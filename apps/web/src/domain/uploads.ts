@@ -8,7 +8,7 @@ import type { AnalysisDocument, AnalysisInput } from '@resolvekit/analyst';
 import { correctionPair, lineRef, linesToConfirmOf, pageOf, type Correction } from './draft';
 import type { IntentRequest } from './intent';
 import { utcStamp } from './time';
-import type { Citation, ContradictionResolution, Evidence, EvidenceType, SentenceView } from './types';
+import type { Citation, ContradictionResolution, Evidence, EvidenceType, SentenceView, SubmissionFile } from './types';
 
 /** An area to cover, in whole pixels of the uploaded image. */
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -160,6 +160,16 @@ const evidenceNumber = (id: string | null | undefined) => Number(/^E(\d+)$/.exec
 /** The confirmed uploads (those with a document), in evidence order. */
 export function confirmedUploads(uploads: readonly UploadRecordView[]): UploadRecordView[] {
   return uploads.filter((u) => !u.restricted && u.status === 'confirmed' && u.document && evidenceNumber(u.evidenceId) > 0).sort((a, b) => evidenceNumber(a.evidenceId) - evidenceNumber(b.evidenceId));
+}
+
+/**
+ * A confirmed upload as the simulator's file of a message (no bytes leave this browser): named as the server names it
+ * for PayPal (apps/server/src/uploads/documents.ts uploadFileName: E8-pasted.pdf, E8-upload.pdf, E8-upload.png), with
+ * its stored size. No sha256: the simulator's files carry none (types.ts).
+ */
+export function simulatedUploadFile(u: UploadRecordView): SubmissionFile {
+  const name = u.kind === 'text' ? `${u.evidenceId}-pasted.pdf` : u.kind === 'pdf' ? `${u.evidenceId}-upload.pdf` : `${u.evidenceId}-upload.${u.mime === 'image/jpeg' ? 'jpg' : 'png'}`;
+  return { name, size: `${Math.max(1, Math.round((u.size ?? 0) / 1024))} KB`, source: 'upload' };
 }
 
 /** The evidence heading's count: the cards shown, so confirmed uploads count like the case's own documents. */

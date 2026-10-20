@@ -7,7 +7,7 @@
 import type { ProofState } from './actionReadback';
 import { composeAction, confirmationTerms, duplicateKey, sameTerms, type ActionRequest, type ConfirmationTerms } from './actions';
 import { contentHash, isComposeProblem, type IntentRequest, type SubmissionIntent } from './intent';
-import type { DisputeSnapshot, EvidenceSubmission, SentenceView } from './types';
+import type { DisputeSnapshot, EvidenceSubmission, SentenceView, SubmissionFile } from './types';
 
 /** A composed action intent; `repeat`: PayPal already recorded this exact message on the dispute and stage. */
 export type ActionIntent = SubmissionIntent & { repeat?: boolean };
@@ -105,7 +105,7 @@ export interface IntentSource {
    * Compose an action (not evidence) against the dispute as just read. The server reads PayPal itself; this browser
    * ({@link LocalIntentClient}, the simulator) composes from `local.snapshot`, with the same rules.
    */
-  createAction(caseId: string, req: ActionRequest, local: { snapshot: DisputeSnapshot | null }): Promise<ActionIntent>;
+  createAction(caseId: string, req: ActionRequest, local: { snapshot: DisputeSnapshot | null; files?: readonly SubmissionFile[] }): Promise<ActionIntent>;
   /** The second confirmation: exactly the terms the approval gave ([A3]). */
   confirm(intent: SubmissionIntent, terms: ConfirmationTerms): Promise<SubmissionIntent>;
   /** The person saw the new buyer messages NEEDS_REVIEW showed (their keys); the same content goes on ([A5]). */
@@ -257,14 +257,16 @@ export class LocalIntentClient implements IntentSource {
    * Compose an action for the simulator with the same rules as the server, against `local.snapshot` (the dispute as
    * the simulator was just read). A message repeats one when this browser already sent the same message on the same
    * stage and proved it recorded, exactly as the live server decides it from its proven sends (never from the thread:
-   * an offer's echoed note is not a message of ours): the same second confirmation (REPEATS_MESSAGE). No uploads exist
-   * without a server.
+   * an offer's echoed note is not a message of ours): the same second confirmation (REPEATS_MESSAGE). A message with a
+   * file needs that file's details (`local.files`: the chosen confirmed upload, one per attachment, from the server's
+   * list); no bytes are involved, and the simulator plays it only from the state W-3 was recorded from.
    */
-  async createAction(caseId: string, req: ActionRequest, local: { snapshot: DisputeSnapshot | null }): Promise<ActionIntent> {
+  async createAction(caseId: string, req: ActionRequest, local: { snapshot: DisputeSnapshot | null; files?: readonly SubmissionFile[] }): Promise<ActionIntent> {
     const snap = local.snapshot;
     if (!snap) throw new IntentError(409, { error: 'NOT_READ', detail: 'The dispute could not be read; nothing was composed' });
-    if (req.attachments.length) throw new IntentError(409, { error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available in the simulator: an attachment needs the ResolveKit server' });
-    const content = composeAction({ caseId, req, snap, disputeId: null, seller: null, files: [] });
+    const files = req.attachments.length ? (local.files ?? []) : [];
+    if (files.length !== req.attachments.length) throw new IntentError(409, { error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available in the simulator: an attachment needs a confirmed upload of the case from the ResolveKit server' });
+    const content = composeAction({ caseId, req, snap, disputeId: null, seller: null, files: files.map((f) => ({ ...f })) });
     if (isComposeProblem(content)) throw new IntentError(content.status, { error: content.error, detail: content.detail });
     const id = `int-${hex()}`;
     const now = new Date();

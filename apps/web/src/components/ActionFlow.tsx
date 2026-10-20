@@ -9,7 +9,8 @@ import type { DisputeGateway } from '../domain/gateway';
 import type { GatewayMode } from '../domain/httpGateway';
 import type { SubmissionIntent } from '../domain/intent';
 import { IntentError, LocalIntentClient, type IntentSource } from '../domain/intentClient';
-import type { DisputeMessage, DisputeSnapshot } from '../domain/types';
+import type { DisputeMessage, DisputeSnapshot, SubmissionFile } from '../domain/types';
+import { simulatedUploadFile, type UploadRecordView } from '../domain/uploads';
 import { MessageThread } from './MessageThread';
 import { Button, Spinner } from './ui';
 
@@ -101,10 +102,30 @@ export interface ActionFlowViewProps {
   onClose: () => void;
   /** What the flow sends, in a few words (the header), before an intent exists. */
   label?: string;
+  /** The case's uploads: which upload a message's file is (by its evidence number), for the review. */
+  uploads?: readonly UploadRecordView[];
 }
 
-/** The message as it will be sent, quoted exactly; for an accept, its type, amount and note. */
-function Quoted({ intent }: { intent: SubmissionIntent }) {
+/** A message's file as PayPal receives it (the server names it by evidence number), and which upload it is. */
+function AttachedFiles({ files, uploads = [] }: { files: readonly SubmissionFile[]; uploads?: readonly UploadRecordView[] }) {
+  if (!files.length) return null;
+  return (
+    <ul data-testid="attached-files" className="m-0 flex list-none flex-col gap-1 p-0 text-body">
+      {files.map((f) => {
+        const u = uploads.find((x) => x.evidenceId && f.name.startsWith(`${x.evidenceId}-`));
+        return (
+          <li key={f.name}>
+            Attached file: <span className="font-mono text-mono-frag">{f.name}</span> · {f.size}
+            {u ? ` · ${u.evidenceId} ${u.name}, uploaded by ${u.uploadedBy.name}` : ''}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** The message as it will be sent, quoted exactly (with its file, if any); for an accept, its type, amount and note. */
+function Quoted({ intent, uploads }: { intent: SubmissionIntent; uploads?: readonly UploadRecordView[] | undefined }) {
   const a = acceptOf(intent);
   if (a) return <AcceptTerms intent={intent} accept={a} />;
   const o = offerOf(intent);
@@ -127,9 +148,12 @@ function Quoted({ intent }: { intent: SubmissionIntent }) {
   }
   const text = intent.payload?.kind === 'send_message' ? intent.payload.text : '';
   return (
-    <blockquote data-testid="approved-message" className="m-0 whitespace-pre-wrap rounded-xl border border-line bg-surface-2 px-4 py-3 text-body-lg leading-normal [overflow-wrap:anywhere]">
-      {text}
-    </blockquote>
+    <>
+      <blockquote data-testid="approved-message" className="m-0 whitespace-pre-wrap rounded-xl border border-line bg-surface-2 px-4 py-3 text-body-lg leading-normal [overflow-wrap:anywhere]">
+        {text}
+      </blockquote>
+      <AttachedFiles files={intent.files} uploads={uploads} />
+    </>
   );
 }
 
@@ -186,7 +210,7 @@ function escalationText(r: ActionResult): string {
 /** Another send holds the dispute: this intent was not sent, and «Check again» reads back that send. */
 const heldByOther = (r: ActionResult, intent: SubmissionIntent) => !!r.holder && r.holder.id !== intent.id;
 
-export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, onConfirm, onCheckAgain, onSendAnyway, onSendNow, onEdit, onClose, label }: ActionFlowViewProps) {
+export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, onConfirm, onCheckAgain, onSendAnyway, onSendNow, onEdit, onClose, label, uploads }: ActionFlowViewProps) {
   const idx = stepIndex(state);
   const closable = state.step !== 'sending';
   const intent = 'intent' in state ? state.intent : null;
@@ -232,7 +256,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
           )}
           {state.step === 'review' && (
             <>
-              <Quoted intent={state.intent} />
+              <Quoted intent={state.intent} uploads={uploads} />
               <p className="m-0 text-body text-ink-2">{consequenceText(state.intent)}</p>
               {state.repeat && <p className="m-0 text-body text-warn">PayPal already shows this exact message on this dispute: you will be asked to confirm sending it again.</p>}
               <p className="m-0 font-mono text-caption text-ink-3">Content sha256 {state.intent.contentHash.slice(0, 12)}… · request {state.intent.requestId}</p>
@@ -240,7 +264,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
           )}
           {state.step === 'confirm' && (
             <>
-              <Quoted intent={state.intent} />
+              <Quoted intent={state.intent} uploads={uploads} />
               <div role="note" className="flex flex-col gap-1 rounded-2xl border border-warn-line bg-warn-soft px-[18px] py-3 text-body">
                 <strong className="font-semibold">{CONSEQUENCE_TEXT[state.terms.consequence] ?? consequenceText(state.intent)}</strong>
                 {state.terms.amount && state.terms.currency && (
@@ -264,7 +288,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
             <>
               <p className="m-0 text-body text-ink-2">Read the new message first: {isMessage ? 'your message' : nounOf(intent)} may answer an outdated one. Nothing was sent.</p>
               <MessageThread messages={state.messages} title="New from the buyer" />
-              <Quoted intent={state.intent} />
+              <Quoted intent={state.intent} uploads={uploads} />
             </>
           )}
           {state.step === 'result' && (
@@ -291,6 +315,9 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
                       : state.result.detail}
               </span>
               {state.result.kind === 'recorded' && acceptOf(state.intent) && !isPartial(state.intent) && <AcceptAftermath result={state.result} />}
+              {state.result.kind === 'recorded' && state.intent.payload?.kind === 'send_message' && state.intent.files.length > 0 && (
+                <span className="text-body text-ink-2">The read-back matched the message text; the file itself is not checked (PayPal gives it back without a name).</span>
+              )}
             </div>
           )}
           {error && (
@@ -357,6 +384,8 @@ export interface ActionFlowDeps {
   live?: () => boolean;
   /** The clock the simulator runs on (tests); the real clock otherwise. */
   now?: () => Date;
+  /** The simulator only: the chosen upload's file details for a message with a file (the server composes its own). */
+  files?: readonly SubmissionFile[];
 }
 
 /**
@@ -383,7 +412,7 @@ export class ActionFlowController {
     try {
       // A fresh read decides what is possible ([A1]); the server reads PayPal itself.
       const snapshot = mode.kind === 'paypal' ? null : await gateway.getDispute(caseId);
-      const i = await source.createAction(caseId, request, { snapshot });
+      const i = await source.createAction(caseId, request, { snapshot, ...(this.d.files ? { files: this.d.files } : {}) });
       if ((i.disputeId != null) !== (mode.kind === 'paypal')) {
         this.put({ step: 'refused', detail: 'The PayPal connection changed while you were writing. Close this and open the case again.' });
         return;
@@ -462,7 +491,22 @@ export class ActionFlowController {
  * Send an action (a message, an accept) through the same chain as every action, composed against a fresh read (the
  * server for real PayPal, this browser for the simulator). Real PayPal and the simulator are fixed when the flow opens.
  */
-export function ActionFlow({ caseId, request, onClose, onEdit, onRecorded }: { caseId: string; request: ActionRequest; onClose: () => void; onEdit: () => void; onRecorded?: () => void }) {
+export function ActionFlow({
+  caseId,
+  request,
+  onClose,
+  onEdit,
+  onRecorded,
+  uploads,
+}: {
+  caseId: string;
+  request: ActionRequest;
+  onClose: () => void;
+  onEdit: () => void;
+  onRecorded?: () => void;
+  /** The case's uploads: the review names a message's file, and the simulator takes its details from them. */
+  uploads?: readonly UploadRecordView[];
+}) {
   const { intents, gatewayFor, modeOf, applySnapshot, addAudit } = useServices();
   const [state, setState] = useState<ActionFlowState>({ step: 'composing' });
   const [busy, setBusy] = useState(false);
@@ -472,9 +516,12 @@ export function ActionFlow({ caseId, request, onClose, onEdit, onRecorded }: { c
     const mode = modeOf(caseId);
     // The server composes and sends only for real PayPal; simulated actions are played in this browser.
     const source: IntentSource = mode.kind === 'paypal' ? intents : browserIntents;
+    // The simulator composes in this browser: a message's file comes from the chosen confirmed upload's details.
+    const files = mode.kind === 'paypal' || request.action !== 'send_message' ? [] : request.attachments.flatMap((a) => uploads?.filter((u) => u.id === a && u.status === 'confirmed').map(simulatedUploadFile) ?? []);
     return new ActionFlowController({
       caseId,
       request,
+      ...(files.length ? { files } : {}),
       source,
       gateway: gatewayFor(caseId),
       mode,
@@ -531,6 +578,7 @@ export function ActionFlow({ caseId, request, onClose, onEdit, onRecorded }: { c
       onEdit={onEdit}
       onClose={onClose}
       label={actionTitle(request)}
+      {...(uploads ? { uploads } : {})}
     />
   );
 }
