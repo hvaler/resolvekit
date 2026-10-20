@@ -112,7 +112,7 @@ muestran a quienes pueden editarla.
 |---|---|---|
 | El servidor de ResolveKit | El archivo original, mientras está pendiente o en revisión; después, solo el archivo tapado (saneado) y su texto | Al subirlo |
 | El proveedor del modelo de IA (Google Gemini o Groq) | El texto de la evidencia confirmada (leído del archivo tapado, con tus correcciones y quién las hizo), con su número de evidencia, un título genérico («Uploaded screenshot», «Pasted text», «Uploaded PDF») y «Uploaded by <name>». Nunca el nombre del archivo, nunca el original | En el siguiente análisis que la incluya, y en las recomprobaciones |
-| PayPal (sandbox) | El archivo tapado que adjuntas, nombrado solo con su número de evidencia: `E7-upload.png` (imagen; `E7-upload.jpg` si es una foto tapada), `E8-upload.pdf` (PDF), `E9-pasted.pdf` (texto pegado) | Solo cuando envías una respuesta que lo adjunta |
+| PayPal (sandbox) | El archivo tapado que adjuntas, nombrado solo con su número de evidencia: `E7-upload.png` (imagen; `E7-upload.jpg` si es una foto tapada), `E8-upload.pdf` (PDF), `E9-pasted.pdf` (texto pegado) | Solo cuando envías una respuesta, o un mensaje al comprador, que lo adjunta (un mensaje lleva uno como máximo; ver [Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa)) |
 
 El texto se lee en el servidor (OCR local), no lo lee un proveedor de modelos ni PayPal. No subas datos personales que
 te importen: el lado de PayPal es un sandbox y la app es una demo.

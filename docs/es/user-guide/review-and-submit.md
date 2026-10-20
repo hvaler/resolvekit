@@ -81,6 +81,7 @@ PayPal.»
 | «New seller evidence that doesn't match what we sent» | Otra persona u otra cosa registró evidencia. Nunca se presenta como tuya y no se reintenta nada automáticamente |
 | **Submission not confirmed** · «PayPal didn't confirm the submission» | PayPal lo rechazó, o la relectura no muestra nada registrado. **Try again**: «We read the dispute back before any retry. Evidence is only re-sent if PayPal shows none recorded.» Un envío fallido puede reintentarse durante 30 minutos con la misma aprobación |
 | «The request timed out.» | Ni éxito ni fracaso: ResolveKit relee primero. Si PayPal no muestra nada: «PayPal showed nothing recorded, so the evidence was sent once more.» (Probado con dobles; no observado contra PayPal) |
+| «Your evidence was not sent» | El servidor la retuvo (`DISPUTE_UNCERTAIN`): un envío anterior en esta disputa (tuyo, o de un compañero) aún no está confirmado por PayPal, y nada de tu evidencia llegó a PayPal. La ventana muestra el mismo aviso que la página del caso, con **Check again** sobre ese envío anterior (solo una relectura). Cuando nada retiene la disputa, **Send it now** vuelve a leer la disputa y envía tu evidencia con todas las comprobaciones del servidor: si el envío anterior dejó evidencia del vendedor en la disputa, la tuya se rechaza (`SELLER_EVIDENCE_EXISTS`), y esa evidencia nunca se muestra como tuya (Probado en local; no observado contra PayPal) |
 
 Tras el registro, «Actions PayPal allows now» explica qué cambió, por ejemplo «Removed by PayPal: evidence already
 submitted» o «Not offered while PayPal reviews». El caso pasa a **Evidence recorded by PayPal**, «Sent · read-only»;
@@ -105,7 +106,7 @@ variante muestra su estado («Verified in sandbox», «Tested locally», o «Not
 
 | Acción | Quién | Qué escribes | Qué hace PayPal |
 |---|---|---|---|
-| Send message | Owner, miembros, revisores | **Message to the buyer** (hasta 2,000 caracteres). «The buyer sees exactly this text in PayPal.» | Añade el mensaje al hilo. No fusiona repeticiones |
+| Send message | Owner, miembros, revisores | **Message to the buyer** (hasta 2,000 caracteres). «The buyer sees exactly this text in PayPal.» Opcionalmente, en **Attach a file (optional, at most one)**, una de las subidas confirmadas del caso, listadas por número de evidencia y título («Message with a file · Tested locally») | Añade el mensaje, con el archivo si elegiste uno, al hilo. No fusiona repeticiones |
 | Accept claim · full refund | Owner | **Note to PayPal** | «PayPal refunds <amount> to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.» (reembolsa al comprador y cierra la disputa a su favor; no se puede deshacer) |
 | Accept claim · partial refund offer | Owner | Importe y **Note to PayPal** | «PayPal offers the buyer a partial refund of <amount>. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.» (el comprador debe aceptarlo; si no, no se mueve dinero y la disputa sigue abierta) |
 | Make offer · refund offer | Owner | Importe (menor que el de la disputa) y **Note to PayPal** | «The buyer is offered <amount>; no money moves unless the buyer accepts.» |
@@ -119,6 +120,16 @@ al servidor que componga exactamente lo que se enviará; la revisión lo cita. *
 aprobación de ese contenido. En una acción solo del Owner, **Confirm before sending** muestra después la consecuencia y
 el importe, ligados a ese intent; **Confirm and send** la envía. Un mensaje que repite otro que PayPal ya muestra en la
 disputa pide la misma confirmación («PayPal already shows this exact message on this dispute…»).
+
+**Un mensaje con archivo.** Solo se ofrecen subidas confirmadas del caso (aquí no se sube nada nuevo: añade la evidencia
+antes), una como máximo; «No confirmed upload of this case to attach» si no hay ninguna. La revisión y la confirmación
+lo muestran tal como lo recibe PayPal, «Attached file: E8-pasted.pdf · 2 KB · E8 <título>, uploaded by <nombre>». El
+servidor solo lo adjunta si sigue siendo una subida confirmada de la disputa activa del caso en tu espacio de trabajo (si
+no, `UNKNOWN_UPLOAD`). «Recorded by PayPal» prueba el texto del mensaje; el archivo en sí no se comprueba. Esta variante
+está Probada en local: no se ha enviado a PayPal a través de la app. Sin el servidor de ResolveKit dice «Not available:
+attaching a file needs the ResolveKit server». En el simulador solo se reproduce mientras PayPal espera al comprador (el
+estado desde el que se envió la escritura registrada); en otro estado dice «Not available: the simulator plays this
+only from a state PayPal’s sandbox recorded it from».
 
 Si el comprador escribió después de que aprobaras un mensaje, una aceptación o una oferta, la ventana dice «The buyer
 wrote since you approved this» y muestra el mensaje nuevo: **Send it anyway** envía el mismo contenido, **Edit**
@@ -152,7 +163,7 @@ si PayPal solo pide esa, no se puede enviar evidencia en esa disputa.
 | Destinatario | Qué | Cuándo |
 |---|---|---|
 | Proveedor del modelo de IA (Gemini, o Groq como respaldo) | Los documentos del caso tal como los monta el servidor (documentos sintéticos del caso, campos leídos de la disputa de PayPal y, para el caso de agente, el recibo de MeterMCP), el texto de tus subidas confirmadas; las frases editadas para las recomprobaciones | En cada análisis en directo y recomprobación |
-| PayPal (sandbox), otras acciones | El texto exacto del mensaje, o el tipo, el importe y la nota de una aceptación, oferta o escalado | Solo cuando se envía la acción |
+| PayPal (sandbox), otras acciones | El texto exacto del mensaje (y la subida tapada que le adjuntaste, con nombre como los archivos de evidencia), o el tipo, el importe y la nota de una aceptación, oferta o escalado | Solo cuando se envía la acción |
 | PayPal (sandbox) | Tipo de evidencia; notas (solo frases con respaldo); transportista y seguimiento o referencia; PDF construidos en el servidor a partir de los documentos del caso (encabezados con «SYNTHETIC TEST DOCUMENT»); para el caso de agente, el PDF del recibo; las subidas tapadas que adjuntaste, con los nombres `E<n>-upload.png` (`.jpg` si es una foto tapada), `E<n>-upload.pdf`, `E<n>-pasted.pdf` | Solo al pulsar **Submit evidence to PayPal** |
 | La auditoría del servidor de ResolveKit | Quién aprobó, cuándo, hash del contenido, id de petición, respuesta de PayPal; ningún texto de documentos; un mensaje solo por su hash | Al aprobar y al enviar |
 | Los intents del servidor de ResolveKit | El texto aprobado del mensaje, como las notas de evidencia aprobadas (el hilo en sí no se guarda ni se entrega a la IA) | Mientras se conserve el registro del intent |
@@ -176,7 +187,7 @@ de modelos conservan lo que recibieron según sus propias políticas.
 | `NOT_THE_SELLER` | Solo el espacio del vendedor puede responder |
 | `DAILY_CAP` | Se han agotado los envíos de evidencia (o de mensajes, o las acciones de liquidación) de la demo por hoy; el mensaje dice cuándo se restablecen |
 | `OWNER_ONLY` | Solo el Owner puede aceptar, ofertar o escalar |
-| `DISPUTE_UNCERTAIN` | Un envío anterior a esta disputa (nombrado en la respuesta) aún no está confirmado, y el tuyo no se envió: **Check again** relee ese envío; cuando queda resuelto, **Send it now**. Tras recargar, la página del caso muestra la misma retención con **Check again** |
+| `DISPUTE_UNCERTAIN` | Un envío anterior a esta disputa (nombrado en la respuesta) aún no está confirmado, y el tuyo no se envió: **Check again** relee ese envío; cuando queda resuelto, **Send it now**. La ventana de evidencia muestra el mismo aviso integrado. Tras recargar, la página del caso muestra la misma retención con **Check again** |
 | `VARIANT_NOT_AVAILABLE` «Not available: not verified with PayPal from this dispute status» | La acción nunca se registró desde el estado actual de la disputa: espera a que cambie el estado en PayPal, o usa otra acción |
 | `NEEDS_REVIEW` | El comprador escribió después de tu aprobación: léelo y después envía el mismo contenido o edítalo |
 | «The PayPal connection changed while you were reviewing. Close this and open the case again.» | Cierra y vuelve a abrir el caso |

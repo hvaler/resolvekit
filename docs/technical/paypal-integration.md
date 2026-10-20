@@ -151,7 +151,7 @@ reads before and after (private evidence, 20/10/2026). The code is now deployed 
 | V-5 | `escalate` | PP-R-JHY-10193786 | «Recorded by PayPal» from the `ESCALATE` entry (the note, stage `INQUIRY`) about 1.5 s after; `UNDER_REVIEW` for about 10 min with `provide_evidence` flickering, never shown as closed; then `CHARGEBACK` · `WAITING_FOR_SELLER_RESPONSE` |
 | V-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | After one live analysis of the bound case, an edited sentence re-checked and a contradiction resolved by the owner: one `provide-evidence`, recorded as a `PROVIDE_EVIDENCE` entry in stage `CHARGEBACK` with 2 documents, next to the inquiry-stage `ESCALATE` entry |
 
-Not verified through the app: `send_message:file` (the web composer cannot attach an upload yet; Tested locally on the
+Not verified through the app: `send_message:file` (the web composer attaches one confirmed upload; Tested locally on the
 server, contract write W-3) and every «Not available» variant.
 
 **W-11, the pending proof-of-refund test.** A disputed payment showed as held in the sandbox on 19/10/2026, and the

@@ -78,6 +78,7 @@ PayPal.»
 | «New seller evidence that doesn't match what we sent» | Someone or something else recorded evidence. It is never reported as yours and nothing is retried automatically |
 | **Submission not confirmed** · «PayPal didn't confirm the submission» | PayPal refused, or the read-back shows nothing recorded. **Try again**: «We read the dispute back before any retry. Evidence is only re-sent if PayPal shows none recorded.» A failed send can be retried for 30 minutes with the same approval |
 | «The request timed out.» | Not a success and not a failure: ResolveKit reads back first. If PayPal shows nothing: «PayPal showed nothing recorded, so the evidence was sent once more.» (Tested with fakes; not observed against PayPal) |
+| «Your evidence was not sent» | The server held it back (`DISPUTE_UNCERTAIN`): an earlier send on this dispute (yours, or a colleague's) is not confirmed by PayPal yet, and none of your evidence reached PayPal. The window shows the same notice as the case page, with **Check again** on that earlier send (a read-back only). Once nothing holds the dispute, **Send it now** reads the dispute again and sends your evidence with every server check: if the earlier send put seller evidence on the dispute, yours is refused (`SELLER_EVIDENCE_EXISTS`), and that evidence is never shown as yours (Tested locally; not observed against PayPal) |
 
 After recording, «Actions PayPal allows now» explains what changed, for example «Removed by PayPal: evidence already
 submitted» or «Not offered while PayPal reviews». The case becomes **Evidence recorded by PayPal**, «Sent ·
@@ -98,7 +99,7 @@ shows its status («Verified in sandbox», «Tested locally», or «Not availabl
 
 | Action | Who | What you write | What PayPal does |
 |---|---|---|---|
-| Send message | Owner, members, reviewers | **Message to the buyer** (up to 2,000 characters). «The buyer sees exactly this text in PayPal.» | Adds the message to the thread. It does not merge repeats |
+| Send message | Owner, members, reviewers | **Message to the buyer** (up to 2,000 characters). «The buyer sees exactly this text in PayPal.» Optionally, under **Attach a file (optional, at most one)**, one of the case's confirmed uploads, listed by evidence number and title («Message with a file · Tested locally») | Adds the message, with the file if you chose one, to the thread. It does not merge repeats |
 | Accept claim · full refund | Owner | **Note to PayPal** | «PayPal refunds <amount> to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.» |
 | Accept claim · partial refund offer | Owner | Amount and **Note to PayPal** | «PayPal offers the buyer a partial refund of <amount>. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.» |
 | Make offer · refund offer | Owner | Amount (below the dispute amount) and **Note to PayPal** | «The buyer is offered <amount>; no money moves unless the buyer accepts.» |
@@ -111,6 +112,16 @@ the server to compose exactly what will be sent; the review quotes it. **Approve
 that content. For an owner-only action, **Confirm before sending** then shows the consequence and amount, bound to that
 intent; **Confirm and send** sends it. A message that repeats one PayPal already shows on the dispute asks for the same
 confirmation («PayPal already shows this exact message on this dispute…»).
+
+**A message with a file.** Only confirmed uploads of the case are offered (no new upload here: add evidence first), one
+at most; «No confirmed upload of this case to attach» when there is none. The review and the confirmation show it as
+PayPal receives it, «Attached file: E8-pasted.pdf · 2 KB · E8 <title>, uploaded by <name>». The server attaches it only
+if it is still a confirmed upload of the case's active dispute in your workspace (otherwise `UNKNOWN_UPLOAD`).
+«Recorded by PayPal» proves the message text; the file itself is not checked. This variant is Tested locally: it has not
+been sent to PayPal through the app. Without the ResolveKit server it reads «Not available: attaching a file needs the
+ResolveKit server». On the simulator it is played only while PayPal waits for the buyer (the state the recorded write
+was sent from); elsewhere it reads «Not available: the simulator plays this only from a state PayPal’s sandbox recorded
+it from».
 
 If the buyer wrote after you approved a message, an accept or an offer, the window says «The buyer wrote since you
 approved this» and shows the new message: **Send it anyway** sends the same content, **Edit** composes a new one.
@@ -143,7 +154,7 @@ it, no evidence can be sent on that dispute.
 | Recipient | What | When |
 |---|---|---|
 | AI model provider (Gemini, or Groq as fallback) | The case's documents as the server assembles them (synthetic case documents, fields read from the PayPal dispute, for the agent case the MeterMCP receipt), your confirmed uploads' text; edited sentences for re-checks | Each live analysis and re-check |
-| PayPal (sandbox), other actions | The exact message text, or the type, amount and note of an accept, offer or escalation | Only when the action is sent |
+| PayPal (sandbox), other actions | The exact message text (and the covered upload you attached to it, named like evidence files), or the type, amount and note of an accept, offer or escalation | Only when the action is sent |
 | PayPal (sandbox) | Evidence type; notes (supported sentences only); carrier and tracking or reference; PDFs built on the server from the case documents (headed «SYNTHETIC TEST DOCUMENT»); for the agent case the receipt PDF; the covered uploads you attached, named `E<n>-upload.png` (`.jpg` for a covered photo), `E<n>-upload.pdf`, `E<n>-pasted.pdf` | Only on **Submit evidence to PayPal** |
 | The ResolveKit server's audit | Who approved, when, content hash, request id, PayPal's answer; no document text; a message only by its hash | On approval and send |
 | The ResolveKit server's intents | The approved message text, like approved evidence notes (the thread itself is not stored and not given to the AI) | While the intent's record is kept |
@@ -167,7 +178,7 @@ providers retain what they received according to their own policies.
 | `NOT_THE_SELLER` | Only the seller's workspace can respond |
 | `DAILY_CAP` | The demo's evidence sends (or message sends, or settling actions) for today are used up; the message says when it resets |
 | `OWNER_ONLY` | Only the Owner can accept, offer or escalate |
-| `DISPUTE_UNCERTAIN` | An earlier send to this dispute (named in the answer) is not confirmed yet, and yours was not sent: **Check again** reads back that send; when it is settled, **Send it now**. After a reload, the case page shows the same hold with **Check again** |
+| `DISPUTE_UNCERTAIN` | An earlier send to this dispute (named in the answer) is not confirmed yet, and yours was not sent: **Check again** reads back that send; when it is settled, **Send it now**. The evidence window shows the same notice inline. After a reload, the case page shows the same hold with **Check again** |
 | `VARIANT_NOT_AVAILABLE` «Not available: not verified with PayPal from this dispute status» | The action was never recorded from the dispute's current status: wait for PayPal's status to change, or use another action |
 | `NEEDS_REVIEW` | The buyer wrote since your approval: read it, then send the same content or edit |
 | «The PayPal connection changed while you were reviewing. Close this and open the case again.» | Close and reopen the case |

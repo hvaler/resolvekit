@@ -130,8 +130,8 @@ Todas en el **sandbox** de PayPal; nada se ha ejecutado contra PayPal live. Las 
 | Escrituras de contrato de acciones de disputa W-1 a W-12 aprobadas por el propietario, enviadas fuera del flujo de la app (a nivel de contrato, no la app): W-1 a W-6, W-9 y W-10 registradas, W-7 rechazada, W-8, W-11 y W-12 no enviadas ([detalles](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)) | 20/10 |
 | Seis variantes de acciones de disputa enviadas una vez cada una por el flujo propio de la app (el servidor de la rama ejecutado en local) y releídas «Recorded by PayPal», V-1 a V-6; solo V-4 movió dinero, un reembolso de 7.00 USD ([detalles](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)) | 20/10 |
 
-**No observado en el sandbox (Pendiente):** un mensaje con adjunto enviado a través de la app (la interfaz aún no
-puede adjuntar); las acciones de disputa en el servicio desplegado; un timeout de PayPal o un
+**No observado en el sandbox (Pendiente):** un mensaje con adjunto enviado a través de la app (la interfaz adjunta
+una subida confirmada, Probado en local); las acciones de disputa en el servicio desplegado; un timeout de PayPal o un
 envío incierto; `capture_pending` de MeterMCP; la
 recuperación del agente tras un reinicio; **Stop** en una ejecución real; el respaldo con Groq para el agente; subidas de
 texto pegado y de PDF enviadas a PayPal; creación de passkeys en el servicio desplegado; el registro de ejecución E5 en

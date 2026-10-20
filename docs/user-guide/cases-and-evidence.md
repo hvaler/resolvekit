@@ -108,7 +108,7 @@ only to people who can edit it.
 |---|---|---|
 | The ResolveKit server | The original file, while it is pending or in review; then only the covered (sanitised) file and its text | On upload |
 | The AI model provider (Google Gemini or Groq) | The text of confirmed evidence (read from the covered file, with your corrections and who made them), under its evidence number, a generic title («Uploaded screenshot», «Pasted text», «Uploaded PDF») and «Uploaded by <name>». Never the file name, never the original | On the next analysis that includes it, and on re-checks |
-| PayPal (sandbox) | The covered file you attach, named only by its evidence number: `E7-upload.png` (image; `E7-upload.jpg` for a covered photo), `E8-upload.pdf` (PDF), `E9-pasted.pdf` (pasted text) | Only when you send a response that attaches it |
+| PayPal (sandbox) | The covered file you attach, named only by its evidence number: `E7-upload.png` (image; `E7-upload.jpg` for a covered photo), `E8-upload.pdf` (PDF), `E9-pasted.pdf` (pasted text) | Only when you send a response, or a message to the buyer, that attaches it (a message takes at most one; see [Review and submit](review-and-submit.md#other-dispute-actions)) |
 
 Text is read on the server (local OCR), not by a model provider or PayPal. Do not upload personal data you care
 about: the PayPal side is a sandbox and the app is a demo.

@@ -159,7 +159,7 @@ reglas de PayPal.
 | V-5 | `escalate` | PP-R-JHY-10193786 | «Recorded by PayPal» por la entrada `ESCALATE` (la nota, fase `INQUIRY`) unos 1.5 s después; `UNDER_REVIEW` durante unos 10 min con `provide_evidence` intermitente, nunca mostrado como cerrado; después `CHARGEBACK` · `WAITING_FOR_SELLER_RESPONSE` |
 | V-6 | `evidence:after_escalation` | la misma, en `CHARGEBACK` | Tras un análisis en directo del caso vinculado, una frase editada recomprobada y una contradicción resuelta por el propietario: un único `provide-evidence`, registrado como entrada `PROVIDE_EVIDENCE` en la fase `CHARGEBACK` con 2 documentos, junto a la entrada `ESCALATE` de la fase de consulta |
 
-No verificado a través de la app: `send_message:file` (el editor web aún no puede adjuntar una subida; Probado en local
+No verificado a través de la app: `send_message:file` (el editor web adjunta una subida confirmada; Probado en local
 en el servidor, escritura de contrato W-3) y todas las variantes «Not available».
 
 **W-11, la prueba pendiente de la prueba de reembolso.** El 19/10/2026 un pago en disputa apareció retenido en el

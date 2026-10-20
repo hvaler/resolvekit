@@ -55,7 +55,7 @@ alojado; un estado por variante
 | Acción de disputa | Estado |
 |---|---|
 | Enviar mensaje; aceptar la reclamación (reembolso total, o parcial, que PayPal registra como oferta); hacer una oferta de reembolso parcial; escalar; evidencia tras un escalado | **Verificado en sandbox** a través de la app (20/10/2026: el servidor de la rama ejecutado en local, un envío cada una, releído). El código está Desplegado (`5111b88`, 20/10/2026); estas acciones **no** se han ejercitado todavía en el servicio alojado |
-| Un mensaje con adjunto | Probado en local en el servidor; la interfaz aún no puede adjuntar una subida |
+| Un mensaje con adjunto | Probado en local en el servidor y en el editor web (una subida confirmada); no enviado a PayPal a través de la app |
 | Oferta de sustitución · retirar una oferta · apelación · prueba de reembolso · tipos con devolución | **No disponible**, cada una con su motivo en el producto |
 
 Cada variante disponible se apoya en una escritura que el propietario aprobó en el sandbox el 20/10/2026 y en su

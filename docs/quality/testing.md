@@ -125,8 +125,8 @@ evidence). An observation is one example, not a guarantee.
 | Owner-approved dispute-action contract writes W-1 to W-12, sent outside the app's flow (contract level, not the app): W-1 to W-6, W-9 and W-10 recorded, W-7 refused, W-8, W-11 and W-12 not sent ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 20/10 |
 | Six dispute-action variants sent once each through the app's own flow (the branch's server run locally) and read back «Recorded by PayPal», V-1 to V-6; only V-4 moved money, a 7.00 USD refund ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 20/10 |
 
-**Not observed in the sandbox (Pending):** a message with an attachment sent through the app (the UI cannot attach
-yet); the dispute actions on the deployed service; a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
+**Not observed in the sandbox (Pending):** a message with an attachment sent through the app (the UI attaches one
+confirmed upload, Tested locally); the dispute actions on the deployed service; a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
 restart recovery; **Stop** on a real run; the Groq fallback for the agent; pasted-text and PDF uploads sent to PayPal;
 passkey creation on the deployed service; the E5 run record on a bound case; `npm run demo-agent` against the hosted
 MeterMCP.
