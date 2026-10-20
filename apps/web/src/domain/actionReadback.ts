@@ -141,13 +141,21 @@ function stillOffered(after: DisputeSnapshot, c: IntentContent): boolean {
 const PENDING = 'Outcome pending confirmation';
 
 /**
+ * How far before send_started PayPal may time this send's entry (its clock behind this server's) and the entry still be
+ * this send's. Only an entry absent from the pre-send read (the multiset baseline) qualifies, so an earlier entry is
+ * never taken for this send; the skew seen is returned (`skewMs`) for the log.
+ */
+export const SKEW_MS = 5_000;
+
+/**
  * Whether the read `after` proves this send recorded, proves it absent, or neither:
- * - `recorded`: a new entry of the contract's list (not in the base), by its actor, timed at or after send_started,
- *   with every match field equal to the approved content under the contract's normalisation;
+ * - `recorded`: a new entry of the contract's list (not in the base), by its actor, timed at or after send_started
+ *   (or up to {@link SKEW_MS} before it: clock skew, reported in `skewMs`), with every match field equal to the approved
+ *   content under the contract's normalisation;
  * - `absent`: no new entry by the actor, the action still offered, and the contract's absence delay passed;
  * - otherwise `pending`: a contract without proof fields, a bare state change, or another entry by the actor.
  */
-export function proveSend(c: IntentContent, base: ReadBackBase, after: DisputeSnapshot, contract: VariantContract, nowMs: number): { state: ProofState; detail: string } {
+export function proveSend(c: IntentContent, base: ReadBackBase, after: DisputeSnapshot, contract: VariantContract, nowMs: number): { state: ProofState; detail: string; skewMs?: number } {
   const pending = { state: 'pending' as const, detail: PENDING };
   const proof = contract.proof;
   if (!proof || !proof.list || !proof.actorField || !proof.actorValue || !proof.timeField || proof.matchFields.length === 0) return pending;
@@ -159,13 +167,17 @@ export function proveSend(c: IntentContent, base: ReadBackBase, after: DisputeSn
   const approved = proof.matchFields.map((f) => [f, approvedValue(c, f)] as const);
   const ours = (e: Entry): boolean => {
     const t = Date.parse(value(e, proof.timeField!) ?? '');
-    if (Number.isNaN(t) || Number.isNaN(started) || t < started) return false;
+    if (Number.isNaN(t) || Number.isNaN(started) || t < started - SKEW_MS) return false;
     return approved.every(([f, want]) => {
       const got = value(e, f);
       return want !== undefined && got !== null && normalise(got, proof.normalise) === normalise(want, proof.normalise);
     });
   };
-  if (fresh.some(ours)) return { state: 'recorded', detail: 'Recorded by PayPal' };
+  const hit = fresh.find(ours);
+  if (hit) {
+    const skewMs = started - Date.parse(value(hit, proof.timeField)!);
+    return skewMs > 0 ? { state: 'recorded', detail: 'Recorded by PayPal', skewMs } : { state: 'recorded', detail: 'Recorded by PayPal' };
+  }
   if (fresh.length) return { state: 'pending', detail: `${PENDING}: PayPal shows a different seller entry` };
   if (contract.absentAfterMs !== null && !Number.isNaN(started) && nowMs - started >= contract.absentAfterMs && stillOffered(after, c)) {
     return { state: 'absent', detail: 'PayPal shows no trace of this send and still offers the action' };

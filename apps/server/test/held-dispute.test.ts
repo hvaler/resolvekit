@@ -92,8 +92,19 @@ test('intents.json lost: the hold from the send log is shown, read back as pendi
     assert.equal(rb.body.intent, null);
     assert.equal(intents.held(REAL), true);
     assert.equal(pp.posts.length, 0);
-    assert.equal(pp.posts.length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('clock skew: PayPal timing the message up to 5 s before send_started is recorded (it was not there before) and logged', async () => {
+  const { app, state, intents, lines } = await setupActions({ actionReply: () => timeout() });
+  const a = await compose(app);
+  await approve(app, a);
+  await send(app, a);
+  state.dispute = withMessage(state.dispute, 'SELLER', T0 - 2_000, TEXT);
+  const rb = await readBack(app, a);
+  assert.equal((rb.body.readBack as { state: string }).state, 'recorded', JSON.stringify(rb.body));
+  assert.equal(intents.isUncertain(REAL), null);
+  assert.ok(lines.some((l) => l.includes(`read-back · intent ${a.id}: PayPal's entry is timed 2000 ms before send_started`)), lines.join('\n'));
 });

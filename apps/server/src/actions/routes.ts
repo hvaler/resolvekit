@@ -39,7 +39,7 @@ import {
   type RulesOf,
   type SimpleAction,
 } from '../../../web/src/domain/actions.ts';
-import { proveSend, readBackBase, type ReadBackBase } from '../../../web/src/domain/actionReadback.ts';
+import { SKEW_MS, proveSend, readBackBase, type ReadBackBase } from '../../../web/src/domain/actionReadback.ts';
 import { contentHash, isComposeProblem } from '../../../web/src/domain/intent.ts';
 import type { DisputeMessage, DisputeSnapshot, SubmissionFile } from '../../../web/src/domain/types.ts';
 import type { ActingPerson, Actor, CaseState, CostlyAction, Reservation } from '../app.ts';
@@ -130,6 +130,11 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
   const { intents, log, now } = deps;
   const contracts = deps.contracts ?? CONTRACTS;
   const rules = deps.rules ?? ACTION_RULES;
+
+  /** PayPal timed this send's entry before send_started (its clock behind ours, within SKEW_MS): logged, never hidden. */
+  const logSkew = (intentId: string, r: { skewMs?: number }) => {
+    if (r.skewMs) log(`read-back · intent ${intentId}: PayPal's entry is timed ${r.skewMs} ms before send_started (clock skew, within ${SKEW_MS} ms; the entry was not in the pre-send read)`);
+  };
 
   const ownerRefusal = (req: Request, action: IntentAction): Response | null => {
     if (!OWNER_ACTIONS.includes(action)) return null;
@@ -327,6 +332,7 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
       if (reconciling) {
         const base = intent.readBackBase ?? null;
         const r = contract && base ? proveSend(intent, base, snap, contract, now().getTime()) : { state: 'pending' as const, detail: PENDING };
+        logSkew(intentId, r);
         intents.revert(intentId, claim.previous);
         const durable = intents.recordReadBack(intentId, r);
         if (r.state === 'recorded') {
@@ -495,6 +501,7 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
       : contract && base
         ? proveSend(current, base, snapshot, contract, now().getTime())
         : { state: 'pending' as const, detail: PENDING };
+    logSkew(intentId, r);
     const durable = intents.recordReadBack(intentId, r);
     if (!durable && r.state !== 'pending') {
       // Nothing changed: the dispute stays held until a read-back is recorded durably.

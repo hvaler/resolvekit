@@ -59,9 +59,12 @@ describe('read-back proof', () => {
     expect(proveSend(content('Hello'), base, before, contract(), SENT_MS + 1000)).toEqual({ state: 'pending', detail: 'Outcome pending confirmation' });
     const after = snap([...before.messages!, msg('SELLER', '2026-10-19T10:00:01.200Z', 'Hello')]);
     expect(proveSend(content('Hello'), base, after, contract(), SENT_MS + 2000)).toEqual({ state: 'recorded', detail: 'Recorded by PayPal' });
-    // At exactly send_started it counts; before it, a new entry is not this send.
-    expect(proveSend(content('Hello'), base, snap([...before.messages!, msg('SELLER', SENT, 'Hello')]), contract(), SENT_MS).state).toBe('recorded');
-    expect(proveSend(content('Hello'), base, snap([...before.messages!, msg('SELLER', '2026-10-19T09:59:59.999Z', 'Hello')]), contract(), SENT_MS)).toEqual({
+    // At exactly send_started it counts; up to 5 s before it (PayPal's clock behind ours) a NEW entry still counts, with
+    // the skew reported; earlier than that, a new entry is not this send.
+    expect(proveSend(content('Hello'), base, snap([...before.messages!, msg('SELLER', SENT, 'Hello')]), contract(), SENT_MS)).toEqual({ state: 'recorded', detail: 'Recorded by PayPal' });
+    expect(proveSend(content('Hello'), base, snap([...before.messages!, msg('SELLER', '2026-10-19T09:59:59.999Z', 'Hello')]), contract(), SENT_MS)).toEqual({ state: 'recorded', detail: 'Recorded by PayPal', skewMs: 1 });
+    expect(proveSend(content('Hello'), base, snap([...before.messages!, msg('SELLER', '2026-10-19T09:59:55.000Z', 'Hello')]), contract(), SENT_MS)).toEqual({ state: 'recorded', detail: 'Recorded by PayPal', skewMs: 5000 });
+    expect(proveSend(content('Hello'), base, snap([...before.messages!, msg('SELLER', '2026-10-19T09:59:54.999Z', 'Hello')]), contract(), SENT_MS)).toEqual({
       state: 'pending',
       detail: 'Outcome pending confirmation: PayPal shows a different seller entry',
     });
@@ -74,6 +77,16 @@ describe('read-back proof', () => {
     });
     // An unreadable time is not after send_started.
     expect(proveSend(content('Hello'), base, snap([...before.messages!, msg('SELLER', 'soon', 'Hello')]), contract(), SENT_MS).state).toBe('pending');
+  });
+
+  it('proof: the skew window takes only an entry absent from the pre-send read (multiset), never an earlier one', () => {
+    // The identical message 3 s before send_started was already there before the POST: it is in the baseline, not ours.
+    const early = msg('SELLER', '2026-10-19T09:59:57.000Z', 'Hello');
+    const before = snap([BUYER, early]);
+    const base = readBackBase(before, proof(), SENT);
+    expect(proveSend(content('Hello'), base, before, contract(), SENT_MS + 1_000)).toEqual({ state: 'pending', detail: 'Outcome pending confirmation' });
+    // A second one with the same key (same time and length) is new by the multiset: within the window, ours.
+    expect(proveSend(content('Hello'), base, snap([BUYER, early, early]), contract(), SENT_MS + 1_000)).toEqual({ state: 'recorded', detail: 'Recorded by PayPal', skewMs: 3000 });
   });
 
   it('proof: normalisation from the contract', () => {
@@ -170,8 +183,8 @@ describe('read-back proof', () => {
     // RESOLVED in the buyer's favour, with a refund, but no attributable entry: never proof.
     const resolved = snap([], { evidences: [buyerCreate], status: 'RESOLVED', allowedActions: [], outcome: { code: 'RESOLVED_BUYER_FAVOUR', closedAt: null } });
     expect(proveSend(ac, base, resolved, c, SENT_MS + 120_000)).toEqual({ state: 'pending', detail: 'Outcome pending confirmation' });
-    // Another accept type, another note, an entry before send_started: not this send.
-    for (const other of [{ ...entry, responseOption: 'PARTIAL_REFUND' }, { ...entry, notes: 'Other note.' }, { ...entry, date: '2026-10-19T09:59:59.000Z' }, { ...entry, responseOption: null }])
+    // Another accept type, another note, an entry more than 5 s before send_started: not this send.
+    for (const other of [{ ...entry, responseOption: 'PARTIAL_REFUND' }, { ...entry, notes: 'Other note.' }, { ...entry, date: '2026-10-19T09:59:54.000Z' }, { ...entry, responseOption: null }])
       expect(proveSend(ac, base, snap([], { evidences: [buyerCreate, other] }), c, SENT_MS + 5_000).state).toBe('pending');
   });
 
