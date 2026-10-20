@@ -109,6 +109,16 @@ const OFFER_PROOF: ProofFields = {
   normalise: [],
 };
 
+/** Recorded 20/10/2026 (W-5): an escalation is an `evidences[]` entry by the seller with action ESCALATE and the note. */
+const ESCALATE_PROOF: ProofFields = {
+  list: 'evidences',
+  actorField: 'source',
+  actorValue: 'SUBMITTED_BY_SELLER',
+  timeField: 'date',
+  matchFields: ['action_info.action', 'notes'],
+  normalise: [],
+};
+
 const ev = (action: string) => `contrato-${action}-2026-10-19.md`;
 
 export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.freeze({
@@ -133,7 +143,15 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   },
   'accept_claim:REFUND': base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim')),
   'accept_claim:PARTIAL_REFUND': base('accept_claim:PARTIAL_REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), null, ev('accept-claim')),
-  escalate: base('escalate', `${REF}disputes-escalate`, 'json', route('escalate'), null, ev('escalate')),
+  // Recorded 20/10/2026 (owner-approved W-5, PP-R-NDZ-10193597): JSON accepted; an attributable evidences[] entry
+  // (SUBMITTED_BY_SELLER, action_info.action ESCALATE, the note) ≈3.9 s after the send started. The stage moved to
+  // CHARGEBACK ≈2 min 46 s later; in between the status was UNDER_REVIEW and the links flickered (never "closed").
+  // Task 10 must map action_info.action → 'ESCALATE' in the read-back's approved values.
+  escalate: {
+    ...base('escalate', `${REF}disputes-escalate`, 'json', route('escalate'), ESCALATE_PROOF, ev('escalate'), 'Contract recorded; flow not built yet'),
+    absentAfterMs: 60_000,
+    recorded: 'packages/paypal/contracts/escalate.json',
+  },
   // Recorded 20/10/2026 (owner-approved W-4, PP-R-OZY-10193601): JSON accepted; offer.history gains a SELLER PROPOSED
   // entry with the approved type and amount ≈3.5 s after the send started (the note is not echoed). No money moves and
   // nothing closes until the buyer accepts; afterwards PayPal waits for the buyer, stops offering make_offer and offers
