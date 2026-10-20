@@ -87,7 +87,7 @@
       },
       "documents": [
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-c34b-5a90f950-bab1-0ad508d57ab4/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         }
       ],
       "notes": "Synthetic test evidence: item shipped on 2026-10-07 with UPS tracking and delivered on 2026-10-08. See attached proof of shipment.",

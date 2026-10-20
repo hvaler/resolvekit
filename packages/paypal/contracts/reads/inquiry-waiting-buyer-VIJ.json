@@ -84,10 +84,10 @@
       },
       "documents": [
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-c39b-3127b8b0-a47d-518c9fcf007f/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         },
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-c39b-3127b8b0-ad0d-6dce7da1be7e/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         }
       ],
       "notes": "Order #10482 was placed on 6 October 2026 and paid in full (7.00 USD). We shipped it on 7 October 2026 with UPS, tracking number 1Z999AA10123456784. UPS recorded delivery on 8 October 2026 at 11:52 UTC, signed for by \"J. D.\" UPS delivered to 12 Example Street, Apt 4B. The order lists Apt 4. The street, number and postcode match. The buyer’s message saying the package never arrived was sent about six hours after the recorded delivery. The carrier tracking record and the shipping label are attached.",

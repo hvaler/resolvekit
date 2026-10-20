@@ -109,7 +109,15 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
     requestIdDedupes: false,
     recorded: 'packages/paypal/contracts/send_message.json',
   },
-  'send_message:file': base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), null, ev('send-message')),
+  // Recorded 20/10/2026 (owner-approved W-3): multipart parts `input` (the JSON message) and `message_document` (the
+  // file) accepted; the entry is a seller message with the exact content and one `documents[]` item, ≈3.5 s after the
+  // send started. Same proof as a text message (the content is matched; the attachment's presence is not).
+  'send_message:file': {
+    ...base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), MESSAGE_PROOF, ev('send-message'), 'Contract recorded; flow not built yet'),
+    absentAfterMs: 60_000,
+    requestIdDedupes: false,
+    recorded: 'packages/paypal/contracts/send_message-file.json',
+  },
   'accept_claim:REFUND': base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim')),
   'accept_claim:PARTIAL_REFUND': base('accept_claim:PARTIAL_REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), null, ev('accept-claim')),
   escalate: base('escalate', `${REF}disputes-escalate`, 'json', route('escalate'), null, ev('escalate')),

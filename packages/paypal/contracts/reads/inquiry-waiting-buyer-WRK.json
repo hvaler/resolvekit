@@ -83,7 +83,7 @@
       },
       "documents": [
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-c352-e4bb22c0-8dd5-5bb021fe16e1/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         }
       ],
       "notes": "Digital service delivered to the buyer's agent under a buyer-approved budget (5.00 USD). 3 of 4 metered tool calls returned results and were charged (1.37); the failed call was not charged. Session receipt with per-call request hashes attached. Synthetic test data.",

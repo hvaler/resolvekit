@@ -81,10 +81,10 @@
       },
       "documents": [
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-ca63-e883f090-833f-c1ad1c2c0fe3/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         },
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-ca63-e8843eb0-a0ae-932bc03fe50c/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         }
       ],
       "notes": "We received order #10482 totaling 7.00 USD for one natural linen tote, with payment capture 8T880432Y7330390L held for 7.00 USD. We created a shipping label for 12 Example Street, Apt 4 and shipped the package via UPS Ground under tracking number 1Z999AA10123456784 on 7 October 2026. We shipped to the order address of 12 Example Street, Apt 4, and carrier records show delivery to 12 Example Street, Apt 4B signed by J. D. The buyer submitted a message claiming the package never arrived at 18:17 UTC on 8 October 2026, several hours after delivery was recorded.",

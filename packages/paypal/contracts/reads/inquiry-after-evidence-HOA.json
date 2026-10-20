@@ -81,13 +81,13 @@
       },
       "documents": [
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-cac1-39fa4d40-a3a2-0ce0c951a464/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         },
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-cac1-39f93bd0-8aac-aaf91c91155a/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         },
         {
-          "url": "https://api-m.sandbox.paypal.com/v2/content/documents/DIS-010-11f1-cac1-39f962e0-9479-ac09c2f7c4a7/files/1/download"
+          "url": "<document url (needs PayPal auth), redacted>"
         }
       ],
       "notes": "We received order #10482 for one natural linen tote totalling 7.00 USD, matching held capture 89J06671ME342681P. We shipped the order via UPS Ground on 7 October 2026 under tracking number 1Z999AA10123456784. The order lists 12 Example Street, Apt 4, while the UPS tracking record lists delivery to 12 Example Street, Apt 4B. Our UPS tracking screenshot shows tracking 1Z999AA10123456784 delivered on 8 Oct 2026 at 11:52.",
