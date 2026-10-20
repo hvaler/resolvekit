@@ -78,7 +78,7 @@ PayPal.»
 | «New seller evidence that doesn't match what we sent» | Someone or something else recorded evidence. It is never reported as yours and nothing is retried automatically |
 | **Submission not confirmed** · «PayPal didn't confirm the submission» | PayPal refused, or the read-back shows nothing recorded. **Try again**: «We read the dispute back before any retry. Evidence is only re-sent if PayPal shows none recorded.» A failed send can be retried for 30 minutes with the same approval |
 | «The request timed out.» | Not a success and not a failure: ResolveKit reads back first. If PayPal shows nothing: «PayPal showed nothing recorded, so the evidence was sent once more.» (Tested with fakes; not observed against PayPal) |
-| «Your evidence was not sent» | The server held it back (`DISPUTE_UNCERTAIN`): an earlier send on this dispute (yours, or a colleague's) is not confirmed by PayPal yet, and none of your evidence reached PayPal. The window shows the same notice as the case page, with **Check again** on that earlier send (a read-back only). Once nothing holds the dispute, **Send it now** reads the dispute again and sends your evidence with every server check: if the earlier send put seller evidence on the dispute, yours is refused (`SELLER_EVIDENCE_EXISTS`), and that evidence is never shown as yours (Tested locally; not observed against PayPal) |
+| «Your evidence was not sent» | The server held it back (`DISPUTE_UNCERTAIN`): an earlier send on this dispute (yours, or a colleague's) is not confirmed by PayPal yet, and none of your evidence reached PayPal. The window shows the same notice as the case page, with **Check again** on that earlier send (a read-back only). Once nothing holds the dispute, **Send it now** reads the dispute again and sends your evidence with every server check: if the earlier send put seller evidence on the dispute, yours is refused (`SELLER_EVIDENCE_EXISTS`), and that evidence is never shown as yours. If the server cannot say what holds the dispute, the window shows the error with **Try again**, which asks again and never sends (Tested locally; not observed against PayPal) |
 
 After recording, «Actions PayPal allows now» explains what changed, for example «Removed by PayPal: evidence already
 submitted» or «Not offered while PayPal reviews». The case becomes **Evidence recorded by PayPal**, «Sent ·
@@ -119,9 +119,10 @@ PayPal receives it, «Attached file: E8-pasted.pdf · 2 KB · E8 <title>, upload
 if it is still a confirmed upload of the case's active dispute in your workspace (otherwise `UNKNOWN_UPLOAD`).
 «Recorded by PayPal» proves the message text; the file itself is not checked. This variant is Tested locally: it has not
 been sent to PayPal through the app. Without the ResolveKit server it reads «Not available: attaching a file needs the
-ResolveKit server». On the simulator it is played only while PayPal waits for the buyer (the state the recorded write
-was sent from); elsewhere it reads «Not available: the simulator plays this only from a state PayPal’s sandbox recorded
-it from».
+ResolveKit server». It is offered only while PayPal waits for the buyer, the status the recorded write was sent from;
+while PayPal waits for you it reads «Not available: not verified with PayPal from this dispute status», and the text
+message alone is still offered. On the simulator, a state the sandbox write was not recorded from reads «Not
+available: the simulator plays this only from a state PayPal’s sandbox recorded it from».
 
 If the buyer wrote after you approved a message, an accept or an offer, the window says «The buyer wrote since you
 approved this» and shows the new message: **Send it anyway** sends the same content, **Edit** composes a new one.
@@ -142,7 +143,8 @@ says the server no longer has that send's approved content, a read-back cannot s
 
 Each action is offered only from the dispute status its recorded sandbox write was sent from: accept, offer and
 escalate only while PayPal is waiting for your response (`WAITING_FOR_SELLER_RESPONSE`); a message also while PayPal
-is waiting for the buyer. From any other status the action reads «Not available: not verified with PayPal from this
+is waiting for the buyer; a message with a file only while PayPal is waiting for the buyer
+(`WAITING_FOR_BUYER_RESPONSE`). From any other status the action reads «Not available: not verified with PayPal from this
 dispute status».
 
 After an escalation the case shows «PayPal is reviewing; the claim stage can take a few minutes» until the claim opens.

@@ -205,7 +205,7 @@ propietario aprobó petición a petición, con su respuesta y su relectura (`pac
 | Variante | Qué es | Estado | Escritura de contrato (sandbox, 20/10/2026) | A través de la app (sandbox, 20/10/2026) |
 |---|---|---|---|---|
 | `send_message` | Un mensaje de texto al comprador (1–2,000 caracteres) | Verificado en sandbox | Registrada (W-1, W-2) | Registrada (V-1) |
-| `send_message:file` | Un mensaje con una subida confirmada adjunta | Probado en local: la ruta del servidor y el editor web (una subida confirmada del caso, mostrada en la revisión y la confirmación; en el simulador solo desde `WAITING_FOR_BUYER_RESPONSE`, como W-3) | Registrada (W-3) | No ejecutada |
+| `send_message:file` | Un mensaje con una subida confirmada adjunta | Probado en local: la ruta del servidor y el editor web (una subida confirmada del caso, mostrada en la revisión y la confirmación; solo desde `WAITING_FOR_BUYER_RESPONSE`, como W-3, en real y en el simulador; el mensaje de texto mantiene ambos estados) | Registrada (W-3) | No ejecutada |
 | `accept_claim:REFUND` | Aceptar la reclamación con un reembolso total | Verificado en sandbox | Registrada (W-10) | Registrada (V-4): resuelta a favor del comprador, 7.00 USD reembolsados |
 | `accept_claim:PARTIAL_REFUND` | Aceptar la reclamación con un reembolso parcial, que PayPal registra como una oferta al comprador | Verificado en sandbox | Registrada (W-9) | Registrada como oferta pendiente (V-3); no se movió dinero |
 | `escalate` | Escalar una consulta a reclamación | Verificado en sandbox | Registrada (W-5) | Registrada (V-5); reclamación unos 10 min después |

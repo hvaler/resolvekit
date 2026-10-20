@@ -81,7 +81,7 @@ PayPal.»
 | «New seller evidence that doesn't match what we sent» | Otra persona u otra cosa registró evidencia. Nunca se presenta como tuya y no se reintenta nada automáticamente |
 | **Submission not confirmed** · «PayPal didn't confirm the submission» | PayPal lo rechazó, o la relectura no muestra nada registrado. **Try again**: «We read the dispute back before any retry. Evidence is only re-sent if PayPal shows none recorded.» Un envío fallido puede reintentarse durante 30 minutos con la misma aprobación |
 | «The request timed out.» | Ni éxito ni fracaso: ResolveKit relee primero. Si PayPal no muestra nada: «PayPal showed nothing recorded, so the evidence was sent once more.» (Probado con dobles; no observado contra PayPal) |
-| «Your evidence was not sent» | El servidor la retuvo (`DISPUTE_UNCERTAIN`): un envío anterior en esta disputa (tuyo, o de un compañero) aún no está confirmado por PayPal, y nada de tu evidencia llegó a PayPal. La ventana muestra el mismo aviso que la página del caso, con **Check again** sobre ese envío anterior (solo una relectura). Cuando nada retiene la disputa, **Send it now** vuelve a leer la disputa y envía tu evidencia con todas las comprobaciones del servidor: si el envío anterior dejó evidencia del vendedor en la disputa, la tuya se rechaza (`SELLER_EVIDENCE_EXISTS`), y esa evidencia nunca se muestra como tuya (Probado en local; no observado contra PayPal) |
+| «Your evidence was not sent» | El servidor la retuvo (`DISPUTE_UNCERTAIN`): un envío anterior en esta disputa (tuyo, o de un compañero) aún no está confirmado por PayPal, y nada de tu evidencia llegó a PayPal. La ventana muestra el mismo aviso que la página del caso, con **Check again** sobre ese envío anterior (solo una relectura). Cuando nada retiene la disputa, **Send it now** vuelve a leer la disputa y envía tu evidencia con todas las comprobaciones del servidor: si el envío anterior dejó evidencia del vendedor en la disputa, la tuya se rechaza (`SELLER_EVIDENCE_EXISTS`), y esa evidencia nunca se muestra como tuya. Si el servidor no puede decir qué retiene la disputa, la ventana muestra el error con **Try again**, que vuelve a preguntar y nunca envía (Probado en local; no observado contra PayPal) |
 
 Tras el registro, «Actions PayPal allows now» explica qué cambió, por ejemplo «Removed by PayPal: evidence already
 submitted» o «Not offered while PayPal reviews». El caso pasa a **Evidence recorded by PayPal**, «Sent · read-only»;
@@ -127,9 +127,11 @@ lo muestran tal como lo recibe PayPal, «Attached file: E8-pasted.pdf · 2 KB ·
 servidor solo lo adjunta si sigue siendo una subida confirmada de la disputa activa del caso en tu espacio de trabajo (si
 no, `UNKNOWN_UPLOAD`). «Recorded by PayPal» prueba el texto del mensaje; el archivo en sí no se comprueba. Esta variante
 está Probada en local: no se ha enviado a PayPal a través de la app. Sin el servidor de ResolveKit dice «Not available:
-attaching a file needs the ResolveKit server». En el simulador solo se reproduce mientras PayPal espera al comprador (el
-estado desde el que se envió la escritura registrada); en otro estado dice «Not available: the simulator plays this
-only from a state PayPal’s sandbox recorded it from».
+attaching a file needs the ResolveKit server». Solo se ofrece mientras PayPal espera al comprador, el estado desde el
+que se envió la escritura registrada; mientras PayPal te espera a ti dice «Not available: not verified with PayPal from
+this dispute status», y el mensaje de texto solo se sigue ofreciendo. En el simulador, un estado desde el que no se
+registró la escritura del sandbox dice «Not available: the simulator plays this only from a state PayPal’s sandbox
+recorded it from».
 
 Si el comprador escribió después de que aprobaras un mensaje, una aceptación o una oferta, la ventana dice «The buyer
 wrote since you approved this» y muestra el mensaje nuevo: **Send it anyway** envía el mismo contenido, **Edit**
@@ -151,7 +153,8 @@ resolverlo: avisa al operador (ver el [Runbook](../operations/runbook.md)).
 
 Cada acción solo se ofrece desde el estado de la disputa desde el que se envió su escritura registrada en el sandbox:
 aceptar, ofertar y escalar solo mientras PayPal espera tu respuesta (`WAITING_FOR_SELLER_RESPONSE`); un mensaje también
-mientras PayPal espera al comprador. Desde cualquier otro estado la acción dice «Not available: not verified with PayPal
+mientras PayPal espera al comprador; un mensaje con archivo solo mientras PayPal espera al comprador
+(`WAITING_FOR_BUYER_RESPONSE`). Desde cualquier otro estado la acción dice «Not available: not verified with PayPal
 from this dispute status».
 
 Tras un escalado, el caso muestra «PayPal is reviewing; the claim stage can take a few minutes» hasta que se abre la

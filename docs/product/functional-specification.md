@@ -194,7 +194,7 @@ the owner approved request by request, with its response and read-back (`package
 | Variant | What it is | Status | Contract write (sandbox, 20/10/2026) | Through the app (sandbox, 20/10/2026) |
 |---|---|---|---|---|
 | `send_message` | A text message to the buyer (1–2,000 characters) | Verified in sandbox | Recorded (W-1, W-2) | Recorded (V-1) |
-| `send_message:file` | A message with one confirmed upload attached | Tested locally: the server path and the web composer (one confirmed upload of the case, shown in the review and the confirmation; on the simulator only from `WAITING_FOR_BUYER_RESPONSE`, as W-3) | Recorded (W-3) | Not run |
+| `send_message:file` | A message with one confirmed upload attached | Tested locally: the server path and the web composer (one confirmed upload of the case, shown in the review and the confirmation; only from `WAITING_FOR_BUYER_RESPONSE`, as W-3, live and on the simulator; the text message keeps both statuses) | Recorded (W-3) | Not run |
 | `accept_claim:REFUND` | Accept the claim with a full refund | Verified in sandbox | Recorded (W-10) | Recorded (V-4): resolved in the buyer's favour, 7.00 USD refunded |
 | `accept_claim:PARTIAL_REFUND` | Accept the claim with a partial refund, which PayPal records as an offer to the buyer | Verified in sandbox | Recorded (W-9) | Recorded as a pending offer (V-3); no money moved |
 | `escalate` | Escalate an inquiry to a claim | Verified in sandbox | Recorded (W-5) | Recorded (V-5); a claim about 10 min later |
