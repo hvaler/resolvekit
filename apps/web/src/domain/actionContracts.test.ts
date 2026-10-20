@@ -47,7 +47,7 @@ describe('action contracts', () => {
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded === null && i !== 'make_offer:withdraw' && i !== 'return_address')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
     // A recorded contract whose flow is not built stays Not available, and says so.
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded !== null)) expect(CONTRACTS[id]).toMatchObject({ status: 'not_available', reason: 'Contract recorded; flow not built yet' });
-    expect(CONTRACTS.send_message).toMatchObject({ recorded: 'packages/paypal/contracts/send_message.json', absentAfterMs: 60_000, body: 'json' });
+    expect(CONTRACTS.send_message).toMatchObject({ recorded: 'packages/paypal/contracts/send_message.json', absentAfterMs: 60_000, requestIdDedupes: false, body: 'json' });
     const withProof = IDS.filter((i) => CONTRACTS[i].proof !== null).sort();
     expect(withProof).toEqual(['accept_claim:REFUND', 'send_message']);
   });
