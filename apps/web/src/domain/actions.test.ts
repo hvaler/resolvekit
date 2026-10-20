@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONTRACTS, type VariantContract } from './actionContracts';
 import {
   RECORDED_STATUSES,
+  RECORDED_VARIANT_STATUSES,
   statusOutsideContract,
   ACTION_EVIDENCE_BLANK,
   ACTION_RULES,
@@ -408,9 +409,11 @@ describe('send_message rules (Task 8, from the recorded contract)', () => {
 
   it('one confirmed upload goes with it only while send_message:file is available', () => {
     const file = { name: 'tracking.png', size: '2 KB' };
-    expect(composeAction({ ...base, req: msg('Screenshot attached.', [upl(1)]), snap: khh(), files: [file] })).toMatchObject({ action: 'send_message', files: [file] });
+    // From W-3's status (PayPal waiting for the buyer); the other status is checked below (RECORDED_VARIANT_STATUSES).
+    const buyer = khh({ status: 'WAITING_FOR_BUYER_RESPONSE' });
+    expect(composeAction({ ...base, req: msg('Screenshot attached.', [upl(1)]), snap: buyer, files: [file] })).toMatchObject({ action: 'send_message', files: [file] });
     const noFile = { ...CONTRACTS, 'send_message:file': { ...CONTRACTS['send_message:file'], status: 'not_available' as const, reason: 'Contract not recorded yet' } };
-    expect(composeActionWith({ ...base, req: msg('Screenshot attached.', [upl(1)]), snap: khh(), files: [file] }, noFile)).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: Contract not recorded yet' });
+    expect(composeActionWith({ ...base, req: msg('Screenshot attached.', [upl(1)]), snap: buyer, files: [file] }, noFile)).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: Contract not recorded yet' });
     // The text alone is still available then.
     expect(err(composeActionWith({ ...base, req: msg(), snap: khh() }, noFile))).toBe('ok');
   });
@@ -684,6 +687,27 @@ describe('recorded statuses (IMP1): each action only from the statuses its write
     }
     expect(statusOutsideContract('provide_evidence', khh({ status: 'UNDER_REVIEW' }))).toBeNull();
     expect(statusOutsideContract('appeal', khh({ status: 'UNDER_REVIEW' }))).toBeNull();
+  });
+
+  it('a message with a file only from W-3’s status (WAITING_FOR_BUYER_RESPONSE); the text message from both', () => {
+    const UPL = `upl-${'0'.repeat(23)}1`;
+    const file: ActionRequest = { action: 'send_message', text: 'The tracking is attached.', attachments: [UPL] };
+    const files = [{ name: 'E8-pasted.pdf', size: '2 KB', source: 'upload' as const }];
+    expect(RECORDED_VARIANT_STATUSES).toEqual({ 'send_message:file': [w3.before.status] });
+    // W-1-pre: PayPal waiting for the seller. The file is refused (availability and compose); the text is not.
+    const w1pre = khh({ status: w1.before.status as DisputeStatus });
+    const a1 = actionAvailability(w1pre, 'send_message', REVIEWER);
+    expect(a1).toMatchObject({ sendable: true, why: null });
+    expect(a1.variants.find((v) => v.variant === 'send_message:file')).toMatchObject({ available: false, why: NOT_VERIFIED });
+    expect(a1.variants.find((v) => v.variant === 'send_message')).toMatchObject({ available: true });
+    expect(composeAction({ ...base, files, req: file, snap: w1pre })).toEqual({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${NOT_VERIFIED}` });
+    expect(composeAction({ ...base, req: reqs[4]!, snap: w1pre })).toMatchObject({ action: 'send_message' });
+    // W-3-pre: PayPal waiting for the buyer. The file is offered and composed.
+    const w3pre = khh({ status: w3.before.status as DisputeStatus, allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'] });
+    const a3 = actionAvailability(w3pre, 'send_message', REVIEWER);
+    expect(a3.variants.find((v) => v.variant === 'send_message:file')).toMatchObject({ available: true, why: null });
+    expect(composeAction({ ...base, files, req: file, snap: w3pre })).toMatchObject({ action: 'send_message', files });
+    expect(composeAction({ ...base, req: reqs[4]!, snap: w3pre })).toMatchObject({ action: 'send_message' });
   });
 
   it('test-only rules without statuses keep any status (the injected registry of the route tests)', () => {

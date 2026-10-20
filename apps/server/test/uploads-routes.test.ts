@@ -1007,7 +1007,8 @@ test("only selected, confirmed uploads of the active dispute are attached; an ar
 });
 
 test("a message with a file (send_message:file, W-3): one confirmed upload of the active dispute is attached; a pending, archived, old-dispute or another workspace's id is refused", TIMEOUT, async () => {
-  const s = sendSetup();
+  // W-3's status: PayPal waiting for the buyer (the only one a message with a file was recorded from).
+  const s = sendSetup({ dispute: () => ({ status: 'WAITING_FOR_BUYER_RESPONSE' }) });
   const cookie = s.people.fullMember('Ana Lopez');
   const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
   const e8 = await s.confirmText(cookie, 'From: buyer\nIt arrived, thanks.', 'buyer email.txt');
@@ -1037,6 +1038,31 @@ test("a message with a file (send_message:file, W-3): one confirmed upload of th
   const two = await message([e7.id, e8.id]);
   assert.deepEqual([two.status, two.body.error], [400, 'INVALID_ACTION_REQUEST']);
   // Nothing went to PayPal: composing only reads.
+  assert.equal(s.sends.length, 0);
+});
+
+test('a message with a file only from W-3’s status: refused while PayPal waits for the seller (compose and the recompose at send); the text message is not', TIMEOUT, async () => {
+  const at = { status: 'WAITING_FOR_SELLER_RESPONSE' };
+  const s = sendSetup({ dispute: () => at });
+  const cookie = s.people.fullMember('Ana Lopez');
+  const e7 = await s.confirmText(cookie, 'UPS tracking\nDelivered 8 Oct 2026', 'tracking.txt');
+  const path = `/api/disputes/${CASE}/intent`;
+  const message = (attachments: string[]) =>
+    call(s.app, path, { body: { action: 'send_message', text: 'The tracking is attached.', attachments }, cookie }) as unknown as Promise<{ status: number; body: SentIntent & { error?: string; detail?: string } }>;
+  const NOT_VERIFIED = 'Not available: not verified with PayPal from this dispute status';
+  // W-1-pre: waiting for the seller. The file is refused; the text alone is composed.
+  const refused = await message([e7.id]);
+  assert.deepEqual([refused.status, refused.body.error, refused.body.detail], [409, 'VARIANT_NOT_AVAILABLE', NOT_VERIFIED]);
+  assert.equal((await message([])).status, 201);
+  // W-3-pre: waiting for the buyer. Composed and approved; then the status moves back: the send recomposes and refuses.
+  at.status = 'WAITING_FOR_BUYER_RESPONSE';
+  const i = await message([e7.id]);
+  assert.equal(i.status, 201, JSON.stringify(i.body));
+  const a = await call(s.app, `${path}/${i.body.id}/approve`, { body: { contentHash: i.body.contentHash }, cookie });
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+  at.status = 'WAITING_FOR_SELLER_RESPONSE';
+  const sent = (await call(s.app, `/api/disputes/${CASE}/send`, { body: { intentId: i.body.id }, cookie })) as unknown as { status: number; body: { error?: string; detail?: string } };
+  assert.deepEqual([sent.status, sent.body.error], [409, 'VARIANT_NOT_AVAILABLE'], JSON.stringify(sent.body));
   assert.equal(s.sends.length, 0);
 });
 

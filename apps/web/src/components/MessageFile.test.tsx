@@ -47,7 +47,7 @@ const member = { role: 'member' as const, reviewer: false };
 const noop = () => {};
 const paypal = { kind: 'paypal' as const, env: 'sandbox' as const };
 const composer = (o: { uploads?: readonly UploadRecordView[] | null; attachment?: string | null; snap?: DisputeSnapshot; text?: string; simulator?: boolean } = {}) => {
-  const snap = o.snap ?? waitingSeller;
+  const snap = o.snap ?? waitingBuyer;
   const offered = actionAvailability(snap, 'send_message', member);
   const a = o.simulator ? onSimulatorFile(onSimulator(offered, snap), snap) : offered;
   return renderToString(
@@ -58,7 +58,7 @@ const radios = (html: string) => html.match(/<input[^>]*type="radio"[^>]*name="m
 
 /** A message intent with one upload, as the server composes it (named by evidence id and kind). */
 const withFile = {
-  ...(composeAction({ caseId: 'CASE-1', req: { action: 'send_message', text: TEXT, attachments: [E8.id] }, snap: waitingSeller, disputeId: 'PP-R-1', seller: 'S', files: [{ name: 'E8-pasted.pdf', size: '2 KB', sha256: 'a'.repeat(64), source: 'upload' }] }) as object),
+  ...(composeAction({ caseId: 'CASE-1', req: { action: 'send_message', text: TEXT, attachments: [E8.id] }, snap: waitingBuyer, disputeId: 'PP-R-1', seller: 'S', files: [{ name: 'E8-pasted.pdf', size: '2 KB', sha256: 'a'.repeat(64), source: 'upload' }] }) as object),
   id: 'int-1',
   contentHash: 'c'.repeat(64),
   requestId: 'rk-int-1',
@@ -177,12 +177,20 @@ describe('the request on its way', () => {
     expect(gateway.sentActions).toHaveLength(1);
   });
 
-  it('the simulator elsewhere: «Not available» with its reason in the composer; the file is not composed', async () => {
-    const html = composer({ uploads: UPLOADS, snap: waitingSeller, simulator: true });
-    expect(html).toContain('Message with a file · Not available: the simulator plays this only from a state PayPal’s sandbox recorded it from');
-    expect(radios(html)).toHaveLength(0);
-    // The text-only message is still offered there (W-1).
-    expect(html).toContain('Review the message');
+  it('elsewhere: «Not available» with its reason in the composer, live and on the simulator; the file is not composed', async () => {
+    // Waiting for the seller (W-1's state): the file was never recorded from there; the text message is offered.
+    for (const simulator of [false, true]) {
+      const html = composer({ uploads: UPLOADS, snap: waitingSeller, simulator });
+      expect(html).toContain('Message with a file · Not available: not verified with PayPal from this dispute status');
+      expect(radios(html)).toHaveLength(0);
+      expect(html).toContain('Message · Verified in sandbox');
+      expect(html).toContain('Review the message');
+    }
+    // W-3's status, but a link the recorded dispute did not offer: the simulator does not play it.
+    const odd = { ...waitingBuyer, allowedActions: [...waitingBuyer.allowedActions, 'appeal' as const] };
+    const sim = composer({ uploads: UPLOADS, snap: odd, simulator: true });
+    expect(sim).toContain('Message with a file · Not available: the simulator plays this only from a state PayPal’s sandbox recorded it from');
+    expect(radios(sim)).toHaveLength(0);
     // And a file without its upload's details is never composed in the browser.
     await expect(new LocalIntentClient().createAction('CASE-1', messageRequest(TEXT, E8.id, UPLOADS), { snapshot: waitingBuyer })).rejects.toBeInstanceOf(IntentError);
   });

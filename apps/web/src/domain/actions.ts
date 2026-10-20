@@ -237,7 +237,7 @@ export function actionAvailabilityWith(snap: DisputeSnapshot, action: IntentActi
     const c = contracts[variant];
     if (c.status === 'not_available') return { variant, type, available: false, why: c.reason ?? 'Not available' };
     const outside =
-      statusOutsideContract(action, snap) ??
+      statusOutsideContract(action, snap, variant) ??
       (action === 'accept_claim' && type
         ? acceptOutsideContract(type, snap)
         : action === 'escalate'
@@ -318,10 +318,26 @@ export const RECORDED_STATUSES: Readonly<Record<SimpleAction, readonly string[]>
 });
 export const STATUS_NOT_VERIFIED = 'not verified with PayPal from this dispute status';
 
-/** Why sending this action from the dispute's status is outside what the contracts recorded, or null. */
-export function statusOutsideContract(action: IntentAction, snap: Pick<DisputeSnapshot, 'status'>): string | null {
+/**
+ * Variants recorded from fewer statuses than their action ([A2]): a message with a file was sent only while PayPal
+ * waited for the buyer (W-3, packages/paypal/contracts/send_message-file.json). Outside them the variant is «Not
+ * available» (VARIANT_NOT_AVAILABLE) in availability, compose and the recompose at send; the action's other variants
+ * keep the action's statuses.
+ */
+export const RECORDED_VARIANT_STATUSES: Readonly<Partial<Record<VariantId, readonly string[]>>> = Object.freeze({
+  'send_message:file': Object.freeze(['WAITING_FOR_BUYER_RESPONSE']),
+});
+
+/** The statuses a variant was recorded from: its own when narrower, else its action's. */
+const variantStatuses = (action: SimpleAction, variant: VariantId | null): readonly string[] => (variant && RECORDED_VARIANT_STATUSES[variant]) || RECORDED_STATUSES[action];
+
+/**
+ * Why sending this action (this variant, when given) from the dispute's status is outside what the contracts recorded,
+ * or null.
+ */
+export function statusOutsideContract(action: IntentAction, snap: Pick<DisputeSnapshot, 'status'>, variant: VariantId | null = null): string | null {
   if (!isSimpleAction(action)) return null;
-  return RECORDED_STATUSES[action].includes(snap.status) ? null : STATUS_NOT_VERIFIED;
+  return variantStatuses(action, variant).includes(snap.status) ? null : STATUS_NOT_VERIFIED;
 }
 
 /**
@@ -330,7 +346,12 @@ export function statusOutsideContract(action: IntentAction, snap: Pick<DisputeSn
  * which makes it the `send_message:file` variant and so needs that variant available in the registry.
  */
 export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Object.freeze({
-  send_message: (): ActionRules => ({ stages: RECORDED_STAGES.send_message!, statuses: RECORDED_STATUSES.send_message, amount: 'not_allowed', text: 'required' }),
+  send_message: (req): ActionRules => ({
+    stages: RECORDED_STAGES.send_message!,
+    statuses: req.action === 'send_message' && req.attachments.length ? variantStatuses('send_message', 'send_message:file') : RECORDED_STATUSES.send_message,
+    amount: 'not_allowed',
+    text: 'required',
+  }),
   // accept_claim, as recorded on not-received disputes: REFUND takes no amount (W-10: PayPal refunded the disputed
   // amount, which equalled its allowed_refund_amount); PARTIAL_REFUND takes `refund_amount`, below the dispute amount
   // and below what PayPal would refund (W-9: 2.00 of 7.00). A note is required: no accept without one was recorded.

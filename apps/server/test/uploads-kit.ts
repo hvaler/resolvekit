@@ -97,7 +97,8 @@ export const pasteText = (app: App, cookie: string, text = 'From: buyer\nThe par
 // ------------------------------------------------------------------------------------- attachments and the send
 
 /** A hosted app whose analyst serves the golden analysis (plus `extra` sentences) for whatever input it is asked about. */
-export function sendSetup(o: { maxSendBytes?: number } = {}) {
+/** `dispute`: fields over the standard dispute on every read (e.g. another status), read each time. */
+export function sendSetup(o: { maxSendBytes?: number; dispute?: () => Record<string, unknown> } = {}) {
   const sends: FormData[] = [];
   let hold: Promise<void> | null = null;
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
@@ -109,7 +110,7 @@ export function sendSetup(o: { maxSendBytes?: number } = {}) {
       return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     const id = decodeURIComponent(u.pathname.split('/').pop()!);
-    return new Response(JSON.stringify({ ...standardDispute(), dispute_id: id }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ ...standardDispute(), ...(o.dispute?.() ?? {}), dispute_id: id }), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   const analyses = new MemoryAnalysisStore();
   const analyst = new AnalystService({ model: null, primaryModel: MODEL, store: analyses });
@@ -124,7 +125,7 @@ export function sendSetup(o: { maxSendBytes?: number } = {}) {
     log: (l) => lines.push(l),
     analyst,
     site: null,
-    counters: new DailyCounters({ file: null, limits: { upload: 40, evidence: 10 } }),
+    counters: new DailyCounters({ file: null, limits: { upload: 40, evidence: 10, message: 5 } }),
     accounts: people.accounts,
     identity: null,
     sessionSecret: TEST_SECRET,
