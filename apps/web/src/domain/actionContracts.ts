@@ -192,8 +192,14 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // entry with the approved type and amount ≈3.5 s after the send started (the note is not echoed). No money moves and
   // nothing closes until the buyer accepts; afterwards PayPal waits for the buyer, stops offering make_offer and offers
   // accept_claim REFUND only.
+  // Tested locally (Task 11): owner only, the bound second confirmation (OFFERS_SETTLEMENT, the amount offered), a note
+  // and an amount below the dispute amount and within PayPal's refundable amount, only from the recorded state (INQUIRY,
+  // a not-received dispute), refused while a seller offer is pending, the recorded body, the offer proof and the
+  // simulator's recorded transition (a pending offer, never a refund or a closed dispute).
   'make_offer:REFUND': {
-    ...base('make_offer:REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), OFFER_PROOF, ev('make-offer'), 'Contract recorded; flow not built yet'),
+    ...base('make_offer:REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), OFFER_PROOF, ev('make-offer')),
+    status: 'tested_locally',
+    reason: null,
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/make_offer-refund.json',
   },

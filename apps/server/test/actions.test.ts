@@ -139,28 +139,35 @@ test('isAmbiguous: only a 4xx with a PayPal issue code proves a refusal; capOf n
   );
 });
 
-test('callPayPal: one POST by action in the contract’s format, with the intent’s request id (escalate, accept)', async () => {
+test('callPayPal: one POST by action in the contract’s format, with the intent’s request id (escalate, accept, offer)', async () => {
   const { pp } = await setupActions();
   const blank = { caseId: CASE, disputeId: REAL, documentsHash: '', analysisKey: '', evidenceType: 'OTHER' as const, carrier: '', tracking: '', notes: '', files: [], sentences: [], resolutionNotes: [] };
   await callPayPal(pp.client, REAL, { ...blank, action: 'escalate', payload: { kind: 'escalate', note: 'Shipped with tracking.' } }, [], 'rk-int-1', TEST_CONTRACTS);
   await callPayPal(pp.client, REAL, { ...blank, action: 'accept_claim', payload: { kind: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.', amount: null } }, [], 'rk-int-2', TEST_CONTRACTS);
+  await callPayPal(pp.client, REAL, { ...blank, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'Half back.', amount: { value: '1.00', currency: 'USD' } } }, [], 'rk-int-5');
   assert.deepEqual(
     pp.posts.map((p) => [p.path.split('/').pop(), p.requestId, JSON.parse(p.body)]),
     [
       ['escalate', 'rk-int-1', { note: 'Shipped with tracking.' }],
       ['accept-claim', 'rk-int-2', { note: 'Refund accepted.', accept_claim_type: 'REFUND' }],
+      ['make-offer', 'rk-int-5', { note: 'Half back.', offer_amount: { currency_code: 'USD', value: '1.00' }, offer_type: 'REFUND' }],
     ],
   );
+  // The offer's fields in the recorded order (W-4): note, offer_amount, offer_type.
+  assert.equal(pp.posts[2]!.body, '{"note":"Half back.","offer_amount":{"currency_code":"USD","value":"1.00"},"offer_type":"REFUND"}');
   // A variant without a recorded contract never reaches PayPal.
   await assert.rejects(
-    callPayPal(pp.client, REAL, { ...blank, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '1.00', currency: 'USD' } } }, [], 'rk-int-3'),
-    /Not available: Contract recorded; flow not built yet/,
+    callPayPal(pp.client, REAL, { ...blank, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REPLACEMENT_WITHOUT_REFUND', note: 'x', amount: null } }, [], 'rk-int-3'),
+    /Not available: Not verified with PayPal: never offered on a sandbox dispute/,
   );
+  // An offer without its note or amount never reaches PayPal.
+  await assert.rejects(callPayPal(pp.client, REAL, { ...blank, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: '', amount: { value: '1.00', currency: 'USD' } } }, [], 'rk-int-6'), /with its note/);
+  await assert.rejects(callPayPal(pp.client, REAL, { ...blank, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'x', amount: null } }, [], 'rk-int-7'), /with its amount/);
   // An accept without its note never reaches PayPal (none was recorded), and is refused before send_started.
   const noNote = { ...blank, action: 'accept_claim' as const, payload: { kind: 'accept_claim' as const, acceptType: 'REFUND', note: '', amount: null } };
   await assert.rejects(callPayPal(pp.client, REAL, noNote, [], 'rk-int-4', TEST_CONTRACTS), /with its note/);
   assert.equal(sendProblem(noNote, [], TEST_CONTRACTS), 'An accept is sent only with its note');
-  assert.equal(pp.posts.length, 2);
+  assert.equal(pp.posts.length, 3);
 });
 
 test('retry reconciles: recorded → no POST; pending → refused; absent (after absentAfterMs, still offered) → POST with the same Request-Id', async () => {
@@ -410,7 +417,7 @@ test('second confirmation: bound to the intent; any other terms refused; send ne
   assert.match(pp.posts[0]!.path, /\/escalate$/);
 });
 
-test('server: send_message through the real registry entry, body format from the contract; the other actions still refused', async () => {
+test('server: send_message through the real registry entry, body format from the contract; an unrecorded variant still refused', async () => {
   const { app, pp, state, intents } = await setupActions({ registry: false });
   // The recorded W-1 request, byte for byte: JSON { message }, stored by PayPal with no normalisation.
   const recorded = JSON.parse(readFileSync(new URL('../../../packages/paypal/contracts/send_message.json', import.meta.url), 'utf8')) as { request: { body: { message: string }; contentType: string } };
@@ -437,9 +444,9 @@ test('server: send_message through the real registry entry, body format from the
   assert.equal(staged.status, 409, JSON.stringify(staged.body));
   assert.equal(staged.body.error, 'ACTION_STAGE');
   state.dispute = { ...state.dispute, dispute_life_cycle_stage: 'INQUIRY' };
-  // The actions whose flows are not built yet are still refused.
+  // A variant whose contract is not recorded is still refused.
   for (const body of [
-    { action: 'make_offer', offerType: 'REFUND', note: 'Half back.', amount: { value: '3.50', currency: 'USD' } },
+    { action: 'make_offer', offerType: 'REPLACEMENT_WITHOUT_REFUND', note: 'A new one.' },
   ]) {
     const r = await answer(await app(postRaw(intentPath, body)));
     assert.equal(r.status, 409, JSON.stringify(r.body));

@@ -1,6 +1,7 @@
 import { CONTRACTS, type VariantId } from './actionContracts';
 import { variantOfContent, type ProofState } from './actionReadback';
-import { intentAction, type ContractRegistry } from './actions';
+import { intentAction, offerOutsideContract, pendingSellerOffer, type ContractRegistry } from './actions';
+import { minorUnits } from './amounts';
 import type { SubmissionIntent } from './intent';
 import { hasSellerEvidence, newSellerEvidence, sellerEscalated, submissionMismatch } from './recorded';
 import { SIM_TRANSITIONS, transitionFrom, type SimStep, type SimTransition } from './simulatedActions';
@@ -370,6 +371,21 @@ export class SimulatedDisputeGateway implements DisputeGateway {
 }
 
 /**
+ * An offer within what W-4 recorded on this dispute: the not-received reason, the dispute's currency, more than 0,
+ * below the dispute amount and at most PayPal's refundable amount (integer minor units).
+ */
+function offerAsRecorded(m: { value: string; currency: string }, d: DisputeSnapshot): boolean {
+  if (offerOutsideContract('REFUND', d) || !d.amount || !d.allowedRefund) return false;
+  if (m.currency !== d.amount.currency || m.currency !== d.allowedRefund.currency) return false;
+  try {
+    const v = minorUnits(m.value, m.currency);
+    return v > 0n && v < minorUnits(d.amount.value, d.amount.currency) && v <= minorUnits(d.allowedRefund.value, d.allowedRefund.currency);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The entry a recorded transition shows for this intent, or null when the intent is not what the transition recorded
  * (the simulator then refuses it). A full accept refunds the disputed amount (W-10); a partial one is an offer (W-9).
  */
@@ -397,9 +413,15 @@ function playEntry(t: SimTransition, intent: SubmissionIntent, d: DisputeSnapsho
       };
       return { entry: { kind: 'evidence', evidence }, refund: { value: d.amount.value, currency: d.amount.currency } };
     }
-    case 'offer':
-      if (p?.kind !== 'accept_claim' || p.acceptType !== 'PARTIAL_REFUND' || !p.amount) return null;
-      return { entry: { kind: 'offer', offer: { time, actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { ...p.amount } } }, refund: null };
+    case 'offer': {
+      // W-9 (a partial accept) and W-4 (an offer): the seller's PROPOSED offer, type REFUND, with the amount.
+      const offered = t.variant === 'make_offer:REFUND' ? (p?.kind === 'make_offer' && p.offerType === 'REFUND' && p.note ? p.amount : null) : p?.kind === 'accept_claim' && p.acceptType === 'PARTIAL_REFUND' ? p.amount : null;
+      if (!offered) return null;
+      // W-4 was sent with no seller message and no pending offer before: after a seller message PayPal stops offering
+      // make_offer (W-1), and an offer while one is pending was never recorded.
+      if (t.variant === 'make_offer:REFUND' && ((d.messages ?? []).some((m) => m.postedBy === 'SELLER') || pendingSellerOffer(d) || !offerAsRecorded(offered, d))) return null;
+      return { entry: { kind: 'offer', offer: { time, actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { ...offered } } }, refund: null };
+    }
     case 'escalate': {
       // W-5: the seller's entry, OTHER with action ESCALATE and the note, in the stage it was sent from.
       if (p?.kind !== 'escalate' || !p.note) return null;

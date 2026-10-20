@@ -43,7 +43,7 @@ export interface SimStep {
 
 /**
  * What the action's new entry is, as the recorded reads show it: a seller message (W-1–W-3), an ACCEPT_CLAIM evidence
- * entry with the accept type and the note (W-10), a SELLER PROPOSED offer with the partial amount (W-9), the seller's
+ * entry with the accept type and the note (W-10), a SELLER PROPOSED offer with the amount (W-9, W-4), the seller's
  * ESCALATE evidence entry with the note in the inquiry stage (W-5), or the seller's evidence in the claim stage (W-6).
  */
 export type SimEntry = 'message' | 'accept_claim' | 'offer' | 'escalate' | 'evidence';
@@ -161,6 +161,20 @@ export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTra
     {
       variant: 'accept_claim:PARTIAL_REFUND',
       recorded: 'packages/paypal/contracts/accept_claim-partial_refund.json (W-9)',
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: WAITING_SELLER_ACTIONS },
+      entry: 'offer',
+      actionLagReads: 0,
+      documents: 0,
+      steps: [step('0s', 'UNDER_REVIEW', [], NONE), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
+    },
+  ],
+  'make_offer:REFUND': [
+    // W-4: the seller's offer (SELLER PROPOSED, type REFUND, the amount offered) at once; nothing closes and no money
+    // moves. UNDER_REVIEW with no links at +0 s, then it waits for the buyer: accept REFUND only, make_offer no longer
+    // offered. The simulator plays it only from this state, with no seller message and no pending offer before.
+    {
+      variant: 'make_offer:REFUND',
+      recorded: 'packages/paypal/contracts/make_offer-refund.json (W-4)',
       from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: WAITING_SELLER_ACTIONS },
       entry: 'offer',
       actionLagReads: 0,

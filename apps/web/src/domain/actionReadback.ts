@@ -95,7 +95,8 @@ function approvedValue(c: IntentContent, field: string): string | undefined {
       // W-10 (and reads/resolved-GFC.json): the accept entry carries action_info { action, response_option } and notes.
       return ({ notes: p.note, 'action_info.action': 'ACCEPT_CLAIM', 'action_info.response_option': p.acceptType } as Record<string, string>)[field];
     case 'make_offer':
-      return ({ event_type: 'PROPOSED', notes: p.note, offer_type: p.offerType, 'offer_amount.value': p.amount?.value, 'offer_amount.currency_code': p.amount?.currency } as Record<string, string | undefined>)[field];
+      // W-4: the seller's offer.history entry, PROPOSED with the type and amount as sent (the note is not in the entry).
+      return ({ event_type: 'PROPOSED', offer_type: p.offerType, 'offer_amount.value': p.amount?.value, 'offer_amount.currency_code': p.amount?.currency } as Record<string, string | undefined>)[field];
   }
 }
 

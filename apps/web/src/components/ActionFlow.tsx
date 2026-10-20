@@ -38,19 +38,25 @@ type Accept = { kind: 'accept_claim'; acceptType: string; note: string; amount: 
 const acceptOf = (i: SubmissionIntent): Accept | null => (i.payload?.kind === 'accept_claim' ? i.payload : null);
 const isPartial = (i: SubmissionIntent) => acceptOf(i)?.acceptType === 'PARTIAL_REFUND';
 const isEscalate = (i: SubmissionIntent | null) => i?.payload?.kind === 'escalate';
+type Offer = { kind: 'make_offer'; offerType: string; note: string; amount: { value: string; currency: string } | null };
+const offerOf = (i: SubmissionIntent | null): Offer | null => (i?.payload?.kind === 'make_offer' ? i.payload : null);
+/** PayPal records it as an offer the buyer must accept (W-4; a partial accept too, W-9): never refunded or closed. */
+const isOfferToBuyer = (i: SubmissionIntent) => isPartial(i) || !!offerOf(i);
 /** What is being sent, in the words of the review and of the pending note. */
 const nounOf = (i: SubmissionIntent | null) =>
-  i?.payload?.kind === 'accept_claim' ? (isPartial(i) ? 'the partial refund offer' : 'the accept') : isEscalate(i) ? 'the escalation' : 'the message';
+  i?.payload?.kind === 'accept_claim' ? (isPartial(i) ? 'the partial refund offer' : 'the accept') : isEscalate(i) ? 'the escalation' : offerOf(i) ? 'the offer' : 'the message';
 
 /**
  * The result's title. Recorded: what the proof shows, by action — a full accept is the accepted claim; a partial accept
- * is an offer waiting for the buyer (PayPal records it as an offer, W-9), never «refunded» or «closed».
+ * is an offer waiting for the buyer (PayPal records it as an offer, W-9), and so is an offer (W-4): never «refunded» or
+ * «closed».
  */
 function resultTitle(r: ActionResult, mode: GatewayMode, intent: SubmissionIntent | null = null): string {
   const by = mode.kind === 'paypal' ? 'PayPal' : 'the simulator';
   if (r.kind === 'recorded') {
     const base = `Recorded by ${by}`;
     if (intent && acceptOf(intent)) return `${base}: ${isPartial(intent) ? 'offer waiting for the buyer' : 'claim accepted'}`;
+    if (offerOf(intent)) return `${base}: offer waiting for the buyer`;
     if (isEscalate(intent)) return `${base}: inquiry escalated`;
     return base;
   }
@@ -66,7 +72,7 @@ function title(s: ActionFlowState, mode: GatewayMode): string {
     case 'refused':
       return 'Nothing can be sent yet';
     case 'review':
-      return acceptOf(s.intent) ? 'Review the accept' : isEscalate(s.intent) ? 'Review the escalation' : 'Review the message';
+      return acceptOf(s.intent) ? 'Review the accept' : isEscalate(s.intent) ? 'Review the escalation' : offerOf(s.intent) ? 'Review the offer' : 'Review the message';
     case 'confirm':
       return 'Confirm before sending';
     case 'sending':
@@ -99,6 +105,16 @@ export interface ActionFlowViewProps {
 function Quoted({ intent }: { intent: SubmissionIntent }) {
   const a = acceptOf(intent);
   if (a) return <AcceptTerms intent={intent} accept={a} />;
+  const o = offerOf(intent);
+  if (o) {
+    const disputed = intent.pin?.amount ?? null;
+    return (
+      <div data-testid="approved-offer" className="flex flex-col gap-1.5 rounded-xl border border-line bg-surface-2 px-4 py-3 text-body">
+        <strong className="font-semibold">{`Refund offered to the buyer: ${o.amount ? formatMoney(o.amount) : '—'}${disputed ? ` of ${formatMoney(disputed)}` : ''}`}</strong>
+        <blockquote className="m-0 whitespace-pre-wrap text-body-lg leading-normal [overflow-wrap:anywhere]">{o.note}</blockquote>
+      </div>
+    );
+  }
   if (intent.payload?.kind === 'escalate') {
     return (
       <div data-testid="approved-escalation" className="flex flex-col gap-1.5 rounded-xl border border-line bg-surface-2 px-4 py-3 text-body">
@@ -261,7 +277,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
               <span className="text-body leading-normal">
                 {state.result.kind === 'pending'
                   ? `${state.result.detail}. Nothing more is sent on this dispute until a read-back proves ${nounOf(state.intent)} recorded or absent; it is never sent again blindly.`
-                  : state.result.kind === 'recorded' && isPartial(state.intent)
+                  : state.result.kind === 'recorded' && isOfferToBuyer(state.intent)
                     ? `${mode.kind === 'paypal' ? 'PayPal' : 'The simulator'} shows your offer to the buyer. Unless the buyer accepts it, no money moves and the dispute stays open.`
                     : state.result.kind === 'recorded' && isEscalate(state.intent)
                       ? escalationText(state.result)

@@ -13,6 +13,8 @@
  * `{ "note", "accept_claim_type": "PARTIAL_REFUND", "refund_amount": { currency_code, value } }` (W-9) —
  * packages/paypal/contracts/accept_claim-*.json.
  * Pinned (Task 10): escalate is JSON `{ "note" }` (W-5) — packages/paypal/contracts/escalate.json.
+ * Pinned (Task 11): make-offer is JSON `{ "note", "offer_amount": { currency_code, value }, "offer_type": "REFUND" }`
+ * (W-4) — packages/paypal/contracts/make_offer-refund.json.
  */
 import { PayPalError, type EvidenceFile, type PayPalClient } from '@resolvekit/paypal';
 import { CONTRACTS, variantOf, type VariantContract } from '../../../web/src/domain/actionContracts.ts';
@@ -80,8 +82,11 @@ export async function callPayPal(
     }
     case 'make_offer': {
       if (p?.kind !== 'make_offer') break;
+      // As recorded (W-4): `{ note, offer_amount, offer_type }`, in that order. Composing requires the note and amount.
       const amount = amountOf(p.amount);
-      return paypal.disputes.makeOffer(disputeId, { offer_type: p.offerType, note: p.note, ...(amount ? { offer_amount: amount } : {}) }, opts);
+      if (!p.note) throw new NotSendable('An offer is sent only with its note');
+      if (!amount) throw new NotSendable('An offer is sent only with its amount');
+      return paypal.disputes.makeOffer(disputeId, { note: p.note, offer_amount: amount, offer_type: p.offerType }, opts);
     }
     case 'escalate':
       if (p?.kind !== 'escalate') break;
@@ -110,6 +115,8 @@ export function sendProblem(c: IntentContent, files: readonly EvidenceFile[], co
   if (action === 'send_message' && files.length > 1) return 'A message carries at most one file';
   if (c.payload?.kind === 'accept_claim' && !c.payload.note) return 'An accept is sent only with its note';
   if (c.payload?.kind === 'escalate' && !c.payload.note) return 'An escalation is sent only with its note';
+  if (c.payload?.kind === 'make_offer' && !c.payload.note) return 'An offer is sent only with its note';
+  if (c.payload?.kind === 'make_offer' && !c.payload.amount) return 'An offer is sent only with its amount';
   if (files.length && contract.body !== 'multipart') return 'A file goes only with a multipart variant';
   return null;
 }

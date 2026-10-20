@@ -6,6 +6,7 @@ import w9 from '../../../../packages/paypal/contracts/accept_claim-partial_refun
 import w10 from '../../../../packages/paypal/contracts/accept_claim-refund.json';
 import w5 from '../../../../packages/paypal/contracts/escalate.json';
 import w6 from '../../../../packages/paypal/contracts/evidence-after-escalation.json';
+import w4 from '../../../../packages/paypal/contracts/make_offer-refund.json';
 import { CONTRACTS } from './actionContracts';
 import { actionAvailability } from './actions';
 import { SIM_TRANSITIONS, onSimulator, simulatorRefusal } from './simulatedActions';
@@ -26,7 +27,7 @@ interface Recorded {
   variant: string;
   sentStartedAt: string;
   request: {
-    body?: { message?: string; note?: string; accept_claim_type?: string; refund_amount?: { value: string; currency_code: string } };
+    body?: { message?: string; note?: string; accept_claim_type?: string; refund_amount?: { value: string; currency_code: string }; offer_type?: string; offer_amount?: { value: string; currency_code: string } };
     parts?: Array<{ name: string; body?: { message?: string; evidences?: Array<{ evidence_type: string; notes: string }> } }>;
   };
   before: RecordedDispute;
@@ -40,6 +41,7 @@ const FILES: Record<string, Recorded> = {
   'packages/paypal/contracts/accept_claim-partial_refund.json': w9 as unknown as Recorded,
   'packages/paypal/contracts/escalate.json': w5 as unknown as Recorded,
   'packages/paypal/contracts/evidence-after-escalation.json': w6 as unknown as Recorded,
+  'packages/paypal/contracts/make_offer-refund.json': w4 as unknown as Recorded,
 };
 // The request-id probe repeats W-1's request byte for byte.
 const messageOf = (c: Recorded): string => c.request.body?.message ?? c.request.parts?.find((p) => p.name === 'input')?.body?.message ?? w1.request.body.message;
@@ -66,9 +68,12 @@ function entriesOf(kind: string, c: Recorded, after: RecordedDispute): unknown[]
     );
   }
   const seen = new Set((before.offer?.history ?? []).map((o) => o.offer_time));
-  const want = c.request.body?.refund_amount;
+  // A partial accept (W-9) sends refund_amount; an offer (W-4) offer_amount and offer_type. Either is recorded as an offer.
+  const want = c.request.body?.refund_amount ?? c.request.body?.offer_amount;
+  const type = c.request.body?.offer_type ?? 'REFUND';
+  expect(want).toBeDefined();
   return (after.offer?.history ?? []).filter(
-    (o) => o.actor === 'SELLER' && o.event_type === 'PROPOSED' && o.offer_type === 'REFUND' && !seen.has(o.offer_time) && o.offer_amount?.value === want?.value && o.offer_amount?.currency_code === want?.currency_code,
+    (o) => o.actor === 'SELLER' && o.event_type === 'PROPOSED' && o.offer_type === type && !seen.has(o.offer_time) && o.offer_amount?.value === want?.value && o.offer_amount?.currency_code === want?.currency_code,
   );
 }
 /** PayPal's links as ResolveKit's action codes, in the mapper's order (packages/paypal SELLER_ACTIONS). */
@@ -84,7 +89,7 @@ const newSellerEntry = (before: RecordedDispute, after: RecordedDispute, text: s
 describe('simulator transitions come from the recorded contracts only', () => {
   it('every transition equals its contract file, read for read', () => {
     const all = Object.values(SIM_TRANSITIONS).flat();
-    expect(all.length).toBe(7);
+    expect(all.length).toBe(8);
     for (const t of all) {
       const file = t.recorded.split(' ')[0]!;
       const c = FILES[file];
@@ -124,6 +129,11 @@ describe('simulator transitions come from the recorded contracts only', () => {
     expect(SIM_TRANSITIONS.send_message![0]!.steps.slice(1).every((s) => !s.allowedActions.includes('make_offer'))).toBe(true);
     // A partial accept never closes, never shows a refund; a full accept closes in the buyer's favour.
     expect(SIM_TRANSITIONS['accept_claim:PARTIAL_REFUND']![0]!.steps.every((s) => s.status !== 'RESOLVED' && !s.refunded && s.outcome === null)).toBe(true);
+    // An offer (W-4) never closes and never refunds; once made, PayPal no longer offers make_offer.
+    const offer = SIM_TRANSITIONS['make_offer:REFUND']![0]!;
+    expect(offer.steps.every((s) => s.status !== 'RESOLVED' && !s.refunded && s.outcome === null && !s.allowedActions.includes('make_offer'))).toBe(true);
+    expect(offer.steps.map((s) => s.status)).toEqual(['UNDER_REVIEW', 'WAITING_FOR_BUYER_RESPONSE', 'WAITING_FOR_BUYER_RESPONSE', 'WAITING_FOR_BUYER_RESPONSE']);
+    expect(offer.steps[0]!.allowedActions).toEqual([]);
     expect(SIM_TRANSITIONS['accept_claim:REFUND']![0]!.steps.at(-1)).toMatchObject({ status: 'RESOLVED', outcome: 'RESOLVED_BUYER_FAVOUR', refunded: true });
     // An escalation never closes: UNDER_REVIEW in the inquiry, then the claim; each read gives requests and due date.
     const esc = SIM_TRANSITIONS.escalate![0]!;

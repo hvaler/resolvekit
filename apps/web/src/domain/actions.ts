@@ -7,7 +7,7 @@ import { canonicalJson } from '@resolvekit/analyst';
 import { CONTRACTS, variantOf, type VariantContract, type VariantId } from './actionContracts.ts';
 import { CURRENCY_EXPONENT, formatMoney, minorUnits, parseAmount } from './amounts.ts';
 import type { ComposeProblem, IntentContent, IntentRequest, SubmissionIntent } from './intent.ts';
-import type { DisputeMessage, DisputeSnapshot, SubmissionFile } from './types';
+import type { DisputeMessage, DisputeSnapshot, OfferEvent, SubmissionFile } from './types';
 
 /** The actions composed from a text and options, without the analysis. */
 export type SimpleAction = 'send_message' | 'accept_claim' | 'escalate' | 'make_offer';
@@ -236,7 +236,14 @@ export function actionAvailabilityWith(snap: DisputeSnapshot, action: IntentActi
     if (!variant) return { variant: null, type, available: false, why: UNCOVERED_TYPE };
     const c = contracts[variant];
     if (c.status === 'not_available') return { variant, type, available: false, why: c.reason ?? 'Not available' };
-    const outside = action === 'accept_claim' && type ? acceptOutsideContract(type, snap) : action === 'escalate' ? escalateOutsideContract(snap) : null;
+    const outside =
+      action === 'accept_claim' && type
+        ? acceptOutsideContract(type, snap)
+        : action === 'escalate'
+          ? escalateOutsideContract(snap)
+          : action === 'make_offer' && type
+            ? (offerOutsideContract(type, snap) ?? (pendingSellerOffer(snap) ? OFFER_PENDING : null))
+            : null;
     return { variant, type, available: !outside, why: outside };
   });
   // Evidence keeps its own flow (its variants are checked where it is composed).
@@ -265,6 +272,12 @@ export interface ActionRules {
   belowDispute?: boolean;
   /** A second upper bound, strictly below which the amount must be (a partial accept: what PayPal would refund). */
   belowAmount?: Money;
+  /** A second upper bound the amount may reach but not pass (an offer: what PayPal would refund). */
+  atMostAmount?: Money;
+  /** Why an amount equal to the dispute amount is outside what the contract recorded (refused VARIANT_NOT_AVAILABLE). */
+  fullAmountUnavailable?: string;
+  /** Why this request duplicates something PayPal shows pending now (refused DUPLICATE_ACTION). */
+  duplicate?: string;
   /** Why this request is outside what the contract recorded (refused VARIANT_NOT_AVAILABLE before anything else). */
   unavailable?: string;
   text: 'required' | 'optional';
@@ -281,6 +294,8 @@ export const RECORDED_STAGES: Readonly<Partial<Record<SimpleAction, readonly str
   accept_claim: Object.freeze(['INQUIRY']),
   // W-5 (packages/paypal/contracts/escalate.json): sent from INQUIRY; the claim (CHARGEBACK) came minutes later.
   escalate: Object.freeze(['INQUIRY']),
+  // W-4 (packages/paypal/contracts/make_offer-refund.json): INQUIRY before and after.
+  make_offer: Object.freeze(['INQUIRY']),
 });
 
 /**
@@ -311,6 +326,23 @@ export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Ob
     const outside = escalateOutsideContract(snap);
     return outside ? { ...r, unavailable: outside } : r;
   },
+  // make_offer, as recorded (W-4): a REFUND offer on a not-received inquiry, with a note and an amount below the
+  // dispute amount (2.00 of 7.00) and within what PayPal would refund. A full-amount offer was never recorded
+  // (unavailable), and an offer while one of the seller's is pending with the buyer is a duplicate.
+  make_offer: (req, snap): ActionRules | null => {
+    if (req.action !== 'make_offer' || req.offerType !== 'REFUND') return null;
+    const r: ActionRules = {
+      stages: RECORDED_STAGES.make_offer!,
+      amount: 'required',
+      belowDispute: true,
+      fullAmountUnavailable: FULL_OFFER_NOT_VERIFIED,
+      ...(snap.allowedRefund ? { atMostAmount: snap.allowedRefund } : {}),
+      text: 'required',
+    };
+    const outside = offerOutsideContract(req.offerType, snap);
+    if (outside) return { ...r, unavailable: outside };
+    return pendingSellerOffer(snap) ? { ...r, duplicate: OFFER_PENDING } : r;
+  },
 });
 
 /** The only dispute reason an accept (W-9, W-10) and an escalation (W-5) were recorded on. */
@@ -322,6 +354,39 @@ export function escalateOutsideContract(snap: DisputeSnapshot): string | null {
   return snap.reason === RECORDED_REASON ? null : REASON_NOT_VERIFIED;
 }
 export const REFUNDABLE_DIFFERS = "PayPal's refundable amount differs from the dispute amount";
+const NO_REFUNDABLE = 'PayPal reports no refundable amount for this dispute';
+/** The duplicate guard of an offer ([A1]): PayPal shows one of the seller's offers waiting for the buyer. */
+export const OFFER_PENDING = 'An offer of yours is pending with the buyer';
+export const FULL_OFFER_NOT_VERIFIED = 'an offer of the full dispute amount was not verified with PayPal; offer less, or accept the claim for a full refund';
+
+/**
+ * Whether the read shows an offer of the seller's waiting for the buyer: the latest offer.history entry (by time, then
+ * PayPal's order) is the seller's PROPOSED one (W-4, W-9). A later entry by anyone else (the buyer answering) ends it.
+ */
+export function pendingSellerOffer(snap: Pick<DisputeSnapshot, 'offerHistory'>): boolean {
+  let last: OfferEvent | null = null;
+  let lastT = -Infinity;
+  for (const o of snap.offerHistory ?? []) {
+    const t = Date.parse(o.time ?? '');
+    const at = Number.isNaN(t) ? lastT : t;
+    if (at >= lastT) {
+      last = o;
+      lastT = at;
+    }
+  }
+  return !!last && last.actor === 'SELLER' && last.event === 'PROPOSED';
+}
+
+/**
+ * Why an offer of this type on this dispute is outside what W-4 recorded ([A2]), or null: only the not-received
+ * reason, with PayPal's refundable amount known (the offer is bounded by it).
+ */
+export function offerOutsideContract(offerType: string, snap: DisputeSnapshot): string | null {
+  if (offerType !== 'REFUND') return null;
+  if (snap.reason !== RECORDED_REASON) return REASON_NOT_VERIFIED;
+  if (!snap.allowedRefund) return NO_REFUNDABLE;
+  return null;
+}
 
 /** Two amounts are the same money: the same currency and the same integer minor units. */
 function sameMoney(a: Money | null | undefined, b: Money | null | undefined): boolean {
@@ -341,7 +406,7 @@ function sameMoney(a: Money | null | undefined, b: Money | null | undefined): bo
 export function acceptOutsideContract(acceptType: string, snap: DisputeSnapshot): string | null {
   if (snap.reason !== RECORDED_REASON) return REASON_NOT_VERIFIED;
   if (acceptType === 'REFUND' && !sameMoney(snap.allowedRefund, snap.amount)) return REFUNDABLE_DIFFERS;
-  if (acceptType === 'PARTIAL_REFUND' && !snap.allowedRefund) return 'PayPal reports no refundable amount for this dispute';
+  if (acceptType === 'PARTIAL_REFUND' && !snap.allowedRefund) return NO_REFUNDABLE;
   return null;
 }
 
@@ -359,7 +424,8 @@ function payloadOf(req: ActionRequest, amount: Money | null): ActionPayload {
       // Trimmed as the composer and the server's parser trim it: what is approved, hashed, sent and matched.
       return { kind: 'accept_claim', acceptType: req.acceptType, note: req.note.trim(), amount };
     case 'make_offer':
-      return { kind: 'make_offer', offerType: req.offerType, note: req.note, amount };
+      // Trimmed like the other notes: what is approved, hashed and sent.
+      return { kind: 'make_offer', offerType: req.offerType, note: req.note.trim(), amount };
   }
 }
 
@@ -406,6 +472,7 @@ export function composeActionWith(x: ComposeActionInput, contracts: ContractRegi
   const r = rules[req.action]?.(req, snap) ?? null;
   if (!r) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: not implemented yet' };
   if (r.unavailable) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${r.unavailable}` };
+  if (r.duplicate) return { status: 409, error: 'DUPLICATE_ACTION', detail: r.duplicate };
 
   // 2. Stage.
   if (r.stages && !r.stages.includes(snap.stage ?? '')) {
@@ -429,6 +496,7 @@ export function composeActionWith(x: ComposeActionInput, contracts: ContractRegi
     } catch (e) {
       return { status: 422, error: 'INVALID_AMOUNT', detail: (e as Error).message };
     }
+    if (r.fullAmountUnavailable && minor === max) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${r.fullAmountUnavailable}` };
     if (minor <= 0n || minor > max || (r.belowDispute && minor >= max)) {
       return { status: 422, error: 'AMOUNT_ABOVE_DISPUTE', detail: `The amount must be more than 0 and ${r.belowDispute ? 'below' : 'at most'} the dispute amount, ${formatMoney(d)}` };
     }
@@ -440,6 +508,15 @@ export function composeActionWith(x: ComposeActionInput, contracts: ContractRegi
         bound = -1n;
       }
       if (minor >= bound) return { status: 422, error: 'AMOUNT_ABOVE_REFUNDABLE', detail: `The amount must be below what PayPal would refund, ${formatMoney(r.belowAmount)}` };
+    }
+    if (r.atMostAmount) {
+      let bound: bigint;
+      try {
+        bound = r.atMostAmount.currency === amount.currency ? minorUnits(r.atMostAmount.value, r.atMostAmount.currency) : -1n;
+      } catch {
+        bound = -1n;
+      }
+      if (minor > bound) return { status: 422, error: 'AMOUNT_ABOVE_REFUNDABLE', detail: `The amount must be at most what PayPal would refund, ${formatMoney(r.atMostAmount)}` };
     }
     money = { value: canonicalValue(amount), currency: amount.currency };
   } else if (r.amount === 'required') return { status: 422, error: 'AMOUNT_REQUIRED', detail: 'Type the amount' };
@@ -522,7 +599,6 @@ export const ESCALATE_CONSEQUENCE = 'The inquiry becomes a claim decided by PayP
 /** What happens at PayPal when the action is sent, in plain words for the confirmation (refined by each action's task). */
 export function consequenceText(c: IntentContent): string {
   const m = termsAmount(c);
-  const amount = m ? formatMoney(m) : 'the disputed amount';
   switch (intentAction(c)) {
     case 'send_message':
       return 'The buyer sees this message in PayPal.';
@@ -531,7 +607,7 @@ export function consequenceText(c: IntentContent): string {
     case 'escalate':
       return ESCALATE_CONSEQUENCE;
     case 'make_offer':
-      return `The buyer is offered ${amount}.`;
+      return offerConsequenceText(m);
     case 'appeal':
       return 'PayPal reviews its decision again with this appeal.';
     case 'provide_evidence':
@@ -551,6 +627,14 @@ export function acceptConsequenceText(acceptType: string, amount: Money | null):
   return `PayPal refunds ${a} to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.`;
 }
 
+/**
+ * What an offer does at PayPal (W-4): the buyer is offered the amount; nothing is refunded or closed unless the buyer
+ * accepts. Never presented as a full accept.
+ */
+export function offerConsequenceText(amount: Money | null): string {
+  return `The buyer is offered ${amount ? formatMoney(amount) : 'the amount you set'}; no money moves unless the buyer accepts.`;
+}
+
 /** The action of an intent or a request in a few words, telling a full accept from a partial one (titles, audit). */
 export function actionTitle(x: { action?: IntentAction; payload?: ActionPayload } | ActionRequest): string {
   const action = x.action ?? 'provide_evidence';
@@ -563,7 +647,7 @@ export function actionTitle(x: { action?: IntentAction; payload?: ActionPayload 
     case 'escalate':
       return 'Escalate';
     case 'make_offer':
-      return 'Make offer';
+      return 'Make offer · refund offer';
     case 'appeal':
       return 'Appeal';
     case 'provide_evidence':

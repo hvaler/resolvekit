@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONTRACTS, STATUS_LABEL, available, statusLabel, variantOf, type VariantId } from './actionContracts';
 
 /** The variants whose flow is built (Task 8 onwards). */
-const BUILT: VariantId[] = ['send_message', 'send_message:file', 'accept_claim:REFUND', 'accept_claim:PARTIAL_REFUND', 'escalate', 'evidence:after_escalation'];
+const BUILT: VariantId[] = ['send_message', 'send_message:file', 'accept_claim:REFUND', 'accept_claim:PARTIAL_REFUND', 'escalate', 'evidence:after_escalation', 'make_offer:REFUND'];
 
 const IDS: VariantId[] = [
   'send_message',
@@ -53,7 +53,7 @@ describe('action contracts', () => {
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded === null && i !== 'make_offer:withdraw' && i !== 'return_address' && i !== 'appeal' && i !== 'make_offer:REPLACEMENT_WITHOUT_REFUND' && i !== 'evidence:PROOF_OF_REFUND')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
     // A recorded contract whose flow is not built stays Not available, and says so.
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded !== null && !BUILT.includes(i))) expect(CONTRACTS[id]).toMatchObject({ status: 'not_available', reason: 'Contract recorded; flow not built yet' });
-    // Built and tested on this machine (Tasks 8–10): the message, accept, escalate and evidence-after-escalation variants.
+    // Built and tested on this machine (Tasks 8–11): the message, accept, escalate, evidence-after-escalation and offer variants.
     for (const id of BUILT) expect(CONTRACTS[id]).toMatchObject({ status: 'tested_locally', reason: null });
     expect(CONTRACTS.send_message).toMatchObject({ recorded: 'packages/paypal/contracts/send_message.json', absentAfterMs: 60_000, requestIdDedupes: false, body: 'json' });
     const withProof = IDS.filter((i) => CONTRACTS[i].proof !== null).sort();

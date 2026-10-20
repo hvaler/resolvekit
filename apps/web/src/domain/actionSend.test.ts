@@ -3,6 +3,7 @@ import w1 from '../../../../packages/paypal/contracts/send_message.json';
 import w9 from '../../../../packages/paypal/contracts/accept_claim-partial_refund.json';
 import w10 from '../../../../packages/paypal/contracts/accept_claim-refund.json';
 import w5 from '../../../../packages/paypal/contracts/escalate.json';
+import w4 from '../../../../packages/paypal/contracts/make_offer-refund.json';
 import { checkAgain, sendActionWithReadBack } from './actionSend';
 import { proveSend, readBackBase } from './actionReadback';
 import { CONTRACTS } from './actionContracts';
@@ -121,8 +122,8 @@ describe('the simulator only plays recorded transitions', () => {
     const pin = { disputeId: null, seller: null, stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', amount: null };
     const base = { ...(composeAction({ caseId: 'CASE-1', req: { action: 'send_message', text: 'x', attachments: [] }, snap, disputeId: null, seller: null, files: [] }) as SubmissionIntent) };
     const fake = (over: Partial<SubmissionIntent>): SubmissionIntent => ({ ...base, id: 'int-x', contentHash: 'a'.repeat(64), requestId: 'rk-x', status: 'approved', createdAt: '', expiresAt: '', approvedBy: 'x', approvedAt: '', sentAt: null, reason: null, ...over });
-    // An offer: recorded (W-4) but its flow is not built, so the registry says Not available and nothing is played.
-    await expect(g.sendAction(fake({ action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'Half back.', amount: { value: '3.50', currency: 'USD' } }, pin }), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
+    // A replacement offer: never offered by PayPal on a sandbox dispute, so the registry says Not available and nothing is played.
+    await expect(g.sendAction(fake({ action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REPLACEMENT_WITHOUT_REFUND', note: 'A new one.', amount: null }, pin }), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
     // An escalation is played only from the recorded state (W-5: waiting for the seller), not with these links.
     const { g: g4 } = sim({ status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['send_message', 'escalate'] });
     await expect(g4.sendAction(fake({ action: 'escalate', payload: { kind: 'escalate', note: 'Delivered.' }, pin }), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
@@ -195,6 +196,59 @@ describe('the simulator plays the recorded accept transitions (W-10, W-9)', () =
     const i = await intents.approve(await intents.createAction('CASE-1', accept('REFUND', 'x'), { snapshot: snap }));
     await expect(g.sendAction(i, { requestId: i.requestId })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
     expect(g.sentActions).toEqual([]);
+  });
+});
+
+describe('the simulator plays the recorded offer (W-4)', () => {
+  /** W-4's starting state: waiting for the seller, 7.00 USD (refundable 7.00), offer REFUND, no seller message. */
+  const waitingSeller = (): Partial<DisputeSnapshot> => ({
+    allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'],
+    amount: { value: w4.before.dispute_amount.value, currency: w4.before.dispute_amount.currency_code },
+    allowedRefund: { value: w4.before.refund_details.allowed_refund_amount.value, currency: w4.before.refund_details.allowed_refund_amount.currency_code },
+    reason: w4.before.reason,
+    responseOptions: { acceptClaimTypes: [...w4.before.allowed_response_options.accept_claim.accept_claim_types], offerTypes: [...w4.before.allowed_response_options.make_offer.offer_types] },
+  });
+  const offer = (value = w4.request.body.offer_amount.value) => ({ action: 'make_offer' as const, offerType: 'REFUND', note: w4.request.body.note, amount: { value, currency: 'USD' }, attachments: [] as [] });
+
+  it('an offer: the SELLER PROPOSED entry at once, the transient UNDER_REVIEW, then waiting for the buyer; never refunded or closed', async () => {
+    const { g, clock } = sim(waitingSeller());
+    const intents = new LocalIntentClient();
+    const before = await g.getDispute('CASE-1');
+    const i = await intents.approve(await intents.createAction('CASE-1', offer(), { snapshot: before }));
+    const r = await sendActionWithReadBack({ intent: i, gateway: g, intents, mode: { kind: 'simulator' }, now: () => new Date(clock.t) });
+    expect(r).toMatchObject({ kind: 'recorded', detail: 'Recorded by the simulator' });
+    expect(r.snapshot).toMatchObject({ status: 'UNDER_REVIEW', allowedActions: [] });
+    expect(r.snapshot!.offerHistory).toEqual([{ time: new Date(T0).toISOString(), actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } }]);
+    for (const step of [30_000, 90_000, 480_000]) {
+      clock.t += step;
+      const later = await g.getDispute('CASE-1');
+      expect(later).toMatchObject({ status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'], responseOptions: { acceptClaimTypes: ['REFUND'], offerTypes: [] } });
+      expect(later.outcome ?? null).toBeNull();
+      expect(later.refunds ?? []).toEqual([]);
+      expect(proveSend(i, r.base!, later, CONTRACTS['make_offer:REFUND'], clock.t).state).toBe('recorded');
+    }
+    // A second offer: PayPal no longer offers make_offer (the fresh read decides).
+    const after = await g.getDispute('CASE-1');
+    expect(composeAction({ caseId: 'CASE-1', req: offer('1.00'), snap: after, disputeId: null, seller: null, files: [] })).toMatchObject({ status: 409, error: 'ACTION_NOT_OFFERED' });
+  });
+
+  it('anything else is NOT_AUTHORIZED: another state, after a seller message, or with an offer pending', async () => {
+    const intents = new LocalIntentClient();
+    const tryOn = async (over: Partial<DisputeSnapshot>) => {
+      const { g } = sim({ ...waitingSeller(), ...over });
+      const snap = await g.getDispute('CASE-1');
+      const c = composeAction({ caseId: 'CASE-1', req: offer(), snap: { ...snap, offerHistory: [] }, disputeId: null, seller: null, files: [] }) as SubmissionIntent;
+      const i = { ...c, id: 'int-o', contentHash: 'a'.repeat(64), requestId: 'rk-o', status: 'approved' as const, createdAt: '', expiresAt: '', approvedBy: 'x', approvedAt: '', sentAt: null, reason: null };
+      await expect(g.sendAction(i, { requestId: i.requestId })).rejects.toThrow(/^NOT_AUTHORIZED/);
+      expect(g.sentActions).toEqual([]);
+    };
+    await tryOn({ status: 'WAITING_FOR_BUYER_RESPONSE' });
+    // Task 8's rule: after a seller message PayPal stops offering make_offer; W-4 had none before.
+    await tryOn({ messages: [BUYER, { postedBy: 'SELLER', time: '2026-10-19T20:00:00.000Z', content: 'Shipped.', files: [] }] });
+    await tryOn({ offerHistory: [{ time: '2026-10-19T20:00:00.000Z', actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } }] });
+    // The browser flow refuses the same before the simulator: composing with a pending offer is a duplicate.
+    const pendingRead = { ...start(waitingSeller()), offerHistory: [{ time: '2026-10-19T20:00:00.000Z', actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } }] };
+    await expect(intents.createAction('CASE-1', offer(), { snapshot: pendingRead })).rejects.toThrow(/pending with the buyer/);
   });
 });
 
@@ -276,8 +330,12 @@ describe('sendActionWithReadBack', () => {
     const intents = new LocalIntentClient();
     const before = await g.getDispute('CASE-1');
     const i = await intents.approve(await intents.createAction('CASE-1', { action: 'send_message', text: TEXT, attachments: [] }, { snapshot: before }));
-    const r = await sendActionWithReadBack({ intent: { ...i, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '1.00', currency: 'USD' } } }, gateway: g, intents, mode: { kind: 'simulator' } });
+    const r = await sendActionWithReadBack({ intent: { ...i, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REPLACEMENT_WITHOUT_REFUND', note: 'x', amount: null } }, gateway: g, intents, mode: { kind: 'simulator' } });
     expect(r).toMatchObject({ kind: 'not_sent', detail: 'NOT_AUTHORIZED: not available in the simulator' });
+    // A refund offer on a dispute outside W-4's recorded state (no reason, no refundable amount) is not played either.
+    const offer = await sendActionWithReadBack({ intent: { ...i, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '1.00', currency: 'USD' } } }, gateway: g, intents, mode: { kind: 'simulator' } });
+    expect(offer).toMatchObject({ kind: 'not_sent', detail: 'NOT_AUTHORIZED: not available in the simulator' });
+    expect(g.sentActions).toEqual([]);
   });
 
   it('real PayPal: the server sends and reads back; pending until the server proves it, then «Check again»', async () => {

@@ -17,6 +17,7 @@ import {
   messageKey,
   OWNER_ACTIONS,
   parseActionRequest,
+  pendingSellerOffer,
   relevantNewBuyerMessages,
   sameTerms,
   type ActionRules,
@@ -30,6 +31,7 @@ import w3 from '../../../../packages/paypal/contracts/send_message-file.json';
 import w9 from '../../../../packages/paypal/contracts/accept_claim-partial_refund.json';
 import w10 from '../../../../packages/paypal/contracts/accept_claim-refund.json';
 import w5 from '../../../../packages/paypal/contracts/escalate.json';
+import w4 from '../../../../packages/paypal/contracts/make_offer-refund.json';
 
 const upl = (n: number) => `upl-${String(n).padStart(24, '0')}`;
 const problem = (r: unknown) => (isComposeProblem(r) ? { status: r.status, error: r.error } : null);
@@ -200,7 +202,8 @@ describe('availability', () => {
       variants: [{ variant: null, type: 'REFUND_WITH_REPLACEMENT', available: false, why: 'ResolveKit cannot send this type' }],
     });
     // A covered variant's reason wins over an uncovered type's.
-    expect(actionAvailability(khh({ responseOptions: { acceptClaimTypes: [], offerTypes: ['REFUND_WITH_REPLACEMENT', 'REFUND'] } }), 'make_offer', OWNER).why).toBe(CONTRACTS['make_offer:REFUND'].reason);
+    const replacementUnrecorded = { ...CONTRACTS, 'make_offer:REFUND': { ...CONTRACTS['make_offer:REFUND'], status: 'not_available' as const, reason: 'Contract not recorded yet' } };
+    expect(actionAvailabilityWith(khh({ responseOptions: { acceptClaimTypes: [], offerTypes: ['REFUND_WITH_REPLACEMENT', 'REFUND'] } }), 'make_offer', OWNER, replacementUnrecorded).why).toBe('Contract not recorded yet');
 
     // With a test-only recorded contract, the same fresh read makes it sendable, for a reviewer too (not owner-only).
     const reg = { ...CONTRACTS, send_message: testContract('send_message') };
@@ -236,9 +239,8 @@ describe('compose', () => {
     const acc = { ...CONTRACTS, 'accept_claim:REFUND': testContract('accept_claim:REFUND') };
     const onlyPartial = khh({ responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND'], offerTypes: [] } });
     expect(err(composeActionWith({ ...base, req: { action: 'accept_claim', acceptType: 'REFUND', note: '', amount: null, attachments: [] }, snap: onlyPartial }, acc))).toBe('409 VARIANT_NOT_AVAILABLE');
-    // Available in the registry, but the action's rules have not landed yet.
-    const reg = { ...CONTRACTS, 'make_offer:REFUND': testContract('make_offer:REFUND') };
-    expect(composeActionWith({ ...base, req: { action: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '1.00', currency: 'USD' }, attachments: [] }, snap: khh() }, reg)).toMatchObject({
+    // Available in the registry, but the action has no rules (as each action was before its task landed).
+    expect(composeActionWith({ ...base, req: { action: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '1.00', currency: 'USD' }, attachments: [] }, snap: khh() }, CONTRACTS, {})).toMatchObject({
       status: 409,
       error: 'VARIANT_NOT_AVAILABLE',
       detail: 'Not available: not implemented yet',
@@ -532,5 +534,101 @@ describe('escalate rules (Task 10, from the recorded contract W-5)', () => {
     const i = approved(composeAction({ ...base, req: escalate(), snap: khh() }));
     const fresh = khh({ messages: [...khh().messages!, { postedBy: 'BUYER', time: '2026-10-19T09:00:00.000Z', content: 'Still nothing.', files: [] }] });
     expect(relevantNewBuyerMessages(intentAction(i), khh().messages!.map(messageKey), fresh)).toEqual([]);
+  });
+});
+
+describe('make_offer rules (Task 11, from the recorded contract W-4)', () => {
+  const base = { caseId: 'case-1', disputeId: 'PP-R-OZY-10193601', seller: 'JWULA7T75ZA4Q', files: [] };
+  const offer = (amount: { value: string; currency: string } | null = { value: '2.00', currency: 'USD' }, note = w4.request.body.note, offerType = 'REFUND') => ({ action: 'make_offer' as const, offerType, note, amount, attachments: [] as [] });
+  const err = (r: unknown) => (isComposeProblem(r) ? `${r.status} ${r.error}` : 'ok');
+  const approved = (c: unknown): SubmissionIntent => ({ ...(c as SubmissionIntent), id: 'int-11', contentHash: 'f'.repeat(64), requestId: 'rk-int-11', status: 'approved' });
+  const pending = { time: '2026-10-20T05:57:05.614Z', actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } };
+
+  it('available as recorded, to the owner only; another reason, or no refundable amount, is not available', () => {
+    expect(w4.before.allowed_response_options.make_offer.offer_types).toEqual(['REFUND']);
+    expect(actionAvailability(khh(), 'make_offer', OWNER)).toMatchObject({ offered: true, sendable: true, why: null, variants: [{ variant: 'make_offer:REFUND', type: 'REFUND', available: true, why: null }] });
+    for (const who of [REVIEWER, MEMBER]) expect(actionAvailability(khh(), 'make_offer', who)).toMatchObject({ sendable: false, why: 'Only the workspace owner can send this action' });
+    const nad = khh({ reason: 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' });
+    expect(actionAvailability(nad, 'make_offer', OWNER)).toMatchObject({ sendable: false, why: 'not verified with PayPal for this dispute reason' });
+    expect(composeAction({ ...base, req: offer(), snap: nad })).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: not verified with PayPal for this dispute reason' });
+    expect(err(composeAction({ ...base, req: offer(), snap: khh({ allowedRefund: null }) }))).toBe('409 VARIANT_NOT_AVAILABLE');
+    // The other offer types stay as the registry says (never offered, no route, owner decision).
+    const repl = khh({ responseOptions: { acceptClaimTypes: [], offerTypes: ['REPLACEMENT_WITHOUT_REFUND'] } });
+    expect(composeAction({ ...base, req: offer(null, 'x', 'REPLACEMENT_WITHOUT_REFUND'), snap: repl })).toMatchObject({ status: 409, detail: 'Not available: Not verified with PayPal: never offered on a sandbox dispute' });
+    expect(composeAction({ ...base, req: offer(null, 'x', 'withdraw'), snap: khh() })).toMatchObject({ status: 409, detail: 'Not available: PayPal documents no route to withdraw an offer' });
+    // PayPal does not offer the type now: refused.
+    expect(err(composeAction({ ...base, req: offer(), snap: khh({ responseOptions: { acceptClaimTypes: ['REFUND'], offerTypes: [] } }) }))).toBe('409 VARIANT_NOT_AVAILABLE');
+  });
+
+  it('the stage rule is the stage W-4 recorded: INQUIRY only', () => {
+    expect(new Set([w4.before.dispute_life_cycle_stage, ...w4.after.map((a) => a.dispute.dispute_life_cycle_stage)])).toEqual(new Set(['INQUIRY']));
+    expect(err(composeAction({ ...base, req: offer(), snap: khh({ stage: 'CHARGEBACK' }) }))).toBe('409 ACTION_STAGE');
+  });
+
+  it('amount by minor units: 2 equals 2.00; 7 equals 7.00 (the full amount, not recorded); 2.001 refused at parse', () => {
+    expect(composeAction({ ...base, req: offer({ value: '2', currency: 'USD' }), snap: khh() })).toMatchObject({ payload: { kind: 'make_offer', offerType: 'REFUND', amount: { value: '2.00', currency: 'USD' } } });
+    for (const value of ['7', '7.00']) {
+      expect(composeAction({ ...base, req: offer({ value, currency: 'USD' }), snap: khh() })).toMatchObject({
+        status: 409,
+        error: 'VARIANT_NOT_AVAILABLE',
+        detail: 'Not available: an offer of the full dispute amount was not verified with PayPal; offer less, or accept the claim for a full refund',
+      });
+    }
+    expect(problem(parseActionRequest({ action: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '2.001', currency: 'USD' } }))).toEqual({ status: 422, error: 'INVALID_AMOUNT' });
+    expect(err(composeAction({ ...base, req: offer({ value: '7.01', currency: 'USD' }), snap: khh() }))).toBe('422 AMOUNT_ABOVE_DISPUTE');
+    expect(err(composeAction({ ...base, req: offer({ value: '0.00', currency: 'USD' }), snap: khh() }))).toBe('422 AMOUNT_ABOVE_DISPUTE');
+    expect(err(composeAction({ ...base, req: offer(null), snap: khh() }))).toBe('422 AMOUNT_REQUIRED');
+    expect(err(composeAction({ ...base, req: offer({ value: '2.00', currency: 'EUR' }), snap: khh() }))).toBe('422 CURRENCY_MISMATCH');
+    // At most what PayPal would refund (equal is fine).
+    const five = khh({ allowedRefund: { value: '5.00', currency: 'USD' } });
+    expect(err(composeAction({ ...base, req: offer({ value: '5.01', currency: 'USD' }), snap: five }))).toBe('422 AMOUNT_ABOVE_REFUNDABLE');
+    expect(err(composeAction({ ...base, req: offer({ value: '5.00', currency: 'USD' }), snap: five }))).toBe('ok');
+    expect(err(composeAction({ ...base, req: offer({ value: '2.00', currency: 'USD' }), snap: khh({ allowedRefund: { value: '5.00', currency: 'EUR' } }) }))).toBe('422 AMOUNT_ABOVE_REFUNDABLE');
+  });
+
+  it('a note (required, at most 2,000, trimmed); terms OFFERS_SETTLEMENT with the amount; the consequence from the recorded outcome', () => {
+    expect(Object.keys(w4.request.body)).toEqual(['note', 'offer_amount', 'offer_type']);
+    expect(err(composeAction({ ...base, req: offer(undefined, '  '), snap: khh() }))).toBe('422 TEXT_REQUIRED');
+    expect(err(composeAction({ ...base, req: offer(undefined, 'x'.repeat(ACTION_TEXT_LIMIT + 1)), snap: khh() }))).toBe('422 TEXT_TOO_LONG');
+    const c = composeAction({ ...base, req: offer({ value: '2', currency: 'USD' }, `  ${w4.request.body.note}  `), snap: khh() });
+    expect(c).toMatchObject({ action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: w4.request.body.note, amount: { value: '2.00', currency: 'USD' } } });
+    const i = approved(c);
+    expect(confirmationTerms(i, false)).toEqual({ intentId: 'int-11', contentHash: 'f'.repeat(64), action: 'make_offer', amount: '2.00', currency: 'USD', consequence: 'OFFERS_SETTLEMENT' });
+    const text = consequenceText(i);
+    expect(text).toBe('The buyer is offered 2.00 USD; no money moves unless the buyer accepts.');
+    // Never presented as a full accept: no refund, no closure.
+    expect(text).not.toMatch(/refunds|closes|cannot be undone/);
+  });
+
+  it('a refund offer is not assumed to close the dispute (no closing behaviour was recorded)', () => {
+    // W-4 after: never RESOLVED, no refund, no outcome; PayPal waits for the buyer.
+    for (const a of w4.after) {
+      expect(a.dispute.status).not.toBe('RESOLVED');
+      expect((a.dispute as { dispute_outcome?: unknown }).dispute_outcome).toBeUndefined();
+      expect((a.dispute.refund_details as { transactions?: unknown[] }).transactions ?? []).toEqual([]);
+    }
+    expect(w4.after.at(-1)!.dispute.status).toBe('WAITING_FOR_BUYER_RESPONSE');
+  });
+
+  it('an offer while one is pending is refused DUPLICATE_ACTION', () => {
+    expect(pendingSellerOffer({ offerHistory: [] })).toBe(false);
+    expect(pendingSellerOffer({ offerHistory: [pending] })).toBe(true);
+    // The buyer answered after it: not pending.
+    expect(pendingSellerOffer({ offerHistory: [pending, { ...pending, time: '2026-10-21T00:00:00.000Z', actor: 'BUYER', event: 'DENIED', amount: null }] })).toBe(false);
+    // Recorded W-4 +30 s: the seller's offer, and PayPal no longer offers make_offer.
+    const after = w4.after[1]!.dispute;
+    expect(after.offer.history).toEqual([{ offer_time: pending.time, actor: 'SELLER', event_type: 'PROPOSED', offer_type: 'REFUND', offer_amount: { currency_code: 'USD', value: '2.00' } }]);
+    expect(after.links.some((l) => l.rel === 'make_offer')).toBe(false);
+    expect(err(composeAction({ ...base, req: offer(), snap: khh({ status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['accept_claim', 'provide_evidence', 'send_message', 'escalate'], offerHistory: [pending] }) }))).toBe('409 ACTION_NOT_OFFERED');
+    // Were PayPal still to offer it, the guard refuses.
+    const still = khh({ offerHistory: [pending] });
+    expect(composeAction({ ...base, req: offer({ value: '1.00', currency: 'USD' }), snap: still })).toMatchObject({ status: 409, error: 'DUPLICATE_ACTION', detail: 'An offer of yours is pending with the buyer' });
+    expect(actionAvailability(still, 'make_offer', OWNER)).toMatchObject({ sendable: false, why: 'An offer of yours is pending with the buyer' });
+  });
+
+  it('a new buyer message holds make_offer', () => {
+    const i = approved(composeAction({ ...base, req: offer(), snap: khh() }));
+    const buyer = { postedBy: 'BUYER', time: '2026-10-19T09:00:00.000Z', content: 'Still nothing.', files: [] };
+    expect(relevantNewBuyerMessages(intentAction(i), khh().messages!.map(messageKey), khh({ messages: [...khh().messages!, buyer] }))).toEqual([buyer]);
   });
 });

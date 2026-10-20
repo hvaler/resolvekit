@@ -384,3 +384,99 @@ describe('escalate: owner only, a note, MOVES_TO_CLAIM, never shown as closed (T
     expect(view(f.state, { kind: 'simulator' })).toContain('PayPal is reviewing; the claim stage can take a few minutes');
   });
 });
+
+describe('make_offer: owner only, an amount and a note, OFFERS_SETTLEMENT, an offer waiting for the buyer (Task 11)', () => {
+  const waiting: DisputeSnapshot = {
+    ...snap,
+    allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'],
+    amount: { value: '7.00', currency: 'USD' },
+    allowedRefund: { value: '7.00', currency: 'USD' },
+    reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED',
+    offerHistory: [],
+    responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND', 'REFUND'], offerTypes: ['REFUND'] },
+  };
+  const NOTE = 'We offer a partial refund of 2.00 USD.';
+  const req = { action: 'make_offer' as const, offerType: 'REFUND', note: NOTE, amount: { value: '2.00', currency: 'USD' }, attachments: [] as [] };
+  const mo = {
+    ...(composeAction({ caseId: 'CASE-1', req, snap: waiting, disputeId: 'PP-R-1', seller: 'S', files: [] }) as object),
+    id: 'int-11',
+    contentHash: 'f'.repeat(64),
+    requestId: 'rk-int-11',
+    status: 'approved',
+  } as SubmissionIntent;
+  const CONSEQUENCE = 'The buyer is offered 2.00 USD; no money moves unless the buyer accepts.';
+
+  it('review and confirmation: the amount of the dispute amount, the note exactly, OFFERS_SETTLEMENT with the amount', () => {
+    const r = view({ step: 'review', intent: mo, repeat: false });
+    expect(r).toContain('Review the offer');
+    expect(r).toContain('Refund offered to the buyer: 2.00 USD of 7.00 USD');
+    expect(r).toContain(NOTE);
+    expect(r).toContain(CONSEQUENCE);
+    const c = view({ step: 'confirm', intent: mo, terms: { intentId: mo.id, contentHash: mo.contentHash, action: 'make_offer', amount: '2.00', currency: 'USD', consequence: 'OFFERS_SETTLEMENT' } });
+    expect(c).toContain('OFFERS_SETTLEMENT');
+    expect(c).toContain(CONSEQUENCE);
+    expect(c.replace(/<!-- -->/g, '')).toContain('Amount: 2.00 USD');
+    // Never worded as a full accept.
+    for (const html of [r, c]) expect(html).not.toMatch(/PayPal refunds|closes the dispute|cannot be undone|Full refund/);
+  });
+
+  it('recorded: an offer waiting for the buyer, never refunded or closed; pending stays pending', () => {
+    const waitingBuyer = { ...waiting, status: 'WAITING_FOR_BUYER_RESPONSE' as const, allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'] as DisputeSnapshot['allowedActions'] };
+    const r = view({ step: 'result', intent: mo, result: { kind: 'recorded', detail: 'Recorded by PayPal', snapshot: waitingBuyer, base: null } });
+    expect(r).toContain('Recorded by PayPal: offer waiting for the buyer');
+    expect(r).toContain('Unless the buyer accepts it, no money moves and the dispute stays open.');
+    expect(r).not.toMatch(/claim accepted|[Rr]efunded|dispute (is )?closed|[Rr]esolved/);
+    const p = view({ step: 'result', intent: mo, result: { kind: 'pending', detail: 'Outcome pending confirmation', snapshot: waitingBuyer, base: null } });
+    expect(p).toContain('Outcome pending confirmation');
+    expect(p).toContain('the offer recorded or absent');
+    expect(p).not.toContain('offer waiting for the buyer');
+  });
+
+  it('the composer: the owner sets the amount and note and reviews; a reviewer or member sees the preview only', () => {
+    const owner = renderToString(<ActionComposer action="make_offer" text="" onText={noop} availability={actionAvailability(waiting, 'make_offer', { role: 'owner', reviewer: false })} locked={null} onReview={noop} onRequest={noop} disputeAmount={waiting.amount!} />);
+    const flat = owner.replace(/<!-- -->/g, '');
+    expect(flat).toContain('Refund offer · Tested locally');
+    expect(flat).toContain('Amount offered (USD, below 7.00)');
+    expect(owner).toContain('Note to PayPal');
+    expect(flat).toContain('The buyer is offered the amount you set; no money moves unless the buyer accepts.');
+    expect(owner).toMatch(/<button[^>]*disabled[^>]*>Review the offer/);
+    for (const who of [{ role: 'member' as const, reviewer: true }, { role: 'member' as const, reviewer: false }]) {
+      const html = renderToString(<ActionComposer action="make_offer" text="" onText={noop} availability={actionAvailability(waiting, 'make_offer', who)} locked={null} onReview={noop} onRequest={noop} disputeAmount={waiting.amount!} />);
+      expect(html).toContain('Only the workspace owner can send this action');
+      expect(html).not.toContain('Review the offer');
+    }
+    // A pending offer: the duplicate guard's reason, nothing to write.
+    const pending = { ...waiting, offerHistory: [{ time: '2026-10-20T05:57:05.614Z', actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } }] };
+    const dup = renderToString(<ActionComposer action="make_offer" text="" onText={noop} availability={actionAvailability(pending, 'make_offer', { role: 'owner', reviewer: false })} locked={null} onReview={noop} onRequest={noop} disputeAmount={waiting.amount!} />);
+    expect(dup.replace(/<!-- -->/g, '')).toContain('Not available: An offer of yours is pending with the buyer');
+    expect(dup).not.toContain('Amount offered');
+  });
+
+  it('controller, simulator: the owner confirms OFFERS_SETTLEMENT with the amount; recorded as an offer waiting for the buyer', async () => {
+    const T0 = Date.UTC(2026, 9, 20, 5, 57, 2);
+    const clock = { t: T0 };
+    const gateway = new SimulatedDisputeGateway([waiting], { outcome: () => 'waiting_for_buyer', now: () => new Date(clock.t) });
+    const audits: string[] = [];
+    const f = new ActionFlowController({
+      caseId: 'CASE-1',
+      request: { ...req, amount: { value: '2', currency: 'USD' } },
+      source: new LocalIntentClient(),
+      gateway,
+      mode: { kind: 'simulator' },
+      onState: () => {},
+      audit: (who, what) => audits.push(`${who}: ${what}`),
+      applySnapshot: () => {},
+      now: () => new Date(clock.t),
+    });
+    await f.start();
+    await f.approve();
+    expect(f.state).toMatchObject({ step: 'confirm', terms: { action: 'make_offer', amount: '2.00', currency: 'USD', consequence: 'OFFERS_SETTLEMENT' } });
+    expect(gateway.sentActions).toEqual([]);
+    await f.confirm();
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'recorded', snapshot: { status: 'UNDER_REVIEW' } } });
+    const html = view(f.state, { kind: 'simulator' });
+    expect(html).toContain('Recorded by the simulator: offer waiting for the buyer');
+    expect(html).toContain('The simulator shows your offer to the buyer.');
+    expect(audits.at(-1)).toBe('Simulator re-read: Make offer · refund offer · recorded');
+  });
+});

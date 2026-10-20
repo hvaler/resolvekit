@@ -189,4 +189,27 @@ describe('read-back proof', () => {
     const acceptEntry = { ...buyerCreate, evidenceType: 'OTHER', source: 'SUBMITTED_BY_SELLER', action: 'ACCEPT_CLAIM', responseOption: 'PARTIAL_REFUND', date: '2026-10-19T10:00:05.035Z', notes: 'Partial refund offered.' };
     expect(proveSend(ac, base, snap([], { evidences: [buyerCreate, acceptEntry] }), c, SENT_MS + 5_000).state).toBe('pending');
   });
+
+  it('make_offer REFUND (W-4): the SELLER PROPOSED offer entry with the type and amount; a state change alone is pending, never absent once PayPal stops offering it', () => {
+    const c = CONTRACTS['make_offer:REFUND'];
+    const mo: IntentContent = {
+      ...content(''),
+      action: 'make_offer',
+      payload: { kind: 'make_offer', offerType: 'REFUND', note: 'We offer a partial refund.', amount: { value: '2.00', currency: 'USD' } },
+      pin: { disputeId: 'PP-R-OZY-10193601', seller: 'S', stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', amount: { value: '7.00', currency: 'USD' } },
+    };
+    const before = snap([], { evidences: [buyerCreate], offerHistory: [], allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'], responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND', 'REFUND'], offerTypes: ['REFUND'] } });
+    const base = readBackBase(before, c.proof!, SENT);
+    const offer = { time: '2026-10-19T10:00:03.500Z', actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } };
+    const waiting = { status: 'WAITING_FOR_BUYER_RESPONSE' as const, allowedActions: ['accept_claim', 'provide_evidence', 'send_message', 'escalate'] as DisputeSnapshot['allowedActions'], responseOptions: { acceptClaimTypes: ['REFUND'], offerTypes: [] } };
+    expect(proveSend(mo, base, snap([], { offerHistory: [offer], ...waiting }), c, SENT_MS + 30_000).state).toBe('recorded');
+    // Waiting for the buyer, or even RESOLVED, without the entry: pending; and long after, still not «absent» (make_offer is no longer offered).
+    expect(proveSend(mo, base, snap([], { offerHistory: [], ...waiting }), c, SENT_MS + 600_000)).toEqual({ state: 'pending', detail: 'Outcome pending confirmation' });
+    expect(proveSend(mo, base, snap([], { offerHistory: [], status: 'RESOLVED', allowedActions: [], outcome: { code: 'RESOLVED_BUYER_FAVOUR', closedAt: null } }), c, SENT_MS + 600_000).state).toBe('pending');
+    // Another amount, another type, an earlier entry, the buyer's entry: not this send.
+    for (const other of [{ ...offer, amount: { value: '2.01', currency: 'USD' } }, { ...offer, type: 'REPLACEMENT_WITHOUT_REFUND' }, { ...offer, time: '2026-10-19T09:59:00.000Z' }, { ...offer, actor: 'BUYER' }, { ...offer, event: 'ACCEPTED' }])
+      expect(proveSend(mo, base, snap([], { offerHistory: [other], ...waiting }), c, SENT_MS + 30_000).state, JSON.stringify(other)).toBe('pending');
+    // No trace while PayPal still offers it after the absence delay: absent (the recorded contract gives the delay).
+    expect(proveSend(mo, base, before, c, SENT_MS + 60_000).state).toBe('absent');
+  });
 });
