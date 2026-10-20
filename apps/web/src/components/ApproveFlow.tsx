@@ -713,7 +713,7 @@ function ApproveIntent({
         {flow === 'error' && result?.kind === 'not_recorded' && result.held && (
           <div className="flex flex-1 items-center justify-center max-md:px-4">
             <div className="flex w-[580px] flex-col gap-4 max-md:w-full">
-              <HeldEvidence holderId={result.held.id} hold={held.hold} known={held.known} message={held.message} busy={held.busy} onCheck={() => void held.check()} onSendNow={() => void run(false, true)} />
+              <HeldEvidence holderId={result.held.id} hold={held.hold} known={held.known} message={held.message} error={held.error} busy={held.busy} onCheck={() => void held.check()} onSendNow={() => void run(false, true)} onRetry={held.retry} />
               <div className="flex items-center gap-3">
                 <Button className="h-[42px]" onClick={onClose}>
                   Back to case

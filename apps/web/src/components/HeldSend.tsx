@@ -41,35 +41,46 @@ export async function checkHeldSend(intents: Pick<IntentSource, 'readBack' | 'ho
   }
 }
 
+/** Ask the server what holds the case's dispute (a GET, never a send): known with the hold (null: free), or the error. */
+export async function lookupHold(intents: Pick<IntentSource, 'hold'>, caseId: string): Promise<{ known: boolean; hold: DisputeHoldView | null; error: string | null }> {
+  try {
+    return { known: true, hold: await intents.hold(caseId), error: null };
+  } catch (e) {
+    return { known: false, hold: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /**
  * The hold of the case's dispute, read when the page opens (and when `refresh` changes), and its «Check again».
- * `known`: the server has said what holds the dispute (null included) since the last refresh.
+ * `known`: the server has said what holds the dispute (null included) since the last refresh; `error`: why it could not,
+ * and `retry` asks again (the lookup only).
  */
 export function useHeldSend(caseId: string, live: boolean, refresh: unknown) {
   const { intents, applySnapshot } = useServices();
   const [hold, setHold] = useState<DisputeHoldView | null>(null);
   const [known, setKnown] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setKnown(false);
+    setError(null);
     if (!live || intents.kind !== 'server') {
       setHold(null);
       return;
     }
     let on = true;
-    intents
-      .hold(caseId)
-      .then((h) => {
-        if (!on) return;
-        setHold(h);
-        setKnown(true);
-      })
-      .catch(() => {});
+    void lookupHold(intents, caseId).then((r) => {
+      if (!on) return;
+      if (r.known) setHold(r.hold);
+      setKnown(r.known);
+      setError(r.error);
+    });
     return () => {
       on = false;
     };
-  }, [caseId, live, intents, refresh]);
+  }, [caseId, live, intents, refresh, attempt]);
   const check = useCallback(async () => {
     if (!hold) return;
     setBusy(true);
@@ -82,7 +93,8 @@ export function useHeldSend(caseId: string, live: boolean, refresh: unknown) {
       setBusy(false);
     }
   }, [hold, intents, applySnapshot]);
-  return { hold, known, message, busy, check };
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  return { hold, known, error, message, busy, check, retry };
 }
 
 /** The notice: what holds the dispute, and «Check again» (a read-back only). After a check, what it found. */
@@ -135,6 +147,8 @@ export function HeldEvidence({
   busy,
   onCheck,
   onSendNow,
+  error = null,
+  onRetry,
 }: {
   holderId: string;
   hold: DisputeHoldView | null;
@@ -144,6 +158,9 @@ export function HeldEvidence({
   busy: boolean;
   onCheck: () => void;
   onSendNow: () => void;
+  /** The hold lookup failed: shown plainly, with «Try again» (the lookup again, never a send). */
+  error?: string | null;
+  onRetry?: () => void;
 }) {
   const free = known && !hold;
   return (
@@ -156,6 +173,17 @@ export function HeldEvidence({
       </div>
       {known ? (
         <HeldSendNotice hold={hold} message={message} busy={busy} onCheck={onCheck} />
+      ) : error ? (
+        <div role="alert" data-testid="hold-lookup-failed" className="flex flex-col gap-1.5 rounded-lg border border-bad-line bg-bad-soft px-3 py-2 text-[12.5px]">
+          <span>{`What holds this dispute could not be read: ${error}. Nothing was sent; your evidence stays unsent until the dispute is known to be free.`}</span>
+          {onRetry && (
+            <span>
+              <Button disabled={busy} onClick={onRetry}>
+                Try again
+              </Button>
+            </span>
+          )}
+        </div>
       ) : (
         <p role="status" className="m-0 text-body text-ink-2">
           {message ?? 'Asking the ResolveKit server what holds this dispute…'}

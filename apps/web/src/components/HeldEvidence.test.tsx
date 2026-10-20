@@ -10,7 +10,7 @@ import { sendAfterHold, submitWithReadBack } from '../domain/gateway';
 import { HttpDisputeGateway } from '../domain/httpGateway';
 import { HttpIntentClient, type DisputeHoldView } from '../domain/intentClient';
 import type { DisputeSnapshot, EvidenceSubmission, RecordedEvidence } from '../domain/types';
-import { HeldEvidence, checkHeldSend } from './HeldSend';
+import { HeldEvidence, checkHeldSend, lookupHold } from './HeldSend';
 
 const HOLDER = `int-${'h'.repeat(32)}`;
 const hold: DisputeHoldView = { disputeId: 'PP-R-1', intentId: HOLDER, caseId: 'CASE-1', since: '2026-10-20T05:07:17.000Z', state: 'uncertain', action: 'provide_evidence', intentKnown: true, own: false };
@@ -51,8 +51,8 @@ function server(replies: Array<[number, unknown]>) {
   return { calls, gateway: new HttpDisputeGateway({ fetch }), intents: new HttpIntentClient({ fetch }) };
 }
 const noop = () => {};
-const held = (o: { hold: DisputeHoldView | null; known: boolean; message?: string | null }) =>
-  renderToString(<HeldEvidence holderId={HOLDER} hold={o.hold} known={o.known} message={o.message ?? null} busy={false} onCheck={noop} onSendNow={noop} />);
+const held = (o: { hold: DisputeHoldView | null; known: boolean; message?: string | null; error?: string | null }) =>
+  renderToString(<HeldEvidence holderId={HOLDER} hold={o.hold} known={o.known} message={o.message ?? null} error={o.error ?? null} busy={false} onCheck={noop} onSendNow={noop} onRetry={noop} />);
 
 describe('the evidence send on a held dispute', () => {
   it('409 DISPUTE_UNCERTAIN: held, naming the holder; evidence PayPal shows meanwhile is never taken as ours', async () => {
@@ -118,5 +118,28 @@ describe('the evidence send on a held dispute', () => {
     const check = await checkHeldSend(intents, hold);
     expect(check.hold).toEqual(hold);
     expect(held({ hold: check.hold, known: true, message: check.message })).not.toContain('Send it now');
+  });
+});
+
+describe('the hold lookup fails', () => {
+  it('says so plainly with «Try again», which repeats the lookup only (never a send); then the hold is known', async () => {
+    const { calls, intents } = server([
+      [502, { error: 'PAYPAL_UNREACHABLE', detail: 'The ResolveKit server could not answer' }],
+      [200, { hold }],
+    ]);
+    const first = await lookupHold(intents, 'CASE-1');
+    expect(first.known).toBe(false);
+    expect(first.error).toBeTruthy();
+    const html = held({ hold: null, known: false, error: first.error });
+    expect(html).toContain('What holds this dispute could not be read');
+    expect(html).toContain(first.error!);
+    expect(html).toContain('Try again');
+    expect(html).not.toContain('Asking the ResolveKit server');
+    expect(html).not.toContain('Send it now');
+    // «Try again»: the same lookup, a GET; nothing is sent or read back.
+    const again = await lookupHold(intents, 'CASE-1');
+    expect(again).toEqual({ known: true, hold, error: null });
+    expect(calls).toEqual(['GET /api/disputes/CASE-1/hold', 'GET /api/disputes/CASE-1/hold']);
+    expect(held({ hold: again.hold, known: true })).toContain('Check again');
   });
 });
