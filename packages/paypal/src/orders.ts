@@ -33,8 +33,6 @@ export interface Capture {
   update_time?: string;
 }
 
-/** A Payments v2 refund (reads/refund-3H730369N6162525E.json): its `up` link is the refunded capture. Read only. */
-
 export interface Order {
   id: string;
   intent?: string;
