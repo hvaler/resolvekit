@@ -154,7 +154,7 @@ export interface ApiOptions {
   agent?: AgentService | null;
   /**
    * Tests only: the action routes against a test-only contract registry and rules (production: CONTRACTS and
-   * ACTION_RULES, which no test changes).
+   * ACTION_RULES, which no test changes). main.ts never passes it (test/main-wiring.test.ts checks it).
    */
   actionRegistry?: { contracts: ContractRegistry; rules: Readonly<Partial<Record<SimpleAction, RulesOf>>> } | null;
 }
@@ -925,7 +925,9 @@ export function createApi(opts: ApiOptions): Api {
     if (!parsed.ok) return parsed.res;
     const ir = parseIntentRequest(parsed.body);
     if (isComposeProblem(ir)) return json(ir.status, { error: ir.error, detail: ir.detail });
-    // An appeal is the owner's only, and not available until its contract is recorded and its flow built (Task 12).
+    // An appeal is the owner's only, and not available until its contract is recorded and its flow built (Task 12). In
+    // this delivery it is always refused here, so every later appeal branch (send, PayPal call) is intentionally
+    // unreachable.
     if (ir.action === 'appeal') {
       const notOwner = actions.ownerRefusal(req, 'appeal');
       if (notOwner) return notOwner;

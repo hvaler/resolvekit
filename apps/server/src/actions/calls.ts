@@ -94,6 +94,7 @@ export async function callPayPal(
       if (!p.note) throw new NotSendable('An escalation is sent only with its note');
       return paypal.disputes.escalate(disputeId, p.note, opts);
     case 'appeal':
+      // Intentionally unreachable in this delivery: appeal is «Not available» (W-7), so no appeal intent is composed.
       return paypal.disputes.appeal(disputeId, { evidence_type: c.evidenceType, notes: c.notes }, files, opts);
     case 'provide_evidence':
       throw new NotSendable('Evidence is sent from its own route');

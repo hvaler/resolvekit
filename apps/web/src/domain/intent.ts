@@ -241,6 +241,9 @@ export function parseIntentRequest(body: unknown): IntentRequest | ComposeProble
       attachments.add(id);
     }
   }
+  // Intentionally unreachable in this delivery: PROOF_OF_REFUND is «Not available» (pending sandbox test W-11), so the
+  // server refuses such a request at compose (VARIANT_NOT_AVAILABLE) and no refund is ever read. The ids are parsed and
+  // hashed here only so the intent's shape is fixed for when the variant ships.
   const refunds = new Set<string>();
   if (body.refundIds !== undefined) {
     const v = body.refundIds;

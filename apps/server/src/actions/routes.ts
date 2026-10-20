@@ -67,7 +67,10 @@ export interface ActionRouteDeps {
   paypal: PayPalClient | null;
   log: (line: string) => void;
   now: () => Date;
-  /** Test only: a registry and rules with test-only contracts (production uses CONTRACTS and ACTION_RULES). */
+  /**
+   * Test only: a registry and rules with test-only contracts (production uses CONTRACTS and ACTION_RULES). main.ts never
+   * passes them (test/main-wiring.test.ts checks it).
+   */
   contracts?: ContractRegistry;
   rules?: Readonly<Partial<Record<SimpleAction, RulesOf>>>;
 }
@@ -342,6 +345,8 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
 
       // 5. Compose again on the fresh read: availability, stage, amount, text and the pin must give the approved hash.
       let files: EvidenceFile[] = [];
+      // The appeal branch is intentionally unreachable in this delivery: appeal is «Not available» (W-7) and composing it
+      // is refused, so no appeal intent reaches a send. It stays for when its contract is recorded.
       if (action === 'appeal') {
         const again = await deps.recomposeEvidence(caseId, st, intent);
         if (again instanceof Response) {
