@@ -7,6 +7,8 @@ código es la fuente de verdad; cuando un comportamiento solo se ha observado en
 dice. Palabras de estado: Diseñado · Implementado · Probado en local · Verificado en sandbox · Desplegado · Disponible
 para usuarios · Pendiente.
 
+La sección 5.6 (acciones de disputa) está comprobada contra el commit `076c74f` (20/10/2026).
+
 Relacionado: [Visión general](overview.md) · [Limitaciones](limitations.md) · [API HTTP](../technical/http-api.md) ·
 [Fronteras de confianza](../architecture/trust-boundaries.md).
 
@@ -55,6 +57,9 @@ sandbox. Las comprobaciones del servidor están en `apps/server/src/hosted.ts` (
 | Descartar una subida pendiente | cualquiera | cualquiera | solo las propias | — | — | sí |
 | Borrar una subida confirmada | sí | sí | no | — | — | sí |
 | Componer, aprobar, enviar una respuesta | sí | sí | sí | rechazado (`NOT_THE_SELLER` / `SELLER_WORKSPACE_ONLY`) | no | sí |
+| Enviar un mensaje al comprador ([5.6](#56-acciones-de-disputa-distintas-de-la-evidencia)) | sí | sí | sí | rechazado | no | sí |
+| Aceptar la reclamación, hacer una oferta, escalar ([5.6](#56-acciones-de-disputa-distintas-de-la-evidencia)) | sí, con una segunda confirmación | solo vista previa (`OWNER_ONLY`) | solo vista previa (`OWNER_ONLY`) | rechazado | no | sí |
+| Ver el caso de liquidación del propietario `PP-R-STL-10190667` | sí | no | no | no | no | sí, si está vinculado |
 | Leer o aprobar el intent de otra persona | no (un intent pertenece a la sesión que lo compuso; los demás reciben 404) | no | no | no | no | — |
 | Miembros e invitaciones (`/workspace`) | sí | no (`OWNER_ONLY`) | no | solo su propio Owner | no | no aplica (el modo local no tiene cuentas) |
 | Iniciar una ejecución del agente comprador | sí | sí | sí | no (`SELLER_WORKSPACE_ONLY`) | redirigido al inicio de sesión | sí |
@@ -87,6 +92,8 @@ Notas:
 | UC-11 | Comparar dos ejecuciones; Keep de una ejecución; ver Workspace runs | Autor / Owner | Implementado · Probado en local · Verificado en sandbox (Compare y Keep, 19/10/2026) |
 | UC-12 | Detener una ejecución del agente en curso | Autor | Implementado · Probado en local; en sandbox **Pendiente** |
 | UC-13 | Conectar las disputas de PayPal propias de un comerciante | Comerciante | **Pendiente** (no está en la app) |
+| UC-14 | Enviar un mensaje al comprador | Espacio del vendedor | Probado en local; Verificado en sandbox y Desplegado: **Pendiente** |
+| UC-15 | Aceptar una reclamación (total o parcial), hacer una oferta, escalar | Owner | Probado en local; Verificado en sandbox y Desplegado: **Pendiente** |
 
 ## 5. Estados y reglas de negocio
 
@@ -186,6 +193,120 @@ una ejecución en curso por persona, 3 por servidor; 5 ejecuciones por persona y
 ejecuciones se conservan 30 días salvo que se marquen con Keep, estén sin liquidar, sin guardar o vinculadas como
 evidencia. Detalles: [Agente comprador](../user-guide/buying-agent.md).
 
+### 5.6 Acciones de disputa distintas de la evidencia
+
+Comprobado contra el commit `076c74f` (20/10/2026). Cada variante de acción tiene un único estado, tomado del registro
+de contratos (`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); el producto muestra la misma etiqueta junto a cada
+variante (**Tested locally**, o **Not available: <motivo>**, «No disponible»). Una variante solo está disponible cuando
+su contrato está registrado: la documentación de PayPal, lecturas de solo lectura en el sandbox y una escritura que el
+propietario aprobó petición a petición, con su respuesta y su relectura (`packages/paypal/contracts/`).
+
+| Variante | Qué es | Estado | Escritura de contrato (sandbox, 20/10/2026) |
+|---|---|---|---|
+| `send_message` | Un mensaje de texto al comprador (1–2,000 caracteres) | Probado en local | Registrada (W-1, W-2) |
+| `send_message:file` | Un mensaje con una subida confirmada adjunta | Probado en local: la ruta del servidor. El editor web aún no puede adjuntar una subida, así que la interfaz no lo ofrece | Registrada (W-3) |
+| `accept_claim:REFUND` | Aceptar la reclamación con un reembolso total | Probado en local | Registrada (W-10) |
+| `accept_claim:PARTIAL_REFUND` | Aceptar la reclamación con un reembolso parcial, que PayPal registra como una oferta al comprador | Probado en local | Registrada (W-9) |
+| `escalate` | Escalar una consulta a reclamación | Probado en local | Registrada (W-5) |
+| `evidence:after_escalation` | Evidencia en la fase de reclamación tras un escalado | Probado en local | Registrada (W-6) |
+| `make_offer:REFUND` | Ofrecer al comprador un reembolso parcial | Probado en local | Registrada (W-4) |
+| `make_offer:REPLACEMENT_WITHOUT_REFUND` | — | No disponible: «Not verified with PayPal: never offered on a sandbox dispute» | No enviada (W-12) |
+| `make_offer:withdraw` | — | No disponible: «PayPal documents no route to withdraw an offer» | — |
+| `appeal` | — | No disponible: «Not verified with PayPal: the sandbox could not produce an appealable dispute» | Preparación rechazada (W-7); no enviada (W-8) |
+| `evidence:PROOF_OF_REFUND` | — | No disponible: «Not verified with PayPal: pending sandbox test (W-11)» | No enviada (W-11, decisión del propietario) |
+| `return_address` | Los tipos de aceptación y de oferta con devolución (`REFUND_WITH_RETURN`, `REFUND_WITH_RETURN_SHIPMENT_LABEL`) | No disponible: «Not in this delivery (owner decision)» | — |
+
+Ninguna variante está **Verificada en sandbox** ni **Desplegada**. Las escrituras de contrato del 20/10/2026 fueron
+peticiones preparadas que el propietario aprobó una a una, enviadas fuera del flujo propio de la app; muestran lo que
+hace PayPal (ver [Integración con PayPal](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)), no
+que el flujo de la app funcione de extremo a extremo contra el sandbox, lo cual está **Pendiente**. El commit
+desplegado (`fbe9621`) es anterior a las acciones de disputa.
+
+**Quién puede hacer qué.** Aceptar la reclamación, hacer una oferta, escalar y apelar son **solo del Owner**: solo el
+Owner del espacio de trabajo (no un revisor) los compone, aprueba, confirma y envía. Los miembros y los revisores solo
+pueden enviar **mensajes** (y evidencia, como antes); de una acción solo del Owner ven una vista previa con su
+consecuencia, y el servidor rechaza componer, aprobar, confirmar y enviar con `403 OWNER_ONLY`. Ocultar botones no es el
+control: el rol se comprueba en cada paso. El operador local actúa como Owner.
+
+**Segunda confirmación.** Tras aprobar el contenido exacto, una acción solo del Owner necesita una confirmación que
+emite el servidor, ligada al id del intent, al hash del contenido, a la acción, al importe canónico, a la moneda y a un
+código de consecuencia: `REFUNDS_BUYER` (aceptación total), `OFFERS_PARTIAL_REFUND` (aceptación parcial),
+`OFFERS_SETTLEMENT` (oferta), `MOVES_TO_CLAIM` (escalado). Un mensaje solo la necesita cuando repite un mensaje que
+PayPal ya registró en esa disputa y fase (`REPEATS_MESSAGE`). Otros términos se rechazan (`CONFIRMATION_MISMATCH`); un
+envío sin ellos se rechaza (`CONFIRMATION_REQUIRED`). Cambiar cualquiera de ellos supone un intent nuevo.
+
+**Reglas, tal como las registraron los contratos.**
+
+- Todas las escrituras registradas partieron de la fase `INQUIRY`, así que el mensaje, la aceptación, la oferta y el
+  escalado solo se componen ahí (otra fase: `ACTION_STAGE`). Lo que se puede hacer se reconstruye siempre a partir de
+  una lectura fresca de PayPal (sus enlaces y tipos permitidos), antes de componer, en el momento del envío y tras cada
+  acción.
+- **Mensaje:** texto obligatorio, como máximo 2,000 caracteres, sin importe. El comprador ve exactamente ese texto.
+- **Aceptación:** solo en disputas `MERCHANDISE_OR_SERVICE_NOT_RECEIVED`, con una nota. Una aceptación **total**
+  necesita que el importe reembolsable de PayPal sea igual al importe de la disputa (si no, «PayPal's refundable amount
+  differs from the dispute amount»); PayPal reembolsa el importe de la disputa y la cierra a favor del comprador
+  (observado: unos 2 minutos, primero `UNDER_REVIEW`). Una aceptación **parcial** lleva un importe mayor que 0 y
+  estrictamente menor que el importe reembolsable y que el de la disputa; PayPal la registra como una **oferta**
+  pendiente: el comprador debe aceptarla, nada se cierra y no se mueve dinero hasta entonces, y la nota se repite como
+  mensaje del vendedor. Las dos se confirman y se informan por separado.
+- **Oferta:** solo un reembolso parcial (tipo `REFUND`), con una nota y un importe menor que el de la disputa y como
+  máximo el importe reembolsable de PayPal. Una oferta por el importe total no se verificó y se rechaza
+  (`VARIANT_NOT_AVAILABLE`). La nota se repite como mensaje del vendedor. Una oferta se rechaza mientras haya una oferta
+  del vendedor pendiente con el comprador. No se mueve dinero salvo que el comprador acepte. Tras una oferta o un mensaje
+  del vendedor, PayPal dejó de ofrecer `make_offer`.
+- **Escalado:** solo disputas de artículo no recibido, una nota, sin importe. PayPal registra una entrada `ESCALATE`
+  atribuible; la fase de reclamación llegó unos 3 minutos después, con `UNDER_REVIEW` y acciones intermitentes entre
+  medias, que el caso muestra como «PayPal is reviewing; the claim stage can take a few minutes» («PayPal está
+  revisando; la fase de reclamación puede tardar unos minutos»). Un escalado nunca se toma como disputa cerrada.
+- **Evidencia por fase:** la evidencia se sigue enviando una vez por disputa. El único caso nuevo es la evidencia en la
+  reclamación tras un escalado, cuando la reclamación espera al vendedor, y solo si la disputa no tiene ninguna
+  evidencia del vendedor; durante la revisión posterior al escalado el caso dice «Not available: after an escalation,
+  evidence was verified with PayPal only once the claim waits for the seller». `provide_supporting_info`, que PayPal
+  ofreció tras evidencia en una reclamación, no está soportado.
+- **Prueba de reembolso:** no se envía en esta entrega. Si PayPal solo pide esa, ResolveKit no puede enviar evidencia en
+  esa disputa: «PayPal asks only for Proof of refund, which is not available in this delivery: Not verified with
+  PayPal: pending sandbox test (W-11)». Si PayPal pide también otros tipos, se preselecciona el primer tipo pedido que
+  esté disponible y el selector dice que Proof of refund no está disponible.
+- **Importes:** cadenas decimales exactas en la moneda de la disputa, canónicas por moneda (`7` pasa a `7.00` USD;
+  `7,00`, `7.001`, `-1`, `1e2`, ` 7`, `+7`, `0` se rechazan con `INVALID_AMOUNT`); sin importe de la disputa en PayPal:
+  `DISPUTE_AMOUNT_UNKNOWN`; por encima del reembolsable: `AMOUNT_ABOVE_REFUNDABLE`.
+- **No se crean reembolsos.** ResolveKit no tiene ninguna llamada que cree o cambie un reembolso; el dinero solo se
+  mueve mediante las acciones de disputa de arriba, en PayPal.
+
+**Después de un envío.**
+
+| Se muestra | Significado |
+|---|---|
+| **Recorded by PayPal** | Una lectura fresca muestra una entrada atribuible a este envío: el mensaje nuevo del vendedor con el texto exacto; la entrada de oferta del vendedor con el tipo y el importe aprobados (oferta, aceptación parcial); la entrada `ACCEPT_CLAIM` del vendedor con tipo y nota (aceptación total); la entrada `ESCALATE` del vendedor con la nota. Un cambio de estado por sí solo (resuelta, una fase nueva) nunca es prueba: lo puede causar el comprador o PayPal |
+| **Outcome pending confirmation** («resultado pendiente de confirmación») | PayPal aceptó la petición o la respuesta no fue clara, y la prueba aún no está. La disputa queda retenida (incierta): ninguna otra escritura en ella, de nadie, hasta que una relectura pruebe la acción registrada, o pruebe su ausencia mientras PayPal aún la ofrece. **Check again** solo relee; nunca envía |
+| Not recorded by PayPal | Una relectura probó la ausencia de la acción mientras seguía ofrecida: el mismo intent aprobado puede enviarse de nuevo, con el mismo id de petición |
+| Not sent | PayPal rechazó con un error conocido; no se hizo nada y la disputa no queda retenida |
+
+Las peticiones de acción a PayPal nunca se reintentan automáticamente. Un reinicio entre el inicio de un envío y su
+resultado retiene la disputa hasta una relectura. La misma acción con el mismo contenido en la misma disputa y fase se
+rechaza una vez que PayPal la registró (`DUPLICATE_ACTION`); un mensaje es la excepción, con la confirmación
+`REPEATS_MESSAGE`, porque PayPal no deduplica mensajes, ni siquiera por `PayPal-Request-Id` (observado, W-2). Un mensaje
+del comprador llegado tras la aprobación retiene un mensaje, una aceptación o una oferta con `NEEDS_REVIEW`: la persona
+lo lee y después envía el mismo contenido o lo edita (un intent nuevo). En un escalado se muestra, pero no bloquea.
+
+**Conservación.** El texto aprobado del mensaje se guarda en el intent (`intents.json`), como las notas aprobadas de la
+evidencia; los registros de auditoría y de envíos guardan solo su hash. El hilo de mensajes se lee de PayPal y se
+muestra, pero no se guarda ni se entrega al analista. Tras cualquier acción registrada del vendedor (evidencia, un
+mensaje del vendedor, una acción que este servidor probó registrada) la entrada del analista sigue siendo la fijada, así
+que un mensaje no provoca un análisis de pago nuevo.
+
+**El caso de liquidación del propietario.** `PP-R-STL-10190667` («Owner settlement case (sandbox)») es el pedido de 7.00
+USD del caso estándar con su propio id, para las acciones solo del Owner en una disputa propia. En modo alojado solo lo
+ve el Owner del espacio del vendedor; los miembros y los revisores no, y los avisos de PayPal sobre sus disputas van
+solo al Owner (un aviso sobre una de sus disputas de reserva enlaza a la página del caso, que muestra la disputa
+activa). Se vincula mediante `BINDINGS_JSON` con su propia reserva; una disputa solo puede aparecer una vez en todas
+las vinculaciones. No tiene análisis guardado (golden), así que componer evidencia ahí responde `NO_ANALYSIS`. La
+rotación nunca mueve un caso de una disputa retenida (un envío en curso, incierto o pendiente de su relectura); el
+informe de operaciones la muestra como `held`.
+
+**Explore demo.** El simulador reproduce solo los estados y transiciones que registraron los contratos, incluido
+«Outcome pending confirmation»; nada llega a PayPal.
+
 ## 6. Flujos
 
 ### 6.1 Flujo normal: responder a una disputa vinculada
@@ -226,6 +347,13 @@ evidencia. Detalles: [Agente comprador](../user-guide/buying-agent.md).
 | `DAILY_CAP` / `PERSON_CAP` (429) | Se ha agotado un límite de la demo; la respuesta dice cuándo se restablece | Esperar al restablecimiento |
 | `RATE_LIMITED` (429) | Demasiadas peticiones desde esta dirección | Esperar lo que indique `Retry-After` |
 | `CAPS_UNAVAILABLE` (503) | La demo no puede registrar el uso, así que no se hace | Volver a intentarlo más tarde |
+| `OWNER_ONLY` (403) | Esta acción mueve dinero o cambia la disputa: solo el Owner puede hacerla | Pedírselo al Owner; la vista previa muestra su consecuencia |
+| `CONFIRMATION_REQUIRED`, `CONFIRMATION_MISMATCH` | Falta la segunda confirmación del Owner, o sus términos no son los de este intent | Confirmar la consecuencia mostrada; si algo cambió, componer de nuevo |
+| `DISPUTE_UNCERTAIN` | PayPal aún no confirma el último envío a esta disputa | **Check again**; no se envía nada más hasta que se resuelva |
+| `NEEDS_REVIEW` | El comprador escribió después de la aprobación | Leer el mensaje nuevo y después enviar el mismo contenido o editarlo |
+| `DUPLICATE_ACTION` | PayPal ya registró esta misma acción, o hay una oferta tuya pendiente | Leer la disputa; componer otra cosa |
+| `VARIANT_NOT_AVAILABLE` | «Not available: <motivo>» del registro de contratos, o fuera de lo que registró el contrato | — |
+| `WRONG_SEND_ROUTE` | Un intent de acción enviado por la ruta de evidencia, o al revés | Enviarlo desde su propio flujo |
 
 Más: [Solución de problemas](../user-guide/troubleshooting.md).
 
@@ -239,12 +367,16 @@ Más: [Solución de problemas](../user-guide/troubleshooting.md).
 | Análisis de IA | análisis golden incluidos en el código, sin llamada al modelo | guardados + en directo (con límites) | — | en directo con una clave de modelo |
 | **+ Add evidence** | desactivado con su motivo | sí | — | sí, con el servidor |
 | Envío | solo simulador | `provide-evidence` al sandbox | — | sandbox para los casos vinculados |
+| Acciones de disputa ([5.6](#56-acciones-de-disputa-distintas-de-la-evidencia)) | simulador, solo transiciones registradas | no están en el commit desplegado (**Pendiente**) | — | las rutas de acciones del servidor (Probado en local con fakes; contra el sandbox a través de la app: **Pendiente**) |
 | Agente comprador | no está en la zona de demo | `/agent` (espacio del vendedor) | inicio rechazado | `/agent` como operador |
 | Límites diarios | — | sí | — | ninguno |
 
 ## 8. Límites y funciones no disponibles
 
 - Límites: ver las constantes en [Limitaciones](limitations.md) y [Configuración](../technical/configuration.md).
-- No disponible: conectar las disputas propias de un comerciante; enviar mensaje, aceptar la reclamación, hacer una
-  oferta, escalar, reembolsos desde el producto; el entorno live (producción) de PayPal; borrado de la cuenta o del
-  espacio de trabajo por el propio usuario. Ver [Limitaciones](limitations.md).
+- No disponible: conectar las disputas propias de un comerciante; las variantes de acciones de disputa marcadas «Not
+  available» en [5.6](#56-acciones-de-disputa-distintas-de-la-evidencia) (oferta de sustitución, retirar una oferta,
+  apelación, prueba de reembolso, los tipos con devolución); crear reembolsos; el entorno live (producción) de PayPal;
+  borrado de la cuenta o del espacio de trabajo por el propio usuario. El mensaje, la aceptación, la oferta y el
+  escalado están Probados en local, aún no Verificados en sandbox a través de la app ni Desplegados. Ver
+  [Limitaciones](limitations.md).

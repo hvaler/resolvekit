@@ -97,8 +97,15 @@ test, no varios comerciantes reales.
 - Envío: el servidor compone el intent; la aprobación es por hash del contenido, solo desde la sesión propietaria, con
   un TTL de 30 minutos; cualquier edición, un intent más nuevo o un cambio de vinculación lo invalidan; el envío vuelve
   a leer PayPal y rechaza ante cualquier diferencia; un `PayPal-Request-Id` por intent; un bloqueo por disputa; una
-  entrada de auditoría duradera antes de que nada vaya a PayPal. Solo se envía provide-evidence a PayPal. Detalles:
-  [API HTTP](../technical/http-api.md).
+  entrada de auditoría duradera antes de que nada vaya a PayPal. Detalles: [API HTTP](../technical/http-api.md).
+- Acciones de disputa (Probadas en local, no desplegadas): la misma cadena, más el rol comprobado al componer, aprobar,
+  confirmar y enviar (aceptar, ofertar y escalar son solo del Owner, `403 OWNER_ONLY`); una segunda confirmación ligada
+  al id del intent, el hash del contenido, la acción, el importe canónico, la moneda y la consecuencia; importes como
+  cadenas decimales exactas, nunca números de coma flotante; una disputa retenida tras cualquier envío cuyo resultado
+  PayPal no prueba, hasta que una relectura lo resuelva; ningún reintento automático de un POST de acción; «Recorded by
+  PayPal» solo ante una entrada atribuible al envío, nunca ante un cambio de estado por sí solo. Ninguna variante se
+  ofrece sin un contrato registrado
+  ([especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
 - Webhooks: una clave secreta en la URL, comprobación de cabeceras, una lista de hosts de certificado permitidos, topes
   de cuerpo y de frecuencia, verificación con el método de postback documentado por PayPal sobre el cuerpo en bruto; la
   carga útil es solo una pista, la disputa se vuelve a leer.
@@ -122,10 +129,13 @@ test, no varios comerciantes reales.
   de esos datos se rige por los términos de cada proveedor, no por ResolveKit.
 - **Qué se guarda**: consulta [Retención y borrado](../operations/retention-and-deletion.md). Datos personales
   guardados: payer ids de PayPal, nombres visibles, correos enmascarados, claves públicas de passkey, hashes de tokens
-  de invitación (`accounts.json`), textos de notas aprobados (`intents.json`), subidas. No hay función de borrado ni de
+  de invitación (`accounts.json`), textos de notas aprobados y textos de mensajes aprobados (`intents.json`; un mensaje
+  se conserva como las notas de evidencia, mientras dure el registro de su intent), subidas. El hilo de mensajes de
+  PayPal se muestra en cada lectura, pero no se guarda y nunca se entrega al analista. No hay función de borrado ni de
   exportación de cuentas (**Pendiente**).
 - **Los logs** llevan ids, códigos, recuentos y tiempos; nunca texto de documentos, contenido de archivos, claves ni
-  tokens. El log de uso del analista solo guarda recuentos de tokens y tiempos.
+  tokens. Los logs de auditoría y de envíos registran un mensaje solo por el SHA-256 de su texto (un texto corto se
+  puede adivinar a partir de su hash; los logs solo están en el servidor). El log de uso del analista solo guarda recuentos de tokens y tiempos.
 - **Los secretos** vienen solo de variables de entorno; no se lee ninguna variable `VITE_*`, así que nada secreto llega
   al bundle web. `.env` está en `.gitignore`.
 - Los ejemplos de esta documentación usan ids ficticios.
@@ -144,6 +154,9 @@ test, no varios comerciantes reales.
 - Las protecciones exclusivas de Linux (matar por RSS) no se han medido en la plataforma de alojamiento; la memoria con
   PDF grandes en Render no se ha medido.
 - El inicio de sesión depende de una familia de API de PayPal obsoleta y puede dejar de funcionar.
+- Las acciones de disputa se apoyan en una escritura de sandbox por variante (20/10/2026); PayPal puede comportarse de
+  otro modo en otras disputas, motivos o fases, y en producción. El texto aprobado del mensaje está en el disco del
+  servidor, con los intents.
 - No consta ninguna auditoría de seguridad externa ni prueba de penetración. Las revisiones internas constan en los
   planes de `docs/superpowers/`.
 - Consulta [Problemas conocidos](known-issues.md) para los puntos abiertos.

@@ -7,9 +7,10 @@ Enviar evidencia a una disputa de PayPal no se puede deshacer. Por eso ResolveKi
 que sigue siendo el mismo en una lectura nueva de PayPal en el momento del envío. Después relee la disputa e informa de
 lo que registró PayPal.
 
-Estado: Implementado · Probado en local · Verificado en sandbox (envíos de dos revisores registrados por PayPal,
-17/10/2026; una subida de imagen, 18/10/2026) · Desplegado. Solo se envía **Provide evidence**; ver
-[Limitaciones](../product/limitations.md).
+Estado de la evidencia: Implementado · Probado en local · Verificado en sandbox (envíos de dos revisores registrados
+por PayPal, 17/10/2026; una subida de imagen, 18/10/2026) · Desplegado. Las demás acciones de disputa (mensaje,
+aceptación, oferta, escalado) solo están **Probadas en local**: ver [Otras acciones de disputa](#otras-acciones-de-disputa)
+y [Limitaciones](../product/limitations.md).
 
 Hay tres cosas distintas y la app las mantiene separadas: **el envío fue aceptado** (PayPal respondió al envío), **la
 evidencia quedó registrada** (aparece en la disputa de PayPal al releer) y **la resolución de la disputa** (PayPal
@@ -19,8 +20,8 @@ decide más tarde).
 
 **Review what will be sent →** sigue desactivado mientras quede algo abierto. La barra de encima lista lo que falta,
 por ejemplo: «sentence 3 needs review», «the address contradiction is open», «PayPal does not allow this action right
-now», «only "Provide evidence" can be sent from this screen for now», «PayPal won't accept "<type>" here», «the case
-file lacks what "<type>" needs», «the notes exceed ResolveKit's 2,000-character limit» (un tope propio de ResolveKit;
+now», «PayPal won't accept "<type>" here», «"Proof of refund" is not available: Not verified with PayPal: pending
+sandbox test (W-11)», «the case file lacks what "<type>" needs», «the notes exceed ResolveKit's 2,000-character limit» (un tope propio de ResolveKit;
 no encontramos documentación de PayPal sobre un límite de notas), «evidence was already submitted to PayPal». Cuando no queda nada: «All claims are supported or removed. You review everything
 before it is sent.»
 
@@ -90,13 +91,56 @@ En nuestras pruebas en sandbox PayPal dejó de ofrecer `provide_evidence` tras u
 documentada). En la evaluación en sandbox, un caso usado pasa a la siguiente disputa de su reserva unos 15 minutos
 después, en su siguiente lectura, **solo si** queda alguna (a 19/10/2026 el caso estándar no tiene ninguna).
 
+## Otras acciones de disputa
+
+Estado: **Probado en local** (con fakes construidos a partir de respuestas registradas de PayPal). Aún no Verificado en
+sandbox a través de la app, no Desplegado. Estado y reglas por variante:
+[Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
+
+Elige la acción en **What to do**. Solo se puede componer lo que PayPal ofrece ahora mismo en la disputa, y cada
+variante muestra su estado («Tested locally», o «Not available: <motivo>»).
+
+| Acción | Quién | Qué escribes | Qué hace PayPal |
+|---|---|---|---|
+| Send message | Owner, miembros, revisores | **Message to the buyer** (hasta 2,000 caracteres). «The buyer sees exactly this text in PayPal.» | Añade el mensaje al hilo. No fusiona repeticiones |
+| Accept claim · full refund | Owner | **Note to PayPal** | «PayPal refunds <amount> to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.» (reembolsa al comprador y cierra la disputa a su favor; no se puede deshacer) |
+| Accept claim · partial refund offer | Owner | Importe y **Note to PayPal** | «PayPal offers the buyer a partial refund of <amount>. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.» (el comprador debe aceptarlo; si no, no se mueve dinero y la disputa sigue abierta) |
+| Make offer · refund offer | Owner | Importe (menor que el de la disputa) y **Note to PayPal** | «The buyer is offered <amount>; no money moves unless the buyer accepts.» |
+| Escalate | Owner | **Note to PayPal** | «The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.» (la consulta pasa a reclamación que decide PayPal) |
+
+Los miembros y los revisores ven las acciones solo del Owner como vista previa con su consecuencia; no pueden
+componerlas ni enviarlas.
+
+Pasos: **Review the message →** (o **Review the accept →**, **Review the offer →**, **Review the escalation →**) pide
+al servidor que componga exactamente lo que se enviará; la revisión lo cita. **Approve and send** registra tu
+aprobación de ese contenido. En una acción solo del Owner, **Confirm before sending** muestra después la consecuencia y
+el importe, ligados a ese intent; **Confirm and send** la envía. Un mensaje que repite otro que PayPal ya muestra en la
+disputa pide la misma confirmación («PayPal already shows this exact message on this dispute…»).
+
+Si el comprador escribió después de que aprobaras un mensaje, una aceptación o una oferta, la ventana dice «The buyer
+wrote since you approved this» y muestra el mensaje nuevo: **Send it anyway** envía el mismo contenido, **Edit**
+compone uno nuevo.
+
+| Resultado | Qué significa |
+|---|---|
+| **Recorded by PayPal** (con «claim accepted», «offer waiting for the buyer» o «inquiry escalated») | Una lectura fresca muestra la entrada que hizo este envío |
+| **Outcome pending confirmation** | PayPal aún no ha mostrado prueba en ningún sentido. La disputa queda retenida: no se puede enviar nada más en ella hasta que **Check again** (solo una relectura, nunca un envío) lo resuelva |
+| Not recorded by PayPal | PayPal no muestra rastro del envío y sigue ofreciendo la acción |
+| Not sent | PayPal lo rechazó; no se hizo nada |
+
+Tras un escalado, el caso muestra «PayPal is reviewing; the claim stage can take a few minutes» hasta que se abre la
+reclamación. Nada se reintenta automáticamente. La evidencia de prueba de reembolso no está disponible en esta entrega;
+si PayPal solo pide esa, no se puede enviar evidencia en esa disputa.
+
 ## Qué se comparte y con quién
 
 | Destinatario | Qué | Cuándo |
 |---|---|---|
 | Proveedor del modelo de IA (Gemini, o Groq como respaldo) | Los documentos del caso tal como los monta el servidor (documentos sintéticos del caso, campos leídos de la disputa de PayPal y, para el caso de agente, el recibo de MeterMCP), el texto de tus subidas confirmadas; las frases editadas para las recomprobaciones | En cada análisis en directo y recomprobación |
+| PayPal (sandbox), otras acciones | El texto exacto del mensaje, o el tipo, el importe y la nota de una aceptación, oferta o escalado | Solo cuando se envía la acción |
 | PayPal (sandbox) | Tipo de evidencia; notas (solo frases con respaldo); transportista y seguimiento o referencia; PDF construidos en el servidor a partir de los documentos del caso (encabezados con «SYNTHETIC TEST DOCUMENT»); para el caso de agente, el PDF del recibo; las subidas tapadas que adjuntaste, con los nombres `E<n>-upload.png` (`.jpg` si es una foto tapada), `E<n>-upload.pdf`, `E<n>-pasted.pdf` | Solo al pulsar **Submit evidence to PayPal** |
-| La auditoría del servidor de ResolveKit | Quién aprobó, cuándo, hash del contenido, id de petición, respuesta de PayPal; ningún texto de documentos | Al aprobar y al enviar |
+| La auditoría del servidor de ResolveKit | Quién aprobó, cuándo, hash del contenido, id de petición, respuesta de PayPal; ningún texto de documentos; un mensaje solo por su hash | Al aprobar y al enviar |
+| Los intents del servidor de ResolveKit | El texto aprobado del mensaje, como las notas de evidencia aprobadas (el hilo en sí no se guarda ni se entrega a la IA) | Mientras se conserve el registro del intent |
 
 Tus credenciales de PayPal y las del servidor nunca llegan al navegador.
 
@@ -115,7 +159,10 @@ de modelos conservan lo que recibieron según sus propias políticas.
 | `SELLER_EVIDENCE_EXISTS` «PayPal already has seller evidence for this dispute; nothing more can be sent» | Lee la evidencia registrada |
 | `DISPUTE_BUSY` | Hay otro envío en curso para esta disputa: espera y después relee |
 | `NOT_THE_SELLER` | Solo el espacio del vendedor puede responder |
-| `DAILY_CAP` | Se han agotado los envíos de evidencia de la demo por hoy; el mensaje dice cuándo se restablecen |
+| `DAILY_CAP` | Se han agotado los envíos de evidencia (o de mensajes, o las acciones de liquidación) de la demo por hoy; el mensaje dice cuándo se restablecen |
+| `OWNER_ONLY` | Solo el Owner puede aceptar, ofertar o escalar |
+| `DISPUTE_UNCERTAIN` | El último envío a esta disputa aún no está confirmado: **Check again** |
+| `NEEDS_REVIEW` | El comprador escribió después de tu aprobación: léelo y después envía el mismo contenido o edítalo |
 | «The PayPal connection changed while you were reviewing. Close this and open the case again.» | Cierra y vuelve a abrir el caso |
 
 Más en [Solución de problemas](troubleshooting.md). Cómo se hace cumplir: [Fronteras de confianza](../architecture/trust-boundaries.md).

@@ -130,10 +130,12 @@ sequenceDiagram
   W->>W: «Recorded by PayPal» only for new matching SUBMITTED_BY_SELLER evidence
 ```
 
-Only `provide-evidence` is sent end to end. The client package also has `send-message` and `accept-claim`
-methods, but no route calls them; there is no make-offer, escalate or refund code. In the review screen the other
-actions PayPal allows are listed, and choosing one blocks sending with «only "Provide evidence" can be sent from
-this screen for now». Details: [PayPal integration](../technical/paypal-integration.md),
+Only `provide-evidence` is verified end to end and deployed. Since commit `076c74f` (20/10/2026, not deployed) the
+server also sends messages, accepts, offers and escalations through the same chain (compose, approve by hash, a
+second confirmation for the Owner's actions, a fresh read, `send_started` on disk, one POST, an attributable
+read-back), only for the variants whose contract is recorded; status: Tested locally
+([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)). There is
+no refund-creating code. Details: [PayPal integration](../technical/paypal-integration.md),
 [HTTP API](../technical/http-api.md).
 
 ### Buying agent

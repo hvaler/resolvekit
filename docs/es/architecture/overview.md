@@ -131,10 +131,12 @@ sequenceDiagram
   W->>W: «Recorded by PayPal» solo para evidencia SUBMITTED_BY_SELLER nueva y coincidente
 ```
 
-Solo `provide-evidence` se envía de extremo a extremo. El paquete cliente también tiene los métodos `send-message` y
-`accept-claim`, pero ninguna ruta los llama; no hay código para hacer una oferta, escalar ni reembolsar. En la pantalla
-de revisión se listan las demás acciones que PayPal permite, y elegir una bloquea el envío con «only "Provide evidence"
-can be sent from this screen for now». Detalles: [integración con PayPal](../technical/paypal-integration.md),
+Solo `provide-evidence` está verificado de extremo a extremo y desplegado. Desde el commit `076c74f` (20/10/2026, no
+desplegado) el servidor también envía mensajes, aceptaciones, ofertas y escalados por la misma cadena (componer,
+aprobar por hash, una segunda confirmación para las acciones del Owner, una lectura fresca, `send_started` en disco, un
+único POST, una relectura atribuible), solo para las variantes cuyo contrato está registrado; estado: Probado en local
+([especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
+No hay código que cree reembolsos. Detalles: [integración con PayPal](../technical/paypal-integration.md),
 [API HTTP](../technical/http-api.md).
 
 ### Agente comprador

@@ -52,11 +52,14 @@ Detalles: [visión general del producto](docs/es/product/overview.md) · [pipeli
 | Google Gemini (`gemini-3.8-flash`), Groq (`openai/gpt-oss-120b`) como respaldo | Analista: hechos con citas literales, cronología, contradicciones, borrador, verificación frase a frase. Agente comprador: una llamada a herramienta por turno mediante function calling | Desplegado; analista medido solo en conjuntos sintéticos |
 | Código determinista | Comprobación de citas literales, comprobación de números, reglas para la acción y el tipo de evidencia, comprobaciones de presupuesto y límites para el agente | Implementado · Probado en local · Desplegado |
 
-Solo `provide-evidence` se envía a PayPal de extremo a extremo. Enviar mensajes, aceptar una reclamación, hacer una
-oferta, escalar y reembolsar **no** son funciones del producto (Pendiente): la interfaz lista las acciones que PayPal
-permite, pero elegir cualquier acción distinta de **Provide evidence** bloquea el envío con *only "Provide evidence"
-can be sent from this screen for now* («por ahora, desde esta pantalla solo se puede enviar "Provide evidence"»). Nada
-se ha ejecutado contra PayPal live. Fuentes: [integración con PayPal](docs/es/technical/paypal-integration.md).
+Solo `provide-evidence` está verificado de extremo a extremo a través de la app y desplegado. Enviar un mensaje,
+aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial y escalar están **Probados
+en local** desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato de sandbox aprobado por el propietario;
+aún no están verificados a través de la app en el sandbox ni desplegados. Las ofertas de sustitución, retirar una
+oferta, las apelaciones, la prueba de reembolso y los tipos con devolución están **No disponibles**, cada uno con su
+motivo. ResolveKit nunca crea un reembolso. Estado por variante:
+[especificación funcional](docs/es/product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
+Nada se ha ejecutado contra PayPal live. Fuentes: [integración con PayPal](docs/es/technical/paypal-integration.md).
 
 ## Elige tu entorno
 
@@ -163,8 +166,8 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 ## Limitaciones actuales
 
 - Conexión del comerciante a sus propias disputas: Pendiente (ver arriba).
-- Solo se envía `provide-evidence` a PayPal; ni mensajes, ni ofertas, ni aceptación de reclamaciones, ni escalado, ni
-  reembolsos.
+- Solo `provide-evidence` está verificado a través de la app y desplegado; mensaje, aceptación, oferta y escalado están
+  Probados en local (no desplegados); nunca se crea un reembolso.
 - Solo sandbox; PayPal live nunca se ha probado. Los tiempos y comportamientos del sandbox pueden
   diferir en live.
 - La reserva de disputas nuevas del sandbox del caso de evaluación estándar estaba vacía el 19/10/2026: hasta que se

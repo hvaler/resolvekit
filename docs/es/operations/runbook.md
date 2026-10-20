@@ -82,13 +82,15 @@ Líneas de log útiles (de ResolveKit salvo que se indique). Los logs nunca llev
 
 | Lo que ve el usuario o el log | Causa | Qué hacer |
 |---|---|---|
-| `429 DAILY_CAP` (análisis en directo 60, recomprobaciones 200, envíos de evidencia 20, subidas 40, ejecuciones del agente 20 por día UTC) | Se alcanzó el tope diario global de esa acción | Espera a que cambie el día UTC (`GET /api/demo` muestra `resetsAt`), o sube el valor `DAILY_*` en Render (reinicia el servicio; los recuentos se conservan en disco) |
+| `429 DAILY_CAP` (análisis en directo 60, recomprobaciones 200, envíos de evidencia 20, subidas 40, ejecuciones del agente 20 por día UTC; en el código, aún no desplegado: envíos de mensajes 20 `DAILY_MESSAGE_SENDS`, acciones de liquidación 20 `DAILY_SETTLE_SENDS`) | Se alcanzó el tope diario global de esa acción | Espera a que cambie el día UTC (`GET /api/demo` muestra `resetsAt`), o sube el valor `DAILY_*` en Render (reinicia el servicio; los recuentos se conservan en disco) |
 | `429 PERSON_CAP` | 5 ejecuciones del agente por persona y día UTC (no configurable) | Espera a la medianoche UTC |
 | Se alcanzó `DAILY_BUDGETS` (20) de MeterMCP | Presupuestos abiertos hoy | Espera al día UTC siguiente, o sube `DAILY_BUDGETS` en MeterMCP |
 | `429 RATE_LIMITED` con `Retry-After` | Límite por dirección u horario (p. ej., 6 análisis en directo o 30 recomprobaciones por hora en todo el servidor; subidas, tapados y lecturas de páginas de PDF, 20 cada 10 min por dirección) | Espera. Los límites por dirección son una cortesía, no la frontera de seguridad |
 | `503 CAPS_UNAVAILABLE` (envíos, ejecuciones en directo, recomprobaciones, subidas y ejecuciones del agente rechazados) | `daily-caps.json` (o `agent-run-caps.json`) ilegible al arrancar, o falló el último guardado: los topes fallan en cerrado | Arregla o elimina el archivo en el disco; se vuelve a leer en la siguiente reserva, sin reiniciar. Eliminarlo pone a cero los recuentos de hoy |
 | `503 AUDIT_UNAVAILABLE` al enviar | El estado `sending` y el evento `send_started` no llegaron al disco: no se envió nada | Revisa el disco (espacio, permisos); la persona puede volver a enviar |
 | `AUDIT NOT DURABLE` en el log | PayPal aceptó, falló la escritura del resultado | La relectura de PayPal es la verdad; revisa el disco |
+| `action outcome unknown · case … · intent … · request …` en el log; `409 DISPUTE_UNCERTAIN` para la persona | Una acción de disputa agotó el tiempo o recibió una respuesta poco clara: la disputa queda retenida | No hay nada que forzar. La persona pulsa **Check again** (una relectura); la retención termina cuando PayPal prueba la acción registrada o ausente. Nunca reenvíes a mano |
+| `… could not be read …; every action interrupted by the restart is held until a read-back settles it` | El log de envíos no se pudo leer al arrancar | Arregla el archivo; las disputas retenidas se liberan con sus relecturas |
 | `503 ACCOUNTS_UNAVAILABLE` | No se pudo escribir un cambio en `accounts.json` (se deshace) | Revisa el disco |
 | `503` con `STORAGE` (subidas), `507 STORAGE_FULL` | Falló la escritura de una subida (se deshace), o se agotó el presupuesto de 300 MiB para subidas | Revisa el disco; borra subidas innecesarias; las caducadas desaparecen en menos de una hora |
 | `503 STORAGE` al iniciar el agente | No se pudo escribir el registro de ejecución: no se inició nada | Revisa el disco |
@@ -152,6 +154,19 @@ sigue en la lista de ese caso, las entradas que ya no coinciden con las vinculac
 lista nunca se salta. Quitar de `BINDINGS_JSON` las disputas usadas sigue siendo ordenado, pero ya no es necesario. Un
 archivo ilegible se conserva como `reserve-position.json.corrupt-<time>` y los casos recorren sus listas como antes
 (Probado en local, `apps/server/test/reserve.test.ts`; aún no observado en el servicio alojado).
+
+**Una disputa retenida nunca se rota** (Probado en local, `reserve.test.ts`, `hosted.test.ts`): mientras una acción de
+disputa sobre la disputa activa esté en curso, incierta o pendiente de su relectura, ni una lectura (`rotateIfUsed`),
+ni un arranque, ni una recarga de vinculaciones (`reserve.apply()`, incluida una recarga completa que la liste en otro
+sitio) mueven el caso fuera de ella, para que quien envió la acción lea la respuesta de PayPal en la misma disputa. El
+log dice `reserve · case …: … is held by an action still settling → kept active`, y el informe de operaciones
+(`GET /api/ops/status`) muestra el `held` de cada vinculación (`{intentId, since}`, o `null`). Una disputa retenida que
+las vinculaciones nuevas ya no listan no se mantiene: manda la configuración.
+
+**El caso de liquidación del propietario** `PP-R-STL-10190667` tiene su propia reserva en `BINDINGS_JSON` y rota como
+cualquier caso. Cada disputa solo puede aparecer una vez en todo el archivo (un duplicado detiene el arranque). No tiene
+análisis guardado, así que la evidencia compuesta ahí responde `NO_ANALYSIS`; está pensado para las acciones solo del
+Owner.
 
 **Estado el 19/10/2026 (evidencia privada):** la disputa activa del caso estándar está usada y su reserva está vacía,
 así que los nuevos envíos a ese caso están **Pendientes** hasta que se rellene la reserva (previsto del 25 al 30/11).

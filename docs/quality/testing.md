@@ -26,6 +26,23 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 
 ## Latest recorded run
 
+**2026-10-20 14:17Z · commit `076c74f` (with the dispute actions; not deployed) · Node v24.19.0 · Windows
+(MINGW64_NT-10.0-26220).** `npm test` exited 0 (every suite ran); `npm run typecheck` exited 0.
+
+| Suite | Command | Tests | Pass | Fail |
+|---|---|---|---|---|
+| `packages/paypal` | `npm run test:paypal` | 37 | 37 | 0 |
+| `packages/hosting` | `npm run test:hosting` | 32 | 32 | 0 |
+| `packages/cases` | `npm run test:cases` | 12 | 12 | 0 |
+| `packages/analyst` | `npm run test:analyst` | 159 | 159 | 0 |
+| `packages/agent` | `npm run test:agent` | 52 | 52 | 0 |
+| `apps/server` | `npm run test:server` | 620 | 620 | 0 |
+| `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
+| `apps/web` (vitest, 35 files) | `npm run test:web` | 435 | 435 | 0 |
+| Total | | 1,427 | 1,427 | 0 |
+
+The previous recorded run, of the deployed commit:
+
 **2026-10-19 12:35Z · commit `fbe9621` · Node v24.19.0 · Windows (MINGW64_NT-10.0-26220).**
 
 | Suite | Command | Tests | Pass | Fail |
@@ -64,11 +81,12 @@ quoted in private notes belong to earlier commits and are not reused here.
 | Agent engine | `packages/agent/test/{engine,meter,models}.test.ts` | See [below](#buying-agent-unit-tests-and-observed-sandbox-runs) |
 | Server API | `apps/server/test/{app,hosted,auth,environments,sellers,mapping,bindings,reserve,webhook,ops}.test.ts` | Guards, sign-in, workspaces, binding checks, rotation, webhooks, ops report |
 | Submission | `intent.test.ts`, `intent-sessions.test.ts`, `review-fixes.test.ts`, `analysis.test.ts` | Composition, approval by hash, invalidation, per-dispute lock, durable audit, re-checks |
+| Dispute actions | Server: `actions.test.ts`, `accept-claim.test.ts`, `make-offer.test.ts`, `escalate.test.ts`, `evidence-after-escalation.test.ts`, `intent-locks.test.ts`, `contract-read.test.ts`, `reserve.test.ts`, `hosted.test.ts`. Web: `domain/actions.test.ts`, `actionContracts.test.ts`, `actionReadback.test.ts`, `actionSend.test.ts`, `simulatedActions.test.ts`, `amounts.test.ts`, `components/ActionFlow.test.tsx` | Fakes built from the recorded PayPal contracts (`packages/paypal/contracts/`), no PayPal call: per-action hashes and cross-action replay, owner-only role at every step, the bound second confirmation, the amount parser, in-flight / uncertain / duplicate locks seeded from the send log, evidence by stage, attributable read-back proofs (an earlier identical message, another actor's state change), `NEEDS_REVIEW`, restart and reconcile, rotation guard, simulator states only from contracts |
 | Uploads | `uploads-{image,text,ocr,store,routes,documents,pdf-input,pdf-routes,pdf-recovery}.test.ts`, `pdf-image.test.ts` | See [Security and privacy](security-and-privacy.md#untrusted-files) |
 | Agent on the server | `agent-routes.test.ts`, `agent-runs.test.ts`, `agent.test.ts` | Caps, visibility, recovery, settlement from the receipt, E5 binding rule |
 | Scripts | `demo-check.test.ts`, `demo-prepare.test.ts` | Argument parsing, reserve checks, readiness evaluation |
 | MeterMCP | `apps/metermcp/test/{app,meter,failclosed,hosted,limits,demo-agent}.test.ts` | Metering, atomic reservations, fail-closed approval, settlement, admin guards, ledger migration (a forced failure leaves schema and rows unchanged; reopening a migrated ledger is a no-op) |
-| Web | `apps/web/src/**/*.test.ts` (vitest, `environment: 'node'`) | Pure domain logic: environments, intent building, read-back comparison, drafts, PDF review decisions, agent run view. **No DOM rendering tests** for the upload and PDF UI (known gap) |
+| Web | `apps/web/src/**/*.test.{ts,tsx}` (vitest, `environment: 'node'`) | Pure domain logic: environments, intent building, read-back comparison, drafts, PDF review decisions, agent run view; the dispute-action components rendered to static HTML (`renderToString`), no browser DOM. **No DOM rendering tests** for the upload and PDF UI (known gap) |
 
 ## Sandbox observations
 
@@ -86,8 +104,11 @@ evidence). An observation is one example, not a guarantee.
 | A covered PNG upload sent and recorded by PayPal (PayPal's copy held only IHDR/IDAT/IEND, the cover burned in) | 18/10 |
 | Two model-driven agent runs on `/agent` | 19/10 (below) |
 | `demo:check` READY except the empty standard reserve | 19/10 |
+| A payment with an open dispute showed as held; the seller's sandbox web pages offered no refund outside the case | 19/10 |
+| Owner-approved dispute-action contract writes W-1 to W-12, sent outside the app's flow (contract level, not the app): W-1 to W-6, W-9 and W-10 recorded, W-7 refused, W-8, W-11 and W-12 not sent ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 20/10 |
 
-**Not observed in the sandbox (Pending):** a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
+**Not observed in the sandbox (Pending):** the app's own dispute-action flow end to end (message, accept, offer,
+escalate sent through ResolveKit and read back); a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
 restart recovery; **Stop** on a real run; the Groq fallback for the agent; pasted-text and PDF uploads sent to PayPal;
 passkey creation on the deployed service; the E5 run record on a bound case; `npm run demo-agent` against the hosted
 MeterMCP.
@@ -131,5 +152,7 @@ not by the model-driven agent.
 - No DOM tests for the upload and PDF review UI (`useUploads`, `PdfSelect`, `PdfReview`, `CasePage` wiring).
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
+- Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
+  is Pending.
 
 The full list, with sources, is in [Known issues](known-issues.md).

@@ -3,7 +3,8 @@
 # PayPal integration
 
 Which PayPal APIs ResolveKit calls, with which credential, what it relies on, and what was only observed in the
-sandbox. Code at commit `fbe9621`; PayPal documentation checked on 19/10/2026 (developer.paypal.com).
+sandbox. Code at commit `fbe9621`, the dispute actions at commit `076c74f` (20/10/2026); PayPal documentation checked
+on 19/10/2026 (developer.paypal.com).
 
 Three kinds of statement are kept apart on this page:
 
@@ -19,7 +20,7 @@ sandbox · live» followed by a dispute id means a live read of a **sandbox** di
 
 | Credential | Variables | Owned by | Used for |
 |---|---|---|---|
-| Seller app | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | The sandbox business account that is the seller on the bound disputes ("Test Store" in our sandbox) | Dispute reads, provide-evidence, webhook verification (server); budgets, captures, voids (MeterMCP, same app); test payments (`demo:prepare`) |
+| Seller app | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | The sandbox business account that is the seller on the bound disputes ("Test Store" in our sandbox) | Dispute reads, provide-evidence, the dispute actions (send-message, accept-claim, make-offer, escalate), webhook verification (server); budgets, captures, voids (MeterMCP, same app); test payments (`demo:prepare`) |
 | Identity app | `PAYPAL_IDENTITY_CLIENT_ID`, `PAYPAL_IDENTITY_CLIENT_SECRET` | **Another** sandbox business account (the platform) | **Continue with PayPal**: the no-charge agreement token only. Must differ from the seller app |
 | Platform (Partner) app | none | — | **No code.** Partner Referrals and `PayPal-Auth-Assertion` were tried only outside the app: see [merchant onboarding](merchant-onboarding.md) |
 
@@ -34,23 +35,25 @@ refreshes it 60 s before expiry. Requests time out after 30 s (the servers' sett
 | `GET /v1/customer/disputes/{id}` | server: case read, compose, send, bindings check, webhook re-read; `demo:prepare` | seller app |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | `demo:prepare` only | seller app |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | server, `POST /api/disputes/:case/evidence` | seller app |
+| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` with a file), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | server, `POST /api/disputes/:case/send` (Tested locally with fakes; not deployed) | seller app |
+| `GET /v2/payments/refunds/{id}` | `npm run contract:read -- --refund <id>` only (read-only contract reads) | seller app |
 | `POST /v1/notifications/verify-webhook-signature` | server webhook handler | seller app (the webhook is registered on it) |
 | `POST /v1/billing-agreements/agreement-tokens`, `GET /v1/billing-agreements/agreement-tokens/{id}` | server sign-in | identity app |
 | `POST /v2/checkout/orders` (intent `AUTHORIZE`), `GET /v2/checkout/orders/{id}`, `POST /v2/checkout/orders/{id}/authorize` | MeterMCP budget | seller app (on the MeterMCP service) |
 | `GET /v2/payments/authorizations/{id}`, `POST …/capture`, `POST …/void`, `GET /v2/payments/captures/{id}` | MeterMCP settlement and reconciliation | seller app |
 | `POST /v2/checkout/orders` (intent `CAPTURE`), `GET …`, `POST …/capture` | `demo:prepare` (the standard case's 7.00 USD test payment) | seller app |
 
-Defined in `packages/paypal` but **never called by any route**: `send-message`, `accept-claim`. There is no
-make-offer, escalate or refund code anywhere. The review screen lists the actions PayPal allows on the dispute; if
-the merchant chooses one other than **Provide evidence**, sending is blocked with «only "Provide evidence" can be
-sent from this screen for now».
+The dispute actions (message, accept, offer, escalate) are sent by the server's action route, only for the variants
+whose contract is recorded ([below](#dispute-action-contracts)); per-variant status is in the
+[functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence). No code
+creates or changes a refund.
 
 ## Client behaviour
 
 | Behaviour | Detail |
 |---|---|
-| `PayPal-Request-Id` | On every POST: the caller's id or a random one. An intent keeps one id for all its sends. Whether the Disputes API deduplicates on it is **not verified**; the code reads the dispute back before any retry |
-| 429 | Retried up to 3 attempts with the same id and body, waiting `Retry-After` (≤ 5 s) |
+| `PayPal-Request-Id` | On every POST: the caller's id or a random one; a dispute-action POST requires one. An intent keeps one id for all its sends. Observed: `send-message` does **not** deduplicate on it (W-2, 20/10/2026); on the other routes it is **not verified**. The code reads the dispute back before any retry |
+| 429 | Retried up to 3 attempts with the same id and body, waiting `Retry-After` (≤ 5 s). Dispute-action POSTs are **never** retried automatically: a 429, 408, 5xx, timeout or unclear answer is an unknown outcome, settled by a read-back |
 | Failed GET | 408, 500, 502, 503, 504 retried after 300 ms and 900 ms |
 | Other errors | Returned to the caller as `PayPalError` with status, body and `paypal-debug-id`; the API answers `{error, paypalIssue}` (e.g. `EVIDENCE_TYPE_IS_NOT_ALLOWED`) |
 | Webhook verification | No retry: a delivery PayPal cannot confirm now is answered 503 and PayPal delivers it again |
@@ -98,6 +101,47 @@ type, full notes, carrier and tracking, file names). New seller evidence that do
 stops any automatic retry. A timeout is neither success nor failure: the app reads back, and offers a safe retry only
 if PayPal shows no seller evidence. Status: Implemented · Tested locally · Verified in sandbox («6 of 6 fields»,
 17/10 and 18/10/2026, including an uploaded image) · Deployed. Timeout behaviour against PayPal: Pending.
+
+### Dispute action contracts
+
+A dispute action variant is offered only when three things agree: PayPal's documentation (the Disputes v1
+[schema](https://developer.paypal.com/api/customer-disputes/v1/schema.json),
+[use the Disputes API](https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api),
+[test and go live](https://developer.paypal.com/platforms/disputes/test-go-live), accessed 19/10/2026); read-only
+sandbox reads (`packages/paypal/contracts/reads/`, taken with `npm run contract:read`, which sends only GET); and one
+write per variant that the owner approved request by request, recorded with its response and its read-backs at
++0 s, +30 s, +2 min and +10 min (`packages/paypal/contracts/*.json`). The registry is
+`apps/web/src/domain/actionContracts.ts`.
+
+**Observed in sandbox, contract level (20/10/2026).** These writes were sent outside the app's own flow; the app's
+flow end to end against the sandbox is **Pending**. Single observations, not PayPal rules and not production.
+
+| Write | Variant | Sandbox dispute | Observed |
+|---|---|---|---|
+| W-1 | `send_message` | PP-R-VQD-10193598 | Accepted (JSON). The seller message appeared about 3 s after the send started, its content byte-identical. A brief `UNDER_REVIEW` with no actions, then `WAITING_FOR_BUYER_RESPONSE` without `make_offer` |
+| W-2 | `send_message`, the same request and `PayPal-Request-Id` | same | A second message was posted: no deduplication by request id |
+| W-3 | `send_message:file` | same | Multipart `input` (the JSON message) and `message_document` (the file) accepted; the message with its exact text and one document about 3.5 s after |
+| W-4 | `make_offer:REFUND`, 2.00 of 7.00 USD | PP-R-OZY-10193601 | `offer.history` gained a seller `PROPOSED` entry with the type and amount about 3.5 s after; the note echoed as a seller message; no money moved, nothing closed. PayPal then waited for the buyer, stopped offering `make_offer` and offered accept `REFUND` only |
+| W-5 | `escalate` | PP-R-NDZ-10193597 | An `evidences[]` entry `SUBMITTED_BY_SELLER`, `action_info.action: ESCALATE`, with the note, about 3.9 s after. Stage `CHARGEBACK` about 2 min 46 s later; `UNDER_REVIEW` with flickering links in between |
+| W-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | Evidence accepted again in the claim stage; each `evidences[]` entry carries its `dispute_life_cycle_stage` |
+| W-7 | the sandbox's adjudicate helper (set-up for an appeal) | same, `UNDER_REVIEW` | Refused: `400`, `ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`; no appealable state could be produced |
+| W-8 | `appeal` | — | Not sent (W-7 was refused) |
+| W-9 | `accept_claim:PARTIAL_REFUND`, 2.00 of 7.00 USD | PP-R-KMJ-10193602 | `200`, recorded as an offer: an `offer.history` seller `PROPOSED` entry, type `REFUND`, 2.00 USD; no `evidences[]` entry; nothing closed, no money moved; the note echoed as a seller message |
+| W-10 | `accept_claim:REFUND` | PP-R-PAU-10193600 | An attributable entry (`ACCEPT_CLAIM`, `response_option: REFUND`, the note) about 5 s after; a 7.00 USD refund at once; `RESOLVED` in the buyer's favour (`SELLER_ISSUED_REFUND`) by +2 min, after `UNDER_REVIEW` |
+| W-11 | `evidence:PROOF_OF_REFUND` | — | Not sent (owner decision, 20/10/2026); a pending test |
+| W-12 | `make_offer:REPLACEMENT_WITHOUT_REFUND` | PP-R-GCV-10193596 (not as described) | Not sent: PayPal offered only `REFUND` and `REFUND_WITH_RETURN` on that dispute |
+
+What ResolveKit takes from them: the proof of each action is the entry the write left (the message; the offer entry,
+also for a partial accept; the `ACCEPT_CLAIM` entry; the `ESCALATE` entry), never a state change alone; an action is
+taken as absent only after 60 s without proof; every action is composed only in `INQUIRY`, on not-received disputes for
+accept, offer and escalate, because that is all the writes covered.
+
+**W-11, the pending proof-of-refund test.** A disputed payment showed as held in the sandbox on 19/10/2026, and the
+seller's sandbox web pages offered no refund outside the case. The planned sequence is therefore: a new sandbox
+payment; the owner refunds part of it **before** any dispute opens; the buyer opens a not-received dispute on it; a
+read-only check that the refund is completed, belongs to the disputed capture, has the same currency and is partial;
+the exact `PROOF_OF_REFUND` request approved by the owner and sent once; read-backs at +0 s, +30 s, +2 min and
++10 min. Until then the variant stays «Not available».
 
 ### Lifecycle (documented)
 
@@ -184,7 +228,7 @@ business test account and a personal (buyer) test account. Observations, not Pay
 | The item type (physical, digital download, service, booking) is the buyer's choice in the dispute form, not the order's item category | Show the buyer-declared item type in the case header |
 | `provide-evidence` takes multipart: JSON part `input` (`{"evidences":[…]}`) and `evidence-file` parts (PDF/JPG/PNG/GIF) | Implemented in `packages/paypal` |
 | After evidence was submitted, `provide_evidence` disappeared from the dispute's actions; status moved to `WAITING_FOR_BUYER_RESPONSE` or `UNDER_REVIEW` | Irreversible-action confirmation; re-read and show the recorded state. «Once per dispute» is this observation, not a documented rule |
-| In the inquiry stage the seller had `send_message`, `make_offer`, `accept_claim`, `provide_evidence`, `escalate` | The review screen lists the allowed actions; only provide-evidence is built |
+| In the inquiry stage the seller had `send_message`, `make_offer`, `accept_claim`, `provide_evidence`, `escalate` | The review screen lists the allowed actions; then only provide-evidence was built (the other actions since: [dispute action contracts](#dispute-action-contracts)) |
 | Partial refunds on a capture completed immediately (by hand) | None: ResolveKit has no refund code |
 | A real dispute always lists the buyer's own entry (`evidence_type: CREATE`, `source: SUBMITTED_BY_BUYER`) next to PayPal's request (`REQUESTED_FROM_SELLER`, no documents) | «Recorded» is only new `SUBMITTED_BY_SELLER` evidence compared with the read before sending |
 
@@ -209,12 +253,17 @@ in `WAITING_FOR_SELLER_RESPONSE` through `apps/server`, with our own `PayPal-Req
 | 18/10 | An uploaded, covered PNG was recorded by PayPal as `E7-upload.png`; PayPal's copy held only the PNG's image chunks, cover burned in |
 | 18/10 | Platform / third-party access tests outside the app: [merchant onboarding](merchant-onboarding.md) |
 | 19/10 | Two model-driven agent runs settled in the sandbox: [buying agent](buying-agent.md) |
+| 19/10 | A payment with an open dispute showed as held; the seller's sandbox web pages offered no refund outside the case |
+| 20/10 | Owner-approved contract writes W-1 to W-12: [dispute action contracts](#dispute-action-contracts) |
 
 ## Unknown and not claimed
 
 - Whether evidence can be provided more than once per dispute or stage in general.
-- Whether the Disputes API deduplicates `PayPal-Request-Id` (PayPal: «Not all APIs support this header»,
+- Whether the Disputes API deduplicates `PayPal-Request-Id` on routes other than `send-message`, which did not (W-2)
+  (PayPal: «Not all APIs support this header»,
   [idempotency](https://developer.paypal.com/api/rest/reference/idempotency/)).
+- What the buyer's answer to an offer looks like in the dispute (never recorded); the dispute actions on other reasons
+  and stages; an appeal (the sandbox could not produce an appealable dispute); a replacement offer (never offered).
 - Any notes length limit on PayPal's side; the 2 000-character cap is ResolveKit's.
 - The maximum number of files per call.
 - Live-environment behaviour of everything on this page.

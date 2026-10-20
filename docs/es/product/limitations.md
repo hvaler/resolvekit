@@ -3,7 +3,8 @@
 # Limitaciones
 
 Lo que ResolveKit no hace, todavía no hace o no se ha demostrado que haga. Comprobado frente al código en el commit
-`fbe9621` (19/10/2026) y las listas de seguimiento de `docs/superpowers/plans/`. Los problemas de código para
+`fbe9621` (19/10/2026) y las listas de seguimiento de `docs/superpowers/plans/`; las acciones de disputa, frente al
+commit `076c74f` (20/10/2026). Los problemas de código para
 colaboradores están en [Problemas conocidos](../quality/known-issues.md); esta página recoge lo que necesita saber un
 usuario, un comerciante o un jurado.
 
@@ -12,8 +13,15 @@ usuario, un comerciante o un jurado.
 | Función | Situación hoy | Estado |
 |---|---|---|
 | Conectar las disputas de PayPal propias de un comerciante | Un comerciante que inicia sesión con **Continue with PayPal** recibe la pantalla de espera. La app no tiene código de Partner Referrals, `merchant-integrations` ni `PayPal-Auth-Assertion`. Se hicieron experimentos en sandbox fuera de la app (ver [Alta de comerciantes](../technical/merchant-onboarding.md)); no son una función | **Pendiente** (no implementado, no desplegado, no disponible) |
-| Enviar mensaje, aceptar la reclamación, hacer una oferta, escalar | El expediente muestra las acciones que PayPal permite, pero solo se puede enviar **Provide evidence**: elegir otra muestra «only "Provide evidence" can be sent from this screen for now». `send-message` y `accept-claim` existen como métodos de cliente en `packages/paypal` sin ruta; hacer una oferta y escalar no tienen código | **Pendiente** |
-| Reembolsos | No hay código de reembolso en ningún sitio | **Pendiente** |
+| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el flujo propio de la app no se ha ejecutado de extremo a extremo contra el sandbox, y el commit desplegado `fbe9621` es anterior a ellos. Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Probado en local; Verificado en sandbox y Desplegado: **Pendiente** |
+| Un mensaje con adjunto | La ruta del servidor está probada; el editor web aún no puede adjuntar una subida, así que la interfaz no lo ofrece | Probado en local (servidor); en la interfaz: **Pendiente** |
+| Oferta de sustitución | No disponible: «Not verified with PayPal: never offered on a sandbox dispute» | No disponible |
+| Retirar una oferta | No disponible: «PayPal documents no route to withdraw an offer» | No disponible |
+| Apelación | No disponible: «Not verified with PayPal: the sandbox could not produce an appealable dispute» | No disponible |
+| Prueba de reembolso (evidencia) | No disponible: «Not verified with PayPal: pending sandbox test (W-11)». Si PayPal solo pide esa, en esta entrega no se puede enviar evidencia en esa disputa | No disponible |
+| Tipos con devolución (reembolso con devolución, etiqueta de envío de devolución) | No disponible: «Not in this delivery (owner decision)» | No disponible |
+| `provide_supporting_info` | PayPal lo ofreció tras evidencia en una reclamación; ResolveKit no lo soporta | No disponible |
+| Crear reembolsos | Ningún código crea o cambia un reembolso. El dinero solo se mueve con una aceptación total en PayPal, o cuando el comprador acepta una oferta. En el sandbox, un pago en disputa quedó retenido y no se pudo reembolsar fuera del caso (observado el 19/10/2026) | No previsto en esta entrega |
 | PayPal live (producción) | Nada se ha ejecutado contra PayPal live. El modo alojado se niega a arrancar en `live` sin una activación explícita. «PayPal sandbox · live» significa una lectura en directo de una disputa del **sandbox** | **Pendiente** |
 | Borrar una cuenta o un espacio de trabajo | El Owner puede revocar miembros e invitaciones; no hay borrado autoservicio de personas, espacios de trabajo ni ejecuciones del agente | **Pendiente** |
 | Copias de seguridad | No hay código de copias de seguridad; los datos viven en el disco del servicio | **Pendiente** (ver [Copias de seguridad y recuperación](../operations/backup-and-recovery.md)) |
@@ -32,12 +40,27 @@ usuario, un comerciante o un jurado.
   del transportista y los mensajes del comprador que lo rodean son inventados, así que una captura real puede aparecer
   como contradicción.
 - **Límites diarios compartidos** (día UTC, para todo el servidor): 60 análisis en directo, 200 recomprobaciones, 20
-  envíos de evidencia, 40 subidas, 20 ejecuciones del agente (5 por persona), 20 presupuestos de MeterMCP. Por hora: 6
+  envíos de evidencia, 40 subidas, 20 ejecuciones del agente (5 por persona), 20 presupuestos de MeterMCP; en el
+  código, aún no desplegados, 20 envíos de mensajes y 20 acciones de liquidación (aceptar, ofertar, escalar). Por hora: 6
   análisis en directo y 30 recomprobaciones. Por dirección: 300 peticiones a la API y 60 lecturas de PayPal cada 5
   minutos; 20 subidas, tapados y lecturas de páginas de PDF cada 10 minutos. Un rechazo dice cuándo se restablece.
 - **Los redespliegues** provocan 1–2 minutos de errores (un servicio con disco no tiene despliegue sin interrupción).
 - **Qué commit está desplegado** no se puede demostrar desde fuera: `fbe9621` se trata como desplegado por la
   confirmación del propietario y un `demo:check` correcto el 19/10/2026.
+
+## Acciones de disputa
+
+- Solo el Owner puede aceptar, ofertar o escalar; los miembros y los revisores solo envían mensajes y ven una vista
+  previa del resto. El caso de liquidación del propietario (`PP-R-STL-10190667`) existe para estas acciones; solo lo ve
+  el Owner.
+- Cada regla sale de una escritura registrada en el sandbox por variante (20/10/2026), todas en disputas de «artículo
+  no recibido» en la fase de consulta: otros motivos y fases se rechazan, no se adivinan.
+- Una aceptación parcial es una oferta que el comprador debe aceptar; por sí sola no reembolsa ni cierra nada.
+- Un envío cuyo resultado PayPal aún no prueba retiene la disputa («Outcome pending confirmation») hasta que **Check
+  again** lo resuelve; mientras tanto no se puede enviar nada más en esa disputa.
+- Lo que hace el comprador tras una oferta (aceptar, rechazar, contraofertar) nunca se registró: ResolveKit sigue las
+  acciones que PayPal ofrece en cada lectura fresca y, como respaldo (fallback), toma cualquier entrada de oferta
+  posterior como fin de la oferta pendiente.
 
 ## Subidas de evidencia
 

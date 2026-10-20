@@ -6,8 +6,9 @@ Sending evidence to a PayPal dispute cannot be undone. ResolveKit therefore lets
 composed from its own copy of the documents and analysis, that **you** approved exactly, and that is still the same on
 a fresh PayPal read at the moment of sending. Afterwards it reads the dispute back and reports what PayPal recorded.
 
-Status: Implemented · Tested locally · Verified in sandbox (two reviewers' submissions recorded by PayPal,
-17/10/2026; an image upload, 18/10/2026) · Deployed. Only **Provide evidence** is sent; see
+Status of evidence: Implemented · Tested locally · Verified in sandbox (two reviewers' submissions recorded by PayPal,
+17/10/2026; an image upload, 18/10/2026) · Deployed. The other dispute actions (message, accept, offer, escalate) are
+**Tested locally** only: see [Other dispute actions](#other-dispute-actions) and
 [Limitations](../product/limitations.md).
 
 Three things are different and the app keeps them apart: **the submission was accepted** (PayPal answered the send),
@@ -18,8 +19,8 @@ decides later).
 
 **Review what will be sent →** stays disabled until nothing is open. The bar above it lists what is left, for
 example: «sentence 3 needs review», «the address contradiction is open», «PayPal does not allow this action right
-now», «only "Provide evidence" can be sent from this screen for now», «PayPal won't accept "<type>" here», «the case
-file lacks what "<type>" needs», «the notes exceed ResolveKit's 2,000-character limit» (a cap of ResolveKit's own; we
+now», «PayPal won't accept "<type>" here», «"Proof of refund" is not available: Not verified with PayPal: pending
+sandbox test (W-11)», «the case file lacks what "<type>" needs», «the notes exceed ResolveKit's 2,000-character limit» (a cap of ResolveKit's own; we
 found no PayPal documentation of a notes limit), «evidence was already submitted to PayPal». When it is clear: «All claims are supported or removed. You review everything before it is sent.»
 
 - Choose the **Evidence type** («PayPal is asking for: …» shows what PayPal requested; a type PayPal will not accept
@@ -86,13 +87,54 @@ In our sandbox tests PayPal stopped offering `provide_evidence` after one submis
 rule). In the sandbox evaluation a used case moves to its next reserve dispute about 15 minutes later, on its next
 read, **only if** one is left (as of 19/10/2026 the standard case has none).
 
+## Other dispute actions
+
+Status: **Tested locally** (with fakes built from recorded PayPal responses). Not yet Verified in sandbox through the
+app, not Deployed. Per-variant status and rules:
+[Functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence).
+
+Choose the action in **What to do**. Only what PayPal offers on the dispute right now can be composed, and each variant
+shows its status («Tested locally», or «Not available: <reason>»).
+
+| Action | Who | What you write | What PayPal does |
+|---|---|---|---|
+| Send message | Owner, members, reviewers | **Message to the buyer** (up to 2,000 characters). «The buyer sees exactly this text in PayPal.» | Adds the message to the thread. It does not merge repeats |
+| Accept claim · full refund | Owner | **Note to PayPal** | «PayPal refunds <amount> to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.» |
+| Accept claim · partial refund offer | Owner | Amount and **Note to PayPal** | «PayPal offers the buyer a partial refund of <amount>. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.» |
+| Make offer · refund offer | Owner | Amount (below the dispute amount) and **Note to PayPal** | «The buyer is offered <amount>; no money moves unless the buyer accepts.» |
+| Escalate | Owner | **Note to PayPal** | «The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.» |
+
+Members and reviewers see the owner-only actions as a preview with their consequence; they cannot compose or send them.
+
+Steps: **Review the message →** (or **Review the accept →**, **Review the offer →**, **Review the escalation →**) asks
+the server to compose exactly what will be sent; the review quotes it. **Approve and send** records your approval of
+that content. For an owner-only action, **Confirm before sending** then shows the consequence and amount, bound to that
+intent; **Confirm and send** sends it. A message that repeats one PayPal already shows on the dispute asks for the same
+confirmation («PayPal already shows this exact message on this dispute…»).
+
+If the buyer wrote after you approved a message, an accept or an offer, the window says «The buyer wrote since you
+approved this» and shows the new message: **Send it anyway** sends the same content, **Edit** composes a new one.
+
+| Result | What it means |
+|---|---|
+| **Recorded by PayPal** (with «claim accepted», «offer waiting for the buyer» or «inquiry escalated») | A fresh read shows the entry this send made |
+| **Outcome pending confirmation** | PayPal has not yet shown proof either way. The dispute is held: nothing else can be sent on it until **Check again** (a read-back only, never a send) settles it |
+| Not recorded by PayPal | PayPal shows no trace of the send while still offering the action |
+| Not sent | PayPal refused; nothing was done |
+
+After an escalation the case shows «PayPal is reviewing; the claim stage can take a few minutes» until the claim opens.
+Nothing is retried automatically. Proof of refund evidence is not available in this delivery; if PayPal asks only for
+it, no evidence can be sent on that dispute.
+
 ## What is shared, and with whom
 
 | Recipient | What | When |
 |---|---|---|
 | AI model provider (Gemini, or Groq as fallback) | The case's documents as the server assembles them (synthetic case documents, fields read from the PayPal dispute, for the agent case the MeterMCP receipt), your confirmed uploads' text; edited sentences for re-checks | Each live analysis and re-check |
+| PayPal (sandbox), other actions | The exact message text, or the type, amount and note of an accept, offer or escalation | Only when the action is sent |
 | PayPal (sandbox) | Evidence type; notes (supported sentences only); carrier and tracking or reference; PDFs built on the server from the case documents (headed «SYNTHETIC TEST DOCUMENT»); for the agent case the receipt PDF; the covered uploads you attached, named `E<n>-upload.png` (`.jpg` for a covered photo), `E<n>-upload.pdf`, `E<n>-pasted.pdf` | Only on **Submit evidence to PayPal** |
-| The ResolveKit server's audit | Who approved, when, content hash, request id, PayPal's answer; no document text | On approval and send |
+| The ResolveKit server's audit | Who approved, when, content hash, request id, PayPal's answer; no document text; a message only by its hash | On approval and send |
+| The ResolveKit server's intents | The approved message text, like approved evidence notes (the thread itself is not stored and not given to the AI) | While the intent's record is kept |
 
 Your PayPal credentials and the server's never reach the browser.
 
@@ -111,7 +153,10 @@ providers retain what they received according to their own policies.
 | `SELLER_EVIDENCE_EXISTS` «PayPal already has seller evidence for this dispute; nothing more can be sent» | Read the recorded evidence |
 | `DISPUTE_BUSY` | Another send for this dispute is in progress: wait, then read back |
 | `NOT_THE_SELLER` | Only the seller's workspace can respond |
-| `DAILY_CAP` | The demo's evidence sends for today are used up; the message says when it resets |
+| `DAILY_CAP` | The demo's evidence sends (or message sends, or settling actions) for today are used up; the message says when it resets |
+| `OWNER_ONLY` | Only the Owner can accept, offer or escalate |
+| `DISPUTE_UNCERTAIN` | The last send to this dispute is not confirmed yet: **Check again** |
+| `NEEDS_REVIEW` | The buyer wrote since your approval: read it, then send the same content or edit |
 | «The PayPal connection changed while you were reviewing. Close this and open the case again.» | Close and reopen the case |
 
 More in [Troubleshooting](troubleshooting.md). How it is enforced: [Trust boundaries](../architecture/trust-boundaries.md).

@@ -96,8 +96,15 @@ Multi-merchant isolation is untested in practice: only one seller workspace is c
 
 - Sending: the server composes the intent; approval is by content hash, owner session only, 30-minute TTL; any edit,
   newer intent or binding change invalidates it; the send re-reads PayPal and refuses on any difference; one
-  `PayPal-Request-Id` per intent; a per-dispute lock; a durable audit entry before anything goes to PayPal. Only
-  provide-evidence is sent to PayPal. Details: [HTTP API](../technical/http-api.md).
+  `PayPal-Request-Id` per intent; a per-dispute lock; a durable audit entry before anything goes to PayPal. Details:
+  [HTTP API](../technical/http-api.md).
+- Dispute actions (Tested locally, not deployed): the same chain, plus the role checked at compose, approve, confirm
+  and send (accept, offer and escalate are the Owner's only, `403 OWNER_ONLY`); a second confirmation bound to the
+  intent id, content hash, action, canonical amount, currency and consequence; amounts as exact decimal strings, never
+  floats; a dispute held after any send whose outcome PayPal does not prove, until a read-back settles it; no automatic
+  retry of an action POST; «Recorded by PayPal» only on an entry attributable to the send, never on a state change
+  alone. No variant is offered without a recorded contract
+  ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)).
 - Webhooks: a secret URL key, header checks, a certificate-host allowlist, body and rate caps, verification with
   PayPal's documented postback method on the raw body; the payload is only a hint, the dispute is re-read.
 - **Continue with PayPal** is an identity check built on a no-charge Billing Agreements v1 agreement token (a
@@ -118,8 +125,12 @@ Multi-merchant isolation is untested in practice: only one seller workspace is c
   covered content, not secrets. Their handling of that data is governed by each provider's terms, not by ResolveKit.
 - **What is stored**: see [Retention and deletion](../operations/retention-and-deletion.md). Personal data held:
   PayPal payer ids, display names, masked emails, passkey public keys, invite token hashes (`accounts.json`), approved
-  notes texts (`intents.json`), uploads. There is no account deletion or export feature (**Pending**).
-- **Logs** carry ids, codes, counts and timings; never document text, file contents, keys or tokens. The analyst usage
+  notes texts and approved message texts (`intents.json`; a message is kept like evidence notes, for as long as its
+  intent's record), uploads. The PayPal message thread is shown from each read but not stored, and never given to the
+  analyst. There is no account deletion or export feature (**Pending**).
+- **Logs** carry ids, codes, counts and timings; never document text, file contents, keys or tokens. The audit and
+  send logs record a message only by the SHA-256 of its text (a short text can be guessed from its hash; the logs are
+  server-only). The analyst usage
   log holds token counts and timings only.
 - **Secrets** come from environment variables only; no `VITE_*` variable is read, so nothing secret reaches the web
   bundle. `.env` is git-ignored.
@@ -137,6 +148,8 @@ Multi-merchant isolation is untested in practice: only one seller workspace is c
 - Linux-only protections (RSS kill) are not measured on the hosted platform; memory with large PDFs on Render is not
   measured.
 - The sign-in relies on a deprecated PayPal API family and may stop working.
+- Dispute actions rest on one sandbox write per variant (20/10/2026); PayPal may behave differently on other disputes,
+  reasons or stages, and in production. The approved message text sits on the server's disk with the intents.
 - No external security audit or penetration test is recorded. Internal reviews are recorded in the plans under
   `docs/superpowers/`.
 - See [Known issues](known-issues.md) for the open items.

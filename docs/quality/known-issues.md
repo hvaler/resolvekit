@@ -9,7 +9,9 @@ under [`docs/superpowers/plans/`](../superpowers/plans/) and, where relevant, th
 
 Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2026-10-18-merchant-evidence-pdf-followups.md`
 · **AG** `2026-10-18-model-driven-agent-followups.md` · **ENV** `2026-10-18-three-environments-followups.md` ·
-**EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** the test run of 19/10 ([Testing](testing.md)).
+**EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** the test run of 19/10 ([Testing](testing.md)) ·
+**DA** the dispute-actions design `docs/superpowers/specs/2026-10-19-dispute-actions-design.md` and the code at
+`076c74f` (20/10/2026).
 
 ## Uploads and PDFs
 
@@ -34,6 +36,20 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | Agent case bound to a scripted-client session | The hosted agent case's binding (18/10) points at a session made by the earlier scripted MCP client, not by the model-driven agent; no binding names a run yet | AG; runtime configuration |
 | Agent-case binding expires around 07/11/2026 | The agent case's current binding (its sandbox dispute, bound 18/10/2026) ages out around 07/11/2026; before judging it must be rebound with `demo:prepare --agent-run <id>`, which prints a binding that names the run. Planned, not yet done: **Pending** | Owner's status notes of 19/10/2026 (private submission notes, not in this repository) |
 | Closing steps not evidenced | **Stop** on a real run, the CLI `npm run demo-agent` against the hosted MeterMCP, and the removal of `METERMCP_FAIL_FIRST` from the hosted service are not recorded (the two `/agent` runs, Compare, Keep and the return were) | AG; private evidence 19/10 |
+
+## Dispute actions
+
+| Issue | Effect | Source |
+|---|---|---|
+| Refundable amount in another currency | If PayPal's refundable amount were in a currency other than the dispute's, an amount is refused with `AMOUNT_ABOVE_REFUNDABLE` («The amount must be below / at most what PayPal would refund, <amount>») quoting the other currency, without saying that the currencies differ. Never seen in the sandbox (every dispute was USD) | DA; `apps/web/src/domain/actions.ts` (amount checks in `composeActionWith`) |
+| Contracts README out of date | `packages/paypal/contracts/README.md` still says no write was sent and every variant is «Not available»; the registry (`actionContracts.ts`) and the recorded files are the current state | DA; `packages/paypal/contracts/README.md` |
+| Message attachments not in the UI | `send_message:file` is tested on the server, but the web composer cannot attach an upload | DA; `apps/web/src/components/ActionComposer.tsx` |
+| The buyer's answer to an offer was never recorded | A pending offer is judged by PayPal's live `make_offer` link and, as a backstop, any later offer entry ends it; the buyer's event names are unknown | DA; `actions.ts` (`pendingSellerOffer`) |
+| Rules cover one reason and one stage | Accept, offer and escalate are composed only for not-received disputes, and every action only in `INQUIRY`, because the recorded writes covered nothing else; others are refused, not guessed (**by design**) | DA; `actions.ts` (`RECORDED_STAGES`, `ACTION_RULES`) |
+| Appeal not testable in the sandbox | The sandbox refused to produce an appealable dispute (W-7), so appeal stays «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
+| `provide_supporting_info` not supported | Offered by PayPal after evidence in a claim; ResolveKit shows nothing to send | DA; `apps/web/src/domain/simulatedActions.ts` |
+| Proof of refund not sent | If PayPal asks only for it, no evidence can be sent on that dispute in this delivery; W-11 is a pending sandbox test | DA; `actionContracts.ts` |
+| The app's flow not run against the sandbox | The statuses stop at Tested locally until the app sends and reads back each variant in the sandbox (**Pending**) | DA |
 
 ## Environments, sign-in and health
 

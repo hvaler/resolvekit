@@ -45,7 +45,7 @@ Legend: **R** required, **O** optional; **Secret** = never commit, never log. "H
 
 | Variable | R/O | Secret | Default | Effect |
 |---|---|---|---|---|
-| `BINDINGS_JSON` | O hosted | sensitive | — | Case → `{dispute, capture[, session, run]}` (or a list: reserve, first active). Wins over the file in hosted mode; bad JSON stops the start |
+| `BINDINGS_JSON` | O hosted | sensitive | — | Case → `{dispute, capture[, session, run]}` (or a list: reserve, first active). Wins over the file in hosted mode; bad JSON, or a dispute listed twice (in any case), stops the start |
 | `RESOLVEKIT_BINDINGS` | O | — | hosted `<data>/bindings.json`, local `apps/server/bindings.json` | Bindings file; hosted without `BINDINGS_JSON` it is re-read every 30 s |
 
 ### Accounts and operations
@@ -85,6 +85,14 @@ Legend: **R** required, **O** optional; **Secret** = never commit, never log. "H
 | `DAILY_EVIDENCE_SENDS` | 20 | Evidence sends to PayPal |
 | `DAILY_UPLOADS` | 40 | Uploads (not in `render.yaml`: the default applies) |
 | `DAILY_AGENT_RUNS` | 20 | Agent runs started (plus 5 per person per day, not configurable) |
+| `DAILY_MESSAGE_SENDS` | 20 | Messages sent to the buyer through PayPal (not in `render.yaml`: the default applies) |
+| `DAILY_SETTLE_SENDS` | 20 | Settling actions sent: accept claim, make offer, escalate (and appeal, which is not available) (not in `render.yaml`: the default applies) |
+
+**The owner settlement case.** `BINDINGS_JSON` may bind `PP-R-STL-10190667`, the owner-only case for accept, offer and
+escalate, to a list of its own sandbox disputes (its reserve), separate from the standard case's; each dispute appears
+once in the whole file. Example shape (fictional ids):
+`"PP-R-STL-10190667": [{"dispute": "PP-R-YYY-00000001", "capture": "YYYYYYYYYYYYYYYY1"}, …]`
+(`apps/server/bindings.example.json`). Hosted, only the seller workspace's Owner sees that case.
 
 ### Agent run limits (both modes)
 
@@ -163,4 +171,5 @@ defaults): `DAILY_UPLOADS`, `RESOLVEKIT_PUBLIC_URL`, `RESOLVEKIT_CUSTOM_DOMAINS`
 `TRUSTED_PROXY_PEERS`, the model choices (`ANALYST_PROVIDER`, `GEMINI_MODEL`, `GROQ_MODEL`, `AGENT_*_MODEL`,
 `GROQ_TPM`), `LIVE_ANALYSES_PER_HOUR`, `RECHECKS_PER_HOUR`, the retention settings (`ANALYSIS_CACHE_MAX_*`,
 `ANALYST_USAGE_MAX_*`); MeterMCP `METERMCP_PUBLIC_URL`, `METERMCP_CUSTOM_DOMAINS`, `METERMCP_IDLE_MINUTES`,
-`METERMCP_ALLOWED_ORIGINS`, `METERMCP_DB`, `TRUSTED_PROXY_PEERS`. Procedure: [deployment](../operations/deployment.md).
+`METERMCP_ALLOWED_ORIGINS`, `METERMCP_DB`, `TRUSTED_PROXY_PEERS`. `DAILY_MESSAGE_SENDS` and `DAILY_SETTLE_SENDS` are
+not in the blueprint, not even as comments: their defaults apply. Procedure: [deployment](../operations/deployment.md).

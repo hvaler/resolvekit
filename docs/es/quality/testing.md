@@ -27,6 +27,23 @@ Requiere Node 24+ (TypeScript se ejecuta de forma nativa). `npm test` no hace ni
 
 ## Última ejecución registrada
 
+**2026-10-20 14:17Z · commit `076c74f` (con las acciones de disputa; no desplegado) · Node v24.19.0 · Windows
+(MINGW64_NT-10.0-26220).** `npm test` terminó con 0 (se ejecutaron todas las suites); `npm run typecheck` terminó con 0.
+
+| Suite | Comando | Tests | Superados | Fallos |
+|---|---|---|---|---|
+| `packages/paypal` | `npm run test:paypal` | 37 | 37 | 0 |
+| `packages/hosting` | `npm run test:hosting` | 32 | 32 | 0 |
+| `packages/cases` | `npm run test:cases` | 12 | 12 | 0 |
+| `packages/analyst` | `npm run test:analyst` | 159 | 159 | 0 |
+| `packages/agent` | `npm run test:agent` | 52 | 52 | 0 |
+| `apps/server` | `npm run test:server` | 620 | 620 | 0 |
+| `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
+| `apps/web` (vitest, 35 archivos) | `npm run test:web` | 435 | 435 | 0 |
+| Total | | 1,427 | 1,427 | 0 |
+
+La ejecución registrada anterior, del commit desplegado:
+
 **2026-10-19 12:35Z · commit `fbe9621` · Node v24.19.0 · Windows (MINGW64_NT-10.0-26220).**
 
 | Suite | Comando | Tests | Pasan | Fallan |
@@ -69,11 +86,12 @@ no se reutilizan aquí.
 | Motor del agente | `packages/agent/test/{engine,meter,models}.test.ts` | Consulta [más abajo](#agente-comprador-tests-unitarios-y-ejecuciones-observadas-en-sandbox) |
 | API del servidor | `apps/server/test/{app,hosted,auth,environments,sellers,mapping,bindings,reserve,webhook,ops}.test.ts` | Guardas, inicio de sesión, espacios de trabajo, comprobación de vinculaciones, rotación, webhooks, informe de ops |
 | Envío | `intent.test.ts`, `intent-sessions.test.ts`, `review-fixes.test.ts`, `analysis.test.ts` | Composición, aprobación por hash, invalidación, bloqueo por disputa, auditoría duradera, recomprobaciones |
+| Acciones de disputa | Servidor: `actions.test.ts`, `accept-claim.test.ts`, `make-offer.test.ts`, `escalate.test.ts`, `evidence-after-escalation.test.ts`, `intent-locks.test.ts`, `contract-read.test.ts`, `reserve.test.ts`, `hosted.test.ts`. Web: `domain/actions.test.ts`, `actionContracts.test.ts`, `actionReadback.test.ts`, `actionSend.test.ts`, `simulatedActions.test.ts`, `amounts.test.ts`, `components/ActionFlow.test.tsx` | Fakes construidos a partir de los contratos registrados de PayPal (`packages/paypal/contracts/`), sin llamadas a PayPal: hashes por acción y repetición entre acciones, rol solo del Owner en cada paso, la segunda confirmación ligada, el analizador de importes, bloqueos en curso / incierto / duplicado cargados desde el log de envíos, evidencia por fase, pruebas de relectura atribuibles (un mensaje idéntico anterior, el cambio de estado de otro actor), `NEEDS_REVIEW`, reinicio y reconciliación, protección de la rotación, estados del simulador solo desde contratos |
 | Subidas | `uploads-{image,text,ocr,store,routes,documents,pdf-input,pdf-routes,pdf-recovery}.test.ts`, `pdf-image.test.ts` | Consulta [Seguridad y privacidad](security-and-privacy.md#archivos-no-fiables) |
 | Agente en el servidor | `agent-routes.test.ts`, `agent-runs.test.ts`, `agent.test.ts` | Topes, visibilidad, recuperación, liquidación a partir del recibo, regla de vinculación E5 |
 | Scripts | `demo-check.test.ts`, `demo-prepare.test.ts` | Análisis de argumentos, comprobaciones de la reserva, evaluación de la preparación |
 | MeterMCP | `apps/metermcp/test/{app,meter,failclosed,hosted,limits,demo-agent}.test.ts` | Medición, reservas atómicas, aprobación que falla en cerrado, liquidación, guardas de administración, migración del ledger (un fallo forzado deja el esquema y las filas sin cambios; reabrir un ledger migrado no hace nada) |
-| Web | `apps/web/src/**/*.test.ts` (vitest, `environment: 'node'`) | Lógica de dominio pura: entornos, construcción de intents, comparación de la relectura, borradores, decisiones de revisión de PDF, vista de ejecuciones del agente. **Sin tests de renderizado del DOM** para la interfaz de subidas y PDF (carencia conocida) |
+| Web | `apps/web/src/**/*.test.{ts,tsx}` (vitest, `environment: 'node'`) | Lógica de dominio pura: entornos, construcción de intents, comparación de la relectura, borradores, decisiones de revisión de PDF, vista de ejecuciones del agente; los componentes de acciones de disputa renderizados a HTML estático (`renderToString`), sin DOM de navegador. **Sin tests de renderizado del DOM** para la interfaz de subidas y PDF (carencia conocida) |
 
 ## Observaciones en sandbox
 
@@ -91,8 +109,12 @@ Todas en el **sandbox** de PayPal; nada se ha ejecutado contra PayPal live. Las 
 | Una subida PNG tapada enviada y registrada por PayPal (la copia de PayPal solo tenía IHDR/IDAT/IEND, con el tapado incrustado) | 18/10 |
 | Dos ejecuciones del agente dirigido por el modelo en `/agent` | 19/10 (abajo) |
 | `demo:check` READY excepto la reserva estándar vacía | 19/10 |
+| Un pago con una disputa abierta apareció retenido; las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso | 19/10 |
+| Escrituras de contrato de acciones de disputa W-1 a W-12 aprobadas por el propietario, enviadas fuera del flujo de la app (a nivel de contrato, no la app): W-1 a W-6, W-9 y W-10 registradas, W-7 rechazada, W-8, W-11 y W-12 no enviadas ([detalles](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)) | 20/10 |
 
-**No observado en el sandbox (Pendiente):** un timeout de PayPal o un envío incierto; `capture_pending` de MeterMCP; la
+**No observado en el sandbox (Pendiente):** el flujo propio de la app para las acciones de disputa de extremo a
+extremo (mensaje, aceptación, oferta, escalado enviados a través de ResolveKit y releídos); un timeout de PayPal o un
+envío incierto; `capture_pending` de MeterMCP; la
 recuperación del agente tras un reinicio; **Stop** en una ejecución real; el respaldo con Groq para el agente; subidas de
 texto pegado y de PDF enviadas a PayPal; creación de passkeys en el servicio desplegado; el registro de ejecución E5 en
 un caso vinculado; `npm run demo-agent` contra el MeterMCP alojado.
@@ -138,5 +160,7 @@ anterior cliente con guion (scripted), no el agente dirigido por el modelo.
 - Rutas exclusivas de Linux (matar por RSS al hijo de PDF) no ejecutadas en Linux; memoria de un PDF de 5 páginas en
   Render no medida.
 - Comportamiento contra PayPal live: ninguno.
+- Acciones de disputa: probadas con fakes y una escritura de contrato registrada por variante; el flujo de la app contra
+  el sandbox está Pendiente.
 
 La lista completa, con fuentes, está en [Problemas conocidos](known-issues.md).

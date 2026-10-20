@@ -9,7 +9,9 @@ código. Los puntos marcados **por diseño** se mantienen a propósito, pero con
 
 Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2026-10-18-merchant-evidence-pdf-followups.md`
 · **AG** `2026-10-18-model-driven-agent-followups.md` · **ENV** `2026-10-18-three-environments-followups.md` ·
-**EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** la ejecución de tests del 19/10 ([Pruebas](testing.md)).
+**EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** la ejecución de tests del 19/10 ([Pruebas](testing.md)) ·
+**DA** el diseño de las acciones de disputa `docs/superpowers/specs/2026-10-19-dispute-actions-design.md` y el código
+en `076c74f` (20/10/2026).
 
 ## Subidas y PDF
 
@@ -34,6 +36,20 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | Caso del agente vinculado a una sesión del cliente con guion (scripted) | La vinculación del caso del agente alojado (18/10) apunta a una sesión creada por el anterior cliente MCP con guion, no por el agente dirigido por el modelo; ninguna vinculación nombra todavía una ejecución | AG; configuración en tiempo de ejecución |
 | La vinculación del caso del agente caduca hacia el 07/11/2026 | La vinculación actual del caso del agente (su disputa de sandbox, vinculada el 18/10/2026) caduca hacia el 07/11/2026; antes de la evaluación del jurado hay que volver a vincularlo con `demo:prepare --agent-run <id>`, que imprime una vinculación que nombra la ejecución. Previsto, aún no hecho: **Pendiente** | Notas de estado del propietario del 19/10/2026 (notas privadas de la entrega, no están en este repositorio) |
 | Pasos de cierre sin evidencia | No constan **Stop** en una ejecución real, la CLI `npm run demo-agent` contra el MeterMCP alojado, ni la retirada de `METERMCP_FAIL_FIRST` del servicio alojado (sí constan las dos ejecuciones en `/agent`, Compare, Keep y la vuelta) | AG; evidencia privada 19/10 |
+
+## Acciones de disputa
+
+| Problema | Efecto | Fuente |
+|---|---|---|
+| Importe reembolsable en otra moneda | Si el importe reembolsable de PayPal estuviera en una moneda distinta de la de la disputa, un importe se rechaza con `AMOUNT_ABOVE_REFUNDABLE` («The amount must be below / at most what PayPal would refund, <amount>») citando la otra moneda, sin decir que las monedas difieren. Nunca visto en el sandbox (todas las disputas eran en USD) | DA; `apps/web/src/domain/actions.ts` (comprobaciones de importe en `composeActionWith`) |
+| README de contratos desactualizado | `packages/paypal/contracts/README.md` sigue diciendo que no se envió ninguna escritura y que todas las variantes están «Not available»; el registro (`actionContracts.ts`) y los archivos registrados son el estado actual | DA; `packages/paypal/contracts/README.md` |
+| Adjuntos de mensajes fuera de la interfaz | `send_message:file` está probado en el servidor, pero el editor web no puede adjuntar una subida | DA; `apps/web/src/components/ActionComposer.tsx` |
+| La respuesta del comprador a una oferta nunca se registró | Una oferta pendiente se juzga por el enlace `make_offer` en directo de PayPal y, como respaldo, cualquier entrada de oferta posterior la termina; los nombres de evento del comprador son desconocidos | DA; `actions.ts` (`pendingSellerOffer`) |
+| Las reglas cubren un motivo y una fase | Aceptar, ofertar y escalar solo se componen en disputas de artículo no recibido, y toda acción solo en `INQUIRY`, porque las escrituras registradas no cubrieron nada más; lo demás se rechaza, no se adivina (**por diseño**) | DA; `actions.ts` (`RECORDED_STAGES`, `ACTION_RULES`) |
+| Apelación no comprobable en el sandbox | El sandbox se negó a producir una disputa apelable (W-7), así que la apelación sigue «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
+| `provide_supporting_info` no soportado | PayPal lo ofrece tras evidencia en una reclamación; ResolveKit no muestra nada que enviar | DA; `apps/web/src/domain/simulatedActions.ts` |
+| Prueba de reembolso no enviada | Si PayPal solo pide esa, en esta entrega no se puede enviar evidencia en esa disputa; W-11 es una prueba de sandbox pendiente | DA; `actionContracts.ts` |
+| El flujo de la app no se ha ejecutado contra el sandbox | Los estados se quedan en Probado en local hasta que la app envíe y relea cada variante en el sandbox (**Pendiente**) | DA |
 
 ## Entornos, inicio de sesión y health
 

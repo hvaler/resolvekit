@@ -7,7 +7,7 @@
 > construyas sobre ellas.
 
 Fuente: `apps/server/src/app.ts`, `hosted.ts`, `auth.ts`, `webhook.ts`, `uploads/routes.ts`, `agent/routes.ts` en el
-commit `fbe9621`. Las rutas de MeterMCP están en [herramientas MCP](mcp-tools.md).
+commit `fbe9621`; las acciones de disputa (`apps/server/src/actions/routes.ts`), en el commit `076c74f` (20/10/2026). Las rutas de MeterMCP están en [herramientas MCP](mcp-tools.md).
 
 ## Convenciones
 
@@ -79,6 +79,31 @@ vinculados son casos de demo y solo viven en el navegador.
 El envío nunca informa de «registrado». `202 {sent:true}` significa que PayPal aceptó la petición; después la app web
 vuelve a leer la disputa y muestra **Recorded by PayPal** solo para evidencia `SUBMITTED_BY_SELLER` nueva que
 coincide con lo enviado. Aceptado ≠ registrado ≠ disputa resuelta.
+
+## Acciones de disputa
+
+Mensaje, aceptar la reclamación, hacer una oferta y escalar usan la misma cadena de intents que la evidencia, con su
+propia ruta de envío. Estado: Probado en local; no desplegado (estado por variante:
+[Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
+El rol se comprueba al componer, aprobar, confirmar y enviar: `accept_claim`, `make_offer` y `escalate` responden
+`403 OWNER_ONLY` a cualquiera que no sea el Owner del espacio de trabajo (un revisor nunca pasa).
+
+| Método | Ruta | Autenticación / permiso | Propósito | Errores principales |
+|---|---|---|---|---|
+| POST | `/api/disputes/:case/intent` `{action, …}` | con sesión (modo alojado); acciones solo del Owner: el Owner | Componer contra una lectura fresca de PayPal → 201 (el intent, con `repeat: true` cuando PayPal ya registró el mismo contenido). Cuerpos: `{action:"send_message", text, attachments:[]}` (como máximo un `upl-…` confirmado), `{action:"accept_claim", acceptType:"REFUND"\|"PARTIAL_REFUND", note, amount?}`, `{action:"make_offer", offerType:"REFUND", note, amount}`, `{action:"escalate", note}`; `amount` es `{value, currency}` con `value` como cadena decimal | 400 `INVALID_ACTION_REQUEST`, 403 `OWNER_ONLY`/`NOT_THE_SELLER`, 409 `SIMULATED_CASE`/`ACTION_NOT_OFFERED`/`VARIANT_NOT_AVAILABLE`/`ACTION_STAGE`/`DUPLICATE_ACTION`/`UPLOAD_CHANGED`, 422 `TEXT_REQUIRED`/`TEXT_TOO_LONG`/`INVALID_AMOUNT`/`AMOUNT_REQUIRED`/`AMOUNT_NOT_ALLOWED`/`AMOUNT_ABOVE_DISPUTE`/`AMOUNT_ABOVE_REFUNDABLE`/`CURRENCY_MISMATCH`/`UNKNOWN_CURRENCY`/`DISPUTE_AMOUNT_UNKNOWN`, 429 `TOO_MANY_INTENTS` |
+| POST | `/api/disputes/:case/intent/:id/approve` `{contentHash}` | el propietario del intent | Aprobar ese contenido exacto → 200 con `confirmation`: los términos de la segunda confirmación, o `null` si no hace falta | 400 `INVALID_APPROVAL`, 403 `OWNER_ONLY`, 409 `CONTENT_HASH_MISMATCH`/`INTENT_<STATUS>` |
+| POST | `/api/disputes/:case/intent/:id/confirm` `{terms}` | el Owner (o el autor, para un mensaje repetido) | La segunda confirmación: los términos deben ser exactamente los emitidos (`intentId`, `contentHash`, `action`, `amount`, `currency`, `consequence`) | 400 `INVALID_CONFIRMATION`, 403 `OWNER_ONLY`, 409 `NO_CONFIRMATION`/`CONFIRMATION_MISMATCH` |
+| POST | `/api/disputes/:case/intent/:id/acknowledge` `{contentHash, shownMessageKeys}` | el propietario del intent | Tras `NEEDS_REVIEW`: la persona vio los mensajes nuevos del comprador y mantiene el mismo contenido | 400 `INVALID_ACKNOWLEDGEMENT`, 409 `CONTENT_HASH_MISMATCH`/`INTENT_<STATUS>`/`BINDING_CHANGED`/`NEEDS_REVIEW` |
+| POST | `/api/disputes/:case/send` `{intentId}` | el propietario del intent; una unidad del tope `message` o `settle` | Recomprobar sobre una lectura fresca, escribir en disco la base de relectura y `send_started`, y después un único POST → 202 `{sent:true}` o `{sent:"unknown"}`; para un intent incierto, releer primero → 200 `{reconciled:true}` cuando PayPal lo muestra | 400 `INVALID_SUBMISSION`, 403 `OWNER_ONLY`, 404 `UNKNOWN_INTENT`, 409 `WRONG_SEND_ROUTE`/`BINDING_CHANGED`/`DISPUTE_BUSY`/`DISPUTE_UNCERTAIN`/`INTENT_STALE`/`DUPLICATE_ACTION`/`NEEDS_REVIEW`/`CONFIRMATION_REQUIRED`/`VARIANT_NOT_AVAILABLE`/`SIMULATED_CASE`/`NOT_BOUND`, 422 `PAYPAL_REFUSED` (con `paypalIssue`), 429 `DAILY_CAP`, 503 `AUDIT_UNAVAILABLE`/`PAYPAL_UNCONFIGURED` |
+| GET | `/api/disputes/:case/intent/:id/readback` | el propietario del intent | Leer ahora la disputa fijada → `{readBack:{state:"recorded"\|"absent"\|"pending", detail, at}, snapshot, intent}`. Nunca envía («Check again») | 409 `SIMULATED_CASE`/`INTENT_SENDING`/`INTENT_NOT_SENT`, 503 `AUDIT_UNAVAILABLE`/`PAYPAL_UNCONFIGURED`, 502/504 de PayPal |
+
+`202 {sent:true}` significa que PayPal aceptó la petición; la disputa sigue retenida hasta que una relectura pruebe la
+acción («Recorded by PayPal») o pruebe su ausencia. `{sent:"unknown"}` (un tiempo de espera agotado, un 5xx, 408, 429 o
+una respuesta poco clara) es «Outcome pending confirmation»: no se reintenta nada, y toda escritura en esa disputa
+responde `409 DISPUTE_UNCERTAIN` hasta que una relectura lo resuelva. Un intent de evidencia enviado aquí, o un intent
+de acción enviado a `/evidence`, responde `409 WRONG_SEND_ROUTE` antes de cambiar nada. Topes diarios (modo alojado):
+`DAILY_MESSAGE_SENDS` para mensajes, `DAILY_SETTLE_SENDS` para aceptar, ofertar, escalar y apelar (ambos 20 por
+defecto).
 
 ## Análisis
 

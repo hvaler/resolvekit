@@ -20,14 +20,18 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 - Ejecución de tests: 19/10/2026 12:35 UTC, `fbe9621`, Node 24.19.0, Windows: 1,131 tests, 1,130 superados, 1 fallo
   intermitente (`apps/server/test/uploads-pdf-recovery.test.ts`, `429 RATE_LIMITED` bajo la carga de la suite
   completa; pasa ejecutado solo).
+- F12, F15, F23 y R7 recomprobados el 20/10/2026 contra el commit `076c74f`, que añade las acciones de disputa (no
+  desplegado; estado por variante en la
+  [especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
+  Ejecución de tests de ese commit: 20/10/2026 14:17 UTC, Node 24.19.0, Windows: 1,427 tests, 1,427 superados.
 
 ## Afirmaciones que hay que cambiar
 
 | # | Afirmación | Por qué | Redacción propuesta |
 |---|---|---|---|
-| F12 | Disputes API used to "send messages, accept claims" | `sendMessage` / `acceptClaim` existen en `packages/paypal/src/disputes.ts`, pero ninguna ruta del servidor ni ninguna pantalla los llama | "submit evidence and read the dispute back" |
-| F15 | "Refunds use Payments v2" | No hay ninguna llamada de reembolso en el código | Eliminar |
-| F23 | "1,027 automated tests" | La ejecución del 19/10/2026 en `fbe9621` contó 1,131 (1,130 superados, 1 intermitente) | "1,131 automated tests (run of 19/10/2026)" o ningún número |
+| F12 | Disputes API used to "send messages, accept claims" | En `076c74f`, enviar mensajes y aceptar reclamaciones (total, o parcial como oferta) están **Probados en local**; PayPal registró en el sandbox, el 20/10/2026, una escritura de cada uno aprobada por el propietario y hecha fuera de la app; el flujo propio de la app en el sandbox está Pendiente y nada de ello está desplegado. Los estados respaldan «construido y probado», no «verificado» ni «en producción» | Hasta la ejecución de la app en el sandbox: "send messages and accept claims (tested locally against recorded sandbox contracts)"; nunca "refunds" para una aceptación parcial |
+| F15 | "Refunds use Payments v2" | Ningún código crea un reembolso, ni con Payments v2 ni de otro modo. El dinero solo se mueve mediante acciones de disputa en PayPal: un reembolso por aceptación total, o una oferta que el comprador acepta (Probado en local) | Eliminar, o "Refunds happen only through PayPal dispute actions the owner approves (tested locally); ResolveKit creates no refund" |
+| F23 | "1,027 automated tests" | La ejecución del 19/10/2026 en `fbe9621` contó 1,131 (1,130 superados, 1 intermitente); la del 20/10/2026 en `076c74f`, 1,427 (todos superados) | Una cifra fechada del commit que se presente, o ningún número |
 | F60 | "PayPal accepts evidence once per dispute" | No es una regla documentada de PayPal; PayPal solo documenta que aportar evidencia necesita el enlace `provide_evidence`. Observado: el enlace desapareció tras un envío en nuestras pruebas en sandbox | "In our sandbox tests PayPal no longer offered evidence after one submission, so…" |
 | F66 | The 1.37 USD agent example "is invented" | El fixture dice «Every value here … is invented» (`packages/cases/src/fixtures/agentCase.ts:7`), pero sus cifras coinciden con una sesión de sandbox hecha por un cliente con guion (scripted) el 09/10/2026 (evidencia privada), cosa que el formulario no dice | "is invented demo data whose figures match a sandbox session made by a scripted client on 09/10/2026; it tests the analyst, not the agent" |
 | F73 | "see the README, sections Run, MeterMCP and The buying agent" | Las secciones del README son ahora "Run locally" y "See the buying agent"; el detalle de MeterMCP pasó a [herramientas MCP](../technical/mcp-tools.md) | Remitir al README y al índice de la documentación |
@@ -55,10 +59,10 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 | F9 | Disputes API: find the dispute by capture | `GET /v1/customer/disputes?disputed_transaction_id=` solo en `apps/server/scripts/demo-prepare.ts`; la aplicación lee las disputas por id desde sus vinculaciones y comprueba la captura | Implementado (script del operador) | Parcialmente respaldada |
 | F10 | Read status, stage, allowed actions and requested evidence | `app.ts` `readCase`, `mapping.ts`; `mapping.test.ts`, `disputes.test.ts`; evidencia privada 09/10, 17/10/2026 | Verificado en sandbox · Desplegado | Respaldada |
 | F11 | Submit evidence (multipart, PDFs generated on our server) | Envío en `app.ts`, `apps/server/src/documents.ts`, `packages/paypal/src/disputes.ts`; evidencia privada 17/10/2026 | Verificado en sandbox · Desplegado | Respaldada |
-| F12 | Send messages, accept claims | Solo métodos del cliente, sin nadie que los llame | Pendiente | **Sin respaldo** |
+| F12 | Send messages, accept claims | `apps/server/src/actions/routes.ts`, `apps/web/src/domain/actionContracts.ts`; `actions.test.ts`, `accept-claim.test.ts`, `ActionFlow.test.tsx`; contratos `packages/paypal/contracts/send_message.json`, `accept_claim-*.json` (escrituras de sandbox aprobadas por el propietario el 20/10/2026, fuera de la app) | Probado en local; Verificado en sandbox (el flujo de la app) y Desplegado: Pendiente | **Parcialmente respaldada** (construido y probado, no verificado a través de la app, no desplegado) |
 | F13 | Read the dispute back | `gateway.ts` `submitWithReadBack`; `gateway.test.ts` | Verificado en sandbox | Respaldada |
 | F14 | Orders v2 `AUTHORIZE`, buyer approval, partial `final_capture` of what was consumed, or void | `packages/paypal/src/orders.ts`, `meter.ts`; `meter.test.ts`; evidencia privada 08/10 (void), 09/10, 19/10/2026 | Verificado en sandbox · Desplegado | Respaldada |
-| F15 | Refunds use Payments v2 | No hay código | Pendiente | **Sin respaldo** |
+| F15 | Refunds use Payments v2 | Ningún código crea reembolsos; reembolsos solo mediante acciones de disputa (aceptación total, una oferta aceptada) | — | **Sin respaldo** |
 | F16 | Gemini 3.8 Flash, Groq gpt-oss-120b as automatic fallback | `packages/analyst/src/providers.ts` | Implementado · Desplegado | Respaldada |
 | F17 | Code checks every quote character by character | `verify.ts` `isVerbatim` (subcadena exacta tras normalizar los espacios en blanco); `deterministic.test.ts` | Implementado · Probado en local | Respaldada |
 | F18 | A separate model call judges each sentence against its own quotes | Paso de verificación de `pipeline.ts` | Implementado · Probado en local | Respaldada |
@@ -140,7 +144,7 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 | R4 | La imagen es un caso de demostración sintético en el simulador | [docs/media/README.md](../../media/README.md) | — | Respaldada |
 | R5 | Cómo funciona en cinco pasos | `app.ts` (`readCase`, compose, approve, send), `pipeline.ts`, `recorded.ts` | Verificado en sandbox · Desplegado | Respaldada |
 | R6 | Tabla de lo que aporta PayPal: Disputes, webhooks (postback), Orders/Payments, **Continue with PayPal** (token de Billing Agreements v1) | `packages/paypal/src/*`, `apps/server/src/webhook.ts`, `auth.ts`; `webhook.test.ts`, `auth.test.ts`; evidencia privada 09/10, 10/10, 17/10, 19/10/2026 | Según se indica en cada fila | Respaldada |
-| R7 | Solo se envía `provide-evidence`; las demás acciones se bloquean con *only "Provide evidence" can be sent from this screen for now* | `apps/web/src/domain/draft.ts`; ninguna ruta para otras acciones | Implementado · Probado en local | Respaldada |
+| R7 | Solo `provide-evidence` está verificado de extremo a extremo y desplegado; mensaje, aceptación, oferta y escalado están Probados en local; el resto, No disponible con un motivo | `apps/web/src/domain/actionContracts.ts` (`CONTRACTS`), `apps/server/src/actions/routes.ts`; ejecución de tests del 20/10/2026 en `076c74f` | Probado en local | Respaldada (recomprobada el 20/10/2026) |
 | R8 | Nada se ha ejecutado contra PayPal live | Sin evidencia en live; el modo alojado rechaza live sin `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, que nunca se ha fijado | — | Respaldada (sin evidencia de ninguna llamada a PayPal live) |
 | R9 | Tabla de entornos | Como F46–F48 | Desplegado | Respaldada |
 | R10 | Pruébalo en la demo: el envío va al simulador | `ApproveFlow.tsx` (*Recorded by the PayPal simulator*) | Implementado · Desplegado | Respaldada |

@@ -34,8 +34,11 @@ submission).
    Press **Explain in response** (adds a neutral sentence citing both) or **Mark resolved…** (records a note).
 6. In the draft, each sentence is **Supported**, **Needs review** or *Removed: no supporting evidence* (struck, never
    sent). **Edit** a sentence to see it checked again (*Re-checking support…*).
-7. Under **What to do**, the actions PayPal allows for this dispute are listed. Only **Provide evidence** can be sent;
-   choosing another one shows *only "Provide evidence" can be sent from this screen for now*.
+7. Under **What to do**, the actions PayPal allows for this dispute are listed. On the deployed commit (`fbe9621`)
+   only **Provide evidence** can be sent; choosing another one shows *only "Provide evidence" can be sent from this
+   screen for now*. From commit `076c74f` (not deployed yet), choosing **Send message**, **Accept claim**, **Make an
+   offer** or **Escalate** opens its own composer, played on the simulator with the recorded PayPal transitions only;
+   variants that are not available say why ([review and submit](../user-guide/review-and-submit.md#other-dispute-actions)).
 8. The button at the bottom reads **Review what will be sent →** once nothing is open (before that, *Resolve N item to
    continue*). Press it: the dialog shows *Exactly what goes to PayPal* (*Composed in this browser (simulator only)*),
    the claim ↔ proof list (*Number*, *Claim*, *Proof*) and *Not sent · removed by the analyst*.

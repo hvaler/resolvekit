@@ -61,7 +61,9 @@ operators, see the [Runbook](../operations/runbook.md).
 | You see | Fix |
 |---|---|
 | **Review what will be sent →** disabled | Read the bar above it: resolve each listed item |
-| «only "Provide evidence" can be sent from this screen for now» | Choose **Provide evidence** in **What to do** |
+| «only "Provide evidence" can be sent from this screen for now» (deployed commit `fbe9621`) | Choose **Provide evidence** in **What to do**; the other actions arrive with commit `076c74f` ([Review and submit](review-and-submit.md#other-dispute-actions)) |
+| «Outcome pending confirmation» after a message, accept, offer or escalation | Press **Check again** (it only reads the dispute back); nothing else can be sent on that dispute until PayPal shows the result |
+| «Not available: <reason>» next to an action | That variant has no recorded PayPal contract, or is outside it; see [Limitations](../product/limitations.md) |
 | «Nothing can be sent yet» with reasons | Fix the reasons, **← Back to edit**, **Try again** |
 | «Only the seller's workspace can send this» | Sign in to the seller workspace |
 | «What would be sent now differs from what you approved…» (`INTENT_STALE`) | Review again and approve |

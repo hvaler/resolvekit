@@ -3,7 +3,8 @@
 # Integración con PayPal
 
 Qué API de PayPal llama ResolveKit, con qué credencial, en qué se apoya y qué solo se ha observado en el sandbox.
-Código en el commit `fbe9621`; documentación de PayPal consultada el 19/10/2026 (developer.paypal.com).
+Código en el commit `fbe9621`, las acciones de disputa en el commit `076c74f` (20/10/2026); documentación de PayPal
+consultada el 19/10/2026 (developer.paypal.com).
 
 En esta página se separan tres tipos de afirmación:
 
@@ -20,7 +21,7 @@ etiqueta de la UI «PayPal sandbox · live» seguida de un id de disputa signifi
 
 | Credencial | Variables | Pertenece a | Se usa para |
 |---|---|---|---|
-| App del vendedor | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | La cuenta business de sandbox que es el vendedor en las disputas vinculadas («Test Store» en nuestro sandbox) | Lecturas de disputas, provide-evidence, verificación de webhooks (servidor); presupuestos, capturas, anulaciones (MeterMCP, la misma app); pagos de prueba (`demo:prepare`) |
+| App del vendedor | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | La cuenta business de sandbox que es el vendedor en las disputas vinculadas («Test Store» en nuestro sandbox) | Lecturas de disputas, provide-evidence, las acciones de disputa (send-message, accept-claim, make-offer, escalate), verificación de webhooks (servidor); presupuestos, capturas, anulaciones (MeterMCP, la misma app); pagos de prueba (`demo:prepare`) |
 | App de identidad | `PAYPAL_IDENTITY_CLIENT_ID`, `PAYPAL_IDENTITY_CLIENT_SECRET` | **Otra** cuenta business de sandbox (la plataforma) | **Continue with PayPal**: solo el token de acuerdo sin cargo. Debe ser distinta de la app del vendedor |
 | App Platform (Partner) | ninguna | — | **Sin código.** Partner Referrals y `PayPal-Auth-Assertion` solo se probaron fuera de la app: ver [alta de comerciantes](merchant-onboarding.md) |
 
@@ -35,23 +36,26 @@ y lo renueva 60 s antes de que caduque. Las peticiones expiran a los 30 s (ajust
 | `GET /v1/customer/disputes/{id}` | servidor: lectura del caso, composición, envío, comprobación de vinculaciones, relectura tras webhook; `demo:prepare` | app del vendedor |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | solo `demo:prepare` | app del vendedor |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | servidor, `POST /api/disputes/:case/evidence` | app del vendedor |
+| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` con un archivo), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | servidor, `POST /api/disputes/:case/send` (Probado en local con fakes; no desplegado) | app del vendedor |
+| `GET /v2/payments/refunds/{id}` | solo `npm run contract:read -- --refund <id>` (lecturas de contrato de solo lectura) | app del vendedor |
 | `POST /v1/notifications/verify-webhook-signature` | manejador del webhook en el servidor | app del vendedor (el webhook está registrado en ella) |
 | `POST /v1/billing-agreements/agreement-tokens`, `GET /v1/billing-agreements/agreement-tokens/{id}` | inicio de sesión en el servidor | app de identidad |
 | `POST /v2/checkout/orders` (intent `AUTHORIZE`), `GET /v2/checkout/orders/{id}`, `POST /v2/checkout/orders/{id}/authorize` | presupuesto de MeterMCP | app del vendedor (en el servicio MeterMCP) |
 | `GET /v2/payments/authorizations/{id}`, `POST …/capture`, `POST …/void`, `GET /v2/payments/captures/{id}` | liquidación y conciliación de MeterMCP | app del vendedor |
 | `POST /v2/checkout/orders` (intent `CAPTURE`), `GET …`, `POST …/capture` | `demo:prepare` (el pago de prueba de 7.00 USD del caso estándar) | app del vendedor |
 
-Definidos en `packages/paypal` pero **nunca llamados por ninguna ruta**: `send-message`, `accept-claim`. No hay
-código para hacer una oferta, escalar ni reembolsar en ninguna parte. La pantalla de revisión lista las acciones que
-PayPal permite sobre la disputa; si el comerciante elige una distinta de **Provide evidence**, el envío se bloquea
-con «only "Provide evidence" can be sent from this screen for now».
+Las acciones de disputa (mensaje, aceptación, oferta, escalado) las envía la ruta de acciones del servidor, solo para
+las variantes cuyo contrato está registrado ([más abajo](#contratos-de-las-acciones-de-disputa)); el estado por
+variante está en la
+[especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
+Ningún código crea o cambia un reembolso.
 
 ## Comportamiento del cliente
 
 | Comportamiento | Detalle |
 |---|---|
-| `PayPal-Request-Id` | En cada POST: el id de quien llama o uno aleatorio. Un intent conserva un único id para todos sus envíos. Si la API de Disputes deduplica con él **no está verificado**; el código vuelve a leer la disputa antes de cualquier reintento |
-| 429 | Se reintenta hasta 3 veces con el mismo id y cuerpo, esperando `Retry-After` (≤ 5 s) |
+| `PayPal-Request-Id` | En cada POST: el id de quien llama o uno aleatorio; un POST de acción de disputa lo exige. Un intent conserva un único id para todos sus envíos. Observado: `send-message` **no** deduplica con él (W-2, 20/10/2026); en las demás rutas **no está verificado**. El código vuelve a leer la disputa antes de cualquier reintento |
+| 429 | Se reintenta hasta 3 veces con el mismo id y cuerpo, esperando `Retry-After` (≤ 5 s). Los POST de acciones de disputa **nunca** se reintentan automáticamente: un 429, 408, 5xx, tiempo agotado o respuesta poco clara es un resultado desconocido, que resuelve una relectura |
 | GET fallido | 408, 500, 502, 503, 504 se reintentan tras 300 ms y 900 ms |
 | Otros errores | Se devuelven a quien llama como `PayPalError` con estado, cuerpo y `paypal-debug-id`; la API responde `{error, paypalIssue}` (p. ej. `EVIDENCE_TYPE_IS_NOT_ALLOWED`) |
 | Verificación de webhooks | Sin reintento: una entrega que PayPal no puede confirmar en ese momento se responde con 503 y PayPal la vuelve a entregar |
@@ -102,6 +106,50 @@ evidencia nueva del vendedor que no coincide se muestra como tal y detiene cualq
 no es ni éxito ni fallo: la app relee y solo ofrece un reintento seguro si PayPal no muestra evidencia del vendedor.
 Estado: Implementado · Probado en local · Verificado en sandbox («6 of 6 fields», 17/10 y 18/10/2026, incluida una
 imagen subida) · Desplegado. Comportamiento ante timeout contra PayPal: Pendiente.
+
+### Contratos de las acciones de disputa
+
+Una variante de acción de disputa solo se ofrece cuando coinciden tres cosas: la documentación de PayPal (el
+[esquema](https://developer.paypal.com/api/customer-disputes/v1/schema.json) de Disputes v1,
+[use the Disputes API](https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api),
+[test and go live](https://developer.paypal.com/platforms/disputes/test-go-live), consultados el 19/10/2026); lecturas
+de solo lectura en el sandbox (`packages/paypal/contracts/reads/`, tomadas con `npm run contract:read`, que solo envía
+GET); y una escritura por variante que el propietario aprobó petición a petición, registrada con su respuesta y sus
+relecturas a +0 s, +30 s, +2 min y +10 min (`packages/paypal/contracts/*.json`). El registro es
+`apps/web/src/domain/actionContracts.ts`.
+
+**Observado en sandbox, a nivel de contrato (20/10/2026).** Estas escrituras se enviaron fuera del flujo propio de la
+app; el flujo de la app de extremo a extremo contra el sandbox está **Pendiente**. Son observaciones únicas, no reglas de
+PayPal ni producción.
+
+| Escritura | Variante | Disputa de sandbox | Observado |
+|---|---|---|---|
+| W-1 | `send_message` | PP-R-VQD-10193598 | Aceptada (JSON). El mensaje del vendedor apareció unos 3 s después de empezar el envío, con el contenido idéntico byte a byte. Un `UNDER_REVIEW` breve sin acciones y después `WAITING_FOR_BUYER_RESPONSE` sin `make_offer` |
+| W-2 | `send_message`, la misma petición y el mismo `PayPal-Request-Id` | la misma | Se publicó un segundo mensaje: no hay deduplicación por id de petición |
+| W-3 | `send_message:file` | la misma | Multipart `input` (el mensaje JSON) y `message_document` (el archivo) aceptados; el mensaje con su texto exacto y un documento unos 3.5 s después |
+| W-4 | `make_offer:REFUND`, 2.00 de 7.00 USD | PP-R-OZY-10193601 | `offer.history` ganó una entrada `PROPOSED` del vendedor con el tipo y el importe unos 3.5 s después; la nota se repitió como mensaje del vendedor; no se movió dinero ni se cerró nada. Después PayPal esperó al comprador, dejó de ofrecer `make_offer` y solo ofreció aceptar con `REFUND` |
+| W-5 | `escalate` | PP-R-NDZ-10193597 | Una entrada en `evidences[]` `SUBMITTED_BY_SELLER`, `action_info.action: ESCALATE`, con la nota, unos 3.9 s después. Fase `CHARGEBACK` unos 2 min 46 s más tarde; `UNDER_REVIEW` con enlaces intermitentes entre medias |
+| W-6 | `evidence:after_escalation` | la misma, en `CHARGEBACK` | Evidencia aceptada de nuevo en la fase de reclamación; cada entrada de `evidences[]` lleva su `dispute_life_cycle_stage` |
+| W-7 | el ayudante de adjudicación del sandbox (preparación de una apelación) | la misma, `UNDER_REVIEW` | Rechazado: `400`, `ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`; no se pudo producir un estado apelable |
+| W-8 | `appeal` | — | No enviada (W-7 fue rechazada) |
+| W-9 | `accept_claim:PARTIAL_REFUND`, 2.00 de 7.00 USD | PP-R-KMJ-10193602 | `200`, registrada como oferta: una entrada `PROPOSED` del vendedor en `offer.history`, tipo `REFUND`, 2.00 USD; ninguna entrada en `evidences[]`; nada se cerró, no se movió dinero; la nota se repitió como mensaje del vendedor |
+| W-10 | `accept_claim:REFUND` | PP-R-PAU-10193600 | Una entrada atribuible (`ACCEPT_CLAIM`, `response_option: REFUND`, la nota) unos 5 s después; un reembolso de 7.00 USD en el acto; `RESOLVED` a favor del comprador (`SELLER_ISSUED_REFUND`) hacia los +2 min, tras `UNDER_REVIEW` |
+| W-11 | `evidence:PROOF_OF_REFUND` | — | No enviada (decisión del propietario, 20/10/2026); una prueba pendiente |
+| W-12 | `make_offer:REPLACEMENT_WITHOUT_REFUND` | PP-R-GCV-10193596 (artículo distinto de lo descrito) | No enviada: en esa disputa PayPal solo ofrecía `REFUND` y `REFUND_WITH_RETURN` |
+
+Lo que ResolveKit toma de ellas: la prueba de cada acción es la entrada que dejó la escritura (el mensaje; la entrada de
+oferta, también para una aceptación parcial; la entrada `ACCEPT_CLAIM`; la entrada `ESCALATE`), nunca un cambio de
+estado por sí solo; una acción solo se da por ausente tras 60 s sin prueba; toda acción se compone solo en `INQUIRY`, y
+la aceptación, la oferta y el escalado solo en disputas de artículo no recibido, porque es todo lo que cubrieron las
+escrituras.
+
+**W-11, la prueba pendiente de la prueba de reembolso.** El 19/10/2026 un pago en disputa apareció retenido en el
+sandbox, y las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso. La secuencia prevista es,
+por tanto: un pago de sandbox nuevo; el propietario reembolsa parte **antes** de que se abra ninguna disputa; el
+comprador abre una disputa de artículo no recibido sobre él; una comprobación de solo lectura de que el reembolso está
+completado, pertenece a la captura en disputa, tiene la misma moneda y es parcial; la petición `PROOF_OF_REFUND` exacta,
+aprobada por el propietario y enviada una vez; relecturas a +0 s, +30 s, +2 min y +10 min. Hasta entonces la variante
+sigue «Not available».
 
 ### Ciclo de vida (documentado)
 
@@ -194,7 +242,7 @@ PayPal.
 | El tipo de artículo (físico, descarga digital, servicio, reserva) lo elige el comprador en el formulario de la disputa, no es la categoría del artículo del pedido | Mostrar el tipo de artículo declarado por el comprador en la cabecera del caso |
 | `provide-evidence` acepta multipart: parte JSON `input` (`{"evidences":[…]}`) y partes `evidence-file` (PDF/JPG/PNG/GIF) | Implementado en `packages/paypal` |
 | Tras enviar la evidencia, `provide_evidence` desapareció de las acciones de la disputa; el estado pasó a `WAITING_FOR_BUYER_RESPONSE` o `UNDER_REVIEW` | Confirmación de acción irreversible; releer y mostrar el estado registrado. «Una vez por disputa» es esta observación, no una regla documentada |
-| En la fase de consulta, el vendedor tenía `send_message`, `make_offer`, `accept_claim`, `provide_evidence`, `escalate` | La pantalla de revisión lista las acciones permitidas; solo está construido provide-evidence |
+| En la fase de consulta, el vendedor tenía `send_message`, `make_offer`, `accept_claim`, `provide_evidence`, `escalate` | La pantalla de revisión lista las acciones permitidas; entonces solo estaba construido provide-evidence (las demás acciones desde entonces: [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa)) |
 | Los reembolsos parciales sobre una captura se completaron de inmediato (a mano) | Ninguna: ResolveKit no tiene código de reembolso |
 | Una disputa real siempre lista la entrada propia del comprador (`evidence_type: CREATE`, `source: SUBMITTED_BY_BUYER`) junto a la solicitud de PayPal (`REQUESTED_FROM_SELLER`, sin documentos) | «Recorded» (registrado) es solo la evidencia `SUBMITTED_BY_SELLER` nueva comparada con la lectura previa al envío |
 
@@ -219,12 +267,18 @@ envío tardó unos 1.9 s (lectura y POST multipart); PayPal lo aceptó, y la rel
 | 18/10 | PayPal registró un PNG subido y tapado como `E7-upload.png`; la copia de PayPal solo contenía los chunks de imagen del PNG, con la tapa incrustada |
 | 18/10 | Pruebas de acceso de plataforma / terceros fuera de la app: [alta de comerciantes](merchant-onboarding.md) |
 | 19/10 | Dos ejecuciones del agente dirigido por el modelo se liquidaron en el sandbox: [agente comprador](buying-agent.md) |
+| 19/10 | Un pago con una disputa abierta apareció retenido; las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso |
+| 20/10 | Escrituras de contrato W-1 a W-12 aprobadas por el propietario: [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
 
 ## Desconocido y no afirmado
 
 - Si, en general, se puede aportar evidencia más de una vez por disputa o por fase.
-- Si la API de Disputes deduplica `PayPal-Request-Id` (PayPal: «Not all APIs support this header»,
+- Si la API de Disputes deduplica `PayPal-Request-Id` en rutas distintas de `send-message`, que no lo hizo (W-2)
+  (PayPal: «Not all APIs support this header»,
   [idempotencia](https://developer.paypal.com/api/rest/reference/idempotency/)).
+- Cómo se ve en la disputa la respuesta del comprador a una oferta (nunca registrada); las acciones de disputa en otros
+  motivos y fases; una apelación (el sandbox no pudo producir una disputa apelable); una oferta de sustitución (nunca
+  ofrecida).
 - Cualquier límite de longitud de las notas en el lado de PayPal; el tope de 2 000 caracteres es de ResolveKit.
 - El número máximo de archivos por llamada.
 - El comportamiento en el entorno de producción de todo lo que aparece en esta página.

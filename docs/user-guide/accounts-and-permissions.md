@@ -39,15 +39,23 @@ If PayPal sign-in fails or you cancel it, you land on the sign-in page instead, 
 
 | Role chip | Who | Can | Cannot |
 |---|---|---|---|
-| **Owner** | The PayPal account that signed in | Everything in the workspace; **Members and invites**; **Workspace runs** and **Keep** on `/agent` | Be revoked |
-| **Member** | Joined with a member invite | Review cases, add evidence, review and delete any upload, approve and send responses, run the agent, within the daily limits | Connect PayPal; manage members |
-| **Reviewer** | Joined with a reviewer invite (judges) | As a Member, until the access end date | Edit or discard anyone else's pending upload; delete uploads; manage members |
+| **Owner** | The PayPal account that signed in | Everything in the workspace; **Members and invites**; **Workspace runs** and **Keep** on `/agent`; the owner-only dispute actions (accept claim, make offer, escalate) with a second confirmation; the owner settlement case | Be revoked |
+| **Member** | Joined with a member invite | Review cases, add evidence, review and delete any upload, approve and send evidence and messages to the buyer, run the agent, within the daily limits | Connect PayPal; manage members; accept, offer or escalate (preview only) |
+| **Reviewer** | Joined with a reviewer invite (judges) | As a Member, until the access end date | Edit or discard anyone else's pending upload; delete uploads; manage members; accept, offer or escalate (preview only) |
 
 What each person approves carries their name and role in the audit trail, e.g. «Dana Ruiz (Member, reviewer ·
 passkey) p_…» (name, role, how they joined, person id).
 
 An approval belongs to the person who composed it: nobody else, not even the Owner, can approve or send someone
 else's composed response.
+
+**Dispute actions** (Tested locally, not yet deployed; see
+[Review and submit](review-and-submit.md#other-dispute-actions)): reviewers and members may send **messages only**.
+Accepting a claim, making an offer and escalating move money or change the dispute, so only the Owner can do them, and
+each needs a second confirmation that names its consequence and amount; everyone else sees a preview of the action and
+its consequence, and the server refuses it (`OWNER_ONLY`) at every step. The **owner settlement case**
+(`PP-R-STL-10190667`), bound to a sandbox dispute of its own for these actions, is visible to the Owner only, and so are
+PayPal's notices about its disputes.
 
 ## Invite people (Owner)
 

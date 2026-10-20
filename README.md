@@ -50,10 +50,13 @@ Details: [product overview](docs/product/overview.md) · [AI pipeline](docs/tech
 | Google Gemini (`gemini-3.8-flash`), Groq (`openai/gpt-oss-120b`) as fallback | Analyst: facts with verbatim quotes, timeline, contradictions, draft, per-sentence verification. Buying agent: one tool call per turn through function calling | Deployed; analyst measured on synthetic sets only |
 | Deterministic code | Verbatim-quote check, numbers check, rules for action and evidence type, budget and limit checks for the agent | Implemented · Tested locally · Deployed |
 
-Only `provide-evidence` is sent to PayPal end to end. Sending messages, accepting a claim, making an offer,
-escalating and refunding are **not** product features (Pending): the UI lists the actions PayPal allows, but choosing
-any action other than **Provide evidence** blocks the send with *only "Provide evidence" can be sent from this screen
-for now*. Nothing has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).
+Only `provide-evidence` is verified end to end through the app and deployed. Sending a message, accepting a claim
+(full, or partial as an offer), making a partial-refund offer and escalating are **Tested locally** from commit
+`076c74f` (20/10/2026), each on a sandbox contract the owner approved; they are not yet verified through the app in
+the sandbox nor deployed. Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
+**Not available**, each with its reason. ResolveKit never creates a refund. Per-variant status:
+[functional specification](docs/product/functional-specification.md#56-dispute-actions-other-than-evidence). Nothing
+has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).
 
 ## Choose your environment
 
@@ -153,7 +156,8 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 ## Current limitations
 
 - Merchant connection to their own disputes: Pending (see above).
-- Only `provide-evidence` is sent to PayPal; no messages, offers, claim acceptance, escalation or refunds.
+- Only `provide-evidence` is verified through the app and deployed; messages, accept, offer and escalate are Tested
+  locally (not deployed); no refund is ever created.
 - Sandbox only; live PayPal never exercised. Sandbox timings and behaviours may differ in live.
 - The standard evaluation case's reserve of fresh sandbox disputes was empty on 19/10/2026: until it is refilled, new
   sends there are refused and the case shows the earlier read-back.

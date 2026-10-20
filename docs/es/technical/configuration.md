@@ -45,7 +45,7 @@ logs. «Alojado» significa `RESOLVEKIT_MODE=hosted` (servidor) o `METERMCP_MODE
 
 | Variable | R/O | Secret | Por defecto | Efecto |
 |---|---|---|---|---|
-| `BINDINGS_JSON` | O alojado | sensible | — | Caso → `{dispute, capture[, session, run]}` (o una lista: reserva, el primero activo). En el modo alojado prevalece sobre el archivo; un JSON incorrecto detiene el arranque |
+| `BINDINGS_JSON` | O alojado | sensible | — | Caso → `{dispute, capture[, session, run]}` (o una lista: reserva, el primero activo). En el modo alojado prevalece sobre el archivo; un JSON incorrecto, o una disputa listada dos veces (en cualquier caso), detiene el arranque |
 | `RESOLVEKIT_BINDINGS` | O | — | alojado `<data>/bindings.json`, local `apps/server/bindings.json` | Archivo de vinculaciones; en el modo alojado sin `BINDINGS_JSON` se relee cada 30 s |
 
 ### Cuentas y operaciones
@@ -85,6 +85,14 @@ logs. «Alojado» significa `RESOLVEKIT_MODE=hosted` (servidor) o `METERMCP_MODE
 | `DAILY_EVIDENCE_SENDS` | 20 | Envíos de evidencia a PayPal |
 | `DAILY_UPLOADS` | 40 | Subidas (no está en `render.yaml`: se aplica el valor por defecto) |
 | `DAILY_AGENT_RUNS` | 20 | Ejecuciones del agente iniciadas (más 5 por persona y día, no configurable) |
+| `DAILY_MESSAGE_SENDS` | 20 | Mensajes enviados al comprador a través de PayPal (no está en `render.yaml`: se aplica el valor por defecto) |
+| `DAILY_SETTLE_SENDS` | 20 | Acciones de liquidación enviadas: aceptar la reclamación, hacer una oferta, escalar (y apelar, que no está disponible) (no está en `render.yaml`: se aplica el valor por defecto) |
+
+**El caso de liquidación del propietario.** `BINDINGS_JSON` puede vincular `PP-R-STL-10190667`, el caso solo del Owner
+para aceptar, ofertar y escalar, a una lista de disputas de sandbox propias (su reserva), separada de la del caso
+estándar; cada disputa aparece una sola vez en todo el archivo. Forma de ejemplo (ids ficticios):
+`"PP-R-STL-10190667": [{"dispute": "PP-R-YYY-00000001", "capture": "YYYYYYYYYYYYYYYY1"}, …]`
+(`apps/server/bindings.example.json`). En modo alojado, solo el Owner del espacio del vendedor ve ese caso.
 
 ### Límites de las ejecuciones del agente (ambos modos)
 
@@ -164,4 +172,5 @@ aplican los valores por defecto; aparecen allí como comentarios YAML con su val
 modelos (`ANALYST_PROVIDER`, `GEMINI_MODEL`, `GROQ_MODEL`, `AGENT_*_MODEL`, `GROQ_TPM`), `LIVE_ANALYSES_PER_HOUR`,
 `RECHECKS_PER_HOUR`, los ajustes de retención (`ANALYSIS_CACHE_MAX_*`, `ANALYST_USAGE_MAX_*`); en MeterMCP
 `METERMCP_PUBLIC_URL`, `METERMCP_CUSTOM_DOMAINS`, `METERMCP_IDLE_MINUTES`, `METERMCP_ALLOWED_ORIGINS`, `METERMCP_DB`,
-`TRUSTED_PROXY_PEERS`. Procedimiento: [despliegue](../operations/deployment.md).
+`TRUSTED_PROXY_PEERS`. `DAILY_MESSAGE_SENDS` y `DAILY_SETTLE_SENDS` no están en el blueprint, ni siquiera como
+comentarios: se aplican sus valores por defecto. Procedimiento: [despliegue](../operations/deployment.md).

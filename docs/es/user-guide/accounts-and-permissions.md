@@ -41,15 +41,23 @@ el motivo:
 
 | Etiqueta de rol | Quién | Puede | No puede |
 |---|---|---|---|
-| **Owner** | La cuenta de PayPal que inició sesión | Todo en el espacio de trabajo; **Members and invites**; **Workspace runs** y **Keep** en `/agent` | Ser revocado |
-| **Member** | Se unió con una invitación de miembro | Revisar casos, añadir evidencia, revisar y borrar cualquier subida, aprobar y enviar respuestas, ejecutar el agente, dentro de los límites diarios | Conectar PayPal; gestionar miembros |
-| **Reviewer** | Se unió con una invitación de revisor (jurados) | Lo mismo que un Member, hasta la fecha de fin de acceso | Editar o descartar subidas pendientes de otras personas; borrar subidas; gestionar miembros |
+| **Owner** | La cuenta de PayPal que inició sesión | Todo en el espacio de trabajo; **Members and invites**; **Workspace runs** y **Keep** en `/agent`; las acciones de disputa solo del Owner (aceptar la reclamación, hacer una oferta, escalar) con una segunda confirmación; el caso de liquidación del propietario | Ser revocado |
+| **Member** | Se unió con una invitación de miembro | Revisar casos, añadir evidencia, revisar y borrar cualquier subida, aprobar y enviar evidencia y mensajes al comprador, ejecutar el agente, dentro de los límites diarios | Conectar PayPal; gestionar miembros; aceptar, ofertar o escalar (solo vista previa) |
+| **Reviewer** | Se unió con una invitación de revisor (jurados) | Lo mismo que un Member, hasta la fecha de fin de acceso | Editar o descartar subidas pendientes de otras personas; borrar subidas; gestionar miembros; aceptar, ofertar o escalar (solo vista previa) |
 
 Lo que aprueba cada persona lleva su nombre y su rol en el registro de auditoría, p. ej. «Dana Ruiz (Member, reviewer ·
 passkey) p_…» (nombre, rol, cómo se unió, id de persona).
 
 Una aprobación pertenece a la persona que la compuso: nadie más, ni siquiera el Owner, puede aprobar o enviar una
 respuesta compuesta por otra persona.
+
+**Acciones de disputa** (Probadas en local, aún no desplegadas; ver
+[Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa)): los revisores y los miembros solo pueden enviar
+**mensajes**. Aceptar una reclamación, hacer una oferta y escalar mueven dinero o cambian la disputa, así que solo el
+Owner puede hacerlos, y cada uno necesita una segunda confirmación que nombra su consecuencia y su importe; los demás
+ven una vista previa de la acción y su consecuencia, y el servidor la rechaza (`OWNER_ONLY`) en cada paso. El **caso de
+liquidación del propietario** (`PP-R-STL-10190667`), vinculado a una disputa de sandbox propia para estas acciones,
+solo lo ve el Owner, igual que los avisos de PayPal sobre sus disputas.
 
 ## Invitar a personas (Owner)
 

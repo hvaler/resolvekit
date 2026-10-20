@@ -6,6 +6,8 @@ What ResolveKit does, for whom, under which rules, as built at commit `fbe9621` 
 source of truth; where behaviour was only observed in the PayPal sandbox, this page says so. Status words: Designed ·
 Implemented · Tested locally · Verified in sandbox · Deployed · Available to users · Pending.
 
+Section 5.6 (dispute actions) is checked against commit `076c74f` (20/10/2026).
+
 Related: [Overview](overview.md) · [Limitations](limitations.md) · [HTTP API](../technical/http-api.md) ·
 [Trust boundaries](../architecture/trust-boundaries.md).
 
@@ -52,6 +54,9 @@ in `apps/server/src/hosted.ts` (gate), `apps/server/src/app.ts`, `apps/server/sr
 | Discard a pending upload | any | any | own only | — | — | yes |
 | Delete a confirmed upload | yes | yes | no | — | — | yes |
 | Compose, approve, send a response | yes | yes | yes | refused (`NOT_THE_SELLER` / `SELLER_WORKSPACE_ONLY`) | no | yes |
+| Send a message to the buyer ([5.6](#56-dispute-actions-other-than-evidence)) | yes | yes | yes | refused | no | yes |
+| Accept claim, make offer, escalate ([5.6](#56-dispute-actions-other-than-evidence)) | yes, with a second confirmation | preview only (`OWNER_ONLY`) | preview only (`OWNER_ONLY`) | refused | no | yes |
+| See the owner settlement case `PP-R-STL-10190667` | yes | no | no | no | no | yes, when bound |
 | Read or approve someone else's intent | no (an intent belongs to the session that composed it; others get 404) | no | no | no | no | — |
 | Members and invites (`/workspace`) | yes | no (`OWNER_ONLY`) | no | its own Owner only | no | not applicable (local mode has no accounts) |
 | Start a buying-agent run | yes | yes | yes | no (`SELLER_WORKSPACE_ONLY`) | redirected to sign-in | yes |
@@ -83,6 +88,8 @@ Notes:
 | UC-11 | Compare two runs; Keep a run; view Workspace runs | Author / Owner | Implemented · Tested locally · Verified in sandbox (Compare and Keep, 19/10/2026) |
 | UC-12 | Stop a running agent run | Author | Implemented · Tested locally; in sandbox **Pending** |
 | UC-13 | Connect a merchant's own PayPal disputes | Merchant | **Pending** (not in the app) |
+| UC-14 | Send a message to the buyer | Seller workspace | Tested locally; Verified in sandbox and Deployed: **Pending** |
+| UC-15 | Accept a claim (full or partial), make an offer, escalate | Owner | Tested locally; Verified in sandbox and Deployed: **Pending** |
 
 ## 5. States and business rules
 
@@ -176,6 +183,113 @@ calls, 180 s of agent time (approval wait excluded), 15 min to approve; one runn
 runs per person and 20 per server per UTC day. Runs are kept 30 days unless kept, unsettled, unsaved or bound as evidence.
 Details: [Buying agent](../user-guide/buying-agent.md).
 
+### 5.6 Dispute actions other than evidence
+
+Checked against commit `076c74f` (20/10/2026). Each action variant has one status, taken from the contract registry
+(`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); the product shows the same label next to each variant. A
+variant is available only when its contract is recorded: PayPal's documentation, read-only sandbox reads, and one write
+the owner approved request by request, with its response and read-back (`packages/paypal/contracts/`).
+
+| Variant | What it is | Status | Contract write (sandbox, 20/10/2026) |
+|---|---|---|---|
+| `send_message` | A text message to the buyer (1–2,000 characters) | Tested locally | Recorded (W-1, W-2) |
+| `send_message:file` | A message with one confirmed upload attached | Tested locally: the server path. The web composer cannot attach an upload yet, so the UI does not offer it | Recorded (W-3) |
+| `accept_claim:REFUND` | Accept the claim with a full refund | Tested locally | Recorded (W-10) |
+| `accept_claim:PARTIAL_REFUND` | Accept the claim with a partial refund, which PayPal records as an offer to the buyer | Tested locally | Recorded (W-9) |
+| `escalate` | Escalate an inquiry to a claim | Tested locally | Recorded (W-5) |
+| `evidence:after_escalation` | Evidence in the claim stage after an escalation | Tested locally | Recorded (W-6) |
+| `make_offer:REFUND` | Offer the buyer a partial refund | Tested locally | Recorded (W-4) |
+| `make_offer:REPLACEMENT_WITHOUT_REFUND` | — | Not available: Not verified with PayPal: never offered on a sandbox dispute | Not sent (W-12) |
+| `make_offer:withdraw` | — | Not available: PayPal documents no route to withdraw an offer | — |
+| `appeal` | — | Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute | Set-up refused (W-7); not sent (W-8) |
+| `evidence:PROOF_OF_REFUND` | — | Not available: Not verified with PayPal: pending sandbox test (W-11) | Not sent (W-11, owner decision) |
+| `return_address` | The accept and offer types with a return (`REFUND_WITH_RETURN`, `REFUND_WITH_RETURN_SHIPMENT_LABEL`) | Not available: Not in this delivery (owner decision) | — |
+
+No variant is **Verified in sandbox** or **Deployed**. The contract writes of 20/10/2026 were prepared requests that
+the owner approved one by one, sent outside the app's own flow; they show what PayPal does (see
+[PayPal integration](../technical/paypal-integration.md#dispute-action-contracts)), not that the app's flow works end
+to end against the sandbox, which is **Pending**. The deployed commit (`fbe9621`) predates the dispute actions.
+
+**Who may do what.** Accept claim, make offer, escalate and appeal are **owner-only**: only the workspace's Owner (not a
+reviewer) composes, approves, confirms and sends them. Members and reviewers may send **messages only** (and evidence,
+as before); for an owner-only action they see a preview with its consequence, and the server refuses compose, approve,
+confirm and send with `403 OWNER_ONLY`. Hidden buttons are not the control: the role is checked at every step. The
+local operator acts as an Owner.
+
+**Second confirmation.** After approving the exact content, an owner-only action needs a confirmation the server
+issues, bound to the intent id, the content hash, the action, the canonical amount, the currency and a consequence
+code: `REFUNDS_BUYER` (full accept), `OFFERS_PARTIAL_REFUND` (partial accept), `OFFERS_SETTLEMENT` (offer),
+`MOVES_TO_CLAIM` (escalate). A message needs it only when it repeats a message PayPal already recorded on that dispute
+and stage (`REPEATS_MESSAGE`). Other terms are refused (`CONFIRMATION_MISMATCH`); a send without them is refused
+(`CONFIRMATION_REQUIRED`). Changing any of them means a new intent.
+
+**Rules, as the contracts recorded them.**
+
+- Every recorded write started in the `INQUIRY` stage, so message, accept, offer and escalate are composed only there
+  (another stage: `ACTION_STAGE`). What is possible is always rebuilt from a fresh PayPal read (its links and allowed
+  types), before composing, at send time and after every action.
+- **Message:** text required, at most 2,000 characters, no amount. The buyer sees exactly that text.
+- **Accept:** only on `MERCHANDISE_OR_SERVICE_NOT_RECEIVED` disputes, with a note. A **full** accept needs PayPal's
+  refundable amount to equal the dispute amount (otherwise «PayPal's refundable amount differs from the dispute
+  amount»); PayPal refunds the dispute amount and closes the dispute in the buyer's favour (observed: about 2 minutes,
+  `UNDER_REVIEW` first). A **partial** accept takes an amount above 0 and strictly below the refundable amount and the
+  dispute amount; PayPal records it as a pending **offer**: the buyer must agree, nothing closes and no money moves
+  until then, and the note is echoed as a seller message. The two are confirmed and reported apart.
+- **Offer:** a partial refund only (type `REFUND`), with a note and an amount below the dispute amount and at most
+  PayPal's refundable amount. An offer of the full amount was not verified and is refused (`VARIANT_NOT_AVAILABLE`).
+  The note is echoed as a seller message. An offer is refused while one of the seller's offers is pending with the
+  buyer. No money moves unless the buyer accepts. After an offer or a seller message PayPal stopped offering
+  `make_offer`.
+- **Escalate:** not-received disputes only, a note, no amount. PayPal records an attributable `ESCALATE` entry; the
+  claim stage came about 3 minutes later, with `UNDER_REVIEW` and flickering actions in between, which the case shows as
+  «PayPal is reviewing; the claim stage can take a few minutes». An escalation is never taken as a closed dispute.
+- **Evidence by stage:** evidence is still sent once per dispute. The only new case is evidence in the claim after an
+  escalation, once the claim waits for the seller, and only if the dispute has no seller evidence at all; during the
+  review after an escalation the case says «Not available: after an escalation, evidence was verified with PayPal only
+  once the claim waits for the seller». `provide_supporting_info`, which PayPal offered after evidence in a claim, is not
+  supported.
+- **Proof of refund:** not sent in this delivery. If PayPal asks only for it, ResolveKit cannot send evidence on that
+  dispute: «PayPal asks only for Proof of refund, which is not available in this delivery: Not verified with PayPal:
+  pending sandbox test (W-11)». If PayPal also asks for other types, the first requested type that is available is
+  preselected and the selector says that Proof of refund is not available.
+- **Amounts:** exact decimal strings in the dispute's currency, canonical per currency (`7` becomes `7.00` USD; `7,00`,
+  `7.001`, `-1`, `1e2`, ` 7`, `+7`, `0` are refused with `INVALID_AMOUNT`); no dispute amount from PayPal:
+  `DISPUTE_AMOUNT_UNKNOWN`; above the refundable amount: `AMOUNT_ABOVE_REFUNDABLE`.
+- **No refunds are created.** ResolveKit has no call that creates or changes a refund; money moves only through the
+  dispute actions above, at PayPal.
+
+**After a send.**
+
+| Shown | Meaning |
+|---|---|
+| **Recorded by PayPal** | A fresh read shows an entry attributable to this send: the new seller message with the exact text; the seller's offer entry with the approved type and amount (offer, partial accept); the seller's `ACCEPT_CLAIM` entry with type and note (full accept); the seller's `ESCALATE` entry with the note. A state change alone (resolved, a new stage) is never proof: the buyer or PayPal can cause it |
+| **Outcome pending confirmation** | PayPal accepted the request or the answer was unclear, and the proof is not there yet. The dispute is held (uncertain): no other write on it, by anyone, until a read-back proves the action recorded, or proves it absent while PayPal still offers it. **Check again** only reads back; it never sends |
+| Not recorded by PayPal | A read-back proved the action absent while still offered: the same approved intent may be sent again, with the same request id |
+| Not sent | PayPal refused with a known error; nothing was done and the dispute is not held |
+
+Action requests to PayPal are never retried automatically. A restart between the start of a send and its outcome holds
+the dispute until a read-back. The same action with the same content on the same dispute and stage is refused once
+PayPal recorded it (`DUPLICATE_ACTION`); a message is the exception, with the `REPEATS_MESSAGE` confirmation, because
+PayPal does not deduplicate messages, not even by `PayPal-Request-Id` (observed, W-2). A buyer message that arrived
+after approval holds a message, an accept or an offer with `NEEDS_REVIEW`: the person reads it, then sends the same
+content or edits it (a new intent). For an escalation it is shown but does not block.
+
+**Retention.** The approved message text is stored in the intent (`intents.json`), like the approved notes of evidence;
+the audit and send logs keep only its hash. The message thread is read from PayPal and shown, but not stored and not
+given to the analyst. After any recorded seller action (evidence, a seller message, an action this server proved
+recorded) the analyst's input stays the pinned one, so a message does not trigger a new paid analysis.
+
+**The owner's settlement case.** `PP-R-STL-10190667` («Owner settlement case (sandbox)») is the standard case's 7.00
+USD order under its own id, for the owner-only actions on a dispute of its own. Hosted, only the seller workspace's
+Owner sees it; members and reviewers do not, and PayPal notices about its disputes go to the Owner only (a notice about
+one of its reserve disputes links to the case page, which shows the active dispute). It is bound through
+`BINDINGS_JSON` with its own reserve; a dispute may be listed only once across all bindings. It has no stored (golden)
+analysis, so composing evidence there answers `NO_ANALYSIS`. Rotation never moves a case off a dispute that is held (a
+send in flight, uncertain, or awaiting its read-back); the ops report shows it as `held`.
+
+**Explore demo.** The simulator plays only the states and transitions the contracts recorded, «Outcome pending
+confirmation» included; nothing reaches PayPal.
+
 ## 6. Flows
 
 ### 6.1 Normal flow: answer a bound dispute
@@ -214,6 +328,13 @@ Details: [Buying agent](../user-guide/buying-agent.md).
 | `DAILY_CAP` / `PERSON_CAP` (429) | A demo cap is used up; the answer says when it resets | Wait for the reset |
 | `RATE_LIMITED` (429) | Too many requests from this address | Wait for `Retry-After` |
 | `CAPS_UNAVAILABLE` (503) | The demo cannot record the use, so it is not done | Try again later |
+| `OWNER_ONLY` (403) | This action moves money or changes the dispute: only the Owner can do it | Ask the Owner; the preview shows its consequence |
+| `CONFIRMATION_REQUIRED`, `CONFIRMATION_MISMATCH` | The owner's second confirmation is missing, or its terms are not this intent's | Confirm the consequence shown; if anything changed, compose again |
+| `DISPUTE_UNCERTAIN` | The last send to this dispute is not confirmed by PayPal yet | **Check again**; nothing else is sent until it is settled |
+| `NEEDS_REVIEW` | The buyer wrote since the approval | Read the new message, then send the same content or edit it |
+| `DUPLICATE_ACTION` | PayPal already recorded this exact action, or an offer of yours is pending | Read the dispute; compose something else |
+| `VARIANT_NOT_AVAILABLE` | «Not available: <reason>» from the contract registry, or outside what the contract recorded | — |
+| `WRONG_SEND_ROUTE` | An action intent sent on the evidence route, or the reverse | Send it from its own flow |
 
 More: [Troubleshooting](../user-guide/troubleshooting.md).
 
@@ -227,12 +348,15 @@ More: [Troubleshooting](../user-guide/troubleshooting.md).
 | AI analysis | committed golden analyses, no model call | stored + live (caps) | — | live with a model key |
 | **+ Add evidence** | disabled with its reason | yes | — | yes, with the server |
 | Submit | simulator only | `provide-evidence` to the sandbox | — | sandbox for bound cases |
+| Dispute actions ([5.6](#56-dispute-actions-other-than-evidence)) | simulator, recorded transitions only | not in the deployed commit (**Pending**) | — | the server's action routes (Tested locally with fakes; against the sandbox through the app: **Pending**) |
 | Buying agent | not in the demo area | `/agent` (seller workspace) | start refused | `/agent` as operator |
 | Daily caps | — | yes | — | none |
 
 ## 8. Limits and unavailable functions
 
 - Limits: see the constants in [Limitations](limitations.md) and [Configuration](../technical/configuration.md).
-- Not available: connecting a merchant's own disputes; send message, accept claim, make offer, escalate, refunds
-  through the product; the live (production) PayPal environment; account or workspace deletion by the user.
-  See [Limitations](limitations.md).
+- Not available: connecting a merchant's own disputes; the dispute-action variants marked «Not available» in
+  [5.6](#56-dispute-actions-other-than-evidence) (replacement offer, offer withdrawal, appeal, proof of refund, the
+  return types); creating refunds; the live (production) PayPal environment; account or workspace deletion by the
+  user. Message, accept, offer and escalate are Tested locally, not yet Verified in sandbox through the app nor
+  Deployed. See [Limitations](limitations.md).

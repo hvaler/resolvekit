@@ -80,13 +80,15 @@ Useful log lines (ResolveKit unless noted). Logs never carry document text, keys
 
 | What the user or the log sees | Cause | What to do |
 |---|---|---|
-| `429 DAILY_CAP` (live analyses 60, re-checks 200, evidence sends 20, uploads 40, agent runs 20 per UTC day) | The global daily cap of that action was reached | Wait for the UTC day to change (`GET /api/demo` shows `resetsAt`), or raise the `DAILY_*` value on Render (restarts the service; counts are kept on disk) |
+| `429 DAILY_CAP` (live analyses 60, re-checks 200, evidence sends 20, uploads 40, agent runs 20 per UTC day; in the code, not yet deployed: message sends 20 `DAILY_MESSAGE_SENDS`, settling actions 20 `DAILY_SETTLE_SENDS`) | The global daily cap of that action was reached | Wait for the UTC day to change (`GET /api/demo` shows `resetsAt`), or raise the `DAILY_*` value on Render (restarts the service; counts are kept on disk) |
 | `429 PERSON_CAP` | 5 agent runs per person per UTC day (not configurable) | Wait for UTC midnight |
 | MeterMCP `DAILY_BUDGETS` (20) reached | Budgets opened today | Wait for the UTC day, or raise `DAILY_BUDGETS` on MeterMCP |
 | `429 RATE_LIMITED` with `Retry-After` | Per-address or hourly limit (e.g. 6 live analyses or 30 re-checks per hour server-wide; uploads, redactions and PDF page reads 20 per 10 min per address) | Wait. Per-address limits are a courtesy, not the security boundary |
 | `503 CAPS_UNAVAILABLE` (sends, live runs, re-checks, uploads, agent runs refused) | `daily-caps.json` (or `agent-run-caps.json`) unreadable at start, or the last save failed: the caps fail closed | Fix or remove the file on the disk; it is read again on the next reservation, no restart needed. Removing it resets today's counts |
 | `503 AUDIT_UNAVAILABLE` on send | The `sending` state and `send_started` event could not reach the disk: nothing was sent | Check the disk (space, permissions); the person can send again |
 | `AUDIT NOT DURABLE` in the log | PayPal accepted, the outcome write failed | The PayPal read-back is the truth; check the disk |
+| `action outcome unknown · case … · intent … · request …` in the log; `409 DISPUTE_UNCERTAIN` to the person | A dispute action timed out or got an unclear answer: the dispute is held | Nothing to force. The person presses **Check again** (a read-back); the hold ends when PayPal proves the action recorded or absent. Never resend by hand |
+| `… could not be read …; every action interrupted by the restart is held until a read-back settles it` | The send log was unreadable at start | Fix the file; held disputes are released by their read-backs |
 | `503 ACCOUNTS_UNAVAILABLE` | A change to `accounts.json` could not be written (it is undone) | Check the disk |
 | `503` with `STORAGE` (uploads), `507 STORAGE_FULL` | An upload write failed (undone), or the 300 MiB upload budget is used | Check the disk; delete unneeded uploads; expired ones go within the hour |
 | `503 STORAGE` on agent start | The run record could not be written: nothing started | Check the disk |
@@ -148,6 +150,17 @@ skipped, entries that no longer match the bindings are ignored, and the last lis
 used disputes from `BINDINGS_JSON` is still tidy but no longer needed. An unreadable file is preserved as
 `reserve-position.json.corrupt-<time>` and the cases walk their lists as before (Tested locally,
 `apps/server/test/reserve.test.ts`; not yet observed on the hosted service).
+
+**A held dispute is never rotated away** (Tested locally, `reserve.test.ts`, `hosted.test.ts`): while a dispute action
+on the active dispute is in flight, uncertain or awaiting its read-back, neither a read (`rotateIfUsed`), nor a start,
+nor a bindings reload (`reserve.apply()`, including a wholesale reload that lists the dispute elsewhere) moves the case
+off it, so whoever sent the action reads PayPal's answer on the same dispute. The log says `reserve · case …: … is held
+by an action still settling → kept active`, and the ops report (`GET /api/ops/status`) shows each binding's `held`
+(`{intentId, since}`, or `null`). A held dispute the new bindings no longer list is not kept: the configuration wins.
+
+**The owner settlement case** `PP-R-STL-10190667` has its own reserve in `BINDINGS_JSON` and rotates like any case.
+Each dispute may be listed once in the whole file (a duplicate stops the start). It has no stored analysis, so evidence
+composed there answers `NO_ANALYSIS`; it is meant for the owner-only actions.
 
 **State on 19/10/2026 (private evidence):** the standard case's active dispute is used and its reserve is empty, so new
 sends to it are **Pending** until the reserve is refilled (planned 25–30/11). PayPal documents that the inquiry
