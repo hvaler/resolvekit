@@ -13,7 +13,8 @@ import { utcDate, utcDateTime, type PayPalSource } from '@resolvekit/cases';
 import { bindingMismatch, moneyText } from './binding';
 import type { GatewayMode } from './httpGateway';
 import { DEMO_CLOCK_TEXT, dueHours, formatDue, formatDueAt, outcomeText, type InboxDispute } from './inbox';
-import { sellerEscalated, sellerEvidenceBlocks } from './recorded';
+import { ESCALATION_REVIEW, escalating, sellerEvidenceBlocks } from './recorded';
+export { ESCALATION_REVIEW } from './recorded';
 import type { DisputeSnapshot, DisputeStatus, DisputeSummary } from './types';
 
 // The case assembly (PayPal's fields, the capture document, the requested evidence) lives in @resolvekit/cases,
@@ -67,13 +68,6 @@ const ITEM_TYPES: Readonly<Record<string, string>> = {
 export function itemTypeLabel(code: string | null | undefined): string | null {
   return code ? (ITEM_TYPES[code] ?? code) : null;
 }
-
-/**
- * The seller escalated and PayPal is reviewing, the claim not opened yet (W-5: UNDER_REVIEW in the inquiry for ≈3 min,
- * its links flickering). Never closed: the claim stage follows.
- */
-export const escalating = (s: DisputeSnapshot): boolean => s.status === 'UNDER_REVIEW' && s.stage === 'INQUIRY' && sellerEscalated(s);
-export const ESCALATION_REVIEW = 'PayPal is reviewing; the claim stage can take a few minutes';
 
 /** "18 Oct" (UTC). */
 const dayMonth = (iso: string) => formatDueAt(iso).split(' · ')[0]!;

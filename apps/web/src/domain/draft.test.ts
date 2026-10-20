@@ -130,6 +130,13 @@ describe('draftBlockers', () => {
     expect(b.map((x) => x.kind)).toEqual(['needs_review']);
   });
 
+  it('evidence not available after an escalation (outside W-6) is a blocker with its reason (Task 10)', () => {
+    const why = 'Not available: after an escalation, evidence was verified with PayPal only once the claim waits for the seller';
+    const ok = { sentences: deriveSentences(S, { ...done, edits: { S4: explain }, rechecks: explainedOk }), resolutions: explained };
+    expect(draftBlockers(base({ ...ok, evidenceUnavailable: why }))).toEqual([{ kind: 'action', text: why }]);
+    expect(draftBlockers(base({ ...ok, evidenceUnavailable: null }))).toEqual([]);
+  });
+
   it('blocks while the analysis runs or a sentence is being re-checked', () => {
     expect(draftBlockers(base({ analysisComplete: false }))[0]!.kind).toBe('analysis');
     const v = deriveSentences(S, { ...done, checking: 'S1' });

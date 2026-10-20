@@ -683,6 +683,30 @@ test('accept_claim is the owner’s only, at compose, approve, confirm and send 
   assert.equal(pp.calls.filter((c) => c.endsWith('/accept-claim')).length, 0);
 });
 
+test('escalate is the owner’s only, at compose, approve, confirm and send, on the production registry (Task 10)', async () => {
+  const intents = new IntentStore();
+  const disputes: Record<string, Dispute> = { [REAL]: standardDispute() };
+  const { app, pp, people } = setup({ intents, disputes });
+  const reviewer = people.member();
+  for (const who of [reviewer, people.fullMember()]) {
+    const r = await actionReq(app, intentPath, ESCALATE, who);
+    assert.deepEqual([r.status, r.body.error], [403, 'OWNER_ONLY']);
+  }
+  const e = await actionReq(app, intentPath, ESCALATE, people.ownerCookie);
+  assert.equal(e.status, 201, JSON.stringify(e.body));
+  const id = e.body.id as string;
+  const m = await actionReq(app, intentPath, MESSAGE, reviewer);
+  assert.equal(m.status, 201, JSON.stringify(m.body));
+  const stored = intents.peek(id)!;
+  stored.createdBy = intents.peek(m.body.id as string)!.createdBy;
+  assert.equal((await actionReq(app, `${intentPath}/${id}/approve`, { contentHash: e.body.contentHash }, reviewer)).body.error, 'OWNER_ONLY');
+  stored.status = 'approved';
+  const terms = { intentId: id, contentHash: e.body.contentHash, action: 'escalate', amount: null, currency: null, consequence: 'MOVES_TO_CLAIM' };
+  assert.equal((await actionReq(app, `${intentPath}/${id}/confirm`, { terms }, reviewer)).body.error, 'OWNER_ONLY');
+  assert.equal((await actionReq(app, sendPath, { intentId: id }, reviewer)).body.error, 'OWNER_ONLY');
+  assert.equal(pp.calls.filter((c) => c.endsWith('/escalate')).length, 0);
+});
+
 test('caps message and settle', async () => {
   const disputes: Record<string, Dispute> = { [REAL]: standardDispute() };
   const { app, pp, people, counters } = setup({ caps: { message: 1, settle: 0 }, disputes, actions: true });

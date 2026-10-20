@@ -198,16 +198,14 @@ describe('evidence by stage after an escalation (Task 10, W-6)', () => {
   });
   const notRecorded = { 'evidence:after_escalation': { ...CONTRACTS['evidence:after_escalation'], status: 'not_available' as const, reason: 'Contract not recorded yet' } };
 
-  it('inquiry evidence does not block the claim; claim evidence does; an entry or dispute without a stage blocks it all', () => {
-    expect(sellerEvidenceBlocks(claim([entry('INQUIRY')]))).toBe(false);
-    expect(sellerEvidenceBlocks(claim([entry('INQUIRY'), entry('CHARGEBACK')]))).toBe(true);
+  it('evidence once: any seller evidence blocks (any stage, or none); only a claim with no seller evidence takes it', () => {
+    expect(sellerEvidenceBlocks(claim([entry('INQUIRY')]))).toBe(true);
+    expect(sellerEvidenceBlocks(claim([entry('CHARGEBACK')]))).toBe(true);
     expect(sellerEvidenceBlocks(claim([entry(null)]))).toBe(true);
-    expect(sellerEvidenceBlocks(claim([entry('INQUIRY')], { stage: null }))).toBe(true);
-    // The ESCALATE entry is not evidence.
+    // The ESCALATE entry is not evidence: the W-6 case (claim, no seller evidence) is open.
     expect(sellerEvidenceBlocks(claim([entry('INQUIRY', 'ESCALATE')]))).toBe(false);
     expect(hasSellerEvidence(claim([entry('INQUIRY', 'ESCALATE')]))).toBe(false);
-    // Not recorded: the whole dispute, as before.
-    expect(sellerEvidenceBlocks(claim([entry('INQUIRY')]), notRecorded)).toBe(true);
+    expect(sellerEvidenceBlocks(claim([]))).toBe(false);
   });
 
   it('after the seller escalated, evidence only from the recorded state (the claim waiting for the seller)', () => {

@@ -5,7 +5,7 @@
  */
 import { utcDateTime } from '@resolvekit/cases';
 import { STAGE_LABEL } from './status';
-import { sellerEvidenceBlocks } from './recorded';
+import { ESCALATION_REVIEW, escalating, sellerEvidenceBlocks } from './recorded';
 import type { BuyerItemType, DisputeSnapshot, DisputeStatus } from './types';
 
 export type NextKind = 'approve' | 'contra' | 'work' | 'processing' | 'none';
@@ -302,6 +302,10 @@ export function applySnapshot(d: InboxDispute, s: DisputeSnapshot | undefined): 
       dueNote: reviewing ? 'PayPal reviewing' : s.buyerRespondBy ? `Buyer: by ${dayMonth(s.buyerRespondBy)}` : 'Buyer to respond',
     };
   }
+  // After the seller's escalation (W-5): PayPal reviewing for minutes, never closed; the claim follows.
+  if (escalating(s)) {
+    return { ...d, status: s.status, stage: s.stage ?? d.stage, next: 'PayPal is reviewing', nextKind: 'none', nextSub: ESCALATION_REVIEW, respondBy: null, dueNote: 'PayPal reviewing' };
+  }
   if (d.nextKind === 'processing' && s.status !== 'UNDER_REVIEW') {
     return {
       ...d,
@@ -314,7 +318,11 @@ export function applySnapshot(d: InboxDispute, s: DisputeSnapshot | undefined): 
       nextSub: `Opened by PayPal · ${s.allowedActions.length} actions allowed`,
     };
   }
-  return s.status === d.status ? d : { ...d, status: s.status };
+  // The stage and the seller's due date as PayPal (or the simulator) reads them now: e.g. the claim after an escalation.
+  const stage = s.stage ?? d.stage;
+  const respondBy = s.respondBy !== undefined ? s.respondBy : d.respondBy;
+  if (s.status === d.status && stage === d.stage && respondBy === d.respondBy) return d;
+  return { ...d, status: s.status, stage, respondBy, ...(respondBy !== d.respondBy ? { dueNote: respondBy ? null : d.dueNote } : {}) };
 }
 
 /** "2 Oct" (UTC). */

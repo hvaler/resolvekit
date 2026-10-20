@@ -44,6 +44,8 @@ export interface CaseDraftOptions {
   allowedActions: readonly ActionCode[];
   /** Evidence has been recorded by PayPal for this dispute. */
   submitted: boolean;
+  /** Why evidence is not available now (after an escalation, outside the recorded state); null or absent: it is. */
+  evidenceUnavailable?: string | null;
   onAudit: (who: string, what: string) => void;
   /** Who is acting in this browser (actorName): named on what they edit and resolve here. */
   actor: string;
@@ -229,6 +231,7 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     allowedActions: opts.allowedActions,
     evidenceType: selected ? { allowed: selected.allowed, satisfied: selected.satisfied, label: selected.label } : null,
     submitted: opts.submitted,
+    evidenceUnavailable: opts.evidenceUnavailable ?? null,
   });
   const actionable = actionableBlockers(blockers);
   const notes = notesText(views);

@@ -32,7 +32,7 @@ import { actionAvailability, type ActionRequest, type Viewer } from '../domain/a
 import { onSimulator } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
-import { payPalEvents, sellerEvidenceBlocks, startsFurtherOn } from '../domain/recorded';
+import { evidenceAfterEscalationRefusal, payPalEvents, sellerEvidenceBlocks, startsFurtherOn } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
@@ -90,7 +90,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const corrections = useMemo(() => uploadCorrections(up.uploads), [up.uploads]);
   const docs = useMemo(() => (confirmedUps.length ? { ...caseDocs, evidence: [...caseDocs.evidence, ...confirmedUps.map(uploadEvidence)] } : caseDocs), [caseDocs, confirmedUps]);
 
-  // Seller evidence already in for this stage (after an escalation, the claim's own: W-6).
+  // Seller evidence already in (once per dispute; W-6 only opens the claim of a dispute with none).
   const submitted = !!snap && sellerEvidenceBlocks(snap);
   const allowed: readonly ActionCode[] = caseAllowedActions(source, snapshots[id], demo.allowedActions);
 
@@ -116,7 +116,9 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   }, [docs, an, later.length]);
   const status = snap?.status ?? demo.summary.status;
   const onAudit = useCallback((who: string, what: string) => addAudit(id, who, what), [addAudit, id]);
-  const d = useCaseDraft(c, { allowedActions: allowed, submitted, onAudit, actor: actorName(demoLock), scope: draftScope(area, demoLock?.person?.id ?? null), analysis, corrections });
+  // After the seller's escalation, evidence only in the state W-6 recorded (not during the review's flickering links).
+  const evidenceUnavailable = snap ? evidenceAfterEscalationRefusal(snap) : null;
+  const d = useCaseDraft(c, { allowedActions: allowed, submitted, evidenceUnavailable, onAudit, actor: actorName(demoLock), scope: draftScope(area, demoLock?.person?.id ?? null), analysis, corrections });
   // Confirmed evidence no analysis on screen has read yet: said so, never shown as if it were included.
   const unread = notAnalysed(up.uploads, an.kind === 'ready' ? an.input : null);
 

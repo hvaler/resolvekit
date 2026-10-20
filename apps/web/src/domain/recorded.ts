@@ -20,22 +20,24 @@ export function hasSellerEvidence(s: DisputeSnapshot): boolean {
   return s.evidences.some(isSellerSubmission);
 }
 
-/** Evidence by stage needs the recorded variant (W-6): each entry carries the stage it was made in. */
-const byStageRecorded = (contracts: Pick<ContractRegistry, 'evidence:after_escalation'>): boolean => contracts['evidence:after_escalation'].status !== 'not_available';
-
 /**
- * PayPal shows seller evidence that blocks more evidence now. With `evidence:after_escalation` recorded (W-6), only
- * evidence in the dispute's current stage does (PayPal's `dispute_life_cycle_stage` on the entry): evidence sent in the
- * inquiry does not block the claim. An entry without a stage, or a dispute without one, blocks the whole dispute, as
- * does any seller evidence while that variant is not recorded. The ESCALATE entry is never evidence.
+ * PayPal shows seller evidence that blocks more evidence now: any (PROVIDE_EVIDENCE in any stage, or without a stage).
+ * Evidence stays once per dispute (controller ruling, Task 10): the only case W-6 opens is evidence in CHARGEBACK on a
+ * dispute with no seller evidence at all, which this already allows. The ESCALATE entry is never evidence.
  */
-export function sellerEvidenceBlocks(s: DisputeSnapshot, contracts: Pick<ContractRegistry, 'evidence:after_escalation'> = CONTRACTS): boolean {
-  if (!byStageRecorded(contracts)) return hasSellerEvidence(s);
-  return sellerEvidence(s).some((e) => !e.stage || !s.stage || e.stage === s.stage);
+export function sellerEvidenceBlocks(s: DisputeSnapshot): boolean {
+  return hasSellerEvidence(s);
 }
 
 /** The seller escalated this dispute: PayPal shows the seller's ESCALATE entry (W-5). */
 export const sellerEscalated = (s: DisputeSnapshot): boolean => s.evidences.some((e) => e.source === 'SUBMITTED_BY_SELLER' && e.action === 'ESCALATE');
+
+/**
+ * The seller escalated and PayPal is reviewing, the claim not opened yet (W-5: UNDER_REVIEW in the inquiry for ≈3 min,
+ * its links flickering). Never closed: the claim stage follows.
+ */
+export const escalating = (s: DisputeSnapshot): boolean => s.status === 'UNDER_REVIEW' && s.stage === 'INQUIRY' && sellerEscalated(s);
+export const ESCALATION_REVIEW = 'PayPal is reviewing; the claim stage can take a few minutes';
 
 /** The state W-6 sent evidence from after the escalation: the claim, waiting for the seller. */
 const AFTER_ESCALATION = { stage: 'CHARGEBACK', status: 'WAITING_FOR_SELLER_RESPONSE' } as const;

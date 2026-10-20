@@ -1,9 +1,9 @@
 /**
  * Task 10: evidence after an escalation (owner-approved W-6, packages/paypal/contracts/evidence-after-escalation.json).
- * PayPal took seller evidence again once the escalated inquiry became a claim; each evidences[] entry carries the stage
- * it was made in. The evidence memory is keyed by (dispute, stage): evidence in the inquiry does not block evidence in
- * the claim, evidence in the claim blocks a second one there, and an entry without a stage blocks the whole dispute.
- * Without the recorded variant the whole-dispute rule stays. Fake PayPal only: nothing is sent anywhere.
+ * PayPal took seller evidence in the claim of an escalated inquiry that had no seller evidence. Evidence stays once per
+ * dispute (controller ruling): any seller evidence (PROVIDE_EVIDENCE in any stage, or without a stage), or any evidence
+ * this server sent, blocks a new one; the only case W-6 opens is evidence in CHARGEBACK on a dispute with no seller
+ * evidence at all, however it was escalated. Fake PayPal only: nothing is sent anywhere.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -96,22 +96,28 @@ async function sendOne(app: App): Promise<[number, string | undefined]> {
 
 const NOT_RECORDED: ContractRegistry = { ...CONTRACTS, 'evidence:after_escalation': { ...CONTRACTS['evidence:after_escalation'], status: 'not_available', reason: 'Contract not recorded yet' } };
 
-test('evidence after escalation follows the registry: recorded → evidence in the claim is allowed once, by stage', async () => {
+test('evidence after escalation follows the registry: the claim with no seller evidence at all takes evidence once', async () => {
   assert.equal(CONTRACTS['evidence:after_escalation'].status, 'tested_locally');
-  // Evidence in the inquiry (stage INQUIRY on PayPal's entry) does not block the claim.
-  const { app, state, sends, intents } = await setup(claim([sellerEvidence('INQUIRY', '2026-10-19T20:00:00.000Z')]));
+  // W-6: the claim after the seller's escalation, no seller evidence (the ESCALATE entry is not evidence).
+  const { app, state, sends } = await setup(claim());
   assert.deepEqual(await sendOne(app), [202, undefined]);
   assert.equal(sends.length, 1);
-  assert.equal(intents.evidenceSentIn(REAL, 'CHARGEBACK'), true);
-  assert.equal(intents.evidenceSentIn(REAL, 'INQUIRY'), false);
-  // PayPal's read does not show it yet: this server's memory for CHARGEBACK refuses a second one.
-  const [status, error] = await sendOne(app);
-  assert.deepEqual([status, error], [409, 'SELLER_EVIDENCE_EXISTS']);
-  // PayPal shows the claim's own seller evidence: composing is refused (a second one in the claim).
-  state.dispute = claim([sellerEvidence('INQUIRY', '2026-10-19T20:00:00.000Z'), sellerEvidence('CHARGEBACK', '2026-10-20T08:00:03.000Z')]);
+  // PayPal's read does not show it yet: this server's memory refuses a second one.
+  assert.deepEqual(await sendOne(app), [409, 'SELLER_EVIDENCE_EXISTS']);
+  // PayPal shows the claim's seller evidence: composing is refused.
+  state.dispute = claim([sellerEvidence('CHARGEBACK', '2026-10-20T08:00:03.000Z')]);
   const second = await propose(app);
   assert.deepEqual([second.status, second.body.error], [422, 'DRAFT_BLOCKED']);
   assert.equal(sends.length, 1);
+});
+
+test('evidence once: seller evidence from the inquiry still blocks the claim', async () => {
+  for (const escalated of [true, false]) {
+    const { app, sends } = await setup(claim([sellerEvidence('INQUIRY', '2026-10-19T20:00:00.000Z')], escalated));
+    const p = await propose(app);
+    assert.deepEqual([p.status, p.body.error], [422, 'DRAFT_BLOCKED'], JSON.stringify(p.body));
+    assert.equal(sends.length, 0);
+  }
 });
 
 test('evidence after escalation not recorded: the inquiry evidence blocks the claim (the whole dispute), and so does the escalation', async () => {
@@ -125,20 +131,24 @@ test('evidence after escalation not recorded: the inquiry evidence blocks the cl
   assert.equal(shown.sends.length + escalated.sends.length, 0);
 });
 
-test('memory by stage: evidence this server sent in the inquiry does not block the claim; not recorded → SELLER_EVIDENCE_EXISTS as today', async () => {
+test('memory: evidence this server sent in the inquiry blocks the claim, recorded variant or not', async () => {
   for (const contracts of [undefined, NOT_RECORDED]) {
     const inquiry = standardDispute();
-    // The claim, PayPal's read not showing the inquiry evidence (lagging), escalated by someone else (no seller entry).
+    // The claim, escalated by someone else (no seller ESCALATE entry); PayPal's read lags and shows no seller evidence.
     const later = claim([], false);
     const { app, state, sends, intents } = await setup(inquiry, { ...(contracts ? { contracts } : {}), later: [later] });
     assert.deepEqual(await sendOne(app), [202, undefined]);
     assert.equal(intents.evidenceSentIn(REAL, 'INQUIRY'), true);
-    // The claim after an escalation; PayPal shows the inquiry evidence with its stage.
     state.dispute = later;
-    const r = await sendOne(app);
-    assert.deepEqual(r, contracts ? [409, 'SELLER_EVIDENCE_EXISTS'] : [202, undefined]);
-    assert.equal(sends.length, contracts ? 1 : 2);
+    assert.deepEqual(await sendOne(app), [409, 'SELLER_EVIDENCE_EXISTS']);
+    assert.equal(sends.length, 1);
   }
+});
+
+test('a claim escalated by the buyer or PayPal, with no seller evidence, takes evidence (W-6 case)', async () => {
+  const { app, sends } = await setup(claim([], false));
+  assert.deepEqual(await sendOne(app), [202, undefined]);
+  assert.equal(sends.length, 1);
 });
 
 test('a seller entry without a stage (legacy) blocks the whole dispute; the ESCALATE entry is not evidence', async () => {

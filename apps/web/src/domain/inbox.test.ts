@@ -193,6 +193,17 @@ describe('applying a fresh read from PayPal', () => {
     expect(g.nextSub).toBe('Opened by PayPal · 5 actions allowed');
   });
 
+  it('after the seller escalates (Task 10): PayPal reviewing, never closed; then the claim with its stage and due date', () => {
+    const esc = { evidenceType: 'OTHER' as const, source: 'SUBMITTED_BY_SELLER', action: 'ESCALATE', stage: 'INQUIRY', carrier: '', tracking: '', notes: 'Please review.', files: [], storedAt: '' };
+    const r = applySnapshot(tvh, snap({ id: tvh.id, status: 'UNDER_REVIEW', stage: 'INQUIRY', evidences: [esc], respondBy: null }));
+    expect(r).toMatchObject({ status: 'UNDER_REVIEW', next: 'PayPal is reviewing', nextKind: 'none', nextSub: 'PayPal is reviewing; the claim stage can take a few minutes', respondBy: null });
+    const claim = applySnapshot(tvh, snap({ id: tvh.id, status: 'WAITING_FOR_SELLER_RESPONSE', stage: 'CHARGEBACK', evidences: [esc], respondBy: '2026-10-30T22:59:59.000Z', allowedActions: ['provide_evidence', 'accept_claim'] }));
+    expect(claim).toMatchObject({ status: 'WAITING_FOR_SELLER_RESPONSE', stage: 'CHARGEBACK', respondBy: '2026-10-30T22:59:59.000Z' });
+    // Evidence once, as before: seller evidence from the inquiry still means nothing more to send in the claim.
+    const ev = { evidenceType: 'PROOF_OF_FULFILLMENT' as const, source: 'SUBMITTED_BY_SELLER', action: 'PROVIDE_EVIDENCE', stage: 'INQUIRY', carrier: 'UPS', tracking: '1Z', notes: '', files: [], storedAt: '' };
+    expect(applySnapshot(tvh, snap({ id: tvh.id, stage: 'CHARGEBACK', evidences: [ev] }))).toMatchObject({ nextKind: 'none', nextSub: 'Evidence recorded by the simulator' });
+  });
+
   it('a closed dispute: nothing to do, PayPal’s outcome and the day it closed', () => {
     const r = applySnapshot(tvh, snap({ id: tvh.id, status: 'RESOLVED', outcome: { code: 'RESOLVED_SELLER_FAVOUR', closedAt: '2026-10-02T16:00:00Z' } }));
     expect(r).toMatchObject({ status: 'RESOLVED', next: 'Nothing to do', nextKind: 'none', nextSub: 'Resolved in your favour · 2 Oct', respondBy: null, dueNote: 'Closed 2 Oct' });

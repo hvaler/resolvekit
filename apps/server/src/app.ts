@@ -731,8 +731,8 @@ export function createApi(opts: ApiOptions): Api {
         return r ?? null;
       },
       allowedActions: caseAllowedActions(st.source, undefined, demo.allowedActions),
-      // Seller evidence that blocks more in this stage (by stage once evidence after escalation is recorded, W-6).
-      submitted: !!st.snap && sellerEvidenceBlocks(st.snap, evidenceContracts()),
+      // Any seller evidence blocks more (evidence once; W-6 only opens the claim of a dispute with none).
+      submitted: !!st.snap && sellerEvidenceBlocks(st.snap),
       // From the uploads in the input this server built: the same corrected and transcribed lines the web app shows.
       corrections: linesToConfirmOf(st.input.documents),
     });
@@ -1027,14 +1027,9 @@ export function createApi(opts: ApiOptions): Api {
       return json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${i0.disputeId ?? 'the simulator'}; the case is bound to ${boundId} now` });
     }
 
-    // Evidence this server already sent, refused before anything is reserved (where beginSend refused it before stages,
-    // after its own state checks). While evidence after a stage change (e.g. after escalation) is not recorded ([A2]),
-    // any stage blocks the whole dispute. Once it is (W-6), the memory is by stage: here the stage of the last read of
-    // this dispute (composing read it), or every stage when none is known; the per-stage check after the fresh read
-    // below is the one that decides.
-    const lastRead = reads.get(caseId);
-    const knownStage = lastRead && lastRead.dispute === boundId ? (lastRead.snap.stage ?? null) : null;
-    const sentHere = evidenceContracts()['evidence:after_escalation'].status === 'not_available' ? intents.sentFor(boundId) : intents.sentFor(boundId, knownStage);
+    // Evidence this server already sent, in any stage, blocks the whole dispute (evidence once: controller ruling,
+    // Task 10), refused before anything is reserved, where beginSend refused it before stages (after its own checks).
+    const sentHere = intents.sentFor(boundId);
     if (sentHere && sentHere.intentId !== intentId && (i0.status === 'approved' || i0.status === 'failed') && !intents.isUncertain(boundId)) {
       return json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent', intent: publicIntent(i0) });
     }
@@ -1068,16 +1063,16 @@ export function createApi(opts: ApiOptions): Api {
       // On the dispute as just read: the person must act for its seller.
       const notSeller = sellerRefusal(req, st);
       if (notSeller) return refuse(notSeller, 'not the seller on this dispute', true);
-      // PayPal takes the seller's evidence once per stage (W-6; the whole dispute until that is recorded). If it already
-      // has some (another session sent first), this intent is over: say so plainly instead of composing it again.
-      if (st.snap && sellerEvidenceBlocks(st.snap, evidenceContracts())) {
+      // PayPal takes the seller's evidence once. If it already has some (another session sent first), this intent is
+      // over: say so plainly instead of composing it again.
+      if (st.snap && sellerEvidenceBlocks(st.snap)) {
         return refuse(json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent' }), 'PayPal already has seller evidence', true);
       }
-      // This server's own memory, in the stage just read (an entry without a stage blocks the whole dispute): PayPal's
-      // read may lag behind an evidence submission it accepted.
+      // This server's own memory of any evidence it sent on this dispute, in any stage (evidence once): PayPal's read
+      // may lag behind an evidence submission it accepted. The stage just read is still logged with the send.
       const stage = st.snap?.stage ?? null;
-      if (intents.evidenceSentIn(boundId, stage)) {
-        return refuse(json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent' }), 'evidence already sent in this stage', true);
+      if (intents.sentFor(boundId)) {
+        return refuse(json(409, { error: 'SELLER_EVIDENCE_EXISTS', detail: 'PayPal already has seller evidence for this dispute; nothing more can be sent' }), 'evidence already sent on this dispute', true);
       }
       if (sha256(documentsSignature(st.input)) !== intent.documentsHash) {
         // Most often a colleague confirmed an upload since this was composed: name it.

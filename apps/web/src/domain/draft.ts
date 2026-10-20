@@ -255,6 +255,8 @@ export interface BlockerInput {
   allowedActions: readonly ActionCode[];
   evidenceType: { allowed: boolean; satisfied: boolean; label: string } | null;
   submitted: boolean;
+  /** Why evidence is not available on this dispute now, e.g. after an escalation outside W-6's state; null: it is. */
+  evidenceUnavailable?: string | null;
 }
 
 /**
@@ -283,6 +285,8 @@ export function draftBlockers(input: BlockerInput): Blocker[] {
   // Another action has its own flow (ActionComposer → ActionFlow) and its own availability; this list is the evidence's.
   if (!input.allowedActions.includes(input.action)) {
     out.push({ kind: 'action', text: 'PayPal does not allow this action right now' });
+  } else if (input.action === 'provide_evidence' && input.evidenceUnavailable) {
+    out.push({ kind: 'action', text: input.evidenceUnavailable });
   }
   if (input.action === 'provide_evidence' && input.evidenceType) {
     if (!input.evidenceType.allowed) out.push({ kind: 'evidence_type', text: `PayPal won't accept "${input.evidenceType.label}" here` });
