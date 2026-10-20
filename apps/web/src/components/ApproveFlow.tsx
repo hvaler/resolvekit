@@ -10,7 +10,7 @@ import { formatCount, notesCountLabel, type Correction } from '../domain/draft';
 import { EVIDENCE_TYPE_LABEL } from '../domain/evidenceTypes';
 import { intentSubmission, type IntentRequest, type SubmissionIntent } from '../domain/intent';
 import { IntentError, LocalIntentClient, auditLine, type IntentSource, type ServerAuditEvent } from '../domain/intentClient';
-import { safeRetry, sendAfterHold, submitWithReadBack, type SendPhase, type SendResult } from '../domain/gateway';
+import { heldRefreshKey, safeRetry, sendAfterHold, submitWithReadBack, type SendPhase, type SendResult } from '../domain/gateway';
 import type { GatewayMode } from '../domain/httpGateway';
 import { quoteFor } from '../domain/quotes';
 import { STATUS_DISPLAY, statusExplanation } from '../domain/status';
@@ -260,7 +260,13 @@ function ApproveIntent({
   const baseline = useRef<DisputeSnapshot | null>(null);
   // Refused because another send holds the dispute (409 DISPUTE_UNCERTAIN): the held-send notice, inline, on THAT send.
   const heldBy = result?.kind === 'not_recorded' ? (result.held ?? null) : null;
-  const held = useHeldSend(id, mode.kind === 'paypal' && !!heldBy, heldBy?.id ?? null);
+  /** Bumped on every held result: the same holder held again asks the server again. */
+  const [heldKey, setHeldKey] = useState(0);
+  const held = useHeldSend(id, mode.kind === 'paypal' && !!heldBy, heldKey);
+  /** An attempt of this intent may have reached PayPal (any attempt not refused as held on a first try). */
+  const mayHaveSent = useRef(false);
+  /** The held result came on a retry: only that attempt was held back. */
+  const [heldEarlier, setHeldEarlier] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -322,13 +328,16 @@ function ApproveIntent({
       if (mounted.current) setFlow('error');
       return;
     }
-    const timing = { requestId, onPhase, confirmDelayMs: 900, rereads: 3, rereadDelayMs: 2000 };
+    // Whether an earlier attempt may have reached PayPal: then the original baseline decides, never a fresh one.
+    const mayHaveReached = mayHaveSent.current;
+    const timing = { requestId, onPhase, confirmDelayMs: 900, rereads: 3, rereadDelayMs: 2000, mayHaveReached };
     const opts = { ...timing, baseline: base };
     try {
-      if (afterHold) {
+      if (afterHold && !mayHaveReached) {
         r = await sendAfterHold(gateway, submission, timing);
         baseline.current = r.baseline;
-      } else r = retry ? await safeRetry(gateway, submission, opts) : await submitWithReadBack(gateway, submission, opts);
+      } else if (afterHold || retry) r = await safeRetry(gateway, submission, opts);
+      else r = await submitWithReadBack(gateway, submission, opts);
     } catch (e) {
       // The read-back itself failed: we cannot say what PayPal holds, so treat it as unconfirmed.
       const snap = await gateway.getDispute(id).catch(() => null);
@@ -350,6 +359,9 @@ function ApproveIntent({
     );
     if (!mounted.current) return;
     setResult(r);
+    setHeldKey((k) => heldRefreshKey(k, r));
+    setHeldEarlier(mayHaveReached);
+    if (!(r.kind === 'not_recorded' && r.held && !mayHaveReached)) mayHaveSent.current = true;
     void source.events(id).then((ev) => mounted.current && setServerEvents(ev));
     setFlow(r.kind === 'recorded' ? 'recorded' : 'error');
   };
@@ -713,7 +725,7 @@ function ApproveIntent({
         {flow === 'error' && result?.kind === 'not_recorded' && result.held && (
           <div className="flex flex-1 items-center justify-center max-md:px-4">
             <div className="flex w-[580px] flex-col gap-4 max-md:w-full">
-              <HeldEvidence holderId={result.held.id} hold={held.hold} known={held.known} message={held.message} error={held.error} busy={held.busy} onCheck={() => void held.check()} onSendNow={() => void run(false, true)} onRetry={held.retry} />
+              <HeldEvidence holderId={result.held.id} hold={held.hold} known={held.known} message={held.message} error={held.error} busy={held.busy} onCheck={() => void held.check()} onSendNow={() => void run(false, true)} onRetry={held.retry} earlierAttempt={heldEarlier} />
               <div className="flex items-center gap-3">
                 <Button className="h-[42px]" onClick={onClose}>
                   Back to case

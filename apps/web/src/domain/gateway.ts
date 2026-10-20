@@ -82,6 +82,11 @@ export interface SendOptions {
   /** Extra read-backs when PayPal accepted the send but does not show the evidence yet. */
   rereads?: number;
   rereadDelayMs?: number;
+  /**
+   * An earlier attempt of this submission may have reached PayPal (a retry). A 409 DISPUTE_UNCERTAIN then refuses only
+   * this attempt: new seller evidence against the original baseline is classified as usual (ours may be the holder).
+   */
+  mayHaveReached?: boolean;
 }
 
 const sleep = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
@@ -117,8 +122,9 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
   }
   opts.onPhase?.('rereading');
   let snapshot = await gw.getDispute(id);
-  // Refused before PayPal because another send holds the dispute: nothing new on it can be this submission.
-  if (held) return { kind: 'not_recorded', snapshot, error: error ?? 'DISPUTE_UNCERTAIN', baseline, held };
+  // Refused before PayPal because another send holds the dispute. On a first attempt nothing new on it can be this
+  // submission; on a retry an earlier attempt may be what PayPal shows, so the read decides as usual.
+  if (held && !opts.mayHaveReached) return { kind: 'not_recorded', snapshot, error: error ?? 'DISPUTE_UNCERTAIN', baseline, held };
   let recorded = newSellerEvidence(snapshot, baseline);
   // PayPal accepted the send: give it a moment to show the evidence before saying it is not there.
   for (let i = 0; !recorded && error == null && i < (opts.rereads ?? 0); i++) {
@@ -127,8 +133,11 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
     recorded = newSellerEvidence(snapshot, baseline);
   }
   if (recorded) return classify(submission, snapshot, recorded, baseline, false);
-  return { kind: 'not_recorded', snapshot, error: error ?? 'PayPal shows no evidence recorded', baseline };
+  return { kind: 'not_recorded', snapshot, error: error ?? 'PayPal shows no evidence recorded', baseline, ...(held ? { held } : {}) };
 }
+
+/** The key that re-runs the hold lookup: bumped on every held result, so the same holder held again is asked again. */
+export const heldRefreshKey = (prev: number, r: SendResult | null): number => (r?.kind === 'not_recorded' && r.held ? prev + 1 : prev);
 
 /**
  * Retry after an unconfirmed submission: read the dispute back first and only send again if PayPal

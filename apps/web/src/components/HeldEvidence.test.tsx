@@ -6,7 +6,7 @@
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { sendAfterHold, submitWithReadBack } from '../domain/gateway';
+import { heldRefreshKey, sendAfterHold, submitWithReadBack, type SendResult } from '../domain/gateway';
 import { HttpDisputeGateway } from '../domain/httpGateway';
 import { HttpIntentClient, type DisputeHoldView } from '../domain/intentClient';
 import type { DisputeSnapshot, EvidenceSubmission, RecordedEvidence } from '../domain/types';
@@ -51,8 +51,8 @@ function server(replies: Array<[number, unknown]>) {
   return { calls, gateway: new HttpDisputeGateway({ fetch }), intents: new HttpIntentClient({ fetch }) };
 }
 const noop = () => {};
-const held = (o: { hold: DisputeHoldView | null; known: boolean; message?: string | null; error?: string | null }) =>
-  renderToString(<HeldEvidence holderId={HOLDER} hold={o.hold} known={o.known} message={o.message ?? null} error={o.error ?? null} busy={false} onCheck={noop} onSendNow={noop} onRetry={noop} />);
+const held = (o: { hold: DisputeHoldView | null; known: boolean; message?: string | null; error?: string | null; earlier?: boolean }) =>
+  renderToString(<HeldEvidence holderId={HOLDER} hold={o.hold} known={o.known} message={o.message ?? null} error={o.error ?? null} busy={false} onCheck={noop} onSendNow={noop} onRetry={noop} earlierAttempt={o.earlier ?? false} />);
 
 describe('the evidence send on a held dispute', () => {
   it('409 DISPUTE_UNCERTAIN: held, naming the holder; evidence PayPal shows meanwhile is never taken as ours', async () => {
@@ -141,5 +141,33 @@ describe('the hold lookup fails', () => {
     expect(again).toEqual({ known: true, hold, error: null });
     expect(calls).toEqual(['GET /api/disputes/CASE-1/hold', 'GET /api/disputes/CASE-1/hold']);
     expect(held({ hold: again.hold, known: true })).toContain('Check again');
+  });
+});
+
+describe('a retry that is held back (an earlier attempt may have reached PayPal)', () => {
+  it('409 DISPUTE_UNCERTAIN on a retry: the original baseline decides; a matching entry is recorded as ours', async () => {
+    const { gateway } = server([uncertain, [200, withEvidence(entry())]]);
+    const r = await submitWithReadBack(gateway, submission, { requestId: 'rk-int-mine', baseline: before, mayHaveReached: true });
+    expect(r.kind).toBe('recorded');
+  });
+
+  it('a retry held back with nothing new: still held, and the copy says this attempt was held back', async () => {
+    const { gateway } = server([uncertain, [200, before]]);
+    const r = await submitWithReadBack(gateway, submission, { requestId: 'rk-int-mine', baseline: before, mayHaveReached: true });
+    expect(r).toMatchObject({ kind: 'not_recorded', held: { id: HOLDER } });
+    const html = held({ hold, known: true, earlier: true });
+    expect(html).toContain('This attempt was held back');
+    expect(html).not.toContain('none of it reached PayPal');
+    // A first attempt keeps its words.
+    expect(held({ hold, known: true })).toContain('none of it reached PayPal');
+  });
+
+  it('the hold lookup runs again on every held result, the same holder included', () => {
+    const heldResult = { kind: 'not_recorded', snapshot: before, error: 'x', baseline: before, held: { id: HOLDER, caseId: 'CASE-1' } } as SendResult;
+    const other = { kind: 'not_recorded', snapshot: before, error: 'x', baseline: before } as SendResult;
+    expect(heldRefreshKey(0, heldResult)).toBe(1);
+    expect(heldRefreshKey(1, heldResult)).toBe(2);
+    expect(heldRefreshKey(2, other)).toBe(2);
+    expect(heldRefreshKey(2, null)).toBe(2);
   });
 });

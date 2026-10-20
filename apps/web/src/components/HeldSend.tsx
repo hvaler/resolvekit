@@ -149,6 +149,7 @@ export function HeldEvidence({
   onSendNow,
   error = null,
   onRetry,
+  earlierAttempt = false,
 }: {
   holderId: string;
   hold: DisputeHoldView | null;
@@ -161,14 +162,18 @@ export function HeldEvidence({
   /** The hold lookup failed: shown plainly, with «Try again» (the lookup again, never a send). */
   error?: string | null;
   onRetry?: () => void;
+  /** An earlier attempt of this evidence may have reached PayPal: only this attempt was held back. */
+  earlierAttempt?: boolean;
 }) {
   const free = known && !hold;
   return (
     <div data-testid="held-evidence" className="flex flex-col gap-3">
       <div role="alert" className="flex flex-col gap-1 rounded-2xl border border-warn-line bg-warn-soft px-[18px] py-4">
-        <strong className="text-[15px] font-semibold">Your evidence was not sent</strong>
+        <strong className="text-[15px] font-semibold">{earlierAttempt ? 'This attempt was held back' : 'Your evidence was not sent'}</strong>
         <span className="text-body-lg leading-normal">
-          {`An earlier send on this dispute (intent ${holderId.slice(0, 12)}…) is not confirmed by PayPal yet, so the ResolveKit server held your evidence back: none of it reached PayPal. «Check again» reads that send back; it never sends.`}
+          {earlierAttempt
+            ? `This attempt was held back: an earlier send on this dispute (intent ${holderId.slice(0, 12)}…) is not confirmed by PayPal yet. An earlier attempt of yours may have reached PayPal; PayPal shows none of it now, and it is reported only from a read-back. «Check again» reads that send back; it never sends.`
+            : `An earlier send on this dispute (intent ${holderId.slice(0, 12)}…) is not confirmed by PayPal yet, so the ResolveKit server held your evidence back: none of it reached PayPal. «Check again» reads that send back; it never sends.`}
         </span>
       </div>
       {known ? (
