@@ -46,7 +46,17 @@ export type SendPhase = 'checking' | 'sending' | 'awaiting' | 'rereading';
 
 export type SendResult =
   | { kind: 'recorded'; snapshot: DisputeSnapshot; recorded: RecordedEvidence; resent: boolean; baseline: DisputeSnapshot }
-  | { kind: 'not_recorded'; snapshot: DisputeSnapshot; error: string; baseline: DisputeSnapshot }
+  | {
+      kind: 'not_recorded';
+      snapshot: DisputeSnapshot;
+      error: string;
+      baseline: DisputeSnapshot;
+      /**
+       * The server refused the send before PayPal (409 DISPUTE_UNCERTAIN): another send holds the dispute, and this is
+       * it. Nothing of this submission reached PayPal; «Check again» reads THAT send back.
+       */
+      held?: { id: string; caseId: string };
+    }
   /**
    * PayPal shows new seller evidence that is not what we sent (another operator or process, or PayPal stored something
    * else). Never reported as "recorded"; no automatic retry: a person reviews it.
@@ -76,6 +86,14 @@ export interface SendOptions {
 
 const sleep = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
 
+/** The send holding the dispute, when the server refused with 409 DISPUTE_UNCERTAIN (httpGateway's GatewayRequestError). */
+function holderOf(e: unknown): { id: string; caseId: string } | null {
+  const x = e as { code?: unknown; status?: unknown; body?: { holder?: { intentId?: unknown; caseId?: unknown } } } | null;
+  if (!x || x.code !== 'DISPUTE_UNCERTAIN' || x.status !== 409) return null;
+  const h = x.body?.holder;
+  return h && typeof h.intentId === 'string' && typeof h.caseId === 'string' ? { id: h.intentId, caseId: h.caseId } : null;
+}
+
 /**
  * Send the evidence, then read the dispute back. "Recorded" is only reported from the read-back, never
  * from the send call's answer, and only for seller evidence (SUBMITTED_BY_SELLER, PROVIDE_EVIDENCE) that
@@ -87,6 +105,7 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
   const id = submission.disputeId;
   const baseline = opts.baseline ?? (await gw.getDispute(id));
   let error: string | null = null;
+  let held: { id: string; caseId: string } | null = null;
   opts.onPhase?.('sending');
   try {
     await gw.provideEvidence(submission, { requestId: opts.requestId });
@@ -94,9 +113,12 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
     await sleep(opts.confirmDelayMs ?? 0);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
+    held = holderOf(e);
   }
   opts.onPhase?.('rereading');
   let snapshot = await gw.getDispute(id);
+  // Refused before PayPal because another send holds the dispute: nothing new on it can be this submission.
+  if (held) return { kind: 'not_recorded', snapshot, error: error ?? 'DISPUTE_UNCERTAIN', baseline, held };
   let recorded = newSellerEvidence(snapshot, baseline);
   // PayPal accepted the send: give it a moment to show the evidence before saying it is not there.
   for (let i = 0; !recorded && error == null && i < (opts.rereads ?? 0); i++) {
@@ -126,6 +148,17 @@ export async function safeRetry(
   if (already) return classify(submission, now, already, baseline, false);
   const r = await submitWithReadBack(gw, submission, opts);
   return r.kind === 'recorded' ? { ...r, resent: true } : r;
+}
+
+/**
+ * «Send it now», after the send that held the dispute settled: this submission never reached PayPal (it was refused
+ * with DISPUTE_UNCERTAIN), so the dispute is read again as the new baseline — what the holder recorded is never taken
+ * as ours — and the submission is sent with every server check again (e.g. SELLER_EVIDENCE_EXISTS).
+ */
+export async function sendAfterHold(gw: DisputeGateway, submission: EvidenceSubmission, opts: Omit<SendOptions, 'baseline'>): Promise<SendResult> {
+  opts.onPhase?.('checking');
+  const baseline = await gw.getDispute(submission.disputeId);
+  return submitWithReadBack(gw, submission, { ...opts, baseline });
 }
 
 // ---------------------------------------------------------------------------------------------

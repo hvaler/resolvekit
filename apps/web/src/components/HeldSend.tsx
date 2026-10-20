@@ -41,13 +41,18 @@ export async function checkHeldSend(intents: Pick<IntentSource, 'readBack' | 'ho
   }
 }
 
-/** The hold of the case's dispute, read when the page opens (and when `refresh` changes), and its «Check again». */
+/**
+ * The hold of the case's dispute, read when the page opens (and when `refresh` changes), and its «Check again».
+ * `known`: the server has said what holds the dispute (null included) since the last refresh.
+ */
 export function useHeldSend(caseId: string, live: boolean, refresh: unknown) {
   const { intents, applySnapshot } = useServices();
   const [hold, setHold] = useState<DisputeHoldView | null>(null);
+  const [known, setKnown] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    setKnown(false);
     if (!live || intents.kind !== 'server') {
       setHold(null);
       return;
@@ -55,7 +60,11 @@ export function useHeldSend(caseId: string, live: boolean, refresh: unknown) {
     let on = true;
     intents
       .hold(caseId)
-      .then((h) => on && setHold(h))
+      .then((h) => {
+        if (!on) return;
+        setHold(h);
+        setKnown(true);
+      })
       .catch(() => {});
     return () => {
       on = false;
@@ -73,7 +82,7 @@ export function useHeldSend(caseId: string, live: boolean, refresh: unknown) {
       setBusy(false);
     }
   }, [hold, intents, applySnapshot]);
-  return { hold, message, busy, check };
+  return { hold, known, message, busy, check };
 }
 
 /** The notice: what holds the dispute, and «Check again» (a read-back only). After a check, what it found. */
@@ -108,6 +117,57 @@ export function HeldSendNotice({ hold, message, busy, onCheck }: { hold: Dispute
             Check again
           </Button>
         </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The evidence flow's answer to 409 DISPUTE_UNCERTAIN, inline: the evidence was not sent because another send
+ * (`holderId`) holds the dispute; the held-send notice with «Check again» on what holds it; «Send it now» only once the
+ * server says nothing holds it (the evidence send then goes through every server check again).
+ */
+export function HeldEvidence({
+  holderId,
+  hold,
+  known,
+  message,
+  busy,
+  onCheck,
+  onSendNow,
+}: {
+  holderId: string;
+  hold: DisputeHoldView | null;
+  /** The server said what holds the dispute (null included). */
+  known: boolean;
+  message: string | null;
+  busy: boolean;
+  onCheck: () => void;
+  onSendNow: () => void;
+}) {
+  const free = known && !hold;
+  return (
+    <div data-testid="held-evidence" className="flex flex-col gap-3">
+      <div role="alert" className="flex flex-col gap-1 rounded-2xl border border-warn-line bg-warn-soft px-[18px] py-4">
+        <strong className="text-[15px] font-semibold">Your evidence was not sent</strong>
+        <span className="text-body-lg leading-normal">
+          {`An earlier send on this dispute (intent ${holderId.slice(0, 12)}…) is not confirmed by PayPal yet, so the ResolveKit server held your evidence back: none of it reached PayPal. «Check again» reads that send back; it never sends.`}
+        </span>
+      </div>
+      {known ? (
+        <HeldSendNotice hold={hold} message={message} busy={busy} onCheck={onCheck} />
+      ) : (
+        <p role="status" className="m-0 text-body text-ink-2">
+          {message ?? 'Asking the ResolveKit server what holds this dispute…'}
+        </p>
+      )}
+      {free && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="primary" disabled={busy} onClick={onSendNow}>
+            Send it now
+          </Button>
+          <span className="text-[12.5px] text-ink-2">The dispute is free again. Your evidence is read against PayPal and checked again by the server before it is sent.</span>
+        </div>
       )}
     </div>
   );

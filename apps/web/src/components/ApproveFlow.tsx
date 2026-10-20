@@ -10,7 +10,7 @@ import { formatCount, notesCountLabel, type Correction } from '../domain/draft';
 import { EVIDENCE_TYPE_LABEL } from '../domain/evidenceTypes';
 import { intentSubmission, type IntentRequest, type SubmissionIntent } from '../domain/intent';
 import { IntentError, LocalIntentClient, auditLine, type IntentSource, type ServerAuditEvent } from '../domain/intentClient';
-import { safeRetry, submitWithReadBack, type SendPhase, type SendResult } from '../domain/gateway';
+import { safeRetry, sendAfterHold, submitWithReadBack, type SendPhase, type SendResult } from '../domain/gateway';
 import type { GatewayMode } from '../domain/httpGateway';
 import { quoteFor } from '../domain/quotes';
 import { STATUS_DISPLAY, statusExplanation } from '../domain/status';
@@ -19,6 +19,7 @@ import { utcClock, utcStamp } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot, EvidenceSubmission, SentenceView, SubmissionFile } from '../domain/types';
 import { attachmentChoices, citedCorrections, confirmationText, provenanceOf, type AttachmentChoice, type UploadRecordView } from '../domain/uploads';
 import { SignInPrompt } from './AccountMenu';
+import { HeldEvidence, useHeldSend } from './HeldSend';
 import { Button, EvidenceTag, Spinner, cx } from './ui';
 
 type Flow = 'review' | 'confirm' | 'sending' | 'error' | 'recorded';
@@ -257,6 +258,9 @@ function ApproveIntent({
   const attempted = useRef(false);
   /** The dispute as read before the first attempt: evidence already on it is never reported as recorded. */
   const baseline = useRef<DisputeSnapshot | null>(null);
+  // Refused because another send holds the dispute (409 DISPUTE_UNCERTAIN): the held-send notice, inline, on THAT send.
+  const heldBy = result?.kind === 'not_recorded' ? (result.held ?? null) : null;
+  const held = useHeldSend(id, mode.kind === 'paypal' && !!heldBy, heldBy?.id ?? null);
 
   useEffect(() => {
     mounted.current = true;
@@ -293,12 +297,16 @@ function ApproveIntent({
   };
   const digital = !!c.fulfillment.digital;
 
-  const run = async (retry: boolean) => {
+  /**
+   * Send and read back. `retry`: read back first, resend only if PayPal shows none of ours. `afterHold`: the send that
+   * held the dispute settled and this one never reached PayPal: a fresh read is the new baseline, then the full send.
+   */
+  const run = async (retry: boolean, afterHold = false) => {
     attempted.current = true;
     setFlow('sending');
     setReached([]);
     setPhase(null);
-    setRetrying(retry);
+    setRetrying(retry || afterHold);
     const onPhase = (p: SendPhase) => {
       if (!mounted.current) return;
       setPhase(p);
@@ -314,9 +322,13 @@ function ApproveIntent({
       if (mounted.current) setFlow('error');
       return;
     }
-    const opts = { requestId, onPhase, confirmDelayMs: 900, baseline: base, rereads: 3, rereadDelayMs: 2000 };
+    const timing = { requestId, onPhase, confirmDelayMs: 900, rereads: 3, rereadDelayMs: 2000 };
+    const opts = { ...timing, baseline: base };
     try {
-      r = retry ? await safeRetry(gateway, submission, opts) : await submitWithReadBack(gateway, submission, opts);
+      if (afterHold) {
+        r = await sendAfterHold(gateway, submission, timing);
+        baseline.current = r.baseline;
+      } else r = retry ? await safeRetry(gateway, submission, opts) : await submitWithReadBack(gateway, submission, opts);
     } catch (e) {
       // The read-back itself failed: we cannot say what PayPal holds, so treat it as unconfirmed.
       const snap = await gateway.getDispute(id).catch(() => null);
@@ -698,7 +710,20 @@ function ApproveIntent({
           </div>
         )}
 
-        {flow === 'error' && result?.kind !== 'mismatch' && (
+        {flow === 'error' && result?.kind === 'not_recorded' && result.held && (
+          <div className="flex flex-1 items-center justify-center max-md:px-4">
+            <div className="flex w-[580px] flex-col gap-4 max-md:w-full">
+              <HeldEvidence holderId={result.held.id} hold={held.hold} known={held.known} message={held.message} busy={held.busy} onCheck={() => void held.check()} onSendNow={() => void run(false, true)} />
+              <div className="flex items-center gap-3">
+                <Button className="h-[42px]" onClick={onClose}>
+                  Back to case
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {flow === 'error' && result?.kind !== 'mismatch' && !(result?.kind === 'not_recorded' && result.held) && (
           <div className="flex flex-1 items-center justify-center max-md:px-4">
             <div className="flex w-[580px] flex-col gap-4 max-md:w-full">
               <div role="alert" className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-2xl border border-warn-line bg-warn-soft px-[18px] py-4">
