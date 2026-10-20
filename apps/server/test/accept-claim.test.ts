@@ -76,6 +76,55 @@ test('accept REFUND: owner, terms bound (amount + currency + REFUNDS_BUYER), the
   assert.deepEqual(snap.refunds, [{ id: '91V163783G183442G', amount: { value: '7.00', currency: 'USD' }, time: '2026-10-20T10:23:31.000Z' }]);
 });
 
+test('accept is bound to the refundable amount, the recorded reason and a note (review fixes)', async () => {
+  const { app, pp, state } = await setupActions({ registry: false });
+  state.t = Date.parse(W10.sentStartedAt) - 60_000;
+  const post = async (body: Record<string, unknown>) => answer(await app(postRaw(intentPath, body)));
+  // PayPal would refund 5.00 of the 7.00 disputed: a full accept is not what W-10 recorded.
+  const five = { currency_code: 'USD', value: '5.00' };
+  state.dispute = { ...rebound(W10.before), refund_details: { allowed_refund_amount: five } };
+  const full = await post({ action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.' });
+  assert.deepEqual([full.status, full.body.error, full.body.detail], [409, 'VARIANT_NOT_AVAILABLE', "Not available: PayPal's refundable amount differs from the dispute amount"]);
+  const atFive = await post({ action: 'accept_claim', acceptType: 'PARTIAL_REFUND', note: 'Partial.', amount: { value: '5.00', currency: 'USD' } });
+  assert.deepEqual([atFive.status, atFive.body.error], [422, 'AMOUNT_ABOVE_REFUNDABLE']);
+  assert.equal((await post({ action: 'accept_claim', acceptType: 'PARTIAL_REFUND', note: 'Partial.', amount: { value: '4.99', currency: 'USD' } })).status, 201);
+  // No refundable amount at all: refused.
+  state.dispute = { ...rebound(W10.before), refund_details: {} };
+  assert.equal((await post({ action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.' })).body.error, 'VARIANT_NOT_AVAILABLE');
+  // The not-as-described sandbox dispute F (reads/W-12-pre.json): no accept was recorded for that reason.
+  const f = JSON.parse(readFileSync(new URL('../../../packages/paypal/contracts/reads/W-12-pre.json', import.meta.url), 'utf8')) as Dispute;
+  state.dispute = rebound(f);
+  for (const body of [
+    { action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.' },
+    { action: 'accept_claim', acceptType: 'PARTIAL_REFUND', note: 'Partial.', amount: { value: '2.00', currency: 'USD' } },
+  ]) {
+    const r = await post(body);
+    assert.deepEqual([r.status, r.body.error, r.body.detail], [409, 'VARIANT_NOT_AVAILABLE', 'Not available: not verified with PayPal for this dispute reason']);
+  }
+  // A note is required (never recorded without one), and is trimmed into the approved content.
+  state.dispute = rebound(W10.before);
+  for (const note of [undefined, '   ']) {
+    const r = await post({ action: 'accept_claim', acceptType: 'REFUND', ...(note === undefined ? {} : { note }) });
+    assert.deepEqual([r.status, r.body.error], [422, 'TEXT_REQUIRED']);
+  }
+  const trimmed = await post({ action: 'accept_claim', acceptType: 'REFUND', note: `  ${W10.request.body.note as string}  ` });
+  assert.equal((trimmed.body.payload as { note: string }).note, W10.request.body.note);
+  assert.equal(pp.posts.length, 0);
+});
+
+test('a refundable amount that changes after approval refuses the send on composing again (no POST)', async () => {
+  const { app, pp, state } = await setupActions({ registry: false });
+  state.dispute = rebound(W10.before);
+  state.t = Date.parse(W10.sentStartedAt) - 60_000;
+  const i = await compose(app, { action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.' });
+  const terms = (await approve(app, i)).body.confirmation;
+  assert.equal((await confirm(app, i, terms)).status, 200);
+  state.dispute = { ...rebound(W10.before), refund_details: { allowed_refund_amount: { currency_code: 'USD', value: '5.00' } } };
+  const s = await send(app, i);
+  assert.deepEqual([s.status, s.body.error], [409, 'VARIANT_NOT_AVAILABLE'], JSON.stringify(s.body));
+  assert.equal(pp.posts.length, 0);
+});
+
 test('after accept, the next fresh read decides: no links → a message or another accept is refused ACTION_NOT_OFFERED (no local lock)', async () => {
   const { app, pp, state } = await setupActions({ registry: false });
   state.t = Date.parse(W10.sentStartedAt) + 120_000;

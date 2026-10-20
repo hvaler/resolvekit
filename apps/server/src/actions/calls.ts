@@ -71,10 +71,11 @@ export async function callPayPal(
       return paypal.disputes.sendMessage(disputeId, p.text, files[0] ?? null, opts);
     case 'accept_claim': {
       if (p?.kind !== 'accept_claim') break;
-      // As recorded (W-10, W-9): `{ note, accept_claim_type }`, plus `refund_amount` for a partial accept only. The
-      // note is optional at PayPal: without one, the field is left out.
+      // As recorded (W-10, W-9): `{ note, accept_claim_type }`, plus `refund_amount` for a partial accept only. The note
+      // is always sent: composing requires one (no accept without a note was recorded).
+      if (!p.note) throw new NotSendable('An accept is sent only with its note');
       const amount = amountOf(p.amount);
-      return paypal.disputes.acceptClaim(disputeId, { ...(p.note ? { note: p.note } : {}), accept_claim_type: p.acceptType, ...(amount ? { refund_amount: amount } : {}) }, opts);
+      return paypal.disputes.acceptClaim(disputeId, { note: p.note, accept_claim_type: p.acceptType, ...(amount ? { refund_amount: amount } : {}) }, opts);
     }
     case 'make_offer': {
       if (p?.kind !== 'make_offer') break;
@@ -104,6 +105,7 @@ export function sendProblem(c: IntentContent, files: readonly EvidenceFile[], co
   if (!contract.body) return 'This variant has no recorded body format';
   if (action !== 'appeal' && c.payload?.kind !== action) return 'The intent’s payload does not match its action';
   if (action === 'send_message' && files.length > 1) return 'A message carries at most one file';
+  if (c.payload?.kind === 'accept_claim' && !c.payload.note) return 'An accept is sent only with its note';
   if (files.length && contract.body !== 'multipart') return 'A file goes only with a multipart variant';
   return null;
 }

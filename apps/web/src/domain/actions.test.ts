@@ -144,6 +144,7 @@ const khh = (over: Partial<DisputeSnapshot> = {}): DisputeSnapshot => ({
   evidences: [],
   readAt: '2026-10-19 10:00 UTC',
   amount: { value: '7.00', currency: 'USD' },
+  allowedRefund: { value: '7.00', currency: 'USD' },
   reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED',
   messages: [{ postedBy: 'BUYER', time: '2026-10-18T08:04:20.960Z', content: 'Where is my parcel?', files: [] }],
   offerHistory: [],
@@ -449,8 +450,33 @@ describe('accept_claim rules (Task 9, from the recorded contracts W-9 and W-10)'
     const i = approved(c);
     expect(confirmationTerms(i, false)).toEqual({ intentId: 'int-9', contentHash: 'b'.repeat(64), action: 'accept_claim', amount: '7.00', currency: 'USD', consequence: 'REFUNDS_BUYER' });
     expect(consequenceText(i)).toBe('PayPal refunds 7.00 USD to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.');
-    // The note is optional.
-    expect(err(composeAction({ ...base, req: accept('REFUND', null, ''), snap: khh() }))).toBe('ok');
+    // A note is required in this delivery: an accept without one was never recorded.
+    for (const t of ['REFUND', 'PARTIAL_REFUND']) expect(err(composeAction({ ...base, req: accept(t, t === 'REFUND' ? null : { value: '2.00', currency: 'USD' }, ''), snap: khh() }))).toBe('422 TEXT_REQUIRED');
+    expect(ACTION_RULES.accept_claim?.(accept('REFUND'), khh())).toMatchObject({ text: 'required' });
+    // The note is trimmed in the approved content, as the composer and the server's parser trim it.
+    expect(composeAction({ ...base, req: accept('REFUND', null, '  Refund accepted.  '), snap: khh() })).toMatchObject({ payload: { note: 'Refund accepted.' } });
+  });
+
+  it('REFUND is bound to what PayPal will refund: allowed_refund_amount equal to the dispute amount, as W-10 recorded', () => {
+    expect(w10.before.refund_details.allowed_refund_amount).toEqual(w10.before.dispute_amount);
+    const why = "Not available: PayPal's refundable amount differs from the dispute amount";
+    for (const allowedRefund of [{ value: '5.00', currency: 'USD' }, null, undefined]) {
+      const s = khh({ allowedRefund });
+      expect(composeAction({ ...base, req: accept('REFUND'), snap: s })).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: why });
+      expect(actionAvailability(s, 'accept_claim', OWNER).variants.find((v) => v.type === 'REFUND')).toMatchObject({ available: false, why: why.replace('Not available: ', '') });
+    }
+    // PARTIAL_REFUND: strictly below the refundable amount.
+    const five = khh({ allowedRefund: { value: '5.00', currency: 'USD' } });
+    expect(err(composeAction({ ...base, req: accept('PARTIAL_REFUND', { value: '5.00', currency: 'USD' }), snap: five }))).toBe('422 AMOUNT_ABOVE_REFUNDABLE');
+    expect(err(composeAction({ ...base, req: accept('PARTIAL_REFUND', { value: '4.99', currency: 'USD' }), snap: five }))).toBe('ok');
+    expect(err(composeAction({ ...base, req: accept('PARTIAL_REFUND', { value: '1.00', currency: 'USD' }), snap: khh({ allowedRefund: null }) }))).toBe('409 VARIANT_NOT_AVAILABLE');
+  });
+
+  it('only the recorded reason (not received): another reason is not verified with PayPal', () => {
+    const nad = khh({ reason: 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' });
+    for (const [t, amount] of [['REFUND', null], ['PARTIAL_REFUND', { value: '2.00', currency: 'USD' }]] as const)
+      expect(composeAction({ ...base, req: accept(t, amount), snap: nad })).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: not verified with PayPal for this dispute reason' });
+    expect(actionAvailability(nad, 'accept_claim', OWNER)).toMatchObject({ sendable: false, why: 'not verified with PayPal for this dispute reason' });
   });
 
   it('PARTIAL_REFUND: an amount below the dispute amount; an offer to the buyer, never presented as a refund', () => {
@@ -465,7 +491,7 @@ describe('accept_claim rules (Task 9, from the recorded contracts W-9 and W-10)'
     const text = consequenceText(i);
     expect(text).toContain('2.00 USD');
     expect(text).toContain('buyer');
-    expect(text).toMatch(/agree/);
+    expect(text).toBe('PayPal offers the buyer a partial refund of 2.00 USD. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.');
     expect(text).not.toMatch(/PayPal refunds|closes the dispute|cannot be undone/);
   });
 });

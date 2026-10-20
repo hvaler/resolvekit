@@ -452,6 +452,8 @@ export interface DisputeSnapshot {
   requestedEvidence?: string[];
   /** Disputed amount as PayPal reports it. */
   amount?: { value: string; currency: string } | null;
+  /** PayPal's `refund_details.allowed_refund_amount`: what an accept would refund (W-10: equal to the dispute amount). */
+  allowedRefund?: { value: string; currency: string } | null;
   /** When PayPal created the dispute (ISO 8601). */
   createdAt?: string | null;
   /** Buyer response due date (ISO 8601), when PayPal is waiting for the buyer. */

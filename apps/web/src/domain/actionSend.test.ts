@@ -139,6 +139,8 @@ describe('the simulator plays the recorded accept transitions (W-10, W-9)', () =
   const waitingSeller = (): Partial<DisputeSnapshot> => ({
     allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'],
     amount: { value: w10.before.dispute_amount.value, currency: w10.before.dispute_amount.currency_code },
+    allowedRefund: { value: w10.before.refund_details.allowed_refund_amount.value, currency: w10.before.refund_details.allowed_refund_amount.currency_code },
+    reason: w10.before.reason,
     responseOptions: { acceptClaimTypes: [...w10.before.allowed_response_options.accept_claim.accept_claim_types], offerTypes: [...w10.before.allowed_response_options.make_offer.offer_types] },
   });
   const accept = (acceptType: string, note: string, amount: { value: string; currency: string } | null = null) => ({ action: 'accept_claim' as const, acceptType, note, amount, attachments: [] as [] });

@@ -386,7 +386,7 @@ test('rotateIfUsed holds a dispute that is in flight, uncertain or awaiting read
     assert.equal(b.status, 200, JSON.stringify(b.body));
     return b.body as { origin?: { disputeId?: string } };
   };
-  const i = await compose(app, { action: 'accept_claim', acceptType: 'REFUND' });
+  const i = await compose(app, { action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.' });
   const a = await approve(app, i);
   assert.equal((await confirm(app, i, a.body.confirmation)).status, 200);
   // In flight: the POST has not answered and PayPal already shows the dispute resolved. A read does not move the case.

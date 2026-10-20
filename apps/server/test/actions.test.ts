@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { durableTestHooks } from '@resolvekit/hosting';
 import { PayPalClient, PayPalError } from '@resolvekit/paypal';
-import { callPayPal, capOf, isAmbiguous } from '../src/actions/calls.ts';
+import { callPayPal, capOf, isAmbiguous, sendProblem } from '../src/actions/calls.ts';
 import { IntentStore } from '../src/intents.ts';
 import {
   ABSENT_AFTER_MS,
@@ -143,16 +143,20 @@ test('callPayPal: one POST by action in the contract’s format, with the intent
   const { pp } = await setupActions();
   const blank = { caseId: CASE, disputeId: REAL, documentsHash: '', analysisKey: '', evidenceType: 'OTHER' as const, carrier: '', tracking: '', notes: '', files: [], sentences: [], resolutionNotes: [] };
   await callPayPal(pp.client, REAL, { ...blank, action: 'escalate', payload: { kind: 'escalate', note: 'Shipped with tracking.' } }, [], 'rk-int-1', TEST_CONTRACTS);
-  await callPayPal(pp.client, REAL, { ...blank, action: 'accept_claim', payload: { kind: 'accept_claim', acceptType: 'REFUND', note: '', amount: null } }, [], 'rk-int-2', TEST_CONTRACTS);
+  await callPayPal(pp.client, REAL, { ...blank, action: 'accept_claim', payload: { kind: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.', amount: null } }, [], 'rk-int-2', TEST_CONTRACTS);
   assert.deepEqual(
     pp.posts.map((p) => [p.path.split('/').pop(), p.requestId, JSON.parse(p.body)]),
     [
       ['escalate', 'rk-int-1', { note: 'Shipped with tracking.' }],
-      ['accept-claim', 'rk-int-2', { accept_claim_type: 'REFUND' }],
+      ['accept-claim', 'rk-int-2', { note: 'Refund accepted.', accept_claim_type: 'REFUND' }],
     ],
   );
   // A variant without a recorded contract never reaches PayPal.
   await assert.rejects(callPayPal(pp.client, REAL, { ...blank, action: 'escalate', payload: { kind: 'escalate', note: 'x' } }, [], 'rk-int-3'), /Not available: Contract recorded; flow not built yet/);
+  // An accept without its note never reaches PayPal (none was recorded), and is refused before send_started.
+  const noNote = { ...blank, action: 'accept_claim' as const, payload: { kind: 'accept_claim' as const, acceptType: 'REFUND', note: '', amount: null } };
+  await assert.rejects(callPayPal(pp.client, REAL, noNote, [], 'rk-int-4', TEST_CONTRACTS), /with its note/);
+  assert.equal(sendProblem(noNote, [], TEST_CONTRACTS), 'An accept is sent only with its note');
   assert.equal(pp.posts.length, 2);
 });
 
@@ -497,7 +501,7 @@ test('a repeated message needs REPEATS_MESSAGE: unconfirmed → 409 CONFIRMATION
 test('DUPLICATE_ACTION stays for the other actions: the same accept PayPal already recorded is refused', async () => {
   const { app, pp, state, intents } = await setupActions();
   const sendAccept = async () => {
-    const i = await compose(app, { action: 'accept_claim', acceptType: 'REFUND' });
+    const i = await compose(app, { action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.' });
     const a = await approve(app, i);
     assert.equal((await confirm(app, i, a.body.confirmation)).status, 200);
     return { i, s: await send(app, i) };

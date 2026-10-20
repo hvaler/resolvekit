@@ -235,8 +235,9 @@ export function actionAvailabilityWith(snap: DisputeSnapshot, action: IntentActi
     const variant = variantOf(action, type);
     if (!variant) return { variant: null, type, available: false, why: UNCOVERED_TYPE };
     const c = contracts[variant];
-    const ok = c.status !== 'not_available';
-    return { variant, type, available: ok, why: ok ? null : (c.reason ?? 'Not available') };
+    if (c.status === 'not_available') return { variant, type, available: false, why: c.reason ?? 'Not available' };
+    const outside = action === 'accept_claim' && type ? acceptOutsideContract(type, snap) : null;
+    return { variant, type, available: !outside, why: outside };
   });
   // Evidence keeps its own flow (its variants are checked where it is composed).
   const withVariants = action !== 'provide_evidence';
@@ -262,6 +263,10 @@ export interface ActionRules {
   amount: 'required' | 'not_allowed' | 'optional';
   /** The amount must be below the dispute amount (a partial refund), not just at most it. */
   belowDispute?: boolean;
+  /** A second upper bound, strictly below which the amount must be (a partial accept: what PayPal would refund). */
+  belowAmount?: Money;
+  /** Why this request is outside what the contract recorded (refused VARIANT_NOT_AVAILABLE before anything else). */
+  unavailable?: string;
   text: 'required' | 'optional';
 }
 export type RulesOf = (req: ActionRequest, snap: DisputeSnapshot) => ActionRules | null;
@@ -283,16 +288,47 @@ export const RECORDED_STAGES: Readonly<Partial<Record<SimpleAction, readonly str
  */
 export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Object.freeze({
   send_message: (): ActionRules => ({ stages: RECORDED_STAGES.send_message!, amount: 'not_allowed', text: 'required' }),
-  // accept_claim, as recorded: REFUND takes no amount (W-10, a not-received dispute: PayPal refunds the disputed
-  // amount); PARTIAL_REFUND takes `refund_amount`, below the dispute amount (W-9: 2.00 of 7.00). The note is optional.
-  // Any other type has no rules (VARIANT_NOT_AVAILABLE; the registry refuses it first).
-  accept_claim: (req): ActionRules | null => {
-    if (req.action !== 'accept_claim') return null;
-    if (req.acceptType === 'REFUND') return { stages: RECORDED_STAGES.accept_claim!, amount: 'not_allowed', text: 'optional' };
-    if (req.acceptType === 'PARTIAL_REFUND') return { stages: RECORDED_STAGES.accept_claim!, amount: 'required', belowDispute: true, text: 'optional' };
-    return null;
+  // accept_claim, as recorded on not-received disputes: REFUND takes no amount (W-10: PayPal refunded the disputed
+  // amount, which equalled its allowed_refund_amount); PARTIAL_REFUND takes `refund_amount`, below the dispute amount
+  // and below what PayPal would refund (W-9: 2.00 of 7.00). A note is required: no accept without one was recorded.
+  // Anything outside that (another reason, another refundable amount) is unavailable; other types have no rules.
+  accept_claim: (req, snap): ActionRules | null => {
+    if (req.action !== 'accept_claim' || (req.acceptType !== 'REFUND' && req.acceptType !== 'PARTIAL_REFUND')) return null;
+    const outside = acceptOutsideContract(req.acceptType, snap);
+    const r: ActionRules =
+      req.acceptType === 'REFUND'
+        ? { stages: RECORDED_STAGES.accept_claim!, amount: 'not_allowed', text: 'required' }
+        : { stages: RECORDED_STAGES.accept_claim!, amount: 'required', belowDispute: true, ...(snap.allowedRefund ? { belowAmount: snap.allowedRefund } : {}), text: 'required' };
+    return outside ? { ...r, unavailable: outside } : r;
   },
 });
+
+/** The only dispute reason an accept was recorded on (W-9, W-10). */
+const ACCEPT_RECORDED_REASON = 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED';
+export const ACCEPT_REASON_NOT_VERIFIED = 'not verified with PayPal for this dispute reason';
+export const REFUNDABLE_DIFFERS = "PayPal's refundable amount differs from the dispute amount";
+
+/** Two amounts are the same money: the same currency and the same integer minor units. */
+function sameMoney(a: Money | null | undefined, b: Money | null | undefined): boolean {
+  if (!a || !b || a.currency !== b.currency) return false;
+  try {
+    return minorUnits(a.value, a.currency) === minorUnits(b.value, b.currency);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Why an accept of this type on this dispute is outside what the contracts recorded ([A2]), or null: only the
+ * not-received reason, and PayPal's refundable amount must be known — for a full accept, equal to the dispute amount
+ * (W-10 recorded them equal; PayPal refunds the refundable amount, which the owner must have confirmed).
+ */
+export function acceptOutsideContract(acceptType: string, snap: DisputeSnapshot): string | null {
+  if (snap.reason !== ACCEPT_RECORDED_REASON) return ACCEPT_REASON_NOT_VERIFIED;
+  if (acceptType === 'REFUND' && !sameMoney(snap.allowedRefund, snap.amount)) return REFUNDABLE_DIFFERS;
+  if (acceptType === 'PARTIAL_REFUND' && !snap.allowedRefund) return 'PayPal reports no refundable amount for this dispute';
+  return null;
+}
 
 const requestType = (req: ActionRequest): string | null =>
   req.action === 'send_message' ? (req.attachments.length ? 'file' : null) : req.action === 'accept_claim' ? req.acceptType : req.action === 'make_offer' ? req.offerType : null;
@@ -304,7 +340,8 @@ function payloadOf(req: ActionRequest, amount: Money | null): ActionPayload {
     case 'escalate':
       return { kind: 'escalate', note: req.note };
     case 'accept_claim':
-      return { kind: 'accept_claim', acceptType: req.acceptType, note: req.note, amount };
+      // Trimmed as the composer and the server's parser trim it: what is approved, hashed, sent and matched.
+      return { kind: 'accept_claim', acceptType: req.acceptType, note: req.note.trim(), amount };
     case 'make_offer':
       return { kind: 'make_offer', offerType: req.offerType, note: req.note, amount };
   }
@@ -352,6 +389,7 @@ export function composeActionWith(x: ComposeActionInput, contracts: ContractRegi
   }
   const r = rules[req.action]?.(req, snap) ?? null;
   if (!r) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: not implemented yet' };
+  if (r.unavailable) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${r.unavailable}` };
 
   // 2. Stage.
   if (r.stages && !r.stages.includes(snap.stage ?? '')) {
@@ -377,6 +415,15 @@ export function composeActionWith(x: ComposeActionInput, contracts: ContractRegi
     }
     if (minor <= 0n || minor > max || (r.belowDispute && minor >= max)) {
       return { status: 422, error: 'AMOUNT_ABOVE_DISPUTE', detail: `The amount must be more than 0 and ${r.belowDispute ? 'below' : 'at most'} the dispute amount, ${formatMoney(d)}` };
+    }
+    if (r.belowAmount) {
+      let bound: bigint;
+      try {
+        bound = r.belowAmount.currency === amount.currency ? minorUnits(r.belowAmount.value, r.belowAmount.currency) : -1n;
+      } catch {
+        bound = -1n;
+      }
+      if (minor >= bound) return { status: 422, error: 'AMOUNT_ABOVE_REFUNDABLE', detail: `The amount must be below what PayPal would refund, ${formatMoney(r.belowAmount)}` };
     }
     money = { value: canonicalValue(amount), currency: amount.currency };
   } else if (r.amount === 'required') return { status: 422, error: 'AMOUNT_REQUIRED', detail: 'Type the amount' };
@@ -480,7 +527,7 @@ export function consequenceText(c: IntentContent): string {
 export function acceptConsequenceText(acceptType: string, amount: Money | null): string {
   const a = amount ? formatMoney(amount) : 'the disputed amount';
   if (acceptType === 'PARTIAL_REFUND') {
-    return `PayPal offers the buyer a partial refund of ${amount ? a : 'the amount you set'}. The buyer has to agree to it: until then no money moves and the dispute stays open.`;
+    return `PayPal offers the buyer a partial refund of ${amount ? a : 'the amount you set'}. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.`;
   }
   return `PayPal refunds ${a} to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.`;
 }

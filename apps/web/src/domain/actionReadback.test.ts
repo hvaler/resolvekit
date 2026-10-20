@@ -173,8 +173,6 @@ describe('read-back proof', () => {
     // Another accept type, another note, an entry before send_started: not this send.
     for (const other of [{ ...entry, responseOption: 'PARTIAL_REFUND' }, { ...entry, notes: 'Other note.' }, { ...entry, date: '2026-10-19T09:59:59.000Z' }, { ...entry, responseOption: null }])
       expect(proveSend(ac, base, snap([], { evidences: [buyerCreate, other] }), c, SENT_MS + 5_000).state).toBe('pending');
-    // Without a note: PayPal's notes absent ('' once mapped) matches the empty note, nothing else.
-    expect(proveSend(acceptOf('REFUND', ''), base, snap([], { evidences: [buyerCreate, { ...entry, notes: '' }] }), c, SENT_MS + 5_000).state).toBe('recorded');
   });
 
   it('accept PARTIAL_REFUND: the SELLER PROPOSED offer entry (type REFUND, the partial amount); no ACCEPT_CLAIM entry is expected', () => {

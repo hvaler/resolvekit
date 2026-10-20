@@ -33,6 +33,9 @@ export const initialSnapshots: DisputeSnapshot[] = [
       stage: c.summary.stage,
       allowedActions: [...c.allowedActions],
       amount: { value: c.summary.amount, currency: c.summary.currency },
+      reason: c.summary.reason,
+      // What PayPal would refund: the dispute amount, as every waiting inquiry read showed it.
+      ...(waitingSellerOptions(c) ? { allowedRefund: { value: c.summary.amount, currency: c.summary.currency } } : {}),
       ...(waitingSellerOptions(c) ? { responseOptions: waitingSellerOptions(c)! } : {}),
       evidences: structuredClone(c.simulatedPayPal?.evidences ?? []),
       ...(c.simulatedPayPal?.buyerRespondBy ? { buyerRespondBy: c.simulatedPayPal.buyerRespondBy } : {}),

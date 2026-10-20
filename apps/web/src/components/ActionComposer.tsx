@@ -125,7 +125,8 @@ function AcceptComposer({
   const amount = type === 'REFUND' ? disputeAmount : partialAmount;
   const noteLen = note.trim().length;
   const noteOver = noteLen > ACTION_TEXT_LIMIT;
-  const ready = owner && !locked && !noteOver && (type === 'REFUND' ? !!disputeAmount : !!partialAmount);
+  // A note is required in this delivery (no accept without one was recorded).
+  const ready = owner && !locked && noteLen > 0 && !noteOver && (type === 'REFUND' ? !!disputeAmount : !!partialAmount);
   return (
     <>
       <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
@@ -155,7 +156,7 @@ function AcceptComposer({
       )}
       <label className="flex flex-col gap-1">
         <span className="flex justify-between text-[12.5px]">
-          <span className="font-medium">Note to PayPal (optional)</span>
+          <span className="font-medium">Note to PayPal</span>
           <span className={cx('font-mono text-[12px]', noteOver ? 'text-bad' : 'text-ink-2')}>{`${formatCount(noteLen)} / ${formatCount(ACTION_TEXT_LIMIT)}`}</span>
         </span>
         <textarea

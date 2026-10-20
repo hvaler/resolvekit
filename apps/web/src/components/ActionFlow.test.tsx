@@ -195,6 +195,8 @@ describe('accept_claim: full and partial are never presented alike (Task 9)', ()
     ...snap,
     allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'],
     amount: { value: '7.00', currency: 'USD' },
+    allowedRefund: { value: '7.00', currency: 'USD' },
+    reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED',
     responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND', 'REFUND'], offerTypes: ['REFUND'] },
   };
   const acceptIntent = (acceptType: string, amount: { value: string; currency: string } | null, note = 'Refund accepted.') =>
@@ -230,6 +232,11 @@ describe('accept_claim: full and partial are never presented alike (Task 9)', ()
     const p = view({ step: 'result', intent: partial, result: { kind: 'recorded', detail: 'Recorded by PayPal', snapshot: { ...waiting, status: 'WAITING_FOR_BUYER_RESPONSE' }, base: null } });
     expect(p).toContain('Recorded by PayPal: offer waiting for the buyer');
     expect(p).not.toMatch(/[Rr]efunded|[Cc]losed|claim accepted/);
+    expect(p).toContain('PayPal shows your offer to the buyer');
+    // On the simulator the body names the simulator, never PayPal.
+    const ps = view({ step: 'result', intent: partial, result: { kind: 'recorded', detail: 'Recorded by the simulator', snapshot: { ...waiting, status: 'WAITING_FOR_BUYER_RESPONSE' }, base: null } }, { kind: 'simulator' });
+    expect(ps).toContain('The simulator shows your offer to the buyer');
+    expect(ps).not.toContain('PayPal shows');
     // Pending stays pending, whatever the action.
     const pending = view({ step: 'result', intent: full, result: { kind: 'pending', detail: 'Outcome pending confirmation', snapshot: closed, base: null } });
     expect(pending).toContain('Outcome pending confirmation');
@@ -245,6 +252,10 @@ describe('accept_claim: full and partial are never presented alike (Task 9)', ()
     expect(owner).toContain('Tested locally');
     expect(owner).toContain('PayPal refunds 7.00 USD to the buyer');
     expect(owner).toContain('Review the accept');
+    // The note is required: no «(optional)», and nothing to review while it is empty.
+    expect(owner).toContain('Note to PayPal');
+    expect(owner).not.toContain('(optional)');
+    expect(owner).toMatch(/<button[^>]*disabled[^>]*>Review the accept/);
     for (const who of [{ role: 'member' as const, reviewer: true }, { role: 'member' as const, reviewer: false }]) {
       const html = renderToString(
         <ActionComposer action="accept_claim" text="" onText={noop} availability={actionAvailability(waiting, 'accept_claim', who)} locked={null} onReview={noop} onRequest={noop} disputeAmount={waiting.amount!} />,

@@ -98,6 +98,7 @@ export function toSnapshot(d: Dispute, caseId: string, env: PayPalEnv, readAt: D
     respondBy: d.seller_response_due_date ?? null,
     buyerRespondBy: d.buyer_response_due_date ?? null,
     amount: money(d.dispute_amount),
+    allowedRefund: money(d.refund_details?.allowed_refund_amount),
     createdAt: d.create_time ?? null,
     transaction: tx?.seller_transaction_id
       ? { id: tx.seller_transaction_id, createdAt: tx.create_time ?? null, amount: money(tx.gross_amount), status: tx.transaction_status ?? null }
