@@ -391,6 +391,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                   onReview={() => setActionRequest({ action: 'send_message', text: message, attachments: [] })}
                   onRequest={setActionRequest}
                   disputeAmount={readNow.amount ?? null}
+                  refundable={readNow.allowedRefund ?? null}
                 />
               ) : undefined
             }

@@ -361,7 +361,10 @@ export const FULL_OFFER_NOT_VERIFIED = 'an offer of the full dispute amount was 
 
 /**
  * Whether the read shows an offer of the seller's waiting for the buyer: the latest offer.history entry (by time, then
- * PayPal's order) is the seller's PROPOSED one (W-4, W-9). A later entry by anyone else (the buyer answering) ends it.
+ * PayPal's order) is the seller's PROPOSED one (W-4, W-9). A backstop only: the authority is PayPal's live make_offer
+ * link in the fresh read (checked first; W-4 shows PayPal removes it after an offer). The buyer's answers were never
+ * recorded, so their event names are unknown and any later entry is taken to end the offer; replace this with the
+ * recorded events once a buyer answer is recorded.
  */
 export function pendingSellerOffer(snap: Pick<DisputeSnapshot, 'offerHistory'>): boolean {
   let last: OfferEvent | null = null;

@@ -43,7 +43,8 @@ export interface SimStep {
 
 /**
  * What the action's new entry is, as the recorded reads show it: a seller message (W-1–W-3), an ACCEPT_CLAIM evidence
- * entry with the accept type and the note (W-10), a SELLER PROPOSED offer with the amount (W-9, W-4), the seller's
+ * entry with the accept type and the note (W-10), a SELLER PROPOSED offer with the amount and the note echoed as a seller
+ * message at the offer's time (W-9, W-4), the seller's
  * ESCALATE evidence entry with the note in the inquiry stage (W-5), or the seller's evidence in the claim stage (W-6).
  */
 export type SimEntry = 'message' | 'accept_claim' | 'offer' | 'escalate' | 'evidence';

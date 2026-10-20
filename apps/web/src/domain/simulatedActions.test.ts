@@ -117,6 +117,12 @@ describe('simulator transitions come from the recorded contracts only', () => {
         }
         const entry = newEntries(t.entry, c!, a.dispute);
         expect(s.entryVisible, `${file} ${a.at}`).toBe(entry.length === 1);
+        // An offer's note is echoed as one new seller message with the note's text, at the offer's time (W-4, W-9).
+        if (t.entry === 'offer') {
+          const offers = entry as Array<{ offer_time?: string }>;
+          const echoed = (a.dispute.messages ?? []).filter((m) => m.posted_by === 'SELLER' && !(c!.before.messages ?? []).some((b) => b.time_posted === m.time_posted));
+          expect(echoed.map((m) => [m.content, m.time_posted]), `${file} ${a.at}`).toEqual(offers.map((o) => [c!.request.body?.note, o.offer_time]));
+        }
         if (entry.length) expect(entry[0]!.documents?.length ?? 0).toBe(t.documents);
       });
       expect(t.actionLagReads).toBe(t.steps.findIndex((s) => s.entryVisible));

@@ -179,6 +179,8 @@ describe('the simulator plays the recorded accept transitions (W-10, W-9)', () =
     expect(r).toMatchObject({ kind: 'recorded' });
     expect(r.snapshot!.offerHistory).toEqual([{ time: new Date(T0).toISOString(), actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } }]);
     expect(r.snapshot!.evidences.filter((e) => e.action === 'ACCEPT_CLAIM')).toEqual([]);
+    // The note echoed as a seller message at the offer's time (W-9); the proof is still the offer entry.
+    expect(r.snapshot!.messages!.filter((m) => m.postedBy === 'SELLER')).toEqual([{ postedBy: 'SELLER', time: new Date(T0).toISOString(), content: w9.request.body.note, files: [] }]);
     for (const step of [30_000, 90_000, 480_000]) {
       clock.t += step;
       const later = await g.getDispute('CASE-1');
@@ -219,14 +221,21 @@ describe('the simulator plays the recorded offer (W-4)', () => {
     expect(r).toMatchObject({ kind: 'recorded', detail: 'Recorded by the simulator' });
     expect(r.snapshot).toMatchObject({ status: 'UNDER_REVIEW', allowedActions: [] });
     expect(r.snapshot!.offerHistory).toEqual([{ time: new Date(T0).toISOString(), actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } }]);
+    // The note echoed as a seller message at the offer's time, as PayPal shows it (W-4).
+    expect(r.snapshot!.messages).toEqual([BUYER, { postedBy: 'SELLER', time: new Date(T0).toISOString(), content: w4.request.body.note, files: [] }]);
     for (const step of [30_000, 90_000, 480_000]) {
       clock.t += step;
       const later = await g.getDispute('CASE-1');
       expect(later).toMatchObject({ status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'], responseOptions: { acceptClaimTypes: ['REFUND'], offerTypes: [] } });
       expect(later.outcome ?? null).toBeNull();
       expect(later.refunds ?? []).toEqual([]);
+      expect(later.messages!.filter((m) => m.postedBy === 'SELLER')).toHaveLength(1);
       expect(proveSend(i, r.base!, later, CONTRACTS['make_offer:REFUND'], clock.t).state).toBe('recorded');
     }
+    // A message with the note's exact text repeats one PayPal shows: it needs the REPEATS_MESSAGE confirmation.
+    const m = await intents.createAction('CASE-1', { action: 'send_message', text: w4.request.body.note, attachments: [] }, { snapshot: await g.getDispute('CASE-1') });
+    expect(m.repeat).toBe(true);
+    expect((await intents.approve(m)).confirmation).toMatchObject({ action: 'send_message', consequence: 'REPEATS_MESSAGE' });
     // A second offer: PayPal no longer offers make_offer (the fresh read decides).
     const after = await g.getDispute('CASE-1');
     expect(composeAction({ caseId: 'CASE-1', req: offer('1.00'), snap: after, disputeId: null, seller: null, files: [] })).toMatchObject({ status: 409, error: 'ACTION_NOT_OFFERED' });

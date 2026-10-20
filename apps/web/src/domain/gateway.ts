@@ -161,7 +161,8 @@ export interface SimulatedGatewayOptions {
 }
 
 /** The entry an action leaves, in the list the recorded reads show it in. */
-type PlayEntry = { kind: 'message'; message: DisputeMessage } | { kind: 'evidence'; evidence: RecordedEvidence } | { kind: 'offer'; offer: OfferEvent };
+/** An offer (W-4, W-9) comes with the note echoed as a seller message, shown in the same read as the offer entry. */
+type PlayEntry = { kind: 'message'; message: DisputeMessage } | { kind: 'evidence'; evidence: RecordedEvidence } | { kind: 'offer'; offer: OfferEvent; echo: DisputeMessage };
 
 /** An action the simulator is playing: the recorded reads still to come, and the entry they show. */
 interface Play {
@@ -255,7 +256,10 @@ export class SimulatedDisputeGateway implements DisputeGateway {
         const e = play.entry;
         if (e.kind === 'message') (d.messages ??= []).push({ ...e.message });
         else if (e.kind === 'evidence') d.evidences.push({ ...e.evidence });
-        else (d.offerHistory ??= []).push({ ...e.offer, amount: e.offer.amount ? { ...e.offer.amount } : null });
+        else {
+          (d.offerHistory ??= []).push({ ...e.offer, amount: e.offer.amount ? { ...e.offer.amount } : null });
+          (d.messages ??= []).push({ ...e.echo, files: [] });
+        }
         play.shown = true;
       }
     }
@@ -416,11 +420,14 @@ function playEntry(t: SimTransition, intent: SubmissionIntent, d: DisputeSnapsho
     case 'offer': {
       // W-9 (a partial accept) and W-4 (an offer): the seller's PROPOSED offer, type REFUND, with the amount.
       const offered = t.variant === 'make_offer:REFUND' ? (p?.kind === 'make_offer' && p.offerType === 'REFUND' && p.note ? p.amount : null) : p?.kind === 'accept_claim' && p.acceptType === 'PARTIAL_REFUND' ? p.amount : null;
-      if (!offered) return null;
+      const note = p?.kind === 'make_offer' || p?.kind === 'accept_claim' ? p.note.trim() : '';
+      if (!offered || !note) return null;
       // W-4 was sent with no seller message and no pending offer before: after a seller message PayPal stops offering
       // make_offer (W-1), and an offer while one is pending was never recorded.
       if (t.variant === 'make_offer:REFUND' && ((d.messages ?? []).some((m) => m.postedBy === 'SELLER') || pendingSellerOffer(d) || !offerAsRecorded(offered, d))) return null;
-      return { entry: { kind: 'offer', offer: { time, actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { ...offered } } }, refund: null };
+      // PayPal echoes the note as a seller message at the offer's time (W-4, W-9); the proof stays the offer entry.
+      const echo: DisputeMessage = { postedBy: 'SELLER', time, content: note, files: [] };
+      return { entry: { kind: 'offer', offer: { time, actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { ...offered } }, echo }, refund: null };
     }
     case 'escalate': {
       // W-5: the seller's entry, OTHER with action ESCALATE and the note, in the stage it was sent from.

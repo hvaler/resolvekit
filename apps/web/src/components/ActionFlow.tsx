@@ -278,7 +278,7 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
                 {state.result.kind === 'pending'
                   ? `${state.result.detail}. Nothing more is sent on this dispute until a read-back proves ${nounOf(state.intent)} recorded or absent; it is never sent again blindly.`
                   : state.result.kind === 'recorded' && isOfferToBuyer(state.intent)
-                    ? `${mode.kind === 'paypal' ? 'PayPal' : 'The simulator'} shows your offer to the buyer. Unless the buyer accepts it, no money moves and the dispute stays open.`
+                    ? `${mode.kind === 'paypal' ? 'PayPal' : 'The simulator'} shows your ${isPartial(state.intent) ? 'partial refund offer' : 'refund offer'} to the buyer. Unless the buyer accepts it, no money moves and the dispute stays open.`
                     : state.result.kind === 'recorded' && isEscalate(state.intent)
                       ? escalationText(state.result)
                       : state.result.detail}

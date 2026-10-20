@@ -99,6 +99,7 @@ const ACCEPT_PROOF: ProofFields = {
 /**
  * Recorded 20/10/2026 (W-4, and W-9 for a partial accept): an offer is an `offer.history[]` entry `actor: SELLER`,
  * `event_type: PROPOSED`, with `offer_time`, `offer_type` and `offer_amount` as sent (reads/W-4-*.json, W-9-*.json).
+ * PayPal also echoes the note as a seller `messages[]` entry at the offer's time; the proof is the offer entry only.
  */
 const OFFER_PROOF: ProofFields = {
   list: 'offerHistory',
@@ -162,8 +163,9 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   },
   // Recorded 20/10/2026 (owner-approved W-9, PP-R-KMJ-10193602): accepted (200), but PayPal records a partial accept as
   // an OFFER awaiting the buyer: an offer.history SELLER PROPOSED entry, type REFUND, the partial amount; no evidences[]
-  // entry; nothing closes, no money moves until the buyer agrees. Proof = the offer shape (the accept type is not echoed):
-  // the read-back maps event_type PROPOSED, offer_type 'REFUND' and offer_amount from the accept payload.
+  // entry; nothing closes, no money moves until the buyer agrees. The note is echoed as a seller message at the offer's
+  // time. Proof = the offer shape (the accept type is not in it): the read-back maps event_type PROPOSED, offer_type
+  // 'REFUND' and offer_amount from the accept payload.
   // Tested locally (Task 9): owner only, its own consequence (OFFERS_PARTIAL_REFUND, the partial amount), the recorded
   // body, the offer proof and the simulator's recorded transition (a pending offer, never a closed dispute).
   'accept_claim:PARTIAL_REFUND': {
@@ -189,7 +191,8 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
     recorded: 'packages/paypal/contracts/escalate.json',
   },
   // Recorded 20/10/2026 (owner-approved W-4, PP-R-OZY-10193601): JSON accepted; offer.history gains a SELLER PROPOSED
-  // entry with the approved type and amount ≈3.5 s after the send started (the note is not echoed). No money moves and
+  // entry with the approved type and amount ≈3.5 s after the send started, and the note echoed as a seller message at the
+  // same time (the proof is the offer entry). No money moves and
   // nothing closes until the buyer accepts; afterwards PayPal waits for the buyer, stops offering make_offer and offers
   // accept_claim REFUND only.
   // Tested locally (Task 11): owner only, the bound second confirmation (OFFERS_SETTLEMENT, the amount offered), a note

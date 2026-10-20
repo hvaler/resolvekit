@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CONTRACTS, statusLabel } from '../domain/actionContracts';
 import { ACTION_TEXT_LIMIT, ESCALATE_CONSEQUENCE, acceptConsequenceText, offerConsequenceText, type ActionAvailability, type ActionRequest, type IntentAction, type Money } from '../domain/actions';
-import { parseAmount } from '../domain/amounts';
+import { minorUnits, parseAmount } from '../domain/amounts';
 import { formatCount } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
 import { PrimaryAction, cx } from './ui';
@@ -33,6 +33,7 @@ export function ActionComposer({
   onReview,
   onRequest,
   disputeAmount = null,
+  refundable = null,
 }: {
   action: Exclude<IntentAction, 'provide_evidence'>;
   text: string;
@@ -45,6 +46,8 @@ export function ActionComposer({
   onRequest?: (req: ActionRequest) => void;
   /** The dispute amount as last read: what a full accept refunds. */
   disputeAmount?: Money | null;
+  /** PayPal's refundable amount as last read (an offer may not exceed it). */
+  refundable?: Money | null;
 }) {
   const isMessage = action === 'send_message';
   const len = text.trim().length;
@@ -94,7 +97,7 @@ export function ActionComposer({
       )}
       {action === 'accept_claim' && <AcceptComposer availability={availability} locked={locked} disputeAmount={disputeAmount} onRequest={onRequest} />}
       {action === 'escalate' && <EscalateComposer availability={availability} locked={locked} onRequest={onRequest} />}
-      {action === 'make_offer' && <OfferComposer availability={availability} locked={locked} disputeAmount={disputeAmount} onRequest={onRequest} />}
+      {action === 'make_offer' && <OfferComposer availability={availability} locked={locked} disputeAmount={disputeAmount} refundable={refundable} onRequest={onRequest} />}
     </section>
   );
 }
@@ -241,11 +244,13 @@ function OfferComposer({
   availability,
   locked,
   disputeAmount,
+  refundable,
   onRequest,
 }: {
   availability: ActionAvailability;
   locked: string | null;
   disputeAmount: Money | null;
+  refundable: Money | null;
   onRequest: ((req: ActionRequest) => void) | undefined;
 }) {
   const [value, setValue] = useState('');
@@ -258,10 +263,11 @@ function OfferComposer({
   const len = note.trim().length;
   const over = len > ACTION_TEXT_LIMIT;
   const ready = owner && !locked && !!amount && len > 0 && !over;
+  const bound = !disputeAmount ? '' : lowerCap(refundable, disputeAmount) ? ` (${disputeAmount.currency}, at most ${refundable!.value}, what PayPal would refund)` : ` (${disputeAmount.currency}, below ${disputeAmount.value})`;
   return (
     <>
       <label className="flex flex-col gap-1 text-[12.5px]">
-        <span className="font-medium">Amount offered{disputeAmount ? ` (${disputeAmount.currency}, below ${disputeAmount.value})` : ''}</span>
+        <span className="font-medium">Amount offered{bound}</span>
         <input
           aria-label="Amount offered"
           inputMode="decimal"
@@ -297,4 +303,14 @@ function OfferComposer({
       )}
     </>
   );
+}
+
+/** PayPal's refundable amount is below the dispute amount (same currency, minor units): the offer's real cap. */
+function lowerCap(refundable: Money | null, dispute: Money): boolean {
+  if (!refundable || refundable.currency !== dispute.currency) return false;
+  try {
+    return minorUnits(refundable.value, refundable.currency) < minorUnits(dispute.value, dispute.currency);
+  } catch {
+    return false;
+  }
 }
