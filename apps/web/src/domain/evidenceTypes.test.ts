@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { agentCase, standardCase } from '../fixtures';
 import { CONTRACTS } from './actionContracts';
-import { NOT_ALLOWED_ERROR, defaultEvidenceType, evidenceTypeOptions, isEvidenceTypeAllowed, requestedOnlyUnavailable, selectEvidenceType } from './evidenceTypes';
+import { NOT_ALLOWED_ERROR, defaultEvidenceType, evidenceTypeOptions, isEvidenceTypeAllowed, requestedNotice, requestedOnlyUnavailable, selectEvidenceType } from './evidenceTypes';
+import { SIM_TRANSITIONS } from './simulatedActions';
+import { notAsDescribedCase } from '@resolvekit/cases';
 
 describe('evidence type choice (docs/sandbox-findings.md)', () => {
   it('disables PROOF_FOR_SOFTWARE_OR_SERVICE_DELIVERED for not-received disputes', () => {
@@ -67,7 +69,30 @@ describe('PROOF_OF_REFUND is not available in this delivery (Task 12, owner deci
     for (const r of [null, [], ['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER'], ['OTHER'], ['SOMETHING_NEW']]) expect(requestedOnlyUnavailable(r)).toBeNull();
     const o = evidenceTypeOptions('MERCHANDISE_OR_SERVICE_NOT_RECEIVED', 'PROOF_OF_REFUND', candidates);
     expect(defaultEvidenceType(o, ['PROOF_OF_REFUND'])).toBeNull();
-    expect(defaultEvidenceType(o, ['PROOF_OF_REFUND', 'OTHER'])).toBe('PROOF_OF_FULFILLMENT');
+    // Requested types exist: the first requested one that is available, never an unrequested type.
+    expect(defaultEvidenceType(o, ['PROOF_OF_REFUND', 'OTHER'])).toBe('OTHER');
     expect(defaultEvidenceType(o)).toBe('PROOF_OF_FULFILLMENT');
+  });
+
+  it('preselects the first PayPal-requested type that is available, skipping PROOF_OF_REFUND (W-5 claim, [PROOF_OF_REFUND, OTHER])', () => {
+    // W-5 +10 min: the claim requested PROOF_OF_FULFILLMENT, PROOF_OF_REFUND, OTHER.
+    const w5 = SIM_TRANSITIONS.escalate![0]!.steps.find((x) => x.at === '10m')!.requested!;
+    expect(w5).toEqual(['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER']);
+    const all = evidenceTypeOptions('MERCHANDISE_OR_SERVICE_NOT_RECEIVED', 'PROOF_OF_FULFILLMENT', candidates);
+    expect(defaultEvidenceType(all, w5)).toBe('PROOF_OF_FULFILLMENT');
+    // A not-as-described case (OTHER satisfied, PROOF_OF_FULFILLMENT met too): OTHER, the requested one.
+    const nad = evidenceTypeOptions(notAsDescribedCase.summary.reason, 'PROOF_OF_REFUND', notAsDescribedCase.evidenceTypes);
+    expect(defaultEvidenceType(nad, ['PROOF_OF_REFUND', 'OTHER'])).toBe('OTHER');
+    // Requested types that are all outside the options: nothing, not an unrequested type.
+    expect(defaultEvidenceType(evidenceTypeOptions('MERCHANDISE_OR_SERVICE_NOT_RECEIVED', null, candidates.filter((x) => x.type !== 'OTHER')), ['OTHER'])).toBeNull();
+  });
+
+  it('PROOF_OF_REFUND requested with others: the notice says it is not available and points to the other requested types', () => {
+    expect(requestedNotice(['PROOF_OF_REFUND', 'OTHER'])).toBe(`Proof of refund is not available in this delivery (${REASON}). PayPal also asks for Other: notes and documents: send that instead.`);
+    expect(requestedNotice(['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER'])).toBe(
+      `Proof of refund is not available in this delivery (${REASON}). PayPal also asks for Proof of fulfillment or Other: notes and documents: send one of those instead.`,
+    );
+    expect(requestedNotice(['PROOF_OF_REFUND'])).toBe(`PayPal asks only for Proof of refund, which is not available in this delivery: ${REASON}`);
+    for (const r of [null, [], ['OTHER'], ['PROOF_OF_FULFILLMENT', 'OTHER']]) expect(requestedNotice(r)).toBeNull();
   });
 });

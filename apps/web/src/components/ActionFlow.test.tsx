@@ -569,9 +569,11 @@ describe('PayPal asks only for PROOF_OF_REFUND (Task 12 review)', () => {
     expect(footerButton(h)).not.toContain('Review what will be sent');
   });
 
-  it('PROOF_OF_REFUND among other requested types: a type is preselected, no notice, Review enabled', () => {
+  it('PROOF_OF_REFUND among other requested types (W-5 claim): the first requested available type is preselected, the note points to the others, Review enabled', () => {
     const h = html(['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER']);
     expect(h).not.toContain('PayPal asks only for');
+    expect(h).toContain('Proof of refund is not available in this delivery (Not verified with PayPal: pending sandbox test (W-11)). PayPal also asks for Proof of fulfillment or Other: notes and documents: send one of those instead.');
+    expect(types(h).slice(0, types(h).indexOf('PROOF_OF_FULFILLMENT</span>'))).toContain('aria-checked="true"');
     expect(types(h)).toContain('aria-checked="true"');
     expect(footerButton(h)).toContain('Review what will be sent');
     expect(footerButton(h)).not.toContain('disabled');

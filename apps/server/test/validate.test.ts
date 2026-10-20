@@ -34,4 +34,7 @@ test('PayPal requests only PROOF_OF_REFUND (not available in this delivery): 409
   assert.equal(checkAgainstDispute(s, several), null);
   const other = standardDispute({ evidences: ev(['OTHER', 'PROOF_OF_REFUND']) as never });
   assert.equal(checkAgainstDispute(s, other)?.error, 'EVIDENCE_TYPE_NOT_REQUESTED');
+  // [PROOF_OF_REFUND, OTHER]: OTHER, the type the web preselects there, is accepted.
+  const refundOther = standardDispute({ evidences: ev(['PROOF_OF_REFUND', 'OTHER']) as never });
+  assert.equal(checkAgainstDispute({ ...s, evidenceType: 'OTHER', carrier: '', tracking: '' }, refundOther), null);
 });

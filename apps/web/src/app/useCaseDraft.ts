@@ -2,7 +2,7 @@ import { PENDING_STEPS, STAGES, toCitations } from '@resolvekit/analyst';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { actionableBlockers, checklistState, citationUse, correctionPair, deriveSentences, draftBlockers, draftCounts, lineRef, notesText, type Correction, type Recheck } from '../domain/draft';
 import { browserStorage, draftKey, loadDraft, saveDraft } from '../domain/draftStore';
-import { defaultEvidenceType, evidenceTypeOptions, requestedOnlyUnavailable, selectEvidenceType } from '../domain/evidenceTypes';
+import { defaultEvidenceType, evidenceTypeOptions, requestedNotice, requestedOnlyUnavailable, selectEvidenceType } from '../domain/evidenceTypes';
 import type { ActionCode, CaseFile, ContradictionResolution, EvidenceType, SentenceView } from '../domain/types';
 import { correctionsToConfirm, dropPairsOf, effectivePairs } from '../domain/uploads';
 import { replayStepMs, useRecording } from './recording';
@@ -88,6 +88,8 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
   const requestedEvidence = opts.requestedEvidence ?? null;
   /** PayPal asks only for types ResolveKit does not send: nothing is preselected and the draft says why it cannot go. */
   const requestedUnavailable = requestedOnlyUnavailable(requestedEvidence);
+  /** What the selector says about requested types not available here (all of them, or some with the others to send). */
+  const requestedNote = requestedNotice(requestedEvidence);
   const [evidenceType, setEvidenceType] = useState<EvidenceType | null>(() => defaultEvidenceType(options, requestedEvidence));
   useEffect(() => {
     if (requestedUnavailable) setEvidenceType(null);
@@ -276,6 +278,8 @@ export function useCaseDraft(c: CaseFile, opts: CaseDraftOptions) {
     options,
     /** Why nothing can be sent as evidence: PayPal asks only for types not available in this delivery; null: not so. */
     requestedUnavailable,
+    /** The selector's note on requested types not available in this delivery; null: none. */
+    requestedNote,
     evidenceType,
     selectEvidenceType: (t: EvidenceType) => setEvidenceType((cur) => selectEvidenceType(options, cur, t)),
     blockers,
