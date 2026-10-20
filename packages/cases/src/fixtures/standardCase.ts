@@ -156,4 +156,11 @@ export const standardCase: CaseFile = {
   },
   refundText: '7.00 USD',
   audit: [],
+  // The simulated thread: one buyer message, in the shape of the recorded reads (reads/W-1-pre.json: posted_by BUYER,
+  // time_posted = the dispute's opening, content). The text is fictional (real buyer text is redacted in the reads).
+  // Shown to the seller's workspace only; never given to the analyst.
+  simulatedPayPal: {
+    evidences: [],
+    messages: [{ postedBy: 'BUYER', time: '2026-10-08T18:19:00.000Z', content: 'The tote has not arrived yet. Can you tell me where it is?', files: [] }],
+  },
 };

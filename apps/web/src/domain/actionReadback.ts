@@ -95,7 +95,7 @@ function normalise(text: string, steps: ProofFields['normalise']): string {
 }
 
 /** The variant an intent sends, as the registry names it. */
-function variantOfContent(c: IntentContent): VariantId | null {
+export function variantOfContent(c: IntentContent): VariantId | null {
   const p = c.payload;
   switch (intentAction(c)) {
     case 'send_message':

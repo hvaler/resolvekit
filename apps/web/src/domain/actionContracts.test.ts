@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CONTRACTS, available, variantOf, type VariantId } from './actionContracts';
+import { CONTRACTS, STATUS_LABEL, available, statusLabel, variantOf, type VariantId } from './actionContracts';
+
+/** The variants whose flow is built (Task 8 onwards). */
+const BUILT: VariantId[] = ['send_message', 'send_message:file'];
 
 const IDS: VariantId[] = [
   'send_message',
@@ -48,14 +51,23 @@ describe('action contracts', () => {
     expect(CONTRACTS.appeal).toMatchObject({ status: 'not_available', recorded: null, reason: 'Not verified with PayPal: the sandbox could not produce an appealable dispute' });
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded === null && i !== 'make_offer:withdraw' && i !== 'return_address' && i !== 'appeal' && i !== 'make_offer:REPLACEMENT_WITHOUT_REFUND')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
     // A recorded contract whose flow is not built stays Not available, and says so.
-    for (const id of IDS.filter((i) => CONTRACTS[i].recorded !== null)) expect(CONTRACTS[id]).toMatchObject({ status: 'not_available', reason: 'Contract recorded; flow not built yet' });
+    for (const id of IDS.filter((i) => CONTRACTS[i].recorded !== null && !BUILT.includes(i))) expect(CONTRACTS[id]).toMatchObject({ status: 'not_available', reason: 'Contract recorded; flow not built yet' });
+    // Built and tested on this machine (Task 8): the message variants, with no reason left.
+    for (const id of BUILT) expect(CONTRACTS[id]).toMatchObject({ status: 'tested_locally', reason: null });
     expect(CONTRACTS.send_message).toMatchObject({ recorded: 'packages/paypal/contracts/send_message.json', absentAfterMs: 60_000, requestIdDedupes: false, body: 'json' });
     const withProof = IDS.filter((i) => CONTRACTS[i].proof !== null).sort();
     expect(withProof).toEqual(['accept_claim:PARTIAL_REFUND', 'accept_claim:REFUND', 'escalate', 'make_offer:REFUND', 'send_message', 'send_message:file']);
   });
 
-  it('nothing is available yet', () => {
-    for (const id of IDS) expect(available(id)).toBe(false);
+  it('only the built variants are available', () => {
+    for (const id of IDS) expect(available(id)).toBe(BUILT.includes(id));
+  });
+
+  it('status labels: «Not available: reason» or the status by name', () => {
+    expect(statusLabel(CONTRACTS.send_message)).toBe('Tested locally');
+    expect(statusLabel(CONTRACTS.appeal)).toBe('Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute');
+    expect(statusLabel({ ...CONTRACTS.escalate, status: 'not_available', reason: null })).toBe('Not available');
+    expect(Object.values(STATUS_LABEL)).toEqual(['Not available', 'Implemented', 'Tested locally', 'Verified in sandbox', 'Deployed']);
   });
 
   it('maps an action and its type to its variant; anything unknown is null', () => {

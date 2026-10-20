@@ -68,6 +68,9 @@ function scripted(reads: DisputeSnapshot[], send: () => Promise<void> = async ()
       g.sends += 1;
       await send();
     },
+    async sendAction() {
+      return { sent: true as const };
+    },
   };
   return g;
 }

@@ -147,6 +147,7 @@ describe('M1: the read-back must match what we sent', () => {
     const reading = (over: Partial<EvidenceSubmission>) => ({
       getDispute: async () => ({ ...base, evidences: [entry(over)] }),
       provideEvidence: async () => {},
+      sendAction: async () => ({ sent: true as const }),
     });
     for (const [over, field] of [
       [{ files: [{ name: 'b.pdf', size: '1 KB' }] }, 'files'],

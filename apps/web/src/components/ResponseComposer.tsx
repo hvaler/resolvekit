@@ -155,14 +155,21 @@ export interface ResponseComposerProps {
   /** The latest read of the dispute: once the seller's evidence is in, what PayPal stored is shown back. */
   snapshot?: DisputeSnapshot;
   onReview: () => void;
+  /**
+   * The composer of the selected action when it is not evidence (ActionComposer): it replaces the evidence's type,
+   * attachments, notes and review button, so another action never opens the evidence review.
+   */
+  actionPanel?: ReactNode;
 }
 
 /** Right zone: the draft with its sentence states, evidence type, attachments, action, and the way forward. */
-export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, realPayPal = false, snapshot, onReview }: ResponseComposerProps) {
+export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, realPayPal = false, snapshot, onReview, actionPanel }: ResponseComposerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const busy = d.blockers.some((b) => b.kind === 'analysis' || b.kind === 'checking');
   const actionable = d.actionable;
   const notesLen = d.notes.length;
+  // Another action than evidence is selected: its own composer and flow, not the evidence's.
+  const other = d.action !== 'provide_evidence' && c.kind !== 'agent' && !!actionPanel;
 
   let blockText: string;
   let blockColor = 'var(--ink2)';
@@ -262,7 +269,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
           })}
         </ol>
 
-        {!submitted && (
+        {!submitted && !other && (
           <EvidenceTypeSelector
             options={d.options}
             selected={d.evidenceType}
@@ -297,9 +304,10 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
           </>
         ) : (
           <>
-            {!submitted && <Attachments c={c} />}
+            {!submitted && !other && <Attachments c={c} />}
             <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} />
-            {!submitted && (
+            {other && actionPanel}
+            {!submitted && !other && (
               <section aria-label="Notes length" className="flex flex-col gap-1.5">
                 <div className="flex justify-between text-[12.5px]">
                   <span className="font-semibold">Notes sent to PayPal</span>
@@ -328,14 +336,16 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
         )}
       </div>
 
-      <div className="flex flex-none flex-col gap-2 border-t border-line bg-surface px-[22px] pb-3.5 pt-3 max-md:sticky max-md:bottom-0 max-md:px-4">
-        <span className="text-[12px]" style={{ color: blockColor }} aria-live="polite">
-          {blockText}
-        </span>
-        <PrimaryAction enabled={d.ready && !submitted} onClick={onReview}>
-          {btnLabel}
-        </PrimaryAction>
-      </div>
+      {!other && (
+        <div className="flex flex-none flex-col gap-2 border-t border-line bg-surface px-[22px] pb-3.5 pt-3 max-md:sticky max-md:bottom-0 max-md:px-4">
+          <span className="text-[12px]" style={{ color: blockColor }} aria-live="polite">
+            {blockText}
+          </span>
+          <PrimaryAction enabled={d.ready && !submitted && d.action === 'provide_evidence'} onClick={onReview}>
+            {btnLabel}
+          </PrimaryAction>
+        </div>
+      )}
     </aside>
   );
 }

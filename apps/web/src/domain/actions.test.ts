@@ -24,6 +24,9 @@ import {
 } from './actions';
 import { isComposeProblem, parseAnyIntentRequest, parseIntentRequest, type SubmissionIntent } from './intent';
 import type { DisputeSnapshot } from './types';
+import w1 from '../../../../packages/paypal/contracts/send_message.json';
+import w2 from '../../../../packages/paypal/contracts/send_message-request-id.json';
+import w3 from '../../../../packages/paypal/contracts/send_message-file.json';
 
 const upl = (n: number) => `upl-${String(n).padStart(24, '0')}`;
 const problem = (r: unknown) => (isComposeProblem(r) ? { status: r.status, error: r.error } : null);
@@ -151,6 +154,12 @@ const MEMBER: Viewer = { role: 'member', reviewer: false };
 
 /** A test-only contract (never a real registry entry flipped): a copy of the registry entry, marked recorded. */
 const testContract = (id: VariantContract['id']): VariantContract => ({ ...CONTRACTS[id], status: 'implemented', reason: null, recorded: 'test-only.json', evidence: 'test-only.md' });
+/** The registry as it was before send_message's contract was recorded (both message variants «Not available»). */
+const UNRECORDED = {
+  ...CONTRACTS,
+  send_message: { ...CONTRACTS.send_message, status: 'not_available' as const, reason: 'Contract not recorded yet' },
+  'send_message:file': { ...CONTRACTS['send_message:file'], status: 'not_available' as const, reason: 'Contract not recorded yet' },
+};
 
 describe('availability', () => {
   it('availability is rebuilt from the fresh read and the registry', () => {
@@ -159,14 +168,14 @@ describe('availability', () => {
     const gone = actionAvailability(khh({ allowedActions: ['provide_evidence'] }), 'send_message', OWNER);
     expect(gone).toMatchObject({ action: 'send_message', offered: false, sendable: false, why: 'PayPal does not offer this action on this dispute right now' });
     // Registry not_available: the variant carries the registry's reason.
-    const msg = actionAvailability(khh(), 'send_message', OWNER);
+    const msg = actionAvailabilityWith(khh(), 'send_message', OWNER, UNRECORDED);
     expect(msg.offered).toBe(true);
     expect(msg.sendable).toBe(false);
     expect(msg.variants).toEqual([
-      { variant: 'send_message', type: null, available: false, why: CONTRACTS.send_message.reason },
-      { variant: 'send_message:file', type: 'file', available: false, why: CONTRACTS['send_message:file'].reason },
+      { variant: 'send_message', type: null, available: false, why: 'Contract not recorded yet' },
+      { variant: 'send_message:file', type: 'file', available: false, why: 'Contract not recorded yet' },
     ]);
-    expect(msg.why).toBe(CONTRACTS.send_message.reason);
+    expect(msg.why).toBe('Contract not recorded yet');
     // Owner-only for a reviewer or a member.
     for (const who of [REVIEWER, MEMBER]) expect(actionAvailability(khh(), 'accept_claim', who)).toMatchObject({ offered: true, sendable: false, why: 'Only the workspace owner can send this action' });
     // Accept and offer variants are PayPal's allowed response options now, each with its registry state.
@@ -212,16 +221,20 @@ describe('compose', () => {
 
   it('availability first: a link gone or a variant without a recorded contract', () => {
     expect(err(composeAction({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh({ allowedActions: [] }) }))).toBe('409 ACTION_NOT_OFFERED');
-    const r = composeAction({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh() });
-    expect(r).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${CONTRACTS.send_message.reason}` });
+    const r = composeActionWith({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh() }, UNRECORDED);
+    expect(r).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: Contract not recorded yet' });
     expect(err(composeAction({ ...base, req: { action: 'accept_claim', acceptType: 'REFUND', note: '', amount: null, attachments: [] }, snap: khh() }))).toBe('409 VARIANT_NOT_AVAILABLE');
     // PayPal does not allow the type now.
     const acc = { ...CONTRACTS, 'accept_claim:REFUND': testContract('accept_claim:REFUND') };
     const onlyPartial = khh({ responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND'], offerTypes: [] } });
     expect(err(composeActionWith({ ...base, req: { action: 'accept_claim', acceptType: 'REFUND', note: '', amount: null, attachments: [] }, snap: onlyPartial }, acc))).toBe('409 VARIANT_NOT_AVAILABLE');
     // Available in the registry, but the action's rules have not landed yet.
-    const reg = { ...CONTRACTS, send_message: testContract('send_message') };
-    expect(composeActionWith({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh() }, reg)).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE' });
+    const reg = { ...CONTRACTS, 'make_offer:REFUND': testContract('make_offer:REFUND') };
+    expect(composeActionWith({ ...base, req: { action: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '1.00', currency: 'USD' }, attachments: [] }, snap: khh() }, reg)).toMatchObject({
+      status: 409,
+      error: 'VARIANT_NOT_AVAILABLE',
+      detail: 'Not available: not implemented yet',
+    });
   });
 
   it('then stage, currency, amount and text, in that order', () => {
@@ -343,5 +356,49 @@ describe('new buyer messages after approval', () => {
     const keys = [messageKey(untimed)];
     expect(relevantNewBuyerMessages('send_message', keys, khh({ messages: [untimed] }))).toEqual([]);
     expect(relevantNewBuyerMessages('send_message', keys, khh({ messages: [untimed, { ...untimed, content: 'Yo!' }] }))).toEqual([{ ...untimed, content: 'Yo!' }]);
+  });
+});
+
+describe('send_message rules (Task 8, from the recorded contract)', () => {
+  const base = { caseId: 'case-1', disputeId: 'PP-R-VQD-10193598', seller: 'JWULA7T75ZA4Q', files: [] };
+  const msg = (text = 'The parcel left on 7 October.', attachments: string[] = []) => ({ action: 'send_message' as const, text, attachments });
+  const err = (r: unknown) => (isComposeProblem(r) ? `${r.status} ${r.error}` : 'ok');
+  const recorded = [w1, w2, w3] as Array<{ before: { dispute_life_cycle_stage: string }; after: Array<{ dispute: { dispute_life_cycle_stage: string } }> }>;
+
+  it('the stage rule is the stages the contract recorded: INQUIRY only', () => {
+    const stages = new Set(recorded.flatMap((c) => [c.before.dispute_life_cycle_stage, ...c.after.map((a) => a.dispute.dispute_life_cycle_stage)]));
+    expect([...stages]).toEqual(['INQUIRY']);
+    expect(ACTION_RULES.send_message?.(msg(), khh())).toEqual({ stages: ['INQUIRY'], amount: 'not_allowed', text: 'required' });
+    expect(composeAction({ ...base, req: msg(), snap: khh({ stage: 'CHARGEBACK' }) })).toMatchObject({ status: 409, error: 'ACTION_STAGE' });
+    expect(err(composeAction({ ...base, req: msg(), snap: khh({ stage: null }) }))).toBe('409 ACTION_STAGE');
+  });
+
+  it('composes through the real registry and rules: the text only, no amount, ≤ 2,000', () => {
+    const ok = composeAction({ ...base, req: msg(), snap: khh() });
+    expect(ok).toEqual({
+      caseId: 'case-1',
+      disputeId: 'PP-R-VQD-10193598',
+      ...ACTION_EVIDENCE_BLANK,
+      files: [],
+      action: 'send_message',
+      payload: { kind: 'send_message', text: 'The parcel left on 7 October.' },
+      pin: { disputeId: 'PP-R-VQD-10193598', seller: 'JWULA7T75ZA4Q', stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', amount: { value: '7.00', currency: 'USD' } },
+    });
+    // No dispute amount is needed for a message.
+    expect(err(composeAction({ ...base, req: msg(), snap: khh({ amount: null }) }))).toBe('ok');
+    expect(err(composeAction({ ...base, req: msg('x'.repeat(ACTION_TEXT_LIMIT)), snap: khh() }))).toBe('ok');
+    expect(err(composeAction({ ...base, req: msg('x'.repeat(ACTION_TEXT_LIMIT + 1)), snap: khh() }))).toBe('422 TEXT_TOO_LONG');
+    expect(err(composeAction({ ...base, req: msg('   '), snap: khh() }))).toBe('422 TEXT_REQUIRED');
+    // The availability says so too, for a reviewer and a member (messages are not owner-only).
+    for (const who of [OWNER, REVIEWER, MEMBER]) expect(actionAvailability(khh(), 'send_message', who)).toMatchObject({ offered: true, sendable: true, why: null });
+  });
+
+  it('one confirmed upload goes with it only while send_message:file is available', () => {
+    const file = { name: 'tracking.png', size: '2 KB' };
+    expect(composeAction({ ...base, req: msg('Screenshot attached.', [upl(1)]), snap: khh(), files: [file] })).toMatchObject({ action: 'send_message', files: [file] });
+    const noFile = { ...CONTRACTS, 'send_message:file': { ...CONTRACTS['send_message:file'], status: 'not_available' as const, reason: 'Contract not recorded yet' } };
+    expect(composeActionWith({ ...base, req: msg('Screenshot attached.', [upl(1)]), snap: khh(), files: [file] }, noFile)).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: Contract not recorded yet' });
+    // The text alone is still available then.
+    expect(err(composeActionWith({ ...base, req: msg(), snap: khh() }, noFile))).toBe('ok');
   });
 });

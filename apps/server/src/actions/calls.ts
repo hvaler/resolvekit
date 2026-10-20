@@ -6,6 +6,9 @@
  * Field names follow PayPal's Disputes v1 reference (accept-claim `note`, `accept_claim_type`, `refund_amount`;
  * make-offer `note`, `offer_type`, `offer_amount`; escalate `note`; send-message `message`). Each action's task pins
  * them against its recorded contract before the variant becomes available.
+ *
+ * Pinned (Task 8): send-message is JSON `{ "message": <the approved text, as approved> }` (W-1), or multipart with the
+ * same JSON in `input` and the file in `message_document` (W-3) — packages/paypal/contracts/send_message*.json.
  */
 import { PayPalError, type EvidenceFile, type PayPalClient } from '@resolvekit/paypal';
 import { CONTRACTS, variantOf, type VariantContract } from '../../../web/src/domain/actionContracts.ts';

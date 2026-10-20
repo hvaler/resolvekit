@@ -1,6 +1,11 @@
+import { CONTRACTS, type VariantId } from './actionContracts';
+import { variantOfContent, type ProofState } from './actionReadback';
+import { intentAction, type ContractRegistry } from './actions';
+import type { SubmissionIntent } from './intent';
 import { hasSellerEvidence, newSellerEvidence, submissionMismatch } from './recorded';
+import { SIM_TRANSITIONS, type SimStep, type SimTransition } from './simulatedActions';
 import { utcStamp } from './time';
-import type { ActionCode, DisputeSnapshot, DisputeStatus, EvidenceSubmission, RecordedEvidence } from './types';
+import type { ActionCode, DisputeMessage, DisputeSnapshot, DisputeStatus, EvidenceSubmission, RecordedEvidence } from './types';
 
 /**
  * Everything the web app needs from PayPal. The browser never talks to PayPal: the real implementation
@@ -10,7 +15,23 @@ import type { ActionCode, DisputeSnapshot, DisputeStatus, EvidenceSubmission, Re
 export interface DisputeGateway {
   getDispute(disputeId: string): Promise<DisputeSnapshot>;
   provideEvidence(submission: EvidenceSubmission, opts: { requestId: string }): Promise<void>;
+  /**
+   * Send an approved action intent (not evidence). The real gateway sends only its id (`POST /send`); the server sends
+   * the intent's own content. PayPal's answer is never proof: the caller reads back (actionSend.ts).
+   */
+  sendAction(intent: SubmissionIntent, opts: { requestId: string }): Promise<ActionSendAnswer>;
 }
+
+/** What a send answered: accepted (`true`), unknown, or settled by a read-back the server did first (a reconcile). */
+export interface ActionSendAnswer {
+  sent: true | 'unknown';
+  reconciled?: boolean;
+  readBack?: { state: ProofState; detail: string; at?: string };
+  intent?: SubmissionIntent;
+}
+
+/** The simulator refuses what no recorded contract shows ([A7]): a variant, or a starting state, never recorded. */
+export const NOT_IN_SIMULATOR = 'NOT_AUTHORIZED: not available in the simulator';
 
 /** The request did not get an answer in time. PayPal may or may not have stored the evidence. */
 export class GatewayTimeoutError extends Error {
@@ -133,6 +154,17 @@ export interface SimulatedGatewayOptions {
   now?: () => Date;
   /** New disputes that PayPal opens to the seller once `afterMs` have passed since the gateway started. */
   openings?: Readonly<Record<string, ScheduledOpening>>;
+  /** Test only: other recorded transitions and registry (the product uses SIM_TRANSITIONS and CONTRACTS). */
+  transitions?: Readonly<Partial<Record<VariantId, readonly SimTransition[]>>>;
+  contracts?: ContractRegistry;
+}
+
+/** An action the simulator is playing: the recorded reads still to come, and the entry they show. */
+interface Play {
+  answeredAt: number;
+  steps: SimStep[];
+  entry: DisputeMessage;
+  shown: boolean;
 }
 
 /**
@@ -147,12 +179,19 @@ export class SimulatedDisputeGateway implements DisputeGateway {
   private readonly pending = new Map<string, ScheduledOpening>();
   private readonly startedAt: number;
   private offline = false;
-  private readonly opts: Required<Omit<SimulatedGatewayOptions, 'openings'>>;
+  private readonly opts: Required<Omit<SimulatedGatewayOptions, 'openings' | 'transitions' | 'contracts'>>;
+  private readonly transitions: Readonly<Partial<Record<VariantId, readonly SimTransition[]>>>;
+  private readonly contracts: ContractRegistry;
+  private readonly plays = new Map<string, Play>();
   readonly sent: { submission: EvidenceSubmission; requestId: string }[] = [];
+  /** The actions the simulator recorded (never sent anywhere). */
+  readonly sentActions: { intentId: string; requestId: string }[] = [];
 
   constructor(initial: readonly DisputeSnapshot[], opts: SimulatedGatewayOptions) {
     for (const d of initial) this.disputes.set(d.id, structuredClone(d));
     this.opts = { outcome: opts.outcome, latencyMs: opts.latencyMs ?? 0, now: opts.now ?? (() => new Date()) };
+    this.transitions = opts.transitions ?? SIM_TRANSITIONS;
+    this.contracts = opts.contracts ?? CONTRACTS;
     this.startedAt = this.opts.now().getTime();
     for (const [id, o] of Object.entries(opts.openings ?? {})) this.pending.set(id, o);
   }
@@ -186,13 +225,72 @@ export class SimulatedDisputeGateway implements DisputeGateway {
     if (o && this.opts.now().getTime() - this.startedAt >= o.afterMs) this.open(disputeId);
     const d = this.disputes.get(disputeId);
     if (!d) throw new Error(`RESOURCE_NOT_FOUND: ${disputeId}`);
+    this.advance(d);
     return { ...structuredClone(d), readAt: utcStamp(this.opts.now()) };
+  }
+
+  /** Apply the recorded reads whose time has come (each once, in order); the entry shows from its first visible read. */
+  private advance(d: DisputeSnapshot): void {
+    const play = this.plays.get(d.id);
+    if (!play) return;
+    const elapsed = this.opts.now().getTime() - play.answeredAt;
+    while (play.steps[0] && play.steps[0].afterMs <= elapsed) {
+      const s = play.steps.shift()!;
+      d.status = s.status;
+      d.stage = s.stage;
+      d.allowedActions = [...s.allowedActions];
+      d.responseOptions = { acceptClaimTypes: [...s.responseOptions.acceptClaimTypes], offerTypes: [...s.responseOptions.offerTypes] };
+      if (s.entryVisible && !play.shown) {
+        (d.messages ??= []).push({ ...play.entry });
+        play.shown = true;
+      }
+    }
+    if (!play.steps.length) this.plays.delete(d.id);
+  }
+
+  /**
+   * Before a new write on the dispute: an earlier action's recorded reads due by now are applied; one whose entry the
+   * simulator does not show yet is still uncertain, and nothing else is written until it is. A write that is accepted
+   * then drops the earlier action's remaining reads (the dispute moved on); a refused one leaves them playing.
+   */
+  private beforeWrite(d: DisputeSnapshot): void {
+    this.advance(d);
+    const earlier = this.plays.get(d.id);
+    if (earlier && !earlier.shown) throw new Error('DISPUTE_UNCERTAIN: the last action is not shown yet; check again first');
+  }
+
+  /**
+   * Play a message exactly as a recorded contract shows it ([A7]): the seller entry with the approved text, timed when
+   * the simulator answered, and the recorded reads that follow (status, stage, links, response options), each from the
+   * time it was read after PayPal answered. A variant with no recorded transition, or a dispute in a state no write was
+   * recorded from, is refused: nothing is invented to complete the demo.
+   */
+  async sendAction(intent: SubmissionIntent, opts: { requestId: string }): Promise<ActionSendAnswer> {
+    await sleep(this.opts.latencyMs);
+    if (this.offline) throw new GatewayUnavailableError();
+    const d = this.disputes.get(intent.caseId);
+    if (!d) throw new Error(`RESOURCE_NOT_FOUND: ${intent.caseId}`);
+    const variant = variantOfContent(intent);
+    const transitions = variant && this.contracts[variant]?.status !== 'not_available' ? (this.transitions[variant] ?? []) : [];
+    const p = intent.payload;
+    if (!transitions.length || p?.kind !== 'send_message') throw new Error(NOT_IN_SIMULATOR);
+    this.beforeWrite(d);
+    const action = intentAction(intent);
+    if (!d.allowedActions.includes(action)) throw new Error(`NOT_AUTHORIZED: ${action} is not allowed for this dispute`);
+    const t = transitions.find((x) => x.from.stage === (d.stage ?? null) && x.from.status === d.status);
+    if (!t) throw new Error(NOT_IN_SIMULATOR);
+    const now = this.opts.now();
+    this.sentActions.push({ intentId: intent.id, requestId: opts.requestId });
+    // PayPal gives the document back without a name, so the thread names no file (as the server's mapping does).
+    this.plays.set(d.id, { answeredAt: now.getTime(), steps: t.steps.map((s) => ({ ...s })), entry: { postedBy: 'SELLER', time: now.toISOString(), content: p.text, files: [] }, shown: false });
+    return { sent: true };
   }
 
   async provideEvidence(submission: EvidenceSubmission, opts: { requestId: string }): Promise<void> {
     await sleep(this.opts.latencyMs);
     const d = this.disputes.get(submission.disputeId);
     if (!d) throw new Error(`RESOURCE_NOT_FOUND: ${submission.disputeId}`);
+    this.beforeWrite(d);
     if (!d.allowedActions.includes('provide_evidence')) throw new Error('NOT_AUTHORIZED: provide_evidence is not allowed for this dispute');
     const outcome = this.opts.outcome();
     if (outcome === 'timeout' && !this.timedOut.has(d.id)) {
@@ -200,6 +298,8 @@ export class SimulatedDisputeGateway implements DisputeGateway {
       throw new GatewayTimeoutError();
     }
     this.sent.push({ submission, requestId: opts.requestId });
+    // The dispute moved on: an earlier message's later recorded reads no longer apply.
+    this.plays.delete(d.id);
     // In the claim stage PayPal decides on the evidence (and send-message / make-offer exist only in the inquiry
     // stage), so the dispute goes to review with no seller actions, as the sandbox shows right after a submission.
     const claim = !!d.stage && d.stage !== 'INQUIRY';

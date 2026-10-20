@@ -1,4 +1,5 @@
-import { GatewayTimeoutError, GatewayUnavailableError, type DisputeGateway } from './gateway';
+import { GatewayTimeoutError, GatewayUnavailableError, type ActionSendAnswer, type DisputeGateway } from './gateway';
+import type { SubmissionIntent } from './intent';
 import type { DisputeSnapshot, EvidenceSubmission } from './types';
 
 /** What the ResolveKit server says about its PayPal connection (`GET /api/health`). */
@@ -16,6 +17,8 @@ export class GatewayRequestError extends Error {
   readonly status: number;
   readonly code: string;
   readonly paypalIssue: string | null;
+  /** The server's whole answer (e.g. NEEDS_REVIEW's messages, CONFIRMATION_REQUIRED's terms). */
+  readonly body: Readonly<Record<string, unknown>>;
   constructor(status: number, body: { error?: string; detail?: string; paypalIssue?: string }) {
     const code = body.error ?? `HTTP ${status}`;
     super([body.paypalIssue, body.detail ?? (body.paypalIssue ? null : code)].filter(Boolean).join(': ') || code);
@@ -23,6 +26,7 @@ export class GatewayRequestError extends Error {
     this.status = status;
     this.code = code;
     this.paypalIssue = body.paypalIssue ?? null;
+    this.body = body as Record<string, unknown>;
   }
 }
 
@@ -84,6 +88,18 @@ export class HttpDisputeGateway implements DisputeGateway {
     );
   }
 
+  /**
+   * Send an approved action intent: only its id goes to the server (`POST /send`), which re-checks it against a fresh
+   * PayPal read and sends the intent's own content once. Never retried here: the caller reads back ([A4]).
+   */
+  sendAction(intent: SubmissionIntent, _opts?: { requestId: string }): Promise<ActionSendAnswer> {
+    return this.call<ActionSendAnswer>(
+      `/disputes/${encodeURIComponent(intent.caseId)}/send`,
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ intentId: intent.id }) },
+      this.sendTimeoutMs,
+    );
+  }
+
   /** The server's PayPal connection; "unconfigured" if the server is not running or cannot reach PayPal. */
   async health(timeoutMs = 8_000): Promise<ServerHealth> {
     try {
@@ -122,5 +138,9 @@ export class RoutingDisputeGateway implements DisputeGateway {
 
   provideEvidence(submission: EvidenceSubmission, opts: { requestId: string }): Promise<void> {
     return this.pick(submission.disputeId).provideEvidence(submission, opts);
+  }
+
+  sendAction(intent: SubmissionIntent, opts: { requestId: string }): Promise<ActionSendAnswer> {
+    return this.pick(intent.caseId).sendAction(intent, opts);
   }
 }

@@ -258,8 +258,22 @@ export interface ActionRules {
 }
 export type RulesOf = (req: ActionRequest, snap: DisputeSnapshot) => ActionRules | null;
 
-/** No action's rules have landed yet: every action is refused VARIANT_NOT_AVAILABLE until its task adds them. */
-export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Object.freeze({});
+/**
+ * The stages the recorded contracts saw each action on ([A2]); another stage is refused ACTION_STAGE.
+ * send_message: W-1, W-2 and W-3 (packages/paypal/contracts/send_message*.json) were INQUIRY before and after.
+ */
+export const RECORDED_STAGES: Readonly<Partial<Record<SimpleAction, readonly string[]>>> = Object.freeze({
+  send_message: Object.freeze(['INQUIRY']),
+});
+
+/**
+ * Each action's rules, from its contract; an action without rules is refused VARIANT_NOT_AVAILABLE (Tasks 9–12 add
+ * theirs). send_message: the text is required (at most ACTION_TEXT_LIMIT), no amount; at most one confirmed upload,
+ * which makes it the `send_message:file` variant and so needs that variant available in the registry.
+ */
+export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Object.freeze({
+  send_message: (): ActionRules => ({ stages: RECORDED_STAGES.send_message!, amount: 'not_allowed', text: 'required' }),
+});
 
 const requestType = (req: ActionRequest): string | null =>
   req.action === 'send_message' ? (req.attachments.length ? 'file' : null) : req.action === 'accept_claim' ? req.acceptType : req.action === 'make_offer' ? req.offerType : null;

@@ -289,10 +289,10 @@ export interface CaseFile {
   notice?: { tone: 'info' | 'warn'; text: string } | null;
   /**
    * Where the simulated PayPal starts for this dispute when it is not at its first seller turn: evidence already on
-   * the dispute (the buyer's entry, the seller's earlier submission), the buyer's due date and PayPal's outcome.
-   * Absent: a fresh dispute waiting for the seller.
+   * the dispute (the buyer's entry, the seller's earlier submission), the buyer's due date, PayPal's outcome and the
+   * thread (in the shape PayPal's reads give it). Absent: a fresh dispute waiting for the seller, with no messages.
    */
-  simulatedPayPal?: Pick<DisputeSnapshot, 'evidences' | 'buyerRespondBy' | 'outcome'>;
+  simulatedPayPal?: Pick<DisputeSnapshot, 'evidences' | 'buyerRespondBy' | 'outcome' | 'messages'>;
 }
 
 // ---------------------------------------------------------------------------------------------

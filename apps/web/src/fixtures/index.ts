@@ -22,6 +22,8 @@ export const initialSnapshots: DisputeSnapshot[] = [
       evidences: structuredClone(c.simulatedPayPal?.evidences ?? []),
       ...(c.simulatedPayPal?.buyerRespondBy ? { buyerRespondBy: c.simulatedPayPal.buyerRespondBy } : {}),
       ...(c.simulatedPayPal?.outcome ? { outcome: c.simulatedPayPal.outcome } : {}),
+      // The thread as PayPal would give it (empty when the case has none); a real read replaces it.
+      messages: structuredClone(c.simulatedPayPal?.messages ?? []),
       readAt: '',
     }),
   ),

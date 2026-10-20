@@ -280,10 +280,9 @@ export function draftBlockers(input: BlockerInput): Blocker[] {
   for (const c of input.contradictions) {
     if ((input.resolutions[c.id]?.status ?? 'open') === 'open') out.push({ kind: 'contradiction', text: `${c.blockerName} is open` });
   }
+  // Another action has its own flow (ActionComposer → ActionFlow) and its own availability; this list is the evidence's.
   if (!input.allowedActions.includes(input.action)) {
     out.push({ kind: 'action', text: 'PayPal does not allow this action right now' });
-  } else if (input.action !== 'provide_evidence') {
-    out.push({ kind: 'action', text: 'only "Provide evidence" can be sent from this screen for now' });
   }
   if (input.action === 'provide_evidence' && input.evidenceType) {
     if (!input.evidenceType.allowed) out.push({ kind: 'evidence_type', text: `PayPal won't accept "${input.evidenceType.label}" here` });

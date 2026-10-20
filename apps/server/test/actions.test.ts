@@ -5,11 +5,11 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { durableTestHooks } from '@resolvekit/hosting';
-import { PayPalError } from '@resolvekit/paypal';
+import { PayPalClient, PayPalError } from '@resolvekit/paypal';
 import { callPayPal, capOf, isAmbiguous } from '../src/actions/calls.ts';
 import { IntentStore } from '../src/intents.ts';
 import {
@@ -152,7 +152,7 @@ test('callPayPal: one POST by action in the contract’s format, with the intent
     ],
   );
   // A variant without a recorded contract never reaches PayPal.
-  await assert.rejects(callPayPal(pp.client, REAL, { ...blank, action: 'escalate', payload: { kind: 'escalate', note: 'x' } }, [], 'rk-int-3'), /Not available: Contract not recorded yet/);
+  await assert.rejects(callPayPal(pp.client, REAL, { ...blank, action: 'escalate', payload: { kind: 'escalate', note: 'x' } }, [], 'rk-int-3'), /Not available: Contract recorded; flow not built yet/);
   assert.equal(pp.posts.length, 2);
 });
 
@@ -403,10 +403,35 @@ test('second confirmation: bound to the intent; any other terms refused; send ne
   assert.match(pp.posts[0]!.path, /\/escalate$/);
 });
 
-test('the production registry still refuses every action (the route tests inject theirs)', async () => {
-  const { app, pp } = await setupActions({ registry: false });
+test('server: send_message through the real registry entry, body format from the contract; the other actions still refused', async () => {
+  const { app, pp, state, intents } = await setupActions({ registry: false });
+  // The recorded W-1 request, byte for byte: JSON { message }, stored by PayPal with no normalisation.
+  const recorded = JSON.parse(readFileSync(new URL('../../../packages/paypal/contracts/send_message.json', import.meta.url), 'utf8')) as { request: { body: { message: string }; contentType: string } };
+  const text = recorded.request.body.message;
+  const i = await compose(app, { action: 'send_message', text });
+  assert.equal(i.repeat, false);
+  assert.equal((await approve(app, i)).body.confirmation, null);
+  state.t += 1_000;
+  const s = await send(app, i);
+  assert.equal(s.status, 202, JSON.stringify(s.body));
+  assert.equal(pp.posts.length, 1);
+  assert.equal(pp.posts[0]!.path, `/v1/customer/disputes/${REAL}/send-message`);
+  assert.equal(pp.posts[0]!.requestId, i.requestId);
+  assert.equal(recorded.request.contentType, 'application/json');
+  assert.equal(pp.posts[0]!.body, JSON.stringify(recorded.request.body));
+  // The production proof: the seller entry PayPal shows, timed after send_started, byte-identical.
+  state.dispute = withMessage(state.dispute, 'SELLER', state.t + 3_000, text);
+  state.t += 5_000;
+  assert.equal(((await readBack(app, i)).body.readBack as { state: string }).state, 'recorded');
+  assert.equal(intents.isUncertain(REAL), null);
+  // At a stage the contract never recorded: refused before anything is created.
+  state.dispute = { ...state.dispute, dispute_life_cycle_stage: 'CHARGEBACK' };
+  const staged = await answer(await app(postRaw(intentPath, { action: 'send_message', text: 'Another message.' })));
+  assert.equal(staged.status, 409, JSON.stringify(staged.body));
+  assert.equal(staged.body.error, 'ACTION_STAGE');
+  state.dispute = { ...state.dispute, dispute_life_cycle_stage: 'INQUIRY' };
+  // The actions whose flows are not built yet are still refused.
   for (const body of [
-    { action: 'send_message', text: TEXT },
     { action: 'escalate', note: 'Delivered.' },
     { action: 'accept_claim', acceptType: 'REFUND' },
   ]) {
@@ -414,7 +439,31 @@ test('the production registry still refuses every action (the route tests inject
     assert.equal(r.status, 409, JSON.stringify(r.body));
     assert.equal(r.body.error, 'VARIANT_NOT_AVAILABLE');
   }
-  assert.equal(pp.posts.length, 0);
+  assert.equal(pp.posts.length, 1);
+});
+
+test('callPayPal: a message with a file goes multipart, as recorded (W-3): input (JSON message) + message_document', async () => {
+  const recorded = JSON.parse(readFileSync(new URL('../../../packages/paypal/contracts/send_message-file.json', import.meta.url), 'utf8')) as {
+    request: { parts: Array<{ name: string; type: string; body?: { message: string } }> };
+  };
+  const forms: FormData[] = [];
+  const fetch = (async (url: string | URL, init: RequestInit = {}) => {
+    if (new URL(String(url)).pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
+    if (init.body instanceof FormData) forms.push(init.body);
+    return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof globalThis.fetch;
+  const client = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch, sleep: async () => {} });
+  const message = recorded.request.parts.find((p) => p.name === 'input')!.body!.message;
+  const blank = { caseId: CASE, disputeId: REAL, documentsHash: '', analysisKey: '', evidenceType: 'OTHER' as const, carrier: '', tracking: '', notes: '', sentences: [], resolutionNotes: [] };
+  const file = { name: 'tracking.png', type: 'image/png' as const, data: new Uint8Array([137, 80, 78, 71]) };
+  // The production registry: send_message:file is the multipart variant.
+  await callPayPal(client, REAL, { ...blank, files: [{ name: 'tracking.png', size: '1 KB' }], action: 'send_message', payload: { kind: 'send_message', text: message } }, [file], 'rk-int-9');
+  assert.equal(forms.length, 1);
+  assert.deepEqual([...forms[0]!.keys()], recorded.request.parts.map((p) => p.name));
+  const input = forms[0]!.get('input') as Blob;
+  assert.equal(input.type, 'application/json');
+  assert.deepEqual(JSON.parse(await input.text()), recorded.request.parts[0]!.body);
+  assert.equal((forms[0]!.get('message_document') as File).name, 'tracking.png');
 });
 
 // ------------------------------------------------------------------------------------------------ review fixes (Task 7)

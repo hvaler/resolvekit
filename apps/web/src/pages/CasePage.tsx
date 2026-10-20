@@ -12,6 +12,8 @@ import { useUploads } from '../app/useUploads';
 import { AddEvidencePanel, PendingUploads } from '../components/AddEvidence';
 import { AnalysisBar, analysisLabel } from '../components/AnalysisBar';
 import { AppBar } from '../components/AppBar';
+import { ActionComposer } from '../components/ActionComposer';
+import { ActionFlow } from '../components/ActionFlow';
 import { ApproveFlow } from '../components/ApproveFlow';
 import { CaseHeader } from '../components/CaseHeader';
 import { ChecklistCard } from '../components/ChecklistCard';
@@ -24,13 +26,15 @@ import { UploadReview } from '../components/UploadReview';
 import { PdfReview } from '../components/PdfReview';
 import { STUCK_COPY, thumbsReady } from '../domain/pdfReview';
 import { PdfSelect } from '../components/PdfSelect';
+import { MessageThread } from '../components/MessageThread';
 import { MiniButton } from '../components/ui';
+import { actionAvailability, type Viewer } from '../domain/actions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
 import { hasSellerEvidence, payPalEvents } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
-import type { ActionCode, CaseFile } from '../domain/types';
+import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
 import { approvalRequest, canReviewUpload, confirmedUploads, evidenceCount, uploadsForInput, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
 import { caseFiles, processingDispute } from '../fixtures';
 
@@ -151,7 +155,18 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
     flowOpen.current = true;
     actionsBefore.current = allowed;
   }
-  const showFlow = !!approveMatch && flowOpen.current && d.evidenceType != null;
+  // The evidence review opens only for evidence: another action has its own flow (ActionFlow).
+  const showFlow = !!approveMatch && flowOpen.current && d.evidenceType != null && d.action === 'provide_evidence';
+
+  // Another action than evidence: what PayPal offers now (the latest read), for this person, by the contract registry.
+  const [message, setMessage] = useState('');
+  const [actionOpen, setActionOpen] = useState(false);
+  const viewer: Viewer = demoLock?.person ? { role: demoLock.person.role, reviewer: demoLock.person.reviewer } : { role: 'owner', reviewer: false };
+  const readNow: DisputeSnapshot = snap ? { ...snap, allowedActions: [...allowed] } : { id, status, stage: demo.summary.stage, allowedActions: [...allowed], evidences: [], readAt: '' };
+  const otherAction = d.action === 'provide_evidence' ? null : d.action;
+  const availability = otherAction ? actionAvailability(readNow, otherAction, viewer) : null;
+  // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
+  const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
 
   const submission = useMemo(
     () => (d.evidenceType ? buildSubmission(c, d.views, d.evidenceType) : null),
@@ -333,6 +348,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                 {c.notice.text}
               </p>
             )}
+            {snap && <MessageThread messages={snap.messages} />}
             {c.checklist && <ChecklistCard title={c.checklist.title} items={c.checklist.items} states={d.checklistStates} />}
             {c.evidence.map((e) => {
               const u = confirmedUps.find((x) => x.evidenceId === e.id);
@@ -357,9 +373,17 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             submitted={submitted}
             {...(snap ? { snapshot: snap } : {})}
             onReview={() => navigate(approvePath(area, id))}
+            actionPanel={
+              otherAction && availability ? (
+                <ActionComposer action={otherAction} text={message} onText={setMessage} availability={availability} locked={actionLocked} onReview={() => setActionOpen(true)} />
+              ) : undefined
+            }
           />
         </main>
       </div>
+      {actionOpen && otherAction === 'send_message' && (
+        <ActionFlow caseId={id} request={{ action: 'send_message', text: message, attachments: [] }} onClose={() => setActionOpen(false)} onEdit={() => setActionOpen(false)} />
+      )}
       {showFlow && submission && (
         <ApproveFlow
           c={c}

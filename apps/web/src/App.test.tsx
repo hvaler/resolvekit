@@ -77,6 +77,15 @@ describe('routes render without errors', () => {
     expect(html).not.toContain('PayPal sandbox · live');
   });
 
+  it('the case page shows the thread from the snapshot', () => {
+    const html = render('/cases/PP-R-TVH-10190665');
+    expect(html).toContain('Messages');
+    expect(html).toContain('The tote has not arrived yet. Can you tell me where it is?');
+    expect(html).toContain('8 Oct 2026 18:19:00 UTC');
+    // A case whose simulated dispute has no thread says so.
+    expect(render('/cases/PP-R-BLW-10187733')).toContain('No messages on this dispute yet.');
+  });
+
   it('buying agent page (local mode: the operator)', () => {
     const html = render('/agent');
     expect(html).toContain('Buying agent');

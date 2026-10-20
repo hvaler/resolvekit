@@ -4,8 +4,20 @@
  * Without a server (tests, a static preview) the simulator is the only PayPal and the same composition runs here
  * ({@link LocalIntentClient}); nothing can reach real PayPal that way.
  */
-import { contentHash, type IntentRequest, type SubmissionIntent } from './intent';
-import type { EvidenceSubmission, SentenceView } from './types';
+import type { ProofState } from './actionReadback';
+import { composeAction, confirmationTerms, sameTerms, type ActionRequest, type ConfirmationTerms } from './actions';
+import { contentHash, isComposeProblem, type IntentRequest, type SubmissionIntent } from './intent';
+import type { DisputeSnapshot, EvidenceSubmission, SentenceView } from './types';
+
+/** A composed action intent; `repeat`: PayPal already recorded this exact message on the dispute and stage. */
+export type ActionIntent = SubmissionIntent & { repeat?: boolean };
+/** An approved intent, with the terms of its second confirmation (null: none needed). */
+export type ApprovedIntent = SubmissionIntent & { confirmation?: ConfirmationTerms | null };
+/** What the server's read-back of an action's send proves, and the dispute as read. */
+export interface ActionReadBack {
+  readBack: { state: ProofState; detail: string; at?: string };
+  snapshot: DisputeSnapshot | null;
+}
 
 /** One event of the server's audit log (apps/server/src/intents.ts). */
 export interface ServerAuditEvent {
@@ -66,9 +78,21 @@ export interface IntentSource {
   readonly kind: 'server' | 'local';
   /** Compose the intent. `local` is what this browser shows; only {@link LocalIntentClient} uses it. */
   create(caseId: string, req: IntentRequest, local: { submission: EvidenceSubmission; views: readonly SentenceView[] }): Promise<SubmissionIntent>;
-  approve(intent: SubmissionIntent): Promise<SubmissionIntent>;
+  /** Approve exactly this content; an action's answer carries its second-confirmation terms (null when none). */
+  approve(intent: SubmissionIntent): Promise<ApprovedIntent>;
   /** The server's audit log of the case; null without a server. */
   events(caseId: string): Promise<ServerAuditEvent[] | null>;
+  /**
+   * Compose an action (not evidence) against the dispute as just read. The server reads PayPal itself; this browser
+   * ({@link LocalIntentClient}, the simulator) composes from `local.snapshot`, with the same rules.
+   */
+  createAction(caseId: string, req: ActionRequest, local: { snapshot: DisputeSnapshot | null }): Promise<ActionIntent>;
+  /** The second confirmation: exactly the terms the approval gave ([A3]). */
+  confirm(intent: SubmissionIntent, terms: ConfirmationTerms): Promise<SubmissionIntent>;
+  /** The person saw the new buyer messages NEEDS_REVIEW showed (their keys); the same content goes on ([A5]). */
+  acknowledge(intent: SubmissionIntent, shownMessageKeys: readonly string[]): Promise<SubmissionIntent>;
+  /** The server's read-back of an action's send; null without a server (the simulator reads back in the browser). */
+  readBack(intent: SubmissionIntent): Promise<ActionReadBack | null>;
 }
 
 export class HttpIntentClient implements IntentSource {
@@ -96,12 +120,36 @@ export class HttpIntentClient implements IntentSource {
     return this.call(`/disputes/${encodeURIComponent(caseId)}/intent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req) });
   }
 
-  approve(intent: SubmissionIntent): Promise<SubmissionIntent> {
+  approve(intent: SubmissionIntent): Promise<ApprovedIntent> {
     return this.call(`/disputes/${encodeURIComponent(intent.caseId)}/intent/${encodeURIComponent(intent.id)}/approve`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ contentHash: intent.contentHash }),
     });
+  }
+
+  createAction(caseId: string, req: ActionRequest): Promise<ActionIntent> {
+    return this.call(`/disputes/${encodeURIComponent(caseId)}/intent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req) });
+  }
+
+  private intentPath(i: SubmissionIntent, step: string): string {
+    return `/disputes/${encodeURIComponent(i.caseId)}/intent/${encodeURIComponent(i.id)}/${step}`;
+  }
+
+  confirm(intent: SubmissionIntent, terms: ConfirmationTerms): Promise<SubmissionIntent> {
+    return this.call(this.intentPath(intent, 'confirm'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ terms }) });
+  }
+
+  acknowledge(intent: SubmissionIntent, shownMessageKeys: readonly string[]): Promise<SubmissionIntent> {
+    return this.call(this.intentPath(intent, 'acknowledge'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contentHash: intent.contentHash, shownMessageKeys: [...shownMessageKeys] }),
+    });
+  }
+
+  readBack(intent: SubmissionIntent): Promise<ActionReadBack> {
+    return this.call(this.intentPath(intent, 'readback'), { method: 'GET' });
   }
 
   async events(caseId: string): Promise<ServerAuditEvent[] | null> {
@@ -150,10 +198,64 @@ export class LocalIntentClient implements IntentSource {
       reason: null,
     };
   }
-  async approve(intent: SubmissionIntent): Promise<SubmissionIntent> {
-    return { ...intent, status: 'approved', approvedBy: 'this browser', approvedAt: new Date().toISOString() };
+  async approve(intent: SubmissionIntent): Promise<ApprovedIntent> {
+    const approved: SubmissionIntent = { ...intent, status: 'approved', approvedBy: 'this browser', approvedAt: new Date().toISOString() };
+    if (!intent.action || intent.action === 'provide_evidence') return approved;
+    return { ...approved, confirmation: confirmationTerms(approved, this.repeats.get(intent.id) ?? false) };
   }
   async events(): Promise<null> {
+    return null;
+  }
+
+  /** Which of this browser's action intents repeat a message the simulated dispute already shows. */
+  private readonly repeats = new Map<string, boolean>();
+
+  /**
+   * Compose an action for the simulator with the same rules as the server, against `local.snapshot` (the dispute as
+   * the simulator was just read). A message repeats one when the simulated thread already has the seller's exact text
+   * (the simulator plays the inquiry stage only): the same second confirmation as the server's (REPEATS_MESSAGE). No
+   * uploads exist without a server.
+   */
+  async createAction(caseId: string, req: ActionRequest, local: { snapshot: DisputeSnapshot | null }): Promise<ActionIntent> {
+    const snap = local.snapshot;
+    if (!snap) throw new IntentError(409, { error: 'NOT_READ', detail: 'The dispute could not be read; nothing was composed' });
+    if (req.attachments.length) throw new IntentError(409, { error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available in the simulator: an attachment needs the ResolveKit server' });
+    const content = composeAction({ caseId, req, snap, disputeId: null, seller: null, files: [] });
+    if (isComposeProblem(content)) throw new IntentError(content.status, { error: content.error, detail: content.detail });
+    const id = `int-${hex()}`;
+    const now = new Date();
+    const intent: SubmissionIntent = {
+      ...content,
+      id,
+      contentHash: await contentHash(content),
+      requestId: `rk-${id}`,
+      status: 'proposed',
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 30 * 60_000).toISOString(),
+      approvedBy: null,
+      approvedAt: null,
+      sentAt: null,
+      reason: null,
+    };
+    const p = content.payload;
+    const repeat = p?.kind === 'send_message' && (snap.messages ?? []).some((m) => m.postedBy === 'SELLER' && m.content === p.text);
+    this.repeats.set(id, repeat);
+    return { ...intent, repeat };
+  }
+
+  async confirm(intent: SubmissionIntent, terms: ConfirmationTerms): Promise<SubmissionIntent> {
+    const own = confirmationTerms(intent, this.repeats.get(intent.id) ?? false);
+    if (!own) throw new IntentError(409, { error: 'NO_CONFIRMATION', detail: 'This intent needs no second confirmation' });
+    if (!sameTerms(own, terms)) throw new IntentError(409, { error: 'CONFIRMATION_MISMATCH', detail: 'These terms are not the ones of this intent; compose it again' });
+    return intent;
+  }
+
+  /** The simulated buyer never writes, so there is never anything new to acknowledge. */
+  async acknowledge(intent: SubmissionIntent): Promise<SubmissionIntent> {
+    return intent;
+  }
+
+  async readBack(): Promise<null> {
     return null;
   }
 }

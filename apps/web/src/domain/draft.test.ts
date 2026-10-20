@@ -153,6 +153,12 @@ describe('draftBlockers', () => {
     expect(draftBlockers(base({ allowedActions: ['send_message'] })).some((x) => x.kind === 'action')).toBe(true);
     expect(draftBlockers(base({ submitted: true })).map((x) => x.kind)).toEqual(['submitted']);
   });
+
+  it('another action PayPal allows is no longer blocked as «only Provide evidence» (its own flow decides)', () => {
+    const b = draftBlockers(base({ action: 'send_message', allowedActions: ['provide_evidence', 'send_message'] }));
+    expect(b.filter((x) => x.kind === 'action')).toEqual([]);
+    expect(b.some((x) => x.text.includes('only "Provide evidence"'))).toBe(false);
+  });
 });
 
 describe('checklist', () => {

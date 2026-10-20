@@ -126,8 +126,11 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // started, content stored byte-identical. absentAfterMs: that lag rounded up to the 30 s read step, ×2. After a seller
   // message PayPal stopped offering make_offer (WAITING_FOR_BUYER_RESPONSE); a brief UNDER_REVIEW with no links came
   // first. PayPal-Request-Id does NOT dedupe (W-2: the same request id posted a second message).
+  // Tested locally (Task 8): the server route, the web flow and the simulator's recorded transitions.
   send_message: {
-    ...base('send_message', `${REF}disputes-send-message`, 'json', route('send-message'), MESSAGE_PROOF, ev('send-message'), 'Contract recorded; flow not built yet'),
+    ...base('send_message', `${REF}disputes-send-message`, 'json', route('send-message'), MESSAGE_PROOF, ev('send-message')),
+    status: 'tested_locally',
+    reason: null,
     absentAfterMs: 60_000,
     requestIdDedupes: false,
     recorded: 'packages/paypal/contracts/send_message.json',
@@ -135,8 +138,11 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // Recorded 20/10/2026 (owner-approved W-3): multipart parts `input` (the JSON message) and `message_document` (the
   // file) accepted; the entry is a seller message with the exact content and one `documents[]` item, ≈3.5 s after the
   // send started. Same proof as a text message (the content is matched; the attachment's presence is not).
+  // Tested locally (Task 8), like the text message; the simulator plays it only from WAITING_FOR_BUYER_RESPONSE (W-3).
   'send_message:file': {
-    ...base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), MESSAGE_PROOF, ev('send-message'), 'Contract recorded; flow not built yet'),
+    ...base('send_message:file', `${REF}disputes-send-message`, 'multipart', route('send-message'), MESSAGE_PROOF, ev('send-message')),
+    status: 'tested_locally',
+    reason: null,
     absentAfterMs: 60_000,
     requestIdDedupes: false,
     recorded: 'packages/paypal/contracts/send_message-file.json',
@@ -229,3 +235,18 @@ export function variantOf(action: IntentAction, type?: string | null): VariantId
 
 /** Available means its contract is recorded: any status but «Not available». */
 export const available = (v: VariantId): boolean => CONTRACTS[v].status !== 'not_available';
+
+/** Each status as the product and the docs name it ([A7]). */
+export const STATUS_LABEL: Readonly<Record<VariantStatus, string>> = Object.freeze({
+  not_available: 'Not available',
+  implemented: 'Implemented',
+  tested_locally: 'Tested locally',
+  verified_in_sandbox: 'Verified in sandbox',
+  deployed: 'Deployed',
+});
+
+/** «Not available: <reason>», or the status by name: a variant is never described beyond its status. */
+export function statusLabel(c: Pick<VariantContract, 'status' | 'reason'>): string {
+  if (c.status !== 'not_available') return STATUS_LABEL[c.status];
+  return c.reason ? `${STATUS_LABEL.not_available}: ${c.reason}` : STATUS_LABEL.not_available;
+}
