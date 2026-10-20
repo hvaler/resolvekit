@@ -6,6 +6,8 @@
 export interface OpsBody {
   ok: boolean;
   problems: string[];
+  /** Worth knowing, not blocking: e.g. a dispute held by a send less than 5 min old (hosted.ts HOLD_STALE_MS). */
+  notices?: string[];
   paypal: string;
   webhook: 'on' | 'off' | string;
   bindings: Record<string, { dispute: string; capture: string | null; status: string; reasons: string[]; checkedAt: string | null; used?: boolean; reserve?: number }>;
@@ -73,6 +75,7 @@ export function evaluate(o: Observed): { ok: boolean; lines: Line[] } {
   for (const m of b.models ?? []) if (m.ok) add(true, `AI model ${m.name}`, 'answered');
   if (b.warmUp === null) add(true, 'warm-up of the bound cases', 'not finished yet (runs after each start)');
   else for (const w of b.warmUp) if (w.outcome === 'done' || w.outcome === 'cached') add(true, `warm-up · case ${w.caseId}`, `${w.outcome} · ${w.detail}`);
+  for (const n of b.notices ?? []) lines.push({ ok: true, warn: true, what: 'held dispute', detail: n });
   for (const p of b.problems) add(false, 'server reports', p);
   if (!b.ok && b.problems.length === 0) add(false, 'server reports', 'not ready (no reason given)');
 

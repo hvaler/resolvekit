@@ -155,6 +155,11 @@ export const OPS_AGENT_RUN_PREFIX = '/api/ops/agent-run/';
 /** POST /api/ops/readback/int-…: the operator's read-back of the send holding a dispute (reads PayPal; never sends). */
 export const OPS_READBACK_PREFIX = '/api/ops/readback/';
 const INTENT_ID_PATH = /^int-[0-9a-f]{32}$/;
+/**
+ * A hold older than this (or one whose intent is gone) is a problem for the operator's check; a younger one is a notice
+ * (a send PayPal accepted moments ago is held until its read-back, which is normal).
+ */
+export const HOLD_STALE_MS = 5 * 60_000;
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -376,16 +381,19 @@ export function createHostedApp(o: HostedOptions): HostedApp {
         problems.push(`binding ${caseId} → ${b.dispute} is used (PayPal has the seller’s evidence or closed it) and no dispute is left in reserve: npm run demo:prepare, then add the new ones to BINDINGS_JSON`);
       }
     }
-    // A held dispute takes no other write until a read-back settles it: the operator reads it back (never resends).
+    // A held dispute takes no other write until a read-back settles it: the operator reads it back (never resends). A
+    // fresh hold is a notice; a stale one, or one whose intent is gone, is a problem.
+    const notices: string[] = [];
     for (const h of r.holds) {
-      problems.push(
+      const stale = !h.intentKnown || now().getTime() - Date.parse(h.since) >= HOLD_STALE_MS;
+      (stale ? problems : notices).push(
         `dispute ${h.disputeId} (case ${h.caseId || 'unknown'}) is held by ${h.action ?? 'a send'} ${h.intentId} since ${h.since} (${h.state === 'in_flight' ? 'being sent' : 'outcome pending confirmation'})${h.intentKnown ? '' : '; its intent is gone (intents.json lost or unreadable): see the runbook'}: POST ${OPS_READBACK_PREFIX}${h.intentId} reads it back`,
       );
     }
     for (const w of lastWarmUp ?? []) {
       if (w.outcome === 'failed' || w.outcome === 'skipped') problems.push(`warm-up · case ${w.caseId} · ${w.outcome} · ${w.detail}`);
     }
-    return { ok: problems.length === 0, problems, ...r, webhook: webhook ? 'on' : 'off', warmUp: lastWarmUp, models, caps: o.counters.state(), checkedAt: now().toISOString() };
+    return { ok: problems.length === 0, problems, notices, ...r, webhook: webhook ? 'on' : 'off', warmUp: lastWarmUp, models, caps: o.counters.state(), checkedAt: now().toISOString() };
   };
 
   const handle = async (req: Request): Promise<Response> => {

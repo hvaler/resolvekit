@@ -80,3 +80,13 @@ test('the ops token only goes over https (or to this machine)', () => {
   assert.match(appUrlProblem('http://resolvekit-i3j2.onrender.com') ?? '', /https/);
   assert.match(appUrlProblem('not a url') ?? '', /URL/);
 });
+
+test('a fresh held dispute from the server: a WARN line «held dispute», still ready', () => {
+  const o = good();
+  o.ops.body!.notices = ['dispute PP-R-BGW-10193053 (case PP-R-TVH-10190665) is held by send_message int-1 since 2026-10-20T10:00:00.000Z (outcome pending confirmation): POST /api/ops/readback/int-1 reads it back'];
+  const r = evaluate(o);
+  assert.equal(r.ok, true);
+  const line = r.lines.find((l) => l.what === 'held dispute');
+  assert.ok(line && line.ok && line.warn, r.lines.map((l) => l.what).join(' | '));
+  assert.match(line.detail, /POST \/api\/ops\/readback\/int-1/);
+});

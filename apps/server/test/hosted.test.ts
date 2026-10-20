@@ -911,17 +911,30 @@ test('a reviewer’s held message is released by the owner’s «Check again»; 
   assert.equal(intents.peek(m.body.id as string)?.readBack, 'recorded');
 });
 
-test('ops: the status lists every held dispute with how to read it back; POST /api/ops/readback/:id reads it back with the token only (never sends)', async () => {
+test('ops: the status lists every held dispute (a notice while fresh, a problem after 5 min); POST /api/ops/readback/:id reads it back with the token only (never sends)', async () => {
   const OPS = 'p'.repeat(20) + '0123456789abcdef';
   const disputes: Record<string, Dispute> = { [REAL]: standardDispute() };
-  const intents = new IntentStore();
-  const { app, pp, people } = setup({ intents, disputes, actions: true, opsToken: OPS });
+  const clock = { t: Date.now() };
+  const now = () => new Date(clock.t);
+  const intents = new IntentStore({ now });
+  const { app, pp, people } = setup({ intents, disputes, actions: true, opsToken: OPS, now });
   const cookie = people.member();
   const m = await actionReq(app, intentPath, MESSAGE, cookie);
   await actionReq(app, `${intentPath}/${m.body.id}/approve`, { contentHash: m.body.contentHash }, cookie);
   assert.equal((await actionReq(app, sendPath, { intentId: m.body.id }, cookie)).status, 202);
-  const status = (await (await app(req('/api/ops/status', { headers: { authorization: `Bearer ${OPS}` } }))).json()) as { ok: boolean; problems: string[]; holds: Array<{ intentId: string; intentKnown: boolean }> };
-  assert.deepEqual(status.holds.map((h) => [h.intentId, h.intentKnown]), [[m.body.id, true]]);
+  type Status = { ok: boolean; problems: string[]; notices: string[]; holds: Array<{ intentId: string; intentKnown: boolean }> };
+  const opsStatus = async () => (await (await app(req('/api/ops/status', { headers: { authorization: `Bearer ${OPS}` } }))).json()) as Status;
+  // Right after the send: held awaiting its read-back, which is normal — a notice, not a problem.
+  const fresh = await opsStatus();
+  assert.deepEqual(fresh.holds.map((h) => [h.intentId, h.intentKnown]), [[m.body.id, true]]);
+  // The only problem left is this test server's webhook being off: the hold adds none (ok but for that).
+  assert.deepEqual(fresh.problems, ['the PayPal webhook is off (PAYPAL_WEBHOOK_ID / PAYPAL_WEBHOOK_KEY)']);
+  assert.equal(fresh.notices.length, 1);
+  assert.ok(fresh.notices[0]!.includes(`POST /api/ops/readback/${m.body.id}`), fresh.notices[0]);
+  // Five minutes on, still unproven: a problem, no longer a notice.
+  clock.t += 5 * 60_000;
+  const status = await opsStatus();
+  assert.deepEqual(status.notices, []);
   assert.equal(status.ok, false);
   assert.ok(status.problems.some((p) => p.includes(`POST /api/ops/readback/${m.body.id}`)), status.problems.join('\n'));
   const path = `/api/ops/readback/${m.body.id}`;
@@ -938,4 +951,25 @@ test('ops: the status lists every held dispute with how to read it back; POST /a
   const after = (await (await app(req('/api/ops/status', { headers: { authorization: `Bearer ${OPS}` } }))).json()) as { holds: unknown[] };
   assert.deepEqual(after.holds, []);
   assert.equal((await app(req(path, { body: {}, headers: { authorization: `Bearer ${OPS}` } })).then(answerOf)).body.error, 'NOT_HELD');
+});
+
+test('ops: a hold whose intent is gone is a problem at once (never only a notice)', async () => {
+  const OPS = 'q'.repeat(20) + '0123456789abcdef';
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'rk-held-ops-'));
+  try {
+    const intentId = `int-${'f'.repeat(32)}`;
+    const e = { at: new Date().toISOString(), caseId: CASE, actor: 'p', disputeId: REAL, intentId, action: 'send_message', scope: 'action', stage: 'INQUIRY' };
+    writeFileSync(join(dir, 'audit-events-sends.jsonl'), `${JSON.stringify({ ...e, kind: 'send_started' })}\n`);
+    const intents = new IntentStore({ file: join(dir, 'intents.json'), eventsFile: join(dir, 'audit-events.jsonl') });
+    const { app } = setup({ intents, actions: true, opsToken: OPS });
+    const st = (await (await app(req('/api/ops/status', { headers: { authorization: `Bearer ${OPS}` } }))).json()) as { ok: boolean; problems: string[]; notices: string[] };
+    assert.equal(st.ok, false);
+    assert.deepEqual(st.notices, []);
+    assert.ok(st.problems.some((p) => p.includes(intentId) && p.includes('its intent is gone')), st.problems.join('\n'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
