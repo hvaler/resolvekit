@@ -141,6 +141,8 @@ async function simulatorReadBack(o: ActionSendOptions, base: ReadBackBase): Prom
   const snapshot = await o.gateway.getDispute(o.intent.caseId);
   if (!contract) return { kind: 'pending', detail: PENDING, snapshot, base };
   const r = proveSend(o.intent, base, snapshot, contract, (o.now?.() ?? new Date()).getTime());
+  // A proven send is recorded as the server records it: a later identical message is a repeat.
+  if (r.state === 'recorded') o.intents.proven?.(o.intent);
   return { kind: r.state, detail: r.state === 'recorded' ? recordedBy(o.mode) : r.state === 'pending' ? PENDING : 'The simulator shows no trace of this send and still offers the action', snapshot, base };
 }
 

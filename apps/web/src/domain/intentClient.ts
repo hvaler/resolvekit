@@ -5,7 +5,7 @@
  * ({@link LocalIntentClient}); nothing can reach real PayPal that way.
  */
 import type { ProofState } from './actionReadback';
-import { composeAction, confirmationTerms, sameTerms, type ActionRequest, type ConfirmationTerms } from './actions';
+import { composeAction, confirmationTerms, duplicateKey, sameTerms, type ActionRequest, type ConfirmationTerms } from './actions';
 import { contentHash, isComposeProblem, type IntentRequest, type SubmissionIntent } from './intent';
 import type { DisputeSnapshot, EvidenceSubmission, SentenceView } from './types';
 
@@ -93,6 +93,11 @@ export interface IntentSource {
   acknowledge(intent: SubmissionIntent, shownMessageKeys: readonly string[]): Promise<SubmissionIntent>;
   /** The server's read-back of an action's send; null without a server (the simulator reads back in the browser). */
   readBack(intent: SubmissionIntent): Promise<ActionReadBack | null>;
+  /**
+   * The simulator proved this action recorded (its read-back in this browser). Only {@link LocalIntentClient} keeps it:
+   * as the server's record of proven sends, it is what decides a repeated message. The server keeps its own.
+   */
+  proven?(intent: SubmissionIntent): void;
 }
 
 export class HttpIntentClient implements IntentSource {
@@ -207,14 +212,25 @@ export class LocalIntentClient implements IntentSource {
     return null;
   }
 
-  /** Which of this browser's action intents repeat a message the simulated dispute already shows. */
+  /** Which of this browser's action intents repeat a message this browser already sent and proved recorded. */
   private readonly repeats = new Map<string, boolean>();
+  /** The duplicate keys of the actions proven recorded on each simulated dispute (the server's recordedKeys). */
+  private readonly recorded = new Map<string, Set<string>>();
+
+  proven(intent: SubmissionIntent): void {
+    const key = duplicateKey(intent);
+    if (!key) return;
+    const keys = this.recorded.get(intent.caseId) ?? new Set<string>();
+    keys.add(key);
+    this.recorded.set(intent.caseId, keys);
+  }
 
   /**
    * Compose an action for the simulator with the same rules as the server, against `local.snapshot` (the dispute as
-   * the simulator was just read). A message repeats one when the simulated thread already has the seller's exact text
-   * (the simulator plays the inquiry stage only): the same second confirmation as the server's (REPEATS_MESSAGE). No
-   * uploads exist without a server.
+   * the simulator was just read). A message repeats one when this browser already sent the same message on the same
+   * stage and proved it recorded, exactly as the live server decides it from its proven sends (never from the thread:
+   * an offer's echoed note is not a message of ours): the same second confirmation (REPEATS_MESSAGE). No uploads exist
+   * without a server.
    */
   async createAction(caseId: string, req: ActionRequest, local: { snapshot: DisputeSnapshot | null }): Promise<ActionIntent> {
     const snap = local.snapshot;
@@ -238,7 +254,8 @@ export class LocalIntentClient implements IntentSource {
       reason: null,
     };
     const p = content.payload;
-    const repeat = p?.kind === 'send_message' && (snap.messages ?? []).some((m) => m.postedBy === 'SELLER' && m.content === p.text);
+    const key = duplicateKey(content);
+    const repeat = p?.kind === 'send_message' && !!key && (this.recorded.get(caseId)?.has(key) ?? false);
     this.repeats.set(id, repeat);
     return { ...intent, repeat };
   }

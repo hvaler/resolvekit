@@ -232,10 +232,28 @@ describe('the simulator plays the recorded offer (W-4)', () => {
       expect(later.messages!.filter((m) => m.postedBy === 'SELLER')).toHaveLength(1);
       expect(proveSend(i, r.base!, later, CONTRACTS['make_offer:REFUND'], clock.t).state).toBe('recorded');
     }
-    // A message with the note's exact text repeats one PayPal shows: it needs the REPEATS_MESSAGE confirmation.
+    // A message with the note's exact text is not a repeat: as on the live server, a repeat is decided only from the
+    // message sends recorded before, never from thread entries such as the offer's echoed note.
     const m = await intents.createAction('CASE-1', { action: 'send_message', text: w4.request.body.note, attachments: [] }, { snapshot: await g.getDispute('CASE-1') });
-    expect(m.repeat).toBe(true);
-    expect((await intents.approve(m)).confirmation).toMatchObject({ action: 'send_message', consequence: 'REPEATS_MESSAGE' });
+    expect(m.repeat).toBe(false);
+    const approvedMessage = await intents.approve(m);
+    expect(approvedMessage.confirmation).toBeNull();
+    // Its proof is the new message: the echo is older than send_started, so it is not this send's.
+    clock.t += 1_000;
+    const sent = await sendActionWithReadBack({ intent: approvedMessage, gateway: g, intents, mode: { kind: 'simulator' }, now: () => new Date(clock.t) });
+    expect(sent).toMatchObject({ kind: 'recorded' });
+    const sellers = sent.snapshot!.messages!.filter((x) => x.postedBy === 'SELLER');
+    expect(sellers.map((x) => [x.content, x.time])).toEqual([
+      [w4.request.body.note, new Date(T0).toISOString()],
+      [w4.request.body.note, new Date(clock.t).toISOString()],
+    ]);
+    const echoOnly = { ...sent.snapshot!, messages: sent.snapshot!.messages!.slice(0, -1) };
+    expect(proveSend(approvedMessage, sent.base!, echoOnly, CONTRACTS.send_message, clock.t).state).toBe('pending');
+    // Two message sends with the same text: the second needs REPEATS_MESSAGE (a recorded send of this browser).
+    clock.t += 1_000;
+    const again = await intents.createAction('CASE-1', { action: 'send_message', text: w4.request.body.note, attachments: [] }, { snapshot: await g.getDispute('CASE-1') });
+    expect(again.repeat).toBe(true);
+    expect((await intents.approve(again)).confirmation).toMatchObject({ action: 'send_message', consequence: 'REPEATS_MESSAGE' });
     // A second offer: PayPal no longer offers make_offer (the fresh read decides).
     const after = await g.getDispute('CASE-1');
     expect(composeAction({ caseId: 'CASE-1', req: offer('1.00'), snap: after, disputeId: null, seller: null, files: [] })).toMatchObject({ status: 409, error: 'ACTION_NOT_OFFERED' });
