@@ -14,6 +14,7 @@ import { AnalysisBar, analysisLabel } from '../components/AnalysisBar';
 import { AppBar } from '../components/AppBar';
 import { ActionComposer } from '../components/ActionComposer';
 import { ActionFlow } from '../components/ActionFlow';
+import { HeldSendNotice, useHeldSend } from '../components/HeldSend';
 import { ApproveFlow } from '../components/ApproveFlow';
 import { CaseHeader } from '../components/CaseHeader';
 import { ChecklistCard } from '../components/ChecklistCard';
@@ -166,6 +167,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const [message, setMessage] = useState('');
   /** The action being reviewed and sent (its flow is open), exactly as the server will compose it. */
   const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
+  // A send still holding the dispute (e.g. before a reload): found again from the server, read again when a flow closes.
+  const held = useHeldSend(id, source.kind === 'live', actionRequest);
   const viewer: Viewer = demoLock?.person ? { role: demoLock.person.role, reviewer: demoLock.person.reviewer } : { role: 'owner', reviewer: false };
   const readNow: DisputeSnapshot = snap ? { ...snap, allowedActions: [...allowed] } : { id, status, stage: demo.summary.stage, allowedActions: [...allowed], evidences: [], readAt: '' };
   const otherAction = d.action === 'provide_evidence' ? null : d.action;
@@ -343,6 +346,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                   onClose={() => setPdfReview(null)}
                 />
               ))}
+            <HeldSendNotice hold={held.hold} message={held.message} busy={held.busy} onCheck={() => void held.check()} />
             {c.notice && (
               <p
                 role="note"

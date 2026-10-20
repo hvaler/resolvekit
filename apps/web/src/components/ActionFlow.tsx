@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useServices } from '../app/services';
-import { checkAgain, sendActionWithReadBack, type ActionPhase, type ActionResult } from '../domain/actionSend';
+import { HOLDER_SETTLED, checkAgain, sendActionWithReadBack, type ActionPhase, type ActionResult } from '../domain/actionSend';
 import { actionTitle, consequenceText, type ActionRequest, type ConfirmationTerms } from '../domain/actions';
 import { formatMoney } from '../domain/amounts';
 import { outcomeText } from '../domain/inbox';
@@ -95,6 +95,8 @@ export interface ActionFlowViewProps {
   onConfirm: () => void;
   onCheckAgain: () => void;
   onSendAnyway: () => void;
+  /** The send that held the dispute is settled: send this (never sent) intent now, with every re-check. */
+  onSendNow?: () => void;
   onEdit: () => void;
   onClose: () => void;
   /** What the flow sends, in a few words (the header), before an intent exists. */
@@ -181,7 +183,10 @@ function escalationText(r: ActionResult): string {
 }
 
 /** The flow's screens, from its state alone (no effects): what each step shows and offers. */
-export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, onConfirm, onCheckAgain, onSendAnyway, onEdit, onClose, label }: ActionFlowViewProps) {
+/** Another send holds the dispute: this intent was not sent, and «Check again» reads back that send. */
+const heldByOther = (r: ActionResult, intent: SubmissionIntent) => !!r.holder && r.holder.id !== intent.id;
+
+export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, onConfirm, onCheckAgain, onSendAnyway, onSendNow, onEdit, onClose, label }: ActionFlowViewProps) {
   const idx = stepIndex(state);
   const closable = state.step !== 'sending';
   const intent = 'intent' in state ? state.intent : null;
@@ -275,7 +280,9 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
             >
               <strong className="text-[15px] font-semibold">{resultTitle(state.result, mode, state.intent)}</strong>
               <span className="text-body leading-normal">
-                {state.result.kind === 'pending'
+                {state.result.kind === 'pending' && heldByOther(state.result, state.intent)
+                  ? `An earlier send on this dispute (intent ${state.result.holder!.id.slice(0, 12)}…) is not confirmed by PayPal yet, so ${nounOf(state.intent)} was not sent. Nothing is sent on this dispute until a read-back proves that send recorded or absent; «Check again» reads it back.`
+                  : state.result.kind === 'pending'
                   ? `${state.result.detail}. Nothing more is sent on this dispute until a read-back proves ${nounOf(state.intent)} recorded or absent; it is never sent again blindly.`
                   : state.result.kind === 'recorded' && isOfferToBuyer(state.intent)
                     ? `${mode.kind === 'paypal' ? 'PayPal' : 'The simulator'} shows your ${isPartial(state.intent) ? 'partial refund offer' : 'refund offer'} to the buyer. Unless the buyer accepts it, no money moves and the dispute stays open.`
@@ -317,6 +324,11 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
           {state.step === 'result' && state.result.kind === 'pending' && (
             <Button variant="primary" disabled={busy} onClick={onCheckAgain}>
               Check again
+            </Button>
+          )}
+          {state.step === 'result' && state.result.refusal?.code === HOLDER_SETTLED && onSendNow && (
+            <Button variant="primary" disabled={busy} onClick={onSendNow}>
+              Send it now
             </Button>
           )}
           {state.step === 'result' && <Button onClick={onClose}>Close</Button>}
@@ -426,8 +438,23 @@ export class ActionFlowController {
   async checkAgain(): Promise<void> {
     const s = this.state;
     if (s.step !== 'result') return;
-    const r = await checkAgain({ intent: s.intent, gateway: this.d.gateway, intents: this.d.source, mode: this.d.mode, base: s.result.base, ...(this.d.now ? { now: this.d.now } : {}) });
+    const r = await checkAgain({
+      intent: s.intent,
+      gateway: this.d.gateway,
+      intents: this.d.source,
+      mode: this.d.mode,
+      base: s.result.base,
+      ...(s.result.holder ? { holder: s.result.holder } : {}),
+      ...(this.d.now ? { now: this.d.now } : {}),
+    });
     this.finish(s.intent, r);
+  }
+
+  /** The send that held the dispute is settled and this intent was never sent: send it now (the server re-checks all). */
+  async sendNow(): Promise<void> {
+    const s = this.state;
+    if (s.step !== 'result' || s.result.refusal?.code !== HOLDER_SETTLED) return;
+    await this.send(s.intent);
   }
 }
 
@@ -500,6 +527,7 @@ export function ActionFlow({ caseId, request, onClose, onEdit, onRecorded }: { c
       onConfirm={step(() => flow.confirm())}
       onCheckAgain={step(() => flow.checkAgain())}
       onSendAnyway={step(() => flow.sendAnyway())}
+      onSendNow={step(() => flow.sendNow())}
       onEdit={onEdit}
       onClose={onClose}
       label={actionTitle(request)}

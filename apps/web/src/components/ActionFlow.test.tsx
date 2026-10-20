@@ -579,3 +579,64 @@ describe('PayPal asks only for PROOF_OF_REFUND (Task 12 review)', () => {
     expect(footerButton(h)).not.toContain('disabled');
   });
 });
+
+describe('a dispute held by another send (IMP2): check again reads THAT send; never «Nothing was sent»', () => {
+  const HOLDER = `int-${'h'.repeat(32)}`;
+  const fakeFetch = () => {
+    const calls: string[] = [];
+    const replies: Array<[number, unknown]> = [];
+    const fetch = (async (url: string | URL, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? 'GET'} ${String(url)}${init.body ? ` ${String(init.body)}` : ''}`);
+      const [status, body] = replies.shift() ?? [500, {}];
+      return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    }) as typeof globalThis.fetch;
+    return { calls, replies, fetch };
+  };
+
+  const deps = (o: Pick<ActionFlowDeps, 'source' | 'gateway' | 'mode'>) => ({
+    d: { caseId: 'CASE-1', request: { action: 'send_message' as const, text: TEXT, attachments: [] }, onState: noop, audit: noop, applySnapshot: noop, ...o } satisfies ActionFlowDeps,
+  });
+
+  it('refused DISPUTE_UNCERTAIN → pending about the holder → check again on the holder → settled → send it now', async () => {
+    const { calls, replies, fetch } = fakeFetch();
+    const live = { ...snap, origin: { kind: 'paypal' as const, env: 'sandbox' as const, disputeId: 'PP-R-1' } };
+    replies.push(
+      [201, { ...intent, status: 'proposed', repeat: false }],
+      [200, { ...intent, confirmation: null }],
+      [409, { error: 'DISPUTE_UNCERTAIN', detail: 'The last send to this dispute is not confirmed by PayPal yet', holder: { intentId: HOLDER, caseId: 'CASE-1' } }],
+      // Check again: still pending, then recorded.
+      [200, { readBack: { state: 'pending', detail: 'Outcome pending confirmation', at: 'a' }, snapshot: live, hold: { intentId: HOLDER } }],
+      [200, { readBack: { state: 'recorded', detail: 'Recorded by PayPal', at: 'b' }, snapshot: live, hold: null }],
+      // Send it now: sent and read back.
+      [202, { sent: true, intent }],
+      [200, { readBack: { state: 'recorded', detail: 'Recorded by PayPal', at: 'c' }, snapshot: live }],
+    );
+    const t = deps({ source: new HttpIntentClient({ fetch }), gateway: new HttpDisputeGateway({ fetch }), mode: paypal });
+    const f = new ActionFlowController(t.d);
+    await f.start();
+    await f.approve();
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'pending', holder: { id: HOLDER, caseId: 'CASE-1' } } });
+    // The view: about the earlier send, never «Nothing was sent to PayPal».
+    const pendingHtml = view(f.state);
+    expect(pendingHtml).toContain('An earlier send on this dispute');
+    expect(pendingHtml).toContain('Check again');
+    expect(pendingHtml).not.toContain('Nothing was sent to PayPal');
+    await f.checkAgain();
+    expect(calls[3]).toBe(`POST /api/disputes/CASE-1/intent/${HOLDER}/readback {}`);
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'pending', holder: { id: HOLDER } } });
+    await f.checkAgain();
+    expect(calls[4]).toBe(`POST /api/disputes/CASE-1/intent/${HOLDER}/readback {}`);
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'not_sent', refusal: { code: 'HOLDER_SETTLED' } } });
+    const settled = renderToString(
+      <ActionFlowView state={f.state} mode={paypal} caseId="CASE-1" busy={false} onApprove={noop} onConfirm={noop} onCheckAgain={noop} onSendAnyway={noop} onSendNow={noop} onEdit={noop} onClose={noop} />,
+    );
+    expect(settled).toContain('The earlier send on this dispute is settled (PayPal recorded it)');
+    expect(settled).toContain('Send it now');
+    expect(settled).not.toContain('Nothing was sent to PayPal');
+    // The person's own intent was never read back as «not sent»: no call to its read-back before it was sent.
+    expect(calls.filter((c) => c.includes(`/intent/${intent.id}/readback`))).toEqual([]);
+    await f.sendNow();
+    expect(calls[5]).toBe('POST /api/disputes/CASE-1/send {"intentId":"int-1"}');
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'recorded' } });
+  });
+});

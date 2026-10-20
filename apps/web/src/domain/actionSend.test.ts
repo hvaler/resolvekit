@@ -400,7 +400,7 @@ describe('sendActionWithReadBack', () => {
     const r = await sendActionWithReadBack({ intent: i, gateway, intents, mode });
     expect(r).toMatchObject({ kind: 'pending', detail: 'Outcome pending confirmation' });
     expect(calls[0]).toBe(`POST /api/disputes/CASE-1/send {"intentId":"int-1"}`);
-    expect(calls[1]).toBe('GET /api/disputes/CASE-1/intent/int-1/readback');
+    expect(calls[1]).toBe('POST /api/disputes/CASE-1/intent/int-1/readback {}');
     replies.push([200, { readBack: { state: 'recorded', detail: 'Recorded by PayPal', at: 'y' }, snapshot: snap }]);
     expect(await checkAgain({ intent: i, gateway, intents, mode, base: r.base })).toMatchObject({ kind: 'recorded', detail: 'Recorded by PayPal' });
     // Refusals before PayPal: not sent, with what the person needs to go on.
@@ -426,7 +426,7 @@ describe('sendActionWithReadBack', () => {
       const before = calls.length;
       replies.push([status, body], [200, { readBack: { state: 'pending', detail: 'Outcome pending confirmation', at: 'p' }, snapshot: snap }]);
       expect(await sendActionWithReadBack({ intent: i, gateway, intents, mode }), String(status)).toMatchObject({ kind: 'pending' });
-      expect(calls[before + 1]).toBe('GET /api/disputes/CASE-1/intent/int-1/readback');
+      expect(calls[before + 1]).toBe('POST /api/disputes/CASE-1/intent/int-1/readback {}');
     }
     // Definite refusals before PayPal (a cap, a stale intent, PayPal's own refusal with its issue): not sent.
     for (const [status, error] of [

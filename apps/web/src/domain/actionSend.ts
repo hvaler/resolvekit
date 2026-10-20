@@ -1,6 +1,6 @@
 /**
  * Send an approved action intent and say only what a read-back proves ([A4]). Real PayPal: the server sends it once
- * (`POST /send`) and reads it back (`GET …/readback`, with the proof of actionReadback.ts). The simulator: this browser
+ * (`POST /send`) and reads it back (`POST …/readback`, which only reads PayPal, with the proof of actionReadback.ts). The simulator: this browser
  * reads the simulated dispute before and after, with the same matcher. «Recorded» needs an entry attributable to this
  * send; anything else is «Outcome pending confirmation» (checked again, never resent blindly) or, when nothing reached
  * PayPal, «Not sent».
@@ -11,7 +11,7 @@ import type { ConfirmationTerms, ContractRegistry } from './actions';
 import { GatewayTimeoutError, type DisputeGateway } from './gateway';
 import { GatewayRequestError, type GatewayMode } from './httpGateway';
 import type { SubmissionIntent } from './intent';
-import { IntentError, type IntentSource } from './intentClient';
+import { IntentError, type IntentRef, type IntentSource } from './intentClient';
 import type { DisputeMessage, DisputeSnapshot } from './types';
 
 export type ActionPhase = 'reading' | 'sending' | 'rereading';
@@ -33,6 +33,11 @@ export interface ActionResult {
   /** The simulator's read-back base (the read before the send); null for real PayPal, whose server keeps its own. */
   base: ReadBackBase | null;
   refusal?: ActionRefusal;
+  /**
+   * Another send holds the dispute (409 DISPUTE_UNCERTAIN names it): this one was not sent, and «Check again» reads back
+   * THAT send, never this one.
+   */
+  holder?: IntentRef;
 }
 
 export interface ActionSendOptions {
@@ -109,7 +114,11 @@ function refusalOf(e: unknown): ActionResult | null {
   if (!(e instanceof GatewayRequestError)) return null;
   const b = e.body;
   // An uncertain dispute is never «not sent»: an earlier send is not proven yet.
-  if (e.code === 'DISPUTE_UNCERTAIN') return { kind: 'pending', detail: typeof b.detail === 'string' ? b.detail : PENDING, snapshot: null, base: null };
+  if (e.code === 'DISPUTE_UNCERTAIN') {
+    const h = b.holder as { intentId?: unknown; caseId?: unknown } | undefined;
+    const holder = h && typeof h.intentId === 'string' && typeof h.caseId === 'string' ? { id: h.intentId, caseId: h.caseId } : undefined;
+    return { kind: 'pending', detail: typeof b.detail === 'string' ? b.detail : PENDING, snapshot: null, base: null, ...(holder ? { holder } : {}) };
+  }
   const definite = e.status >= 400 && e.status < 500 && (NOT_SENT_CODES.has(e.code) || (e.code === 'PAYPAL_REFUSED' && e.status === 422));
   if (!definite) return null;
   const refusal: ActionRefusal = { code: e.code };
@@ -121,10 +130,10 @@ function refusalOf(e: unknown): ActionResult | null {
   return { kind: 'not_sent', detail: e.message, snapshot: null, base: null, refusal };
 }
 
-/** Real PayPal: what the server's read-back proves now. */
-async function serverReadBack(o: ActionSendOptions, fallback: string): Promise<ActionResult> {
+/** Real PayPal: what the server's read-back proves now (of `ref`, this intent by default). */
+async function serverReadBack(o: ActionSendOptions, fallback: string, ref: IntentRef = o.intent): Promise<ActionResult> {
   try {
-    const r = await o.intents.readBack(o.intent);
+    const r = await o.intents.readBack(ref);
     if (!r) return { kind: 'pending', detail: fallback, snapshot: null, base: null };
     const state = r.readBack.state;
     return { kind: state, detail: state === 'recorded' ? recordedBy(o.mode) : r.readBack.detail, snapshot: r.snapshot, base: null };
@@ -185,8 +194,30 @@ export async function sendActionWithReadBack(o: ActionSendOptions): Promise<Acti
   return simulatorReadBack(o, base);
 }
 
-/** «Check again»: read back only, never send. */
-export async function checkAgain(o: ActionSendOptions & { base: ReadBackBase | null }): Promise<ActionResult> {
+/** The words for a holder's send that is settled, while this intent was refused because of it. */
+export const HOLDER_SETTLED = 'HOLDER_SETTLED';
+
+/**
+ * «Check again» on the send holding the dispute (another intent): read it back only. Still unproven: pending, about
+ * that send. Settled (recorded or absent): the dispute is free and THIS intent was never sent — said so, and it may be
+ * sent now (its own send re-checks everything).
+ */
+async function holderReadBack(o: ActionSendOptions, holder: IntentRef): Promise<ActionResult> {
+  const r = await serverReadBack(o, PENDING, holder);
+  if (r.kind === 'pending') return { ...r, holder };
+  const what = r.kind === 'recorded' ? 'PayPal recorded it' : r.kind === 'absent' ? 'PayPal shows no trace of it' : 'it is not held any more';
+  return {
+    kind: 'not_sent',
+    detail: `The earlier send on this dispute is settled (${what}). Yours was not sent: it waited for that send. Send it now; it is checked again against PayPal first.`,
+    snapshot: r.snapshot,
+    base: null,
+    refusal: { code: HOLDER_SETTLED },
+  };
+}
+
+/** «Check again»: read back only, never send. With `holder`, the send holding the dispute is the one read back. */
+export async function checkAgain(o: ActionSendOptions & { base: ReadBackBase | null; holder?: IntentRef }): Promise<ActionResult> {
+  if (o.mode.kind === 'paypal' && o.holder && o.holder.id !== o.intent.id) return holderReadBack(o, o.holder);
   if (o.mode.kind === 'paypal') return serverReadBack(o, PENDING);
   if (!o.base) return { kind: 'pending', detail: PENDING, snapshot: null, base: null };
   return simulatorReadBack(o, o.base);

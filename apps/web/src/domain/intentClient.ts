@@ -17,7 +17,26 @@ export type ApprovedIntent = SubmissionIntent & { confirmation?: ConfirmationTer
 export interface ActionReadBack {
   readBack: { state: ProofState; detail: string; at?: string };
   snapshot: DisputeSnapshot | null;
+  /** What holds the dispute after this read-back (null: nothing; absent: the server did not say). */
+  hold?: DisputeHoldView | null;
 }
+
+/** The send holding a case's dispute (GET /api/disputes/:case/hold): no content, only what «Check again» needs. */
+export interface DisputeHoldView {
+  disputeId: string;
+  intentId: string;
+  caseId: string;
+  since: string;
+  state: 'in_flight' | 'uncertain';
+  action: string | null;
+  /** False: the server no longer has the intent (its intents file was lost); a read-back cannot settle it. */
+  intentKnown: boolean;
+  /** It is this person's own send. */
+  own: boolean;
+}
+
+/** An intent a read-back is about: its case and id (the send holding a dispute may be a colleague's). */
+export type IntentRef = Pick<SubmissionIntent, 'caseId' | 'id'>;
 
 /** One event of the server's audit log (apps/server/src/intents.ts). */
 export interface ServerAuditEvent {
@@ -91,8 +110,13 @@ export interface IntentSource {
   confirm(intent: SubmissionIntent, terms: ConfirmationTerms): Promise<SubmissionIntent>;
   /** The person saw the new buyer messages NEEDS_REVIEW showed (their keys); the same content goes on ([A5]). */
   acknowledge(intent: SubmissionIntent, shownMessageKeys: readonly string[]): Promise<SubmissionIntent>;
-  /** The server's read-back of an action's send; null without a server (the simulator reads back in the browser). */
-  readBack(intent: SubmissionIntent): Promise<ActionReadBack | null>;
+  /**
+   * The server's read-back of an action's send (a POST that only reads PayPal); null without a server (the simulator
+   * reads back in the browser). `intent` may be a colleague's send that holds the dispute.
+   */
+  readBack(intent: IntentRef): Promise<ActionReadBack | null>;
+  /** The send holding the case's dispute, if any (a reloaded page offers «Check again» on it); null without a server. */
+  hold(caseId: string): Promise<DisputeHoldView | null>;
   /**
    * The simulator proved this action recorded (its read-back in this browser). Only {@link LocalIntentClient} keeps it:
    * as the server's record of proven sends, it is what decides a repeated message. The server keeps its own.
@@ -137,7 +161,7 @@ export class HttpIntentClient implements IntentSource {
     return this.call(`/disputes/${encodeURIComponent(caseId)}/intent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req) });
   }
 
-  private intentPath(i: SubmissionIntent, step: string): string {
+  private intentPath(i: IntentRef, step: string): string {
     return `/disputes/${encodeURIComponent(i.caseId)}/intent/${encodeURIComponent(i.id)}/${step}`;
   }
 
@@ -153,8 +177,12 @@ export class HttpIntentClient implements IntentSource {
     });
   }
 
-  readBack(intent: SubmissionIntent): Promise<ActionReadBack> {
-    return this.call(this.intentPath(intent, 'readback'), { method: 'GET' });
+  readBack(intent: IntentRef): Promise<ActionReadBack> {
+    return this.call(this.intentPath(intent, 'readback'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  }
+
+  async hold(caseId: string): Promise<DisputeHoldView | null> {
+    return (await this.call<{ hold: DisputeHoldView | null }>(`/disputes/${encodeURIComponent(caseId)}/hold`, { method: 'GET' })).hold ?? null;
   }
 
   async events(caseId: string): Promise<ServerAuditEvent[] | null> {
@@ -270,6 +298,10 @@ export class LocalIntentClient implements IntentSource {
   /** The simulated buyer never writes, so there is never anything new to acknowledge. */
   async acknowledge(intent: SubmissionIntent): Promise<SubmissionIntent> {
     return intent;
+  }
+
+  async hold(): Promise<null> {
+    return null;
   }
 
   async readBack(): Promise<null> {
