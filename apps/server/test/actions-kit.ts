@@ -138,7 +138,6 @@ export interface Intent {
 
 const post = (path: string, body: unknown) =>
   new Request(BASE + path, { method: 'POST', headers: { [TOKEN_HEADER]: TOKEN, 'content-type': 'application/json', origin: 'http://127.0.0.1:4173' }, body: JSON.stringify(body) });
-const get = (path: string) => new Request(BASE + path, { headers: { [TOKEN_HEADER]: TOKEN } });
 export const intentPath = `/api/disputes/${CASE}/intent`;
 export const sendPath = `/api/disputes/${CASE}/send`;
 export const evidencePath = `/api/disputes/${CASE}/evidence`;
@@ -157,5 +156,6 @@ export const confirm = async (app: App, i: Intent, terms: unknown) => answer(awa
 export const acknowledge = async (app: App, i: Intent, shownMessageKeys: string[] = [], hash = i.contentHash) =>
   answer(await app(post(`${intentPath}/${i.id}/acknowledge`, { contentHash: hash, shownMessageKeys })));
 export const send = async (app: App, i: Intent) => answer(await app(post(sendPath, { intentId: i.id })));
-export const readBack = async (app: App, i: Intent) => answer(await app(get(`${intentPath}/${i.id}/readback`)));
+/** «Check again»: a POST (it records what PayPal proves), never a send. */
+export const readBack = async (app: App, i: Intent) => answer(await app(post(`${intentPath}/${i.id}/readback`, {})));
 export const postRaw = post;

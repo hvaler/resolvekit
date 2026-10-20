@@ -22,7 +22,7 @@ import { evidenceAfterEscalationRefusal, hasSellerEvidence, sellerEvidence, sell
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
 import { toBinding, verifyBinding, type Binding, type BindingState } from './bindings.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
-import { IntentStore, publicIntent, requestAttachments, type StoredIntent } from './intents.ts';
+import { IntentStore, publicIntent, requestAttachments, type DisputeHold, type StoredIntent } from './intents.ts';
 import { intentAction, isActionRequest, isSimpleAction, type ContractRegistry, type RulesOf, type SimpleAction } from '../../web/src/domain/actions.ts';
 import { CONTRACTS } from '../../web/src/domain/actionContracts.ts';
 import { createActionRoutes } from './actions/routes.ts';
@@ -290,6 +290,11 @@ export type Api = Handler & {
   intents: IntentStore;
   /** For the operator's check (hosted /api/ops/status): PayPal's state and each binding verified on a fresh read now. */
   opsReport: () => Promise<OpsReport>;
+  /**
+   * The operator's read-back of the send holding a dispute (hosted POST /api/ops/readback/:id, behind the ops token):
+   * reads PayPal and records what it proves; never POSTs to PayPal.
+   */
+  opsReadBack: (intentId: string) => Promise<Response>;
   /** The person acting on a request (see {@link ActingPerson}); null when signed out. */
   personOf: (req: Request) => ActingPerson | null;
 };
@@ -316,6 +321,8 @@ export interface OpsReport {
       held: { intentId: string; since: string } | null;
     }
   >;
+  /** Every dispute held by a send in flight or unproven (reserves included), and whether its intent is still known. */
+  holds: DisputeHold[];
 }
 
 /** sha256 hex of a string. */
@@ -1035,7 +1042,7 @@ export function createApi(opts: ApiOptions): Api {
     }
     // One send at a time: of two concurrent confirmations, exactly one gets past this synchronous transition.
     const claim = intents.beginSend(intentId, caseId, who.actor);
-    if (!claim.ok) return json(claim.status, { error: claim.error, detail: claim.detail, ...(claim.intent ? { intent: publicIntent(claim.intent) } : {}) });
+    if (!claim.ok) return json(claim.status, { error: claim.error, detail: claim.detail, ...(claim.intent ? { intent: publicIntent(claim.intent) } : {}), ...(claim.holder ? { holder: claim.holder } : {}) });
     const intent = claim.intent;
     const refuse = (res: Response, why: string, invalidate: boolean): Response => {
       if (invalidate) intents.invalidate(intentId, why, who.actor);
@@ -1314,7 +1321,7 @@ export function createApi(opts: ApiOptions): Api {
     if (up) return up;
     const ag = await agentRoutes(req, url);
     if (ag) return ag;
-    const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|send|intent|audit)(?:\/(int-[0-9a-f]{32})(\/approve|\/cancel|\/confirm|\/acknowledge|\/readback)?)?)?$/.exec(path);
+    const m = /^\/api\/disputes\/([A-Za-z0-9-]{1,64})(?:\/(evidence|send|intent|audit|hold)(?:\/(int-[0-9a-f]{32})(\/approve|\/cancel|\/confirm|\/acknowledge|\/readback)?)?)?$/.exec(path);
     if (!m) return json(404, { error: 'NOT_FOUND' });
     const caseId = m[1]!;
     const sub = m[2];
@@ -1333,7 +1340,8 @@ export function createApi(opts: ApiOptions): Api {
       if (m[4] === '/approve') return req.method === 'POST' ? approveIntent(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
       if (m[4] === '/confirm') return req.method === 'POST' ? actions.confirm(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
       if (m[4] === '/acknowledge') return req.method === 'POST' ? actions.acknowledge(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
-      if (m[4] === '/readback') return req.method === 'GET' ? actions.readBack(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+      // A read-back records what PayPal proves (it may release a held dispute): a POST, though it never POSTs to PayPal.
+      if (m[4] === '/readback') return req.method === 'POST' ? actions.readBack(req, caseId, intentId!) : json(405, { error: 'METHOD_NOT_ALLOWED' });
       // Reads, cancels and the audit trail: the session's own (hosted: needs the demo unlock).
       const who = actorOf(req, true);
       if (!who.ok) return json(who.refusal.status, who.refusal.body);
@@ -1352,6 +1360,8 @@ export function createApi(opts: ApiOptions): Api {
       return i && i.caseId === caseId ? json(200, publicIntent(i)) : json(404, { error: 'UNKNOWN_INTENT' });
     }
     if (intentId) return json(404, { error: 'NOT_FOUND' });
+    // The send holding the case's dispute (no PayPal read): a reloaded case page finds it and offers «Check again».
+    if (sub === 'hold') return req.method === 'GET' ? actions.hold(req, caseId, bindingOf(caseId)?.dispute ?? null) : json(405, { error: 'METHOD_NOT_ALLOWED' });
 
     const disputeId = bindingOf(caseId)?.dispute;
     if (!disputeId) return json(404, { error: 'NOT_BOUND', detail: `Case ${caseId} is not bound to a PayPal dispute` });
@@ -1389,6 +1399,7 @@ export function createApi(opts: ApiOptions): Api {
     paypalNotified,
     intents,
     opsReport,
+    opsReadBack: (intentId: string) => actions.opsReadBack(intentId),
     personOf,
   });
 
@@ -1420,7 +1431,7 @@ export function createApi(opts: ApiOptions): Api {
         held: intents.holdOf(active.dispute),
       };
     }
-    return { ...h, bindings, storage: storageProblems().map((p) => p.problem) };
+    return { ...h, bindings, storage: storageProblems().map((p) => p.problem), holds: intents.allHolds() };
   }
 }
 

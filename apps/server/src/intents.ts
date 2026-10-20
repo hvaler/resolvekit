@@ -172,6 +172,25 @@ export interface Refused {
   /** For 429: when to try again. */
   retryAfterSec?: number;
   intent?: StoredIntent;
+  /** DISPUTE_UNCERTAIN: the send holding the dispute (its intent and case), the one «Check again» reads back. */
+  holder?: { intentId: string; caseId: string };
+}
+
+/** What holds a dispute, as the case page and the operator see it (no content, no text). */
+export interface DisputeHold {
+  disputeId: string;
+  intentId: string;
+  caseId: string;
+  since: string;
+  /** in_flight: its POST has not answered yet; uncertain: sent (or maybe sent), not proven recorded or absent. */
+  state: 'in_flight' | 'uncertain';
+  /** The holding intent's action, from the intent or else the send log; null when neither says. */
+  action: IntentAction | null;
+  /**
+   * Whether this server still has the intent (its approved content and read-back base). False when intents.json was
+   * lost or unreadable and the hold comes from the send log alone: a read-back cannot prove it recorded or absent.
+   */
+  intentKnown: boolean;
 }
 export type Transition = { ok: true; intent: StoredIntent; previous: IntentStatus } | Refused;
 
@@ -180,7 +199,8 @@ const SEND_KINDS: readonly AuditKind[] = ['send_started', 'sent', 'send_failed',
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 /** The evidence memory's key: per (dispute, stage); without a known stage, the whole dispute (as before stages). */
 const evidenceKey = (disputeId: string, stage: string | null | undefined) => (typeof stage === 'string' && stage ? `${disputeId}|${stage}` : disputeId);
-const isActionIntent = (i: StoredIntent) => intentAction(i) !== 'provide_evidence';
+/** Whether the intent is an action (not evidence): the one test, for the store and the action routes. */
+export const isActionIntent = (i: Pick<StoredIntent, 'action'>) => intentAction(i as StoredIntent) !== 'provide_evidence';
 /** The lock scope of a send-log event: written ones say it; one written before actions is evidence. */
 const eventScope = (e: AuditEvent): 'evidence' | 'action' =>
   e.scope ?? (e.kind === 'send_uncertain' || e.kind === 'read_back' ? 'action' : !e.action || e.action === 'provide_evidence' ? 'evidence' : 'action');
@@ -677,6 +697,39 @@ export class IntentStore {
     return f ? { intentId: f.intentId, since: f.since } : this.isUncertain(disputeId);
   }
 
+  /** What holds the dispute, with its case and whether this server still has the intent; null: nothing. */
+  holdInfo(disputeId: string): DisputeHold | null {
+    const f = this.inFlight.get(disputeId);
+    if (f) {
+      const i = this.intents.get(f.intentId) ?? null;
+      return { disputeId, intentId: f.intentId, caseId: i?.caseId ?? '', since: f.since, state: 'in_flight', action: i ? intentAction(i) : null, intentKnown: !!i };
+    }
+    const h = this.uncertain.get(disputeId);
+    if (!h) return null;
+    const i = this.intents.get(h.intentId) ?? this.tombstones.get(h.intentId) ?? null;
+    return { disputeId, intentId: h.intentId, caseId: h.caseId, since: h.since, state: 'uncertain', action: i ? intentAction(i) : this.loggedAction(h.intentId), intentKnown: !!i };
+  }
+
+  /** Every dispute held by an unproven or in-flight send (the operator's check lists them all, reserves included). */
+  allHolds(): DisputeHold[] {
+    const ids = new Set([...this.inFlight.keys(), ...this.uncertain.keys()]);
+    return [...ids].map((d) => this.holdInfo(d)!).filter(Boolean);
+  }
+
+  /** The hold this intent is, if it holds a dispute (in flight or uncertain); null otherwise. */
+  holdOfIntent(intentId: string): DisputeHold | null {
+    for (const [d, f] of this.inFlight) if (f.intentId === intentId) return this.holdInfo(d);
+    for (const [d, h] of this.uncertain) if (h.intentId === intentId) return this.holdInfo(d);
+    return null;
+  }
+
+  /** The action the send log names for an intent (its latest send event that says one). */
+  private loggedAction(intentId: string): IntentAction | null {
+    let a: IntentAction | null = null;
+    for (const e of this.sendLog) if (e.intentId === intentId && e.action) a = e.action;
+    return a;
+  }
+
   /** Whether the dispute is in flight or uncertain (rotation never moves a case off it). */
   held(disputeId: string): boolean {
     return this.inFlight.has(disputeId) || this.uncertain.has(disputeId);
@@ -827,7 +880,14 @@ export class IntentStore {
       // action route's reconcile (`reconcile`) lets the holding intent through: it reads PayPal back before any POST.
       const hold = this.uncertain.get(i.disputeId);
       if (hold && !(opts.reconcile && hold.intentId === id)) {
-        return { ok: false, status: 409, error: 'DISPUTE_UNCERTAIN', detail: 'The last send to this dispute is not confirmed by PayPal yet; check it again before anything else is sent', intent: i };
+        return {
+          ok: false,
+          status: 409,
+          error: 'DISPUTE_UNCERTAIN',
+          detail: 'The last send to this dispute is not confirmed by PayPal yet; check it again before anything else is sent',
+          intent: i,
+          holder: { intentId: hold.intentId, caseId: hold.caseId },
+        };
       }
       // Evidence: the whole-dispute memory (entries without a stage). The per-stage check is the route's, on the
       // stage it has just read from PayPal (evidenceSentIn). Actions: PayPal's fresh read decides.

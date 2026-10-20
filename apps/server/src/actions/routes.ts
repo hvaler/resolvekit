@@ -6,7 +6,13 @@
  *   POST /api/disputes/:case/intent/:id/confirm {terms}         → 200 when the terms are exactly this intent's ([A3])
  *   POST /api/disputes/:case/intent/:id/acknowledge {contentHash} → 200: new buyer messages seen, same content ([A5])
  *   POST /api/disputes/:case/send {intentId}                    → 202 sent (or 'unknown'), or 200 reconciled
- *   GET  /api/disputes/:case/intent/:id/readback                → 200 { readBack, snapshot }: what PayPal proves ([A4])
+ *   POST /api/disputes/:case/intent/:id/readback                → 200 { readBack, snapshot, hold }: what PayPal proves ([A4])
+ *   GET  /api/disputes/:case/hold                               → 200 { hold }: the send holding the case's dispute, if any
+ *   POST /api/ops/readback/:id (hosted, the operator's token)    → the same read-back of a held send, for the operator
+ *
+ * A read-back only reads: it never POSTs to PayPal. Anyone of the seller's workspace may read back the send that holds
+ * a dispute of the case (a reviewer's held message is released by the owner's «Check again», and the other way round);
+ * a 409 DISPUTE_UNCERTAIN names that send (`holder`: its intent and case).
  *
  * What can be done is always rebuilt from a fresh PayPal read; local state only prevents duplicates and conflicting
  * writes ([A1]). The role is checked at compose, approve, confirm and send: hidden buttons are not a control.
@@ -37,7 +43,7 @@ import { proveSend, readBackBase, type ReadBackBase } from '../../../web/src/dom
 import { contentHash, isComposeProblem } from '../../../web/src/domain/intent.ts';
 import type { DisputeMessage, DisputeSnapshot, SubmissionFile } from '../../../web/src/domain/types.ts';
 import type { ActingPerson, Actor, CaseState, CostlyAction, Reservation } from '../app.ts';
-import { publicIntent, type IntentStore, type StoredIntent } from '../intents.ts';
+import { isActionIntent, publicIntent, type DisputeHold, type IntentStore, type Refused, type StoredIntent } from '../intents.ts';
 import { callPayPal, capOf, contractOf, isAmbiguous, issueOf, sendProblem } from './calls.ts';
 
 export interface ActionRouteDeps {
@@ -71,13 +77,15 @@ const json = (status: number, body: unknown) =>
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const HASH = /^[0-9a-f]{64}$/;
 const PENDING = 'Outcome pending confirmation';
+/** A hold whose intent this server no longer has (intents.json lost or unreadable; the hold is from the send log). */
+const CONTENT_GONE =
+  'Outcome pending confirmation: this server no longer has the approved content of this send (its intents file was lost or could not be read), so PayPal’s read cannot prove it recorded or absent; the operator runbook says what to do';
 const OWNER_ONLY = 'Only the workspace owner can do this action: it moves money or changes the dispute at PayPal';
 const UNKNOWN_INTENT = { error: 'UNKNOWN_INTENT', detail: 'No such submission intent for this case and session' };
 
 const sellerOf = (d: Dispute | null): string | null => d?.disputed_transactions?.[0]?.seller?.merchant_id ?? null;
 /** The buyer messages of a read, by key (no text): what an approval is held against ([A5]). */
 const buyerKeys = (s: DisputeSnapshot): string[] => (s.messages ?? []).filter((m) => m.postedBy === 'BUYER').map(messageKey);
-const isActionIntent = (i: StoredIntent) => intentAction(i) !== 'provide_evidence';
 
 const isTimeout = (e: unknown) => e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
 /** A short reason for the trail: codes and PayPal's debug_id, never message text. */
@@ -108,6 +116,10 @@ export interface ActionRoutes {
   acknowledge: (req: Request, caseId: string, intentId: string) => Promise<Response>;
   send: (req: Request, caseId: string, boundId: string) => Promise<Response>;
   readBack: (req: Request, caseId: string, intentId: string) => Promise<Response>;
+  /** The operator's read-back of a held send (hosted ops route, behind the ops token): no person, never a POST. */
+  opsReadBack: (intentId: string) => Promise<Response>;
+  /** GET …/hold: the send holding the case's dispute (in flight or unproven), so a reloaded page can check it again. */
+  hold: (req: Request, caseId: string, disputeId: string | null) => Response;
   /** 403 OWNER_ONLY unless the person is the workspace owner (not a reviewer), for owner-only actions. */
   ownerRefusal: (req: Request, action: IntentAction) => Response | null;
   /** The second-confirmation terms of an intent now (a message repeats one PayPal recorded: REPEATS_MESSAGE). */
@@ -277,7 +289,7 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
 
     // 2. In flight and uncertain: the holder of an uncertain dispute may go on only to be reconciled first.
     let claim = intents.beginSend(intentId, caseId, who.actor, { reconcile: true });
-    if (!claim.ok) return json(claim.status, { error: claim.error, detail: claim.detail, ...(claim.intent ? { intent: publicIntent(claim.intent) } : {}) });
+    if (!claim.ok) return claimRefusal(claim);
     const intent = claim.intent;
     const reconciling = intents.isUncertain(boundId)?.intentId === intentId;
     const refuse = (res: Response, why: string, invalidate: boolean): Response => {
@@ -326,11 +338,16 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
           // A pending read-back holds the dispute whatever the disk says (fail-closed); an absence not recorded durably
           // changed nothing: still held.
           intents.record({ caseId, kind: 'send_refused', actor: who.actor, disputeId: boundId, intentId, contentHash: intent.contentHash, requestId: intent.requestId, detail: 'outcome still unproven' });
-          return json(409, { error: 'DISPUTE_UNCERTAIN', detail: `${PENDING}: PayPal does not show this send yet, and does not prove it absent; nothing was sent again`, intent: publicIntent(intents.get(intentId, who.actor)!) });
+          return json(409, {
+            error: 'DISPUTE_UNCERTAIN',
+            detail: `${PENDING}: PayPal does not show this send yet, and does not prove it absent; nothing was sent again`,
+            intent: publicIntent(intents.get(intentId, who.actor)!),
+            holder: { intentId, caseId },
+          });
         }
         // Proven absent: the dispute is free; claim it again for this send (synchronously, nothing in between).
         claim = intents.beginSend(intentId, caseId, who.actor);
-        if (!claim.ok) return json(claim.status, { error: claim.error, detail: claim.detail, ...(claim.intent ? { intent: publicIntent(claim.intent) } : {}) });
+        if (!claim.ok) return claimRefusal(claim);
       }
 
       // 5. Compose again on the fresh read: availability, stage, amount, text and the pin must give the approved hash.
@@ -418,56 +435,111 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
   };
 
   /**
-   * GET …/intent/:id/readback: the pinned dispute read now, and what it proves about this intent's send. Only the
-   * intent that holds its dispute is settled here; never while its POST has not answered.
+   * The intent a read-back is about: the person's own action intent of the case, or — for anyone of the seller's
+   * workspace (the seller check follows the read) — the send holding a dispute of this case, even when this server no
+   * longer has its intent (a hold seeded from the send log).
    */
-  const readBack = async (req: Request, caseId: string, intentId: string): Promise<Response> => {
-    const who = deps.actorOf(req, true);
-    if (!who.ok) return json(who.refusal.status, who.refusal.body);
-    const i = ownAction(who.actor, caseId, intentId);
-    if (i instanceof Response) return i;
-    if (!i.disputeId) return json(409, { error: 'SIMULATED_CASE', detail: 'This intent is for the simulator; the simulator reads it back' });
-    if (i.status === 'sending') return json(409, { error: 'INTENT_SENDING', detail: 'This intent is being sent right now; read it back once PayPal answers' });
-    const holder = intents.isUncertain(i.disputeId)?.intentId === intentId;
-    if (!holder && i.readBack !== 'recorded') return json(409, { error: 'INTENT_NOT_SENT', detail: 'This intent has no send to read back' });
+  const readBackTarget = (actor: string, caseId: string, intentId: string): { i: StoredIntent | null; hold: DisputeHold | null } | Response => {
+    const own = intents.get(intentId, actor);
+    if (own) {
+      if (own.caseId !== caseId) return json(404, UNKNOWN_INTENT);
+      if (!isActionIntent(own)) return json(409, { error: 'WRONG_SEND_ROUTE', detail: 'This intent is an evidence response; it is approved and sent as evidence' });
+      return { i: own, hold: intents.holdOfIntent(intentId) };
+    }
+    const hold = intents.holdOfIntent(intentId);
+    const i = intents.peek(intentId);
+    if (!hold || (hold.caseId || i?.caseId) !== caseId || (i && (i.caseId !== caseId || !isActionIntent(i)))) return json(404, UNKNOWN_INTENT);
+    return { i, hold };
+  };
+
+  /**
+   * Read the pinned dispute now and record what it proves about this intent's send. Only the intent that holds its
+   * dispute is settled here; never while its POST has not answered. Never POSTs. `req` null: the operator (no seller
+   * check, no person).
+   */
+  const settle = async (intentId: string, i: StoredIntent | null, disputeId: string, caseId: string, req: Request | null): Promise<Response> => {
+    const sendingNow = () => json(409, { error: 'INTENT_SENDING', detail: 'This intent is being sent right now; read it back once PayPal answers' });
+    if (i?.status === 'sending' || intents.holdOfIntent(intentId)?.state === 'in_flight') return sendingNow();
+    const holder = intents.isUncertain(disputeId)?.intentId === intentId;
+    if (!holder && i?.readBack !== 'recorded') return json(409, { error: 'INTENT_NOT_SENT', detail: 'This intent has no send to read back' });
     const paypal = deps.paypal;
     if (!paypal) return json(503, { error: 'PAYPAL_UNCONFIGURED' });
     // The send this read is about: a retry that started meanwhile has its own base, and this read predates it.
-    const baseAt = i.readBackBase?.sentStartedAt ?? null;
+    const baseAt = i?.readBackBase?.sentStartedAt ?? null;
     let d: Dispute;
     try {
-      d = await paypal.disputes.get(i.disputeId);
+      d = await paypal.disputes.get(disputeId);
     } catch (e) {
       return readFailure(e);
     }
-    const notSeller = deps.sellerRefusal(req, { dispute: d });
-    if (notSeller) return notSeller;
+    if (req) {
+      const notSeller = deps.sellerRefusal(req, { dispute: d });
+      if (notSeller) return notSeller;
+    }
     const snapshot = await deps.snapshotOf(caseId, d);
     const at = now().toISOString();
+    const answer = (readBack: unknown, current: StoredIntent | null, status = 200, extra: Record<string, unknown> = {}) =>
+      json(status, { ...extra, readBack, snapshot, intent: current ? publicIntent(current) : null, hold: intents.holdInfo(disputeId) });
     // The read may have been answered after another request settled it: the state as it is now.
-    const current = intents.get(intentId, who.actor) ?? i;
-    if (current.status === 'sending') return json(409, { error: 'INTENT_SENDING', detail: 'This intent is being sent right now; read it back once PayPal answers' });
-    if (holder && (current.readBackBase?.sentStartedAt ?? null) !== baseAt) {
-      return json(200, { readBack: { state: 'pending', detail: PENDING, at }, snapshot, intent: publicIntent(current) });
+    const current = intents.peek(intentId) ?? i;
+    if (current?.status === 'sending') return sendingNow();
+    if (holder && (current?.readBackBase?.sentStartedAt ?? null) !== baseAt) return answer({ state: 'pending', detail: PENDING, at }, current);
+    if (!holder || intents.isUncertain(disputeId)?.intentId !== intentId) {
+      const state = current?.readBack === 'recorded' ? 'recorded' : current?.readBack === 'absent' ? 'absent' : 'pending';
+      return answer({ state, detail: state === 'recorded' ? 'Recorded by PayPal' : state === 'absent' ? 'PayPal shows no trace of this send' : PENDING, at }, current);
     }
-    if (!holder || intents.isUncertain(i.disputeId)?.intentId !== intentId) {
-      const state = current.readBack === 'recorded' ? 'recorded' : current.readBack === 'absent' ? 'absent' : 'pending';
-      return json(200, { readBack: { state, detail: state === 'recorded' ? 'Recorded by PayPal' : state === 'absent' ? 'PayPal shows no trace of this send' : PENDING, at }, snapshot, intent: publicIntent(current) });
-    }
-    const contract = contractOf(current, contracts);
-    const base = current.readBackBase ?? null;
-    const r = contract && base ? proveSend(current, base, snapshot, contract, now().getTime()) : { state: 'pending' as const, detail: PENDING };
+    const contract = current ? contractOf(current, contracts) : null;
+    const base = current?.readBackBase ?? null;
+    const r = !current
+      ? { state: 'pending' as const, detail: CONTENT_GONE }
+      : contract && base
+        ? proveSend(current, base, snapshot, contract, now().getTime())
+        : { state: 'pending' as const, detail: PENDING };
     const durable = intents.recordReadBack(intentId, r);
     if (!durable && r.state !== 'pending') {
       // Nothing changed: the dispute stays held until a read-back is recorded durably.
-      return json(503, { error: 'AUDIT_UNAVAILABLE', detail: 'PayPal’s answer could not be recorded durably; check again', readBack: { state: 'pending', detail: PENDING, at }, snapshot });
+      return answer({ state: 'pending', detail: PENDING, at }, current, 503, { error: 'AUDIT_UNAVAILABLE', detail: 'PayPal’s answer could not be recorded durably; check again' });
     }
     // A pending read-back holds the dispute even when its line is not durable (fail-closed).
     if (!durable) log(`AUDIT NOT DURABLE: read-back of intent ${intentId} (pending) not written; the dispute stays held`);
-    return json(200, { readBack: { ...r, at }, snapshot, intent: publicIntent(intents.get(intentId, who.actor) ?? current) });
+    if (r.state !== 'pending') log(`read-back · case ${caseId} → ${disputeId} · intent ${intentId}: ${r.state}${req ? '' : ' (operator)'}`);
+    return answer({ state: r.state, detail: r.detail, at }, intents.peek(intentId) ?? current);
   };
 
-  return { compose, confirm, acknowledge, send, readBack, ownerRefusal, termsOf };
+  /** POST …/intent/:id/readback: the person's own send, or the send holding a dispute of this case. */
+  const readBack = async (req: Request, caseId: string, intentId: string): Promise<Response> => {
+    const who = deps.actorOf(req, true);
+    if (!who.ok) return json(who.refusal.status, who.refusal.body);
+    const t = readBackTarget(who.actor, caseId, intentId);
+    if (t instanceof Response) return t;
+    const disputeId = t.i ? t.i.disputeId : (t.hold?.disputeId ?? null);
+    if (!disputeId) return json(409, { error: 'SIMULATED_CASE', detail: 'This intent is for the simulator; the simulator reads it back' });
+    return settle(intentId, t.i, disputeId, caseId, req);
+  };
+
+  /** The operator's read-back of the send holding a dispute (the hosted ops route checks the token). */
+  const opsReadBack = async (intentId: string): Promise<Response> => {
+    const hold = intents.holdOfIntent(intentId);
+    const i = intents.peek(intentId);
+    if (!hold) return json(404, { error: 'NOT_HELD', detail: 'This intent holds no dispute (nothing to read back)' });
+    if (i && !isActionIntent(i)) return json(409, { error: 'WRONG_SEND_ROUTE', detail: 'An evidence send holds this dispute; it is settled by its own answer' });
+    return settle(intentId, i, hold.disputeId, hold.caseId || i?.caseId || '', null);
+  };
+
+  /** GET …/hold: what holds the case's dispute now, and whether it is this person's own send. */
+  const hold = (req: Request, _caseId: string, disputeId: string | null): Response => {
+    const who = deps.actorOf(req, true);
+    if (!who.ok) return json(who.refusal.status, who.refusal.body);
+    const h = disputeId ? intents.holdInfo(disputeId) : null;
+    return json(200, { hold: h ? { ...h, own: intents.get(h.intentId, who.actor) !== null } : null });
+  };
+
+  return { compose, confirm, acknowledge, send, readBack, opsReadBack, hold, ownerRefusal, termsOf };
+}
+
+/** A refused claim (beginSend), with the send holding the dispute when it is DISPUTE_UNCERTAIN. */
+function claimRefusal(c: Refused): Response {
+  return json(c.status, { error: c.error, detail: c.detail, ...(c.intent ? { intent: publicIntent(c.intent) } : {}), ...(c.holder ? { holder: c.holder } : {}) });
 }
 
 /** 409 NEEDS_REVIEW with the new buyer messages from the fresh read and their keys (what acknowledge echoes). */

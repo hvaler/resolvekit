@@ -744,7 +744,7 @@ test('caps message and settle', async () => {
   assert.equal((await actionReq(app, sendPath, { intentId: m.body.id }, cookie)).status, 202);
   // PayPal shows the message: proven, the dispute is free again.
   disputes[REAL] = { ...standardDispute(), messages: [{ posted_by: 'SELLER', time_posted: new Date(Date.now() + 1_000).toISOString(), content: MESSAGE.text }] };
-  const rb = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie })).then(answerOf);
+  const rb = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie, body: {} })).then(answerOf);
   assert.equal((rb.body.readBack as { state: string }).state, 'recorded', JSON.stringify(rb.body));
   const n = await actionReq(app, intentPath, { action: 'send_message', text: 'A second message.' }, cookie);
   await actionReq(app, `${intentPath}/${n.body.id}/approve`, { contentHash: n.body.contentHash }, cookie);
@@ -775,9 +775,9 @@ test('read-back counts as a PayPal read', async () => {
   await actionReq(app, `${intentPath}/${m.body.id}/approve`, { contentHash: m.body.contentHash }, cookie, '198.51.100.1');
   assert.equal((await actionReq(app, sendPath, { intentId: m.body.id }, cookie, '198.51.100.1')).status, 202);
   // From another address (its own read budget): one read-back, then the limit.
-  const first = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie, ip: '198.51.100.2' }));
+  const first = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie, ip: '198.51.100.2', body: {} }));
   assert.equal(first.status, 200);
-  const second = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie, ip: '198.51.100.2' }));
+  const second = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie, ip: '198.51.100.2', body: {} }));
   assert.equal(second.status, 429);
 });
 
@@ -875,4 +875,67 @@ test('appeal (Task 12): a non-sendable preview — members get OWNER_ONLY, the o
   const o = await actionReq(app, intentPath, APPEAL, people.ownerCookie);
   assert.deepEqual([o.status, o.body.error, o.body.detail], [409, 'VARIANT_NOT_AVAILABLE', 'Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute']);
   assert.equal(pp.calls.filter((c) => c.endsWith('/appeal')).length, 0);
+});
+
+// ------------------------------------------------------------------------------------------------ held disputes (IMP2)
+
+test('a reviewer’s held message is released by the owner’s «Check again»; a full member can read it back too; an outsider cannot', async () => {
+  const disputes: Record<string, Dispute> = { [REAL]: standardDispute() };
+  const intents = new IntentStore();
+  const { app, pp, people } = setup({ intents, disputes, actions: true });
+  const reviewer = people.member();
+  const owner = people.ownerCookie;
+  const m = await actionReq(app, intentPath, MESSAGE, reviewer);
+  await actionReq(app, `${intentPath}/${m.body.id}/approve`, { contentHash: m.body.contentHash }, reviewer);
+  assert.equal((await actionReq(app, sendPath, { intentId: m.body.id }, reviewer)).status, 202);
+  // Accepted, not proven: the dispute is held by the reviewer's send.
+  assert.equal(intents.isUncertain(REAL)?.intentId, m.body.id);
+  // The owner reloads the case: the hold route names the reviewer's send (not the owner's own).
+  const h = await app(req(`/api/disputes/${CASE}/hold`, { cookie: owner })).then(answerOf);
+  assert.deepEqual([h.status, (h.body.hold as { intentId: string; own: boolean }).intentId, (h.body.hold as { own: boolean }).own], [200, m.body.id, false]);
+  // An outsider (another workspace) does not see the case at all.
+  const out = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie: people.outsider(), body: {} })).then(answerOf);
+  assert.equal(out.status, 404);
+  // A full member's check: still pending (PayPal shows nothing yet); held, nothing sent.
+  const pending = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie: people.fullMember(), body: {} })).then(answerOf);
+  assert.equal((pending.body.readBack as { state: string }).state, 'pending', JSON.stringify(pending.body));
+  assert.equal(intents.isUncertain(REAL)?.intentId, m.body.id);
+  // PayPal shows the message: the owner's check releases the reviewer's hold. Only the one POST was ever made.
+  disputes[REAL] = { ...standardDispute(), messages: [{ posted_by: 'SELLER', time_posted: new Date(Date.now() + 1_000).toISOString(), content: MESSAGE.text }] };
+  const rb = await app(req(`${intentPath}/${m.body.id}/readback`, { cookie: owner, body: {} })).then(answerOf);
+  assert.equal((rb.body.readBack as { state: string }).state, 'recorded', JSON.stringify(rb.body));
+  assert.equal(rb.body.hold, null);
+  assert.equal(intents.isUncertain(REAL), null);
+  assert.equal(pp.actionPosts(), 1);
+  // The reviewer's own view of the intent says it is recorded.
+  assert.equal(intents.peek(m.body.id as string)?.readBack, 'recorded');
+});
+
+test('ops: the status lists every held dispute with how to read it back; POST /api/ops/readback/:id reads it back with the token only (never sends)', async () => {
+  const OPS = 'p'.repeat(20) + '0123456789abcdef';
+  const disputes: Record<string, Dispute> = { [REAL]: standardDispute() };
+  const intents = new IntentStore();
+  const { app, pp, people } = setup({ intents, disputes, actions: true, opsToken: OPS });
+  const cookie = people.member();
+  const m = await actionReq(app, intentPath, MESSAGE, cookie);
+  await actionReq(app, `${intentPath}/${m.body.id}/approve`, { contentHash: m.body.contentHash }, cookie);
+  assert.equal((await actionReq(app, sendPath, { intentId: m.body.id }, cookie)).status, 202);
+  const status = (await (await app(req('/api/ops/status', { headers: { authorization: `Bearer ${OPS}` } }))).json()) as { ok: boolean; problems: string[]; holds: Array<{ intentId: string; intentKnown: boolean }> };
+  assert.deepEqual(status.holds.map((h) => [h.intentId, h.intentKnown]), [[m.body.id, true]]);
+  assert.equal(status.ok, false);
+  assert.ok(status.problems.some((p) => p.includes(`POST /api/ops/readback/${m.body.id}`)), status.problems.join('\n'));
+  const path = `/api/ops/readback/${m.body.id}`;
+  // Without the token (or with a session only): the route does not exist.
+  for (const r of [await app(req(path, { body: {} })), await app(req(path, { body: {}, cookie })), await app(req(path, { body: {}, headers: { authorization: 'Bearer wrong' } }))]) assert.equal(r.status, 404);
+  assert.equal((await app(req(path, { headers: { authorization: `Bearer ${OPS}` } }))).status, 405);
+  assert.equal((await app(req('/api/ops/readback/int-x', { body: {}, headers: { authorization: `Bearer ${OPS}` } }))).status, 400);
+  // PayPal shows the message: the operator's read-back records it and frees the dispute.
+  disputes[REAL] = { ...standardDispute(), messages: [{ posted_by: 'SELLER', time_posted: new Date(Date.now() + 1_000).toISOString(), content: MESSAGE.text }] };
+  const rb = await app(req(path, { body: {}, headers: { authorization: `Bearer ${OPS}` } })).then(answerOf);
+  assert.equal((rb.body.readBack as { state: string }).state, 'recorded', JSON.stringify(rb.body));
+  assert.equal(intents.isUncertain(REAL), null);
+  assert.equal(pp.actionPosts(), 1);
+  const after = (await (await app(req('/api/ops/status', { headers: { authorization: `Bearer ${OPS}` } }))).json()) as { holds: unknown[] };
+  assert.deepEqual(after.holds, []);
+  assert.equal((await app(req(path, { body: {}, headers: { authorization: `Bearer ${OPS}` } })).then(answerOf)).body.error, 'NOT_HELD');
 });

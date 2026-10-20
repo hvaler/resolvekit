@@ -152,6 +152,9 @@ const CAP_NAME: Record<CostlyAction, string> = {
 export const OPS_PATH = '/api/ops/status';
 /** `GET <prefix><run id>`: one agent run and its receipt, for `demo:prepare --agent-run` (same ops token). */
 export const OPS_AGENT_RUN_PREFIX = '/api/ops/agent-run/';
+/** POST /api/ops/readback/int-…: the operator's read-back of the send holding a dispute (reads PayPal; never sends). */
+export const OPS_READBACK_PREFIX = '/api/ops/readback/';
+const INTENT_ID_PATH = /^int-[0-9a-f]{32}$/;
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -373,6 +376,12 @@ export function createHostedApp(o: HostedOptions): HostedApp {
         problems.push(`binding ${caseId} → ${b.dispute} is used (PayPal has the seller’s evidence or closed it) and no dispute is left in reserve: npm run demo:prepare, then add the new ones to BINDINGS_JSON`);
       }
     }
+    // A held dispute takes no other write until a read-back settles it: the operator reads it back (never resends).
+    for (const h of r.holds) {
+      problems.push(
+        `dispute ${h.disputeId} (case ${h.caseId || 'unknown'}) is held by ${h.action ?? 'a send'} ${h.intentId} since ${h.since} (${h.state === 'in_flight' ? 'being sent' : 'outcome pending confirmation'})${h.intentKnown ? '' : '; its intent is gone (intents.json lost or unreadable): see the runbook'}: POST ${OPS_READBACK_PREFIX}${h.intentId} reads it back`,
+      );
+    }
     for (const w of lastWarmUp ?? []) {
       if (w.outcome === 'failed' || w.outcome === 'skipped') problems.push(`warm-up · case ${w.caseId} · ${w.outcome} · ${w.detail}`);
     }
@@ -394,6 +403,18 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       const bearer = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1] ?? '';
       if (!bearer || !sameSecret(bearer, o.opsToken)) return json(404, { error: 'NOT_FOUND' });
       return req.method === 'GET' ? json(200, await opsStatus(url.searchParams.get('probe') === 'models')) : json(405, { error: 'METHOD_NOT_ALLOWED' });
+    }
+    // The operator's read-back of a held send («Check again» without a person): the token, or the route does not exist.
+    if (path.startsWith(OPS_READBACK_PREFIX)) {
+      if (!o.opsToken) return json(404, { error: 'NOT_FOUND' });
+      const t = authLimit.take(clientIp(req, hops, trust));
+      if (!t.ok) return tooMany(t.retryAfterSec, 'Too many requests from this address');
+      const bearer = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1] ?? '';
+      if (!bearer || !sameSecret(bearer, o.opsToken)) return json(404, { error: 'NOT_FOUND' });
+      if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+      const id = path.slice(OPS_READBACK_PREFIX.length);
+      if (!INTENT_ID_PATH.test(id)) return json(400, { error: 'INVALID_INTENT_ID', detail: 'int-<32 hex>' });
+      return api.opsReadBack(id);
     }
     // demo:prepare --agent-run: the full run record and its receipt as MeterMCP's admin route reads it now. A read
     // only: no engine, no MCP connection. Without the ops token 404 (Ruling A12, as /api/ops/status), whoever is signed in.
@@ -461,8 +482,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       // Reads that go to PayPal: the dispute itself, composing an intent (it reads the dispute fresh), an action's
       // read-back («Check again») and acknowledging new buyer messages (both read the dispute fresh too).
       const paypalRead =
-        (req.method === 'GET' && path.startsWith('/api/disputes/') && !path.endsWith('/audit') && !path.includes('/intent/')) ||
-        (req.method === 'GET' && /^\/api\/disputes\/[^/]+\/intent\/[^/]+\/readback$/.test(path)) ||
+        (req.method === 'GET' && path.startsWith('/api/disputes/') && !path.endsWith('/audit') && !path.endsWith('/hold') && !path.includes('/intent/')) ||
+        (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent\/[^/]+\/readback$/.test(path)) ||
         (req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent(\/[^/]+\/acknowledge)?$/.test(path));
       const composing = req.method === 'POST' && /^\/api\/disputes\/[^/]+\/intent$/.test(path);
       if (composing) {
