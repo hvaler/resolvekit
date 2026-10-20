@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import w1 from '../../../../packages/paypal/contracts/send_message.json';
 import w9 from '../../../../packages/paypal/contracts/accept_claim-partial_refund.json';
 import w10 from '../../../../packages/paypal/contracts/accept_claim-refund.json';
+import w5 from '../../../../packages/paypal/contracts/escalate.json';
 import { checkAgain, sendActionWithReadBack } from './actionSend';
 import { proveSend, readBackBase } from './actionReadback';
 import { CONTRACTS } from './actionContracts';
@@ -120,7 +121,11 @@ describe('the simulator only plays recorded transitions', () => {
     const pin = { disputeId: null, seller: null, stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', amount: null };
     const base = { ...(composeAction({ caseId: 'CASE-1', req: { action: 'send_message', text: 'x', attachments: [] }, snap, disputeId: null, seller: null, files: [] }) as SubmissionIntent) };
     const fake = (over: Partial<SubmissionIntent>): SubmissionIntent => ({ ...base, id: 'int-x', contentHash: 'a'.repeat(64), requestId: 'rk-x', status: 'approved', createdAt: '', expiresAt: '', approvedBy: 'x', approvedAt: '', sentAt: null, reason: null, ...over });
-    await expect(g.sendAction(fake({ action: 'escalate', payload: { kind: 'escalate', note: 'Delivered.' }, pin }), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
+    // An offer: recorded (W-4) but its flow is not built, so the registry says Not available and nothing is played.
+    await expect(g.sendAction(fake({ action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'Half back.', amount: { value: '3.50', currency: 'USD' } }, pin }), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
+    // An escalation is played only from the recorded state (W-5: waiting for the seller), not with these links.
+    const { g: g4 } = sim({ status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['send_message', 'escalate'] });
+    await expect(g4.sendAction(fake({ action: 'escalate', payload: { kind: 'escalate', note: 'Delivered.' }, pin }), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
     // A message with a file was recorded only while PayPal waited for the buyer (W-3), not from this state.
     await expect(g.sendAction(fake({ files: [{ name: 'tracking.png', size: '2 KB' }] }), { requestId: 'rk-x' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
     // A link PayPal does not give.
@@ -193,6 +198,63 @@ describe('the simulator plays the recorded accept transitions (W-10, W-9)', () =
   });
 });
 
+describe('the simulator plays the recorded escalation (W-5) and the evidence after it (W-6)', () => {
+  const waitingSeller = (): Partial<DisputeSnapshot> => ({
+    allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'],
+    amount: { value: '7.00', currency: 'USD' },
+    reason: w5.before.reason,
+    respondBy: w5.before.seller_response_due_date,
+  });
+  const escalate = { action: 'escalate' as const, note: w5.request.body.note, attachments: [] as [] };
+  const evidence = { disputeId: 'CASE-1', action: 'provide_evidence' as const, evidenceType: 'PROOF_OF_FULFILLMENT' as const, carrier: 'UPS', tracking: '1Z999AA10123456784', notes: 'Shipped with UPS.', files: [{ name: 'tracking.png', size: '1 KB' }] };
+
+  it('escalate: the ESCALATE entry at once, UNDER_REVIEW with flickering links, the claim by +10 min; never closed', async () => {
+    const { g, clock } = sim(waitingSeller());
+    const intents = new LocalIntentClient();
+    const before = await g.getDispute('CASE-1');
+    const i = await intents.approve(await intents.createAction('CASE-1', escalate, { snapshot: before }));
+    const r = await sendActionWithReadBack({ intent: i, gateway: g, intents, mode: { kind: 'simulator' }, now: () => new Date(clock.t) });
+    expect(r).toMatchObject({ kind: 'recorded', detail: 'Recorded by the simulator' });
+    expect(r.snapshot).toMatchObject({ status: 'UNDER_REVIEW', stage: 'INQUIRY', allowedActions: [], respondBy: null, requestedEvidence: [] });
+    expect(r.snapshot!.evidences.at(-1)).toMatchObject({ source: 'SUBMITTED_BY_SELLER', action: 'ESCALATE', evidenceType: 'OTHER', notes: w5.request.body.note, stage: 'INQUIRY' });
+    // +30 s: provide_evidence for a moment; evidence there was never recorded, so the simulator refuses it.
+    clock.t += 30_000;
+    expect(await g.getDispute('CASE-1')).toMatchObject({ status: 'UNDER_REVIEW', stage: 'INQUIRY', allowedActions: ['provide_evidence'] });
+    await expect(g.provideEvidence(evidence, { requestId: 'rk-e1' })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
+    clock.t += 90_000;
+    expect(await g.getDispute('CASE-1')).toMatchObject({ status: 'UNDER_REVIEW', stage: 'INQUIRY', allowedActions: [] });
+    // +10 min: the claim waits for the seller, with what PayPal requests and a new due date.
+    clock.t += 480_000;
+    const claim = await g.getDispute('CASE-1');
+    expect(claim).toMatchObject({
+      status: 'WAITING_FOR_SELLER_RESPONSE',
+      stage: 'CHARGEBACK',
+      allowedActions: ['provide_evidence', 'accept_claim'],
+      responseOptions: { acceptClaimTypes: ['REFUND', 'PARTIAL_REFUND'], offerTypes: [] },
+      requestedEvidence: ['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER'],
+      respondBy: new Date(T0 + Date.parse(w5.after[3]!.dispute.seller_response_due_date!) - Date.parse(w5.sentStartedAt)).toISOString(),
+    });
+    expect(claim.outcome ?? null).toBeNull();
+    expect(proveSend(i, r.base!, claim, CONTRACTS.escalate, clock.t).state).toBe('recorded');
+    // W-6: evidence in the claim, once; the entry carries the claim stage; then PayPal reviews with no seller action.
+    await g.provideEvidence(evidence, { requestId: 'rk-e2' });
+    const after = await g.getDispute('CASE-1');
+    expect(after).toMatchObject({ status: 'UNDER_REVIEW', stage: 'CHARGEBACK', allowedActions: [] });
+    expect(after.evidences.at(-1)).toMatchObject({ source: 'SUBMITTED_BY_SELLER', action: 'PROVIDE_EVIDENCE', stage: 'CHARGEBACK', notes: 'Shipped with UPS.' });
+    await expect(g.provideEvidence(evidence, { requestId: 'rk-e3' })).rejects.toThrow(/NOT_AUTHORIZED/);
+    expect(g.sent.map((x) => x.requestId)).toEqual(['rk-e2']);
+  });
+
+  it('escalate from another state is NOT_AUTHORIZED in the simulator', async () => {
+    const { g } = sim({ ...waitingSeller(), status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'] });
+    const intents = new LocalIntentClient();
+    const snap = await g.getDispute('CASE-1');
+    const i = await intents.approve(await intents.createAction('CASE-1', escalate, { snapshot: snap }));
+    await expect(g.sendAction(i, { requestId: i.requestId })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
+    expect(g.sentActions).toEqual([]);
+  });
+});
+
 describe('sendActionWithReadBack', () => {
   it('the simulator: read before, send, read back with the same matcher → «Recorded by the simulator»', async () => {
     const { g, clock } = sim();
@@ -214,7 +276,7 @@ describe('sendActionWithReadBack', () => {
     const intents = new LocalIntentClient();
     const before = await g.getDispute('CASE-1');
     const i = await intents.approve(await intents.createAction('CASE-1', { action: 'send_message', text: TEXT, attachments: [] }, { snapshot: before }));
-    const r = await sendActionWithReadBack({ intent: { ...i, action: 'escalate', payload: { kind: 'escalate', note: 'x' } }, gateway: g, intents, mode: { kind: 'simulator' } });
+    const r = await sendActionWithReadBack({ intent: { ...i, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '1.00', currency: 'USD' } } }, gateway: g, intents, mode: { kind: 'simulator' } });
     expect(r).toMatchObject({ kind: 'not_sent', detail: 'NOT_AUTHORIZED: not available in the simulator' });
   });
 

@@ -13,7 +13,7 @@ import { utcDate, utcDateTime, type PayPalSource } from '@resolvekit/cases';
 import { bindingMismatch, moneyText } from './binding';
 import type { GatewayMode } from './httpGateway';
 import { DEMO_CLOCK_TEXT, dueHours, formatDue, formatDueAt, outcomeText, type InboxDispute } from './inbox';
-import { hasSellerEvidence } from './recorded';
+import { sellerEscalated, sellerEvidenceBlocks } from './recorded';
 import type { DisputeSnapshot, DisputeStatus, DisputeSummary } from './types';
 
 // The case assembly (PayPal's fields, the capture document, the requested evidence) lives in @resolvekit/cases,
@@ -68,6 +68,13 @@ export function itemTypeLabel(code: string | null | undefined): string | null {
   return code ? (ITEM_TYPES[code] ?? code) : null;
 }
 
+/**
+ * The seller escalated and PayPal is reviewing, the claim not opened yet (W-5: UNDER_REVIEW in the inquiry for ≈3 min,
+ * its links flickering). Never closed: the claim stage follows.
+ */
+export const escalating = (s: DisputeSnapshot): boolean => s.status === 'UNDER_REVIEW' && s.stage === 'INQUIRY' && sellerEscalated(s);
+export const ESCALATION_REVIEW = 'PayPal is reviewing; the claim stage can take a few minutes';
+
 /** "18 Oct" (UTC). */
 const dayMonth = (iso: string) => formatDueAt(iso).split(' · ')[0]!;
 
@@ -77,8 +84,8 @@ const dayMonth = (iso: string) => formatDueAt(iso).split(' · ')[0]!;
  */
 export function noSellerDeadline(s: DisputeSnapshot): { text: string; sub: string | null } {
   if (s.status === 'RESOLVED') return { text: 'No seller deadline', sub: s.outcome?.closedAt ? `${outcomeText(s.outcome.code)} · ${dayMonth(s.outcome.closedAt)}` : 'Closed at PayPal' };
-  if (s.status === 'UNDER_REVIEW') return { text: 'No seller deadline', sub: 'PayPal is reviewing' };
-  if (s.status === 'WAITING_FOR_BUYER_RESPONSE' || hasSellerEvidence(s)) {
+  if (s.status === 'UNDER_REVIEW') return { text: 'No seller deadline', sub: escalating(s) ? ESCALATION_REVIEW : 'PayPal is reviewing' };
+  if (s.status === 'WAITING_FOR_BUYER_RESPONSE' || sellerEvidenceBlocks(s)) {
     return { text: 'No seller deadline', sub: s.buyerRespondBy ? `Buyer’s turn · buyer by ${dayMonth(s.buyerRespondBy)}` : 'Buyer’s turn' };
   }
   return { text: 'Not set by PayPal', sub: null };
@@ -129,7 +136,7 @@ export interface HeaderInput {
 }
 
 function fromDemo(s: DisputeSummary, status: DisputeStatus, statusDetail: string, snap?: DisputeSnapshot): HeaderView {
-  const settled = !s.respondBy && !!snap && (snap.status === 'RESOLVED' || hasSellerEvidence(snap));
+  const settled = !s.respondBy && !!snap && (snap.status === 'RESOLVED' || sellerEvidenceBlocks(snap));
   return {
     amount: s.amount,
     currency: s.currency,
@@ -273,7 +280,7 @@ export function boundInboxRow(d: InboxDispute, source: Exclude<PayPalSource, { k
     respondBy: s.respondBy ?? null,
     dueNote: s.respondBy ? null : (noSellerDeadline(s).sub ?? noSellerDeadline(s).text),
   };
-  if (hasSellerEvidence(s)) {
+  if (sellerEvidenceBlocks(s)) {
     const reviewing = s.status === 'UNDER_REVIEW';
     return {
       ...base,
@@ -283,6 +290,7 @@ export function boundInboxRow(d: InboxDispute, source: Exclude<PayPalSource, { k
     };
   }
   if (s.status === 'RESOLVED') return { ...base, next: 'Nothing to do', nextKind: 'none', nextSub: 'Resolved at PayPal' };
+  if (escalating(s)) return { ...base, next: 'PayPal is reviewing', nextKind: 'none', nextSub: ESCALATION_REVIEW };
   if (s.status === 'UNDER_REVIEW' && !s.allowedActions.length) return { ...base, next: 'PayPal processing', nextKind: 'processing', nextSub: 'No seller actions yet' };
   return base;
 }

@@ -29,13 +29,24 @@ export interface SimStep {
   outcome: string | null;
   /** `refund_details.transactions[]` listed a refund in that read (W-10: at once). */
   refunded: boolean;
+  /**
+   * The evidence types PayPal requested from the seller in that read (REQUESTED_FROM_SELLER entries; W-5 +10 min: the
+   * claim's PROOF_OF_FULFILLMENT, PROOF_OF_REFUND, OTHER). Absent: the transition does not change them.
+   */
+  requested?: string[];
+  /**
+   * `seller_response_due_date` in that read, as ms after the send started (W-5 +10 min: the claim's due date); null: no
+   * due date in that read. Absent: the transition does not change it.
+   */
+  dueAfterMs?: number | null;
 }
 
 /**
  * What the action's new entry is, as the recorded reads show it: a seller message (W-1–W-3), an ACCEPT_CLAIM evidence
- * entry with the accept type and the note (W-10), or a SELLER PROPOSED offer with the partial amount (W-9).
+ * entry with the accept type and the note (W-10), a SELLER PROPOSED offer with the partial amount (W-9), the seller's
+ * ESCALATE evidence entry with the note in the inquiry stage (W-5), or the seller's evidence in the claim stage (W-6).
  */
-export type SimEntry = 'message' | 'accept_claim' | 'offer';
+export type SimEntry = 'message' | 'accept_claim' | 'offer' | 'escalate' | 'evidence';
 
 export interface SimTransition {
   variant: VariantId;
@@ -64,21 +75,30 @@ const step = (
   status: DisputeStatus,
   allowedActions: ActionCode[],
   responseOptions: SimStep['responseOptions'],
-  o: { entryVisible?: boolean; outcome?: string | null; refunded?: boolean } = {},
+  o: { entryVisible?: boolean; outcome?: string | null; refunded?: boolean; stage?: string; requested?: string[]; dueAfterMs?: number | null } = {},
 ): SimStep => ({
   at,
   afterMs: AFTER_MS[at]!,
   status,
-  stage: 'INQUIRY',
+  stage: o.stage ?? 'INQUIRY',
   allowedActions,
   responseOptions,
   entryVisible: o.entryVisible ?? true,
   outcome: o.outcome ?? null,
   refunded: o.refunded ?? false,
+  ...(o.requested ? { requested: o.requested } : {}),
+  ...(o.dueAfterMs !== undefined ? { dueAfterMs: o.dueAfterMs } : {}),
 });
 const waitingBuyer = (at: string) => step(at, 'WAITING_FOR_BUYER_RESPONSE', WAITING_BUYER_ACTIONS, ACCEPT_REFUND);
 const WAITING_SELLER_ACTIONS: ActionCode[] = ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'];
 const BUYER_FAVOUR = 'RESOLVED_BUYER_FAVOUR';
+/** The claim after an escalation, waiting for the seller (W-5 +10 min, W-6 before). */
+const CLAIM_ACTIONS: ActionCode[] = ['provide_evidence', 'accept_claim'];
+const CLAIM_OPTIONS = { acceptClaimTypes: ['REFUND', 'PARTIAL_REFUND'], offerTypes: [] };
+/** W-5: the claim's due date, from when the escalation was sent (2026-10-30T22:59:59Z − 2026-10-20T06:17:37.925Z). */
+const CLAIM_DUE_AFTER_MS = Date.parse('2026-10-30T22:59:59.000Z') - Date.parse('2026-10-20T06:17:37.925Z');
+const reviewing = (at: string, stage: string, allowedActions: ActionCode[] = [], requested: string[] = []) =>
+  step(at, 'UNDER_REVIEW', allowedActions, NONE, { stage, requested, dueAfterMs: null });
 
 export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTransition[]>>> = Object.freeze({
   send_message: [
@@ -146,6 +166,38 @@ export const SIM_TRANSITIONS: Readonly<Partial<Record<VariantId, readonly SimTra
       actionLagReads: 0,
       documents: 0,
       steps: [step('0s', 'UNDER_REVIEW', [], NONE), waitingBuyer('30s'), waitingBuyer('2m'), waitingBuyer('10m')],
+    },
+  ],
+  escalate: [
+    // W-5: the seller's ESCALATE entry with the note at once; UNDER_REVIEW in the inquiry with flickering links (+30 s:
+    // provide_evidence and a PROOF_OF_FULFILLMENT request for a moment), then the claim (CHARGEBACK) waiting for the
+    // seller by +10 min: evidence and accept offered, three evidence types requested, a new seller due date.
+    {
+      variant: 'escalate',
+      recorded: 'packages/paypal/contracts/escalate.json (W-5)',
+      from: { stage: 'INQUIRY', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: WAITING_SELLER_ACTIONS },
+      entry: 'escalate',
+      actionLagReads: 0,
+      documents: 0,
+      steps: [
+        reviewing('0s', 'INQUIRY'),
+        reviewing('30s', 'INQUIRY', ['provide_evidence'], ['PROOF_OF_FULFILLMENT']),
+        reviewing('2m', 'INQUIRY'),
+        step('10m', 'WAITING_FOR_SELLER_RESPONSE', CLAIM_ACTIONS, CLAIM_OPTIONS, { stage: 'CHARGEBACK', requested: ['PROOF_OF_FULFILLMENT', 'PROOF_OF_REFUND', 'OTHER'], dueAfterMs: CLAIM_DUE_AFTER_MS }),
+      ],
+    },
+  ],
+  'evidence:after_escalation': [
+    // W-6: evidence in the claim after the escalation: the seller's entry (stage CHARGEBACK, one document) at once, then
+    // UNDER_REVIEW in the claim; PayPal's only link is provide_supporting_info, which is not in this delivery.
+    {
+      variant: 'evidence:after_escalation',
+      recorded: 'packages/paypal/contracts/evidence-after-escalation.json (W-6)',
+      from: { stage: 'CHARGEBACK', status: 'WAITING_FOR_SELLER_RESPONSE', allowedActions: CLAIM_ACTIONS },
+      entry: 'evidence',
+      actionLagReads: 0,
+      documents: 1,
+      steps: [reviewing('0s', 'CHARGEBACK'), reviewing('30s', 'CHARGEBACK'), reviewing('2m', 'CHARGEBACK'), reviewing('10m', 'CHARGEBACK')],
     },
   ],
 });

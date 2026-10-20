@@ -4,6 +4,7 @@ import { checkAgain, sendActionWithReadBack, type ActionPhase, type ActionResult
 import { actionTitle, consequenceText, type ActionRequest, type ConfirmationTerms } from '../domain/actions';
 import { formatMoney } from '../domain/amounts';
 import { outcomeText } from '../domain/inbox';
+import { ESCALATION_REVIEW } from '../domain/paypalView';
 import type { DisputeGateway } from '../domain/gateway';
 import type { GatewayMode } from '../domain/httpGateway';
 import type { SubmissionIntent } from '../domain/intent';
@@ -36,8 +37,10 @@ const where = (mode: GatewayMode) => (mode.kind === 'paypal' ? `PayPal ${mode.en
 type Accept = { kind: 'accept_claim'; acceptType: string; note: string; amount: { value: string; currency: string } | null };
 const acceptOf = (i: SubmissionIntent): Accept | null => (i.payload?.kind === 'accept_claim' ? i.payload : null);
 const isPartial = (i: SubmissionIntent) => acceptOf(i)?.acceptType === 'PARTIAL_REFUND';
+const isEscalate = (i: SubmissionIntent | null) => i?.payload?.kind === 'escalate';
 /** What is being sent, in the words of the review and of the pending note. */
-const nounOf = (i: SubmissionIntent | null) => (i?.payload?.kind === 'accept_claim' ? (isPartial(i) ? 'the partial refund offer' : 'the accept') : 'the message');
+const nounOf = (i: SubmissionIntent | null) =>
+  i?.payload?.kind === 'accept_claim' ? (isPartial(i) ? 'the partial refund offer' : 'the accept') : isEscalate(i) ? 'the escalation' : 'the message';
 
 /**
  * The result's title. Recorded: what the proof shows, by action — a full accept is the accepted claim; a partial accept
@@ -48,6 +51,7 @@ function resultTitle(r: ActionResult, mode: GatewayMode, intent: SubmissionInten
   if (r.kind === 'recorded') {
     const base = `Recorded by ${by}`;
     if (intent && acceptOf(intent)) return `${base}: ${isPartial(intent) ? 'offer waiting for the buyer' : 'claim accepted'}`;
+    if (isEscalate(intent)) return `${base}: inquiry escalated`;
     return base;
   }
   if (r.kind === 'pending') return 'Outcome pending confirmation';
@@ -62,7 +66,7 @@ function title(s: ActionFlowState, mode: GatewayMode): string {
     case 'refused':
       return 'Nothing can be sent yet';
     case 'review':
-      return acceptOf(s.intent) ? 'Review the accept' : 'Review the message';
+      return acceptOf(s.intent) ? 'Review the accept' : isEscalate(s.intent) ? 'Review the escalation' : 'Review the message';
     case 'confirm':
       return 'Confirm before sending';
     case 'sending':
@@ -95,6 +99,14 @@ export interface ActionFlowViewProps {
 function Quoted({ intent }: { intent: SubmissionIntent }) {
   const a = acceptOf(intent);
   if (a) return <AcceptTerms intent={intent} accept={a} />;
+  if (intent.payload?.kind === 'escalate') {
+    return (
+      <div data-testid="approved-escalation" className="flex flex-col gap-1.5 rounded-xl border border-line bg-surface-2 px-4 py-3 text-body">
+        <strong className="font-semibold">Escalate the inquiry to a claim</strong>
+        <blockquote className="m-0 whitespace-pre-wrap text-body-lg leading-normal [overflow-wrap:anywhere]">{intent.payload.note}</blockquote>
+      </div>
+    );
+  }
   const text = intent.payload?.kind === 'send_message' ? intent.payload.text : '';
   return (
     <blockquote data-testid="approved-message" className="m-0 whitespace-pre-wrap rounded-xl border border-line bg-surface-2 px-4 py-3 text-body-lg leading-normal [overflow-wrap:anywhere]">
@@ -140,6 +152,16 @@ function AcceptAftermath({ result }: { result: ActionResult }) {
       )}
     </ul>
   );
+}
+
+/**
+ * Where a recorded escalation stands, from the read: PayPal reviewing (W-5: UNDER_REVIEW for minutes, links flickering;
+ * never closed) or the claim open, with what PayPal offers there.
+ */
+function escalationText(r: ActionResult): string {
+  const s = r.snapshot;
+  if (s?.stage && s.stage !== 'INQUIRY') return `The dispute is a claim now (${s.stage}): what you can do next is what PayPal offers on it.`;
+  return `${ESCALATION_REVIEW}. Nothing is closed; what you can do next is what PayPal offers on the claim.`;
 }
 
 /** The flow's screens, from its state alone (no effects): what each step shows and offers. */
@@ -241,7 +263,9 @@ export function ActionFlowView({ state, mode, caseId, busy, error, onApprove, on
                   ? `${state.result.detail}. Nothing more is sent on this dispute until a read-back proves ${nounOf(state.intent)} recorded or absent; it is never sent again blindly.`
                   : state.result.kind === 'recorded' && isPartial(state.intent)
                     ? `${mode.kind === 'paypal' ? 'PayPal' : 'The simulator'} shows your offer to the buyer. Unless the buyer accepts it, no money moves and the dispute stays open.`
-                    : state.result.detail}
+                    : state.result.kind === 'recorded' && isEscalate(state.intent)
+                      ? escalationText(state.result)
+                      : state.result.detail}
               </span>
               {state.result.kind === 'recorded' && acceptOf(state.intent) && !isPartial(state.intent) && <AcceptAftermath result={state.result} />}
             </div>

@@ -2,7 +2,7 @@ import { CONTRACTS, type VariantId } from './actionContracts';
 import { variantOfContent, type ProofState } from './actionReadback';
 import { intentAction, type ContractRegistry } from './actions';
 import type { SubmissionIntent } from './intent';
-import { hasSellerEvidence, newSellerEvidence, submissionMismatch } from './recorded';
+import { hasSellerEvidence, newSellerEvidence, sellerEscalated, submissionMismatch } from './recorded';
 import { SIM_TRANSITIONS, transitionFrom, type SimStep, type SimTransition } from './simulatedActions';
 import { utcStamp } from './time';
 import type { ActionCode, DisputeMessage, DisputeSnapshot, DisputeStatus, EvidenceSubmission, OfferEvent, RecordedEvidence } from './types';
@@ -246,6 +246,8 @@ export class SimulatedDisputeGateway implements DisputeGateway {
       d.allowedActions = [...s.allowedActions];
       d.responseOptions = { acceptClaimTypes: [...s.responseOptions.acceptClaimTypes], offerTypes: [...s.responseOptions.offerTypes] };
       const at = new Date(play.answeredAt + s.afterMs).toISOString();
+      if (s.requested) d.requestedEvidence = [...s.requested];
+      if (s.dueAfterMs !== undefined) d.respondBy = s.dueAfterMs === null ? null : new Date(play.answeredAt + s.dueAfterMs).toISOString();
       if (s.refunded && play.refund && !d.refunds?.length) d.refunds = [{ id: null, amount: { ...play.refund }, time: new Date(play.answeredAt).toISOString() }];
       if (s.outcome && !d.outcome) d.outcome = { code: s.outcome, closedAt: s.status === 'RESOLVED' ? at : null, amountRefunded: play.refund ? { ...play.refund } : null };
       if (s.entryVisible && !play.shown) {
@@ -305,6 +307,8 @@ export class SimulatedDisputeGateway implements DisputeGateway {
     if (!d) throw new Error(`RESOURCE_NOT_FOUND: ${submission.disputeId}`);
     this.beforeWrite(d);
     if (!d.allowedActions.includes('provide_evidence')) throw new Error('NOT_AUTHORIZED: provide_evidence is not allowed for this dispute');
+    // After the seller's escalation, evidence is played only as W-6 recorded it (the claim waiting for the seller).
+    if (sellerEscalated(d)) return this.evidenceAfterEscalation(d, submission, opts);
     const outcome = this.opts.outcome();
     if (outcome === 'timeout' && !this.timedOut.has(d.id)) {
       this.timedOut.add(d.id);
@@ -336,6 +340,32 @@ export class SimulatedDisputeGateway implements DisputeGateway {
       files: submission.files.map((f) => f.name),
       storedAt: utcStamp(now),
     });
+  }
+
+  /**
+   * Evidence on a dispute the seller escalated, exactly as W-6 recorded it: only from the claim waiting for the seller;
+   * the seller's entry carries the claim stage, then PayPal reviews with no seller action. Anything else is refused.
+   */
+  private evidenceAfterEscalation(d: DisputeSnapshot, submission: EvidenceSubmission, opts: { requestId: string }): void {
+    const variant: VariantId = 'evidence:after_escalation';
+    const t = this.contracts[variant]?.status !== 'not_available' ? transitionFrom(this.transitions[variant], d) : null;
+    if (!t) throw new Error(NOT_IN_SIMULATOR);
+    const now = this.opts.now();
+    this.sent.push({ submission, requestId: opts.requestId });
+    const evidence: RecordedEvidence = {
+      evidenceType: submission.evidenceType,
+      source: 'SUBMITTED_BY_SELLER',
+      action: 'PROVIDE_EVIDENCE',
+      stage: d.stage ?? null,
+      date: now.toISOString(),
+      carrier: submission.carrier,
+      tracking: submission.tracking,
+      notes: submission.notes,
+      files: submission.files.map((f) => f.name),
+      storedAt: utcStamp(now),
+    };
+    this.plays.set(d.id, { answeredAt: now.getTime(), steps: t.steps.map((s) => ({ ...s })), entry: { kind: 'evidence', evidence }, shown: false, refund: null });
+    this.advance(d);
   }
 }
 
@@ -370,5 +400,14 @@ function playEntry(t: SimTransition, intent: SubmissionIntent, d: DisputeSnapsho
     case 'offer':
       if (p?.kind !== 'accept_claim' || p.acceptType !== 'PARTIAL_REFUND' || !p.amount) return null;
       return { entry: { kind: 'offer', offer: { time, actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { ...p.amount } } }, refund: null };
+    case 'escalate': {
+      // W-5: the seller's entry, OTHER with action ESCALATE and the note, in the stage it was sent from.
+      if (p?.kind !== 'escalate' || !p.note) return null;
+      const evidence: RecordedEvidence = { evidenceType: 'OTHER', source: 'SUBMITTED_BY_SELLER', action: 'ESCALATE', stage: d.stage ?? null, date: time, carrier: '', tracking: '', notes: p.note, files: [], storedAt: utcStamp(now) };
+      return { entry: { kind: 'evidence', evidence }, refund: null };
+    }
+    case 'evidence':
+      // Evidence is played by provideEvidence, never as an action.
+      return null;
   }
 }

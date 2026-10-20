@@ -1,4 +1,4 @@
-import { hasSellerEvidence } from './recorded';
+import { sellerEvidenceBlocks } from './recorded';
 import { ACTION_LABEL } from './status';
 import type { ActionCode, DisputeSnapshot } from './types';
 
@@ -19,7 +19,7 @@ export function allowedActionsAfter(before: readonly ActionCode[], after: Disput
     const allowed = after.allowedActions.includes(code);
     let why: string | null = null;
     if (!allowed) {
-      if (code === 'provide_evidence' && hasSellerEvidence(after)) why = 'Removed by PayPal: evidence already submitted';
+      if (code === 'provide_evidence' && sellerEvidenceBlocks(after)) why = 'Removed by PayPal: evidence already submitted';
       else if (after.status === 'UNDER_REVIEW') why = 'Not offered while PayPal reviews';
       else why = 'No longer offered by PayPal';
     }

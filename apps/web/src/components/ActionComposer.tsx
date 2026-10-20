@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CONTRACTS, statusLabel } from '../domain/actionContracts';
-import { ACTION_TEXT_LIMIT, acceptConsequenceText, type ActionAvailability, type ActionRequest, type IntentAction, type Money } from '../domain/actions';
+import { ACTION_TEXT_LIMIT, ESCALATE_CONSEQUENCE, acceptConsequenceText, type ActionAvailability, type ActionRequest, type IntentAction, type Money } from '../domain/actions';
 import { parseAmount } from '../domain/amounts';
 import { formatCount } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
@@ -10,14 +10,16 @@ const VARIANT_LABEL: Partial<Record<string, string>> = {
   send_message: 'Message',
   'accept_claim:REFUND': 'Full refund',
   'accept_claim:PARTIAL_REFUND': 'Partial refund',
+  escalate: 'Escalate to a claim',
 };
 
 /**
  * An action other than evidence, as the merchant writes it: for a message, the text with its `n / 2,000` count; for an
- * accept, the type (full or partial refund), the partial amount and an optional note, with what PayPal does then; for
- * every action, whether PayPal offers it now and each variant's status as the contract registry gives it
- * («Tested locally», «Not available: <reason>»). Only a sendable message or accept can be reviewed; anyone else (a
- * reviewer or a member, for an owner-only accept) sees the preview only.
+ * accept, the type (full or partial refund), the partial amount and the note, with what PayPal does then; for an
+ * escalation, the note and what PayPal does then; for every action, whether PayPal offers it now and each variant's
+ * status as the contract registry gives it («Tested locally», «Not available: <reason>»). Only a sendable message,
+ * accept or escalation can be reviewed; anyone else (a reviewer or a member, for an owner-only action) sees the preview
+ * only.
  */
 export function ActionComposer({
   action,
@@ -88,6 +90,7 @@ export function ActionComposer({
         </>
       )}
       {action === 'accept_claim' && <AcceptComposer availability={availability} locked={locked} disputeAmount={disputeAmount} onRequest={onRequest} />}
+      {action === 'escalate' && <EscalateComposer availability={availability} locked={locked} onRequest={onRequest} />}
     </section>
   );
 }
@@ -178,6 +181,46 @@ function AcceptComposer({
           onClick={() => onRequest?.({ action: 'accept_claim', acceptType: type, note: note.trim(), amount: type === 'PARTIAL_REFUND' ? partialAmount : null, attachments: [] })}
         >
           Review the accept →
+        </PrimaryAction>
+      )}
+    </>
+  );
+}
+
+/**
+ * An escalation: the note to PayPal (required, at most 2,000 characters) and what happens then, shown to everyone while
+ * the recorded variant is available; the review button only to whoever may send it (the owner).
+ */
+function EscalateComposer({ availability, locked, onRequest }: { availability: ActionAvailability; locked: string | null; onRequest: ((req: ActionRequest) => void) | undefined }) {
+  const [note, setNote] = useState('');
+  if (!availability.variants.some((v) => v.variant === 'escalate' && v.available)) return null;
+  const owner = availability.sendable;
+  const len = note.trim().length;
+  const over = len > ACTION_TEXT_LIMIT;
+  const ready = owner && !locked && len > 0 && !over;
+  return (
+    <>
+      <label className="flex flex-col gap-1">
+        <span className="flex justify-between text-[12.5px]">
+          <span className="font-medium">Note to PayPal</span>
+          <span className={cx('font-mono text-[12px]', over ? 'text-bad' : 'text-ink-2')}>{`${formatCount(len)} / ${formatCount(ACTION_TEXT_LIMIT)}`}</span>
+        </span>
+        <textarea
+          aria-label="Note to PayPal"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          disabled={!owner}
+          className="resize-y rounded-[7px] border border-line-2 bg-surface px-2.5 py-2 text-body leading-normal text-ink disabled:opacity-60"
+        />
+      </label>
+      <p data-testid="escalate-consequence" className="m-0 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
+        {ESCALATE_CONSEQUENCE}
+      </p>
+      {locked && <span className="text-[12px] text-warn">{locked}</span>}
+      {owner && (
+        <PrimaryAction enabled={ready && !!onRequest} onClick={() => onRequest?.({ action: 'escalate', note: note.trim(), attachments: [] })}>
+          Review the escalation →
         </PrimaryAction>
       )}
     </>

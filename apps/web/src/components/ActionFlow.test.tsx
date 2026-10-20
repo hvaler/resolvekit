@@ -298,3 +298,89 @@ describe('accept_claim: full and partial are never presented alike (Task 9)', ()
     }
   });
 });
+
+describe('escalate: owner only, a note, MOVES_TO_CLAIM, never shown as closed (Task 10)', () => {
+  const waiting: DisputeSnapshot = {
+    ...snap,
+    allowedActions: ['provide_evidence', 'send_message', 'make_offer', 'accept_claim', 'escalate'],
+    amount: { value: '7.00', currency: 'USD' },
+    reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED',
+    responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND', 'REFUND'], offerTypes: ['REFUND'] },
+  };
+  const NOTE = 'The parcel was shipped with tracking; we ask PayPal to review.';
+  const esc = {
+    ...(composeAction({ caseId: 'CASE-1', req: { action: 'escalate', note: NOTE, attachments: [] }, snap: waiting, disputeId: 'PP-R-1', seller: 'S', files: [] }) as object),
+    id: 'int-10',
+    contentHash: 'e'.repeat(64),
+    requestId: 'rk-int-10',
+    status: 'approved',
+  } as SubmissionIntent;
+  const CONSEQUENCE = 'The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.';
+
+  it('review and confirmation: the note exactly, the consequence and MOVES_TO_CLAIM with no amount', () => {
+    const r = view({ step: 'review', intent: esc, repeat: false });
+    expect(r).toContain('Review the escalation');
+    expect(r).toContain(NOTE);
+    expect(r).toContain(CONSEQUENCE);
+    const c = view({ step: 'confirm', intent: esc, terms: { intentId: esc.id, contentHash: esc.contentHash, action: 'escalate', amount: null, currency: null, consequence: 'MOVES_TO_CLAIM' } });
+    expect(c).toContain('MOVES_TO_CLAIM');
+    expect(c).toContain(CONSEQUENCE);
+    expect(c).not.toContain('confirm-amount');
+  });
+
+  it('recorded while PayPal reviews: said honestly, never closed; the claim once PayPal opens it; pending stays pending', () => {
+    const reviewing = { ...waiting, status: 'UNDER_REVIEW' as const, allowedActions: [] };
+    const r = view({ step: 'result', intent: esc, result: { kind: 'recorded', detail: 'Recorded by PayPal', snapshot: reviewing, base: null } });
+    expect(r).toContain('Recorded by PayPal: inquiry escalated');
+    expect(r).toContain('PayPal is reviewing; the claim stage can take a few minutes');
+    expect(r).not.toMatch(/dispute (is )?closed|was closed|[Rr]esolved/);
+    const claim = { ...waiting, stage: 'CHARGEBACK', allowedActions: ['provide_evidence', 'accept_claim'] as DisputeSnapshot['allowedActions'] };
+    expect(view({ step: 'result', intent: esc, result: { kind: 'recorded', detail: 'Recorded by PayPal', snapshot: claim, base: null } })).toContain('The dispute is a claim now (CHARGEBACK)');
+    const p = view({ step: 'result', intent: esc, result: { kind: 'pending', detail: 'Outcome pending confirmation', snapshot: claim, base: null } });
+    expect(p).toContain('Outcome pending confirmation');
+    expect(p).toContain('the escalation recorded or absent');
+    expect(p).not.toContain('inquiry escalated');
+  });
+
+  it('the composer: the owner writes the note and reviews; a reviewer or member sees the preview only', () => {
+    const owner = renderToString(<ActionComposer action="escalate" text="" onText={noop} availability={actionAvailability(waiting, 'escalate', { role: 'owner', reviewer: false })} locked={null} onReview={noop} onRequest={noop} />);
+    expect(owner.replace(/<!-- -->/g, '')).toContain('Escalate to a claim · Tested locally');
+    expect(owner).toContain('Note to PayPal');
+    expect(owner).toContain(CONSEQUENCE);
+    expect(owner).toMatch(/<button[^>]*disabled[^>]*>Review the escalation/);
+    for (const who of [{ role: 'member' as const, reviewer: true }, { role: 'member' as const, reviewer: false }]) {
+      const html = renderToString(<ActionComposer action="escalate" text="" onText={noop} availability={actionAvailability(waiting, 'escalate', who)} locked={null} onReview={noop} onRequest={noop} />);
+      expect(html).toContain('Only the workspace owner can send this action');
+      expect(html).toContain(CONSEQUENCE);
+      expect(html).not.toContain('Review the escalation');
+    }
+    // Another reason: not verified with PayPal, nothing to write.
+    const nad = renderToString(<ActionComposer action="escalate" text="" onText={noop} availability={actionAvailability({ ...waiting, reason: 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' }, 'escalate', { role: 'owner', reviewer: false })} locked={null} onReview={noop} onRequest={noop} />);
+    expect(nad.replace(/<!-- -->/g, '')).toContain('Not available: not verified with PayPal for this dispute reason');
+    expect(nad).not.toContain('Note to PayPal');
+  });
+
+  it('controller, simulator: the owner confirms MOVES_TO_CLAIM; recorded while PayPal reviews', async () => {
+    const T0 = Date.UTC(2026, 9, 20, 6, 17, 37);
+    const clock = { t: T0 };
+    const gateway = new SimulatedDisputeGateway([waiting], { outcome: () => 'waiting_for_buyer', now: () => new Date(clock.t) });
+    const f = new ActionFlowController({
+      caseId: 'CASE-1',
+      request: { action: 'escalate', note: NOTE, attachments: [] },
+      source: new LocalIntentClient(),
+      gateway,
+      mode: { kind: 'simulator' },
+      onState: () => {},
+      audit: () => {},
+      applySnapshot: () => {},
+      now: () => new Date(clock.t),
+    });
+    await f.start();
+    await f.approve();
+    expect(f.state).toMatchObject({ step: 'confirm', terms: { action: 'escalate', amount: null, currency: null, consequence: 'MOVES_TO_CLAIM' } });
+    expect(gateway.sentActions).toEqual([]);
+    await f.confirm();
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'recorded', snapshot: { status: 'UNDER_REVIEW', stage: 'INQUIRY' } } });
+    expect(view(f.state, { kind: 'simulator' })).toContain('PayPal is reviewing; the claim stage can take a few minutes');
+  });
+});

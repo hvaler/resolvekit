@@ -152,7 +152,10 @@ test('callPayPal: one POST by action in the contract’s format, with the intent
     ],
   );
   // A variant without a recorded contract never reaches PayPal.
-  await assert.rejects(callPayPal(pp.client, REAL, { ...blank, action: 'escalate', payload: { kind: 'escalate', note: 'x' } }, [], 'rk-int-3'), /Not available: Contract recorded; flow not built yet/);
+  await assert.rejects(
+    callPayPal(pp.client, REAL, { ...blank, action: 'make_offer', payload: { kind: 'make_offer', offerType: 'REFUND', note: 'x', amount: { value: '1.00', currency: 'USD' } } }, [], 'rk-int-3'),
+    /Not available: Contract recorded; flow not built yet/,
+  );
   // An accept without its note never reaches PayPal (none was recorded), and is refused before send_started.
   const noNote = { ...blank, action: 'accept_claim' as const, payload: { kind: 'accept_claim' as const, acceptType: 'REFUND', note: '', amount: null } };
   await assert.rejects(callPayPal(pp.client, REAL, noNote, [], 'rk-int-4', TEST_CONTRACTS), /with its note/);
@@ -436,7 +439,6 @@ test('server: send_message through the real registry entry, body format from the
   state.dispute = { ...state.dispute, dispute_life_cycle_stage: 'INQUIRY' };
   // The actions whose flows are not built yet are still refused.
   for (const body of [
-    { action: 'escalate', note: 'Delivered.' },
     { action: 'make_offer', offerType: 'REFUND', note: 'Half back.', amount: { value: '3.50', currency: 'USD' } },
   ]) {
     const r = await answer(await app(postRaw(intentPath, body)));

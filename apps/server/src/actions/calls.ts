@@ -12,6 +12,7 @@
  * Pinned (Task 9): accept-claim is JSON `{ "note", "accept_claim_type": "REFUND" }` (W-10) or, for a partial accept,
  * `{ "note", "accept_claim_type": "PARTIAL_REFUND", "refund_amount": { currency_code, value } }` (W-9) —
  * packages/paypal/contracts/accept_claim-*.json.
+ * Pinned (Task 10): escalate is JSON `{ "note" }` (W-5) — packages/paypal/contracts/escalate.json.
  */
 import { PayPalError, type EvidenceFile, type PayPalClient } from '@resolvekit/paypal';
 import { CONTRACTS, variantOf, type VariantContract } from '../../../web/src/domain/actionContracts.ts';
@@ -84,6 +85,8 @@ export async function callPayPal(
     }
     case 'escalate':
       if (p?.kind !== 'escalate') break;
+      // As recorded (W-5): `{ note }`. PayPal requires the note (1–2,000 characters); composing requires it too.
+      if (!p.note) throw new NotSendable('An escalation is sent only with its note');
       return paypal.disputes.escalate(disputeId, p.note, opts);
     case 'appeal':
       return paypal.disputes.appeal(disputeId, { evidence_type: c.evidenceType, notes: c.notes }, files, opts);
@@ -106,6 +109,7 @@ export function sendProblem(c: IntentContent, files: readonly EvidenceFile[], co
   if (action !== 'appeal' && c.payload?.kind !== action) return 'The intent’s payload does not match its action';
   if (action === 'send_message' && files.length > 1) return 'A message carries at most one file';
   if (c.payload?.kind === 'accept_claim' && !c.payload.note) return 'An accept is sent only with its note';
+  if (c.payload?.kind === 'escalate' && !c.payload.note) return 'An escalation is sent only with its note';
   if (files.length && contract.body !== 'multipart') return 'A file goes only with a multipart variant';
   return null;
 }

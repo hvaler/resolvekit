@@ -84,7 +84,8 @@ function approvedValue(c: IntentContent, field: string): string | undefined {
     case 'send_message':
       return field === 'content' ? p.text : undefined;
     case 'escalate':
-      return field === 'notes' ? p.note : undefined;
+      // W-5: the escalation is the seller's evidences[] entry with action_info.action ESCALATE and the note.
+      return ({ notes: p.note, 'action_info.action': 'ESCALATE' } as Record<string, string>)[field];
     case 'accept_claim':
       // W-9: PayPal records a partial accept as the seller's offer (offer.history SELLER PROPOSED, type REFUND, the
       // partial amount; the accept type is not echoed and no ACCEPT_CLAIM entry appears). Only those fields answer.

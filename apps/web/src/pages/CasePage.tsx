@@ -32,7 +32,7 @@ import { actionAvailability, type ActionRequest, type Viewer } from '../domain/a
 import { onSimulator } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
-import { hasSellerEvidence, payPalEvents, startsFurtherOn } from '../domain/recorded';
+import { payPalEvents, sellerEvidenceBlocks, startsFurtherOn } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
@@ -90,7 +90,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const corrections = useMemo(() => uploadCorrections(up.uploads), [up.uploads]);
   const docs = useMemo(() => (confirmedUps.length ? { ...caseDocs, evidence: [...caseDocs.evidence, ...confirmedUps.map(uploadEvidence)] } : caseDocs), [caseDocs, confirmedUps]);
 
-  const submitted = !!snap && hasSellerEvidence(snap);
+  // Seller evidence already in for this stage (after an escalation, the claim's own: W-6).
+  const submitted = !!snap && sellerEvidenceBlocks(snap);
   const allowed: readonly ActionCode[] = caseAllowedActions(source, snapshots[id], demo.allowedActions);
 
   // The analyst reads the documents exactly as shown: once PayPal's (and MeterMCP's) data is in for a bound case.

@@ -1,3 +1,5 @@
+import { CONTRACTS } from './actionContracts.ts';
+import type { ContractRegistry } from './actions.ts';
 import type { CaseFile, DisputeSnapshot, EvidenceSubmission, RecordedEvidence, TimelineItem } from './types';
 
 /**
@@ -16,6 +18,41 @@ export function sellerEvidence(s: DisputeSnapshot): RecordedEvidence[] {
 /** PayPal shows evidence submitted by the seller on this dispute. */
 export function hasSellerEvidence(s: DisputeSnapshot): boolean {
   return s.evidences.some(isSellerSubmission);
+}
+
+/** Evidence by stage needs the recorded variant (W-6): each entry carries the stage it was made in. */
+const byStageRecorded = (contracts: Pick<ContractRegistry, 'evidence:after_escalation'>): boolean => contracts['evidence:after_escalation'].status !== 'not_available';
+
+/**
+ * PayPal shows seller evidence that blocks more evidence now. With `evidence:after_escalation` recorded (W-6), only
+ * evidence in the dispute's current stage does (PayPal's `dispute_life_cycle_stage` on the entry): evidence sent in the
+ * inquiry does not block the claim. An entry without a stage, or a dispute without one, blocks the whole dispute, as
+ * does any seller evidence while that variant is not recorded. The ESCALATE entry is never evidence.
+ */
+export function sellerEvidenceBlocks(s: DisputeSnapshot, contracts: Pick<ContractRegistry, 'evidence:after_escalation'> = CONTRACTS): boolean {
+  if (!byStageRecorded(contracts)) return hasSellerEvidence(s);
+  return sellerEvidence(s).some((e) => !e.stage || !s.stage || e.stage === s.stage);
+}
+
+/** The seller escalated this dispute: PayPal shows the seller's ESCALATE entry (W-5). */
+export const sellerEscalated = (s: DisputeSnapshot): boolean => s.evidences.some((e) => e.source === 'SUBMITTED_BY_SELLER' && e.action === 'ESCALATE');
+
+/** The state W-6 sent evidence from after the escalation: the claim, waiting for the seller. */
+const AFTER_ESCALATION = { stage: 'CHARGEBACK', status: 'WAITING_FOR_SELLER_RESPONSE' } as const;
+
+/**
+ * Why evidence cannot be sent on this dispute after the seller's escalation ([A2]), or null: only the recorded variant,
+ * and only from the state it was recorded from (not, e.g., the inquiry under review whose links flicker after W-5).
+ * A dispute the seller did not escalate keeps the existing evidence flow.
+ */
+export function evidenceAfterEscalationRefusal(s: DisputeSnapshot, contracts: Pick<ContractRegistry, 'evidence:after_escalation'> = CONTRACTS): string | null {
+  if (!sellerEscalated(s)) return null;
+  const c = contracts['evidence:after_escalation'];
+  if (c.status === 'not_available') return `Not available: ${c.reason ?? 'Contract not recorded yet'}`;
+  if (s.stage !== AFTER_ESCALATION.stage || s.status !== AFTER_ESCALATION.status) {
+    return 'Not available: after an escalation, evidence was verified with PayPal only once the claim waits for the seller';
+  }
+  return null;
 }
 
 /** An evidence entry's identity: who, what, when and its content, as PayPal reports it. */

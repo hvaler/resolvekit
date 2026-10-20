@@ -5,7 +5,7 @@
  */
 import { utcDateTime } from '@resolvekit/cases';
 import { STAGE_LABEL } from './status';
-import { hasSellerEvidence } from './recorded';
+import { sellerEvidenceBlocks } from './recorded';
 import type { BuyerItemType, DisputeSnapshot, DisputeStatus } from './types';
 
 export type NextKind = 'approve' | 'contra' | 'work' | 'processing' | 'none';
@@ -290,7 +290,7 @@ export function applySnapshot(d: InboxDispute, s: DisputeSnapshot | undefined): 
       dueNote: closed ? `Closed ${closed}` : 'Closed',
     };
   }
-  if (hasSellerEvidence(s)) {
+  if (sellerEvidenceBlocks(s)) {
     const reviewing = s.status === 'UNDER_REVIEW';
     return {
       ...d,

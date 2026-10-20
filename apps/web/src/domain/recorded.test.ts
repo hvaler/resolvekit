@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { safeRetry, submitWithReadBack, type DisputeGateway } from './gateway';
 import { resolvedCase, standardCase } from '@resolvekit/cases';
-import { hasSellerEvidence, newSellerEvidence, startsFurtherOn } from './recorded';
+import { CONTRACTS } from './actionContracts';
+import { evidenceAfterEscalationRefusal, hasSellerEvidence, newSellerEvidence, sellerEscalated, sellerEvidenceBlocks, startsFurtherOn } from './recorded';
 import type { DisputeSnapshot, EvidenceSubmission, RecordedEvidence } from './types';
 
 // Evidence entries shaped like a real sandbox dispute read (2026-10-08): the buyer's own entry and PayPal's request
@@ -170,5 +171,53 @@ describe('the timeline after a send (Task 8 review)', () => {
     expect(standardCase.simulatedPayPal?.messages?.length).toBe(1);
     expect(startsFurtherOn(standardCase)).toBe(false);
     expect(startsFurtherOn(resolvedCase)).toBe(true);
+  });
+});
+
+describe('evidence by stage after an escalation (Task 10, W-6)', () => {
+  const entry = (stage: string | null, action: string | null = 'PROVIDE_EVIDENCE'): RecordedEvidence => ({
+    evidenceType: action === 'ESCALATE' ? 'OTHER' : 'PROOF_OF_FULFILLMENT',
+    source: 'SUBMITTED_BY_SELLER',
+    action,
+    ...(stage ? { stage } : {}),
+    date: '2026-10-20T06:17:41.810Z',
+    carrier: '',
+    tracking: '',
+    notes: 'x',
+    files: [],
+    storedAt: '',
+  });
+  const claim = (evidences: RecordedEvidence[], over: Partial<DisputeSnapshot> = {}): DisputeSnapshot => ({
+    id: 'D',
+    status: 'WAITING_FOR_SELLER_RESPONSE',
+    stage: 'CHARGEBACK',
+    allowedActions: ['provide_evidence', 'accept_claim'],
+    evidences: [buyerCreate, requested, ...evidences],
+    readAt: '',
+    ...over,
+  });
+  const notRecorded = { 'evidence:after_escalation': { ...CONTRACTS['evidence:after_escalation'], status: 'not_available' as const, reason: 'Contract not recorded yet' } };
+
+  it('inquiry evidence does not block the claim; claim evidence does; an entry or dispute without a stage blocks it all', () => {
+    expect(sellerEvidenceBlocks(claim([entry('INQUIRY')]))).toBe(false);
+    expect(sellerEvidenceBlocks(claim([entry('INQUIRY'), entry('CHARGEBACK')]))).toBe(true);
+    expect(sellerEvidenceBlocks(claim([entry(null)]))).toBe(true);
+    expect(sellerEvidenceBlocks(claim([entry('INQUIRY')], { stage: null }))).toBe(true);
+    // The ESCALATE entry is not evidence.
+    expect(sellerEvidenceBlocks(claim([entry('INQUIRY', 'ESCALATE')]))).toBe(false);
+    expect(hasSellerEvidence(claim([entry('INQUIRY', 'ESCALATE')]))).toBe(false);
+    // Not recorded: the whole dispute, as before.
+    expect(sellerEvidenceBlocks(claim([entry('INQUIRY')]), notRecorded)).toBe(true);
+  });
+
+  it('after the seller escalated, evidence only from the recorded state (the claim waiting for the seller)', () => {
+    const esc = entry('INQUIRY', 'ESCALATE');
+    expect(sellerEscalated(claim([esc]))).toBe(true);
+    expect(evidenceAfterEscalationRefusal(claim([esc]))).toBeNull();
+    expect(evidenceAfterEscalationRefusal(claim([esc], { stage: 'INQUIRY', status: 'UNDER_REVIEW', allowedActions: ['provide_evidence'] }))).toMatch(/^Not available: after an escalation/);
+    expect(evidenceAfterEscalationRefusal(claim([esc]), notRecorded)).toBe('Not available: Contract not recorded yet');
+    // Escalated by someone else (no seller ESCALATE entry): the existing evidence flow.
+    expect(evidenceAfterEscalationRefusal(claim([]), notRecorded)).toBeNull();
+    expect(evidenceAfterEscalationRefusal(claim([{ ...esc, source: 'SUBMITTED_BY_BUYER' }]))).toBeNull();
   });
 });

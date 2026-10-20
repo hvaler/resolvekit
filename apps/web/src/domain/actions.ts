@@ -236,7 +236,7 @@ export function actionAvailabilityWith(snap: DisputeSnapshot, action: IntentActi
     if (!variant) return { variant: null, type, available: false, why: UNCOVERED_TYPE };
     const c = contracts[variant];
     if (c.status === 'not_available') return { variant, type, available: false, why: c.reason ?? 'Not available' };
-    const outside = action === 'accept_claim' && type ? acceptOutsideContract(type, snap) : null;
+    const outside = action === 'accept_claim' && type ? acceptOutsideContract(type, snap) : action === 'escalate' ? escalateOutsideContract(snap) : null;
     return { variant, type, available: !outside, why: outside };
   });
   // Evidence keeps its own flow (its variants are checked where it is composed).
@@ -279,6 +279,8 @@ export const RECORDED_STAGES: Readonly<Partial<Record<SimpleAction, readonly str
   send_message: Object.freeze(['INQUIRY']),
   // W-9 and W-10 (packages/paypal/contracts/accept_claim-*.json): INQUIRY before and after.
   accept_claim: Object.freeze(['INQUIRY']),
+  // W-5 (packages/paypal/contracts/escalate.json): sent from INQUIRY; the claim (CHARGEBACK) came minutes later.
+  escalate: Object.freeze(['INQUIRY']),
 });
 
 /**
@@ -301,11 +303,24 @@ export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Ob
         : { stages: RECORDED_STAGES.accept_claim!, amount: 'required', belowDispute: true, ...(snap.allowedRefund ? { belowAmount: snap.allowedRefund } : {}), text: 'required' };
     return outside ? { ...r, unavailable: outside } : r;
   },
+  // escalate, as recorded (W-5): from an inquiry on a not-received dispute, a note (PayPal: 1–2,000 characters), no
+  // amount. Another reason was never escalated in the sandbox: unavailable.
+  escalate: (req, snap): ActionRules | null => {
+    if (req.action !== 'escalate') return null;
+    const r: ActionRules = { stages: RECORDED_STAGES.escalate!, amount: 'not_allowed', text: 'required' };
+    const outside = escalateOutsideContract(snap);
+    return outside ? { ...r, unavailable: outside } : r;
+  },
 });
 
-/** The only dispute reason an accept was recorded on (W-9, W-10). */
-const ACCEPT_RECORDED_REASON = 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED';
-export const ACCEPT_REASON_NOT_VERIFIED = 'not verified with PayPal for this dispute reason';
+/** The only dispute reason an accept (W-9, W-10) and an escalation (W-5) were recorded on. */
+const RECORDED_REASON = 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED';
+export const REASON_NOT_VERIFIED = 'not verified with PayPal for this dispute reason';
+
+/** Why an escalation of this dispute is outside what W-5 recorded ([A2]): only the not-received reason. */
+export function escalateOutsideContract(snap: DisputeSnapshot): string | null {
+  return snap.reason === RECORDED_REASON ? null : REASON_NOT_VERIFIED;
+}
 export const REFUNDABLE_DIFFERS = "PayPal's refundable amount differs from the dispute amount";
 
 /** Two amounts are the same money: the same currency and the same integer minor units. */
@@ -324,7 +339,7 @@ function sameMoney(a: Money | null | undefined, b: Money | null | undefined): bo
  * (W-10 recorded them equal; PayPal refunds the refundable amount, which the owner must have confirmed).
  */
 export function acceptOutsideContract(acceptType: string, snap: DisputeSnapshot): string | null {
-  if (snap.reason !== ACCEPT_RECORDED_REASON) return ACCEPT_REASON_NOT_VERIFIED;
+  if (snap.reason !== RECORDED_REASON) return REASON_NOT_VERIFIED;
   if (acceptType === 'REFUND' && !sameMoney(snap.allowedRefund, snap.amount)) return REFUNDABLE_DIFFERS;
   if (acceptType === 'PARTIAL_REFUND' && !snap.allowedRefund) return 'PayPal reports no refundable amount for this dispute';
   return null;
@@ -338,7 +353,8 @@ function payloadOf(req: ActionRequest, amount: Money | null): ActionPayload {
     case 'send_message':
       return { kind: 'send_message', text: req.text };
     case 'escalate':
-      return { kind: 'escalate', note: req.note };
+      // Trimmed like an accept's note: what is approved, hashed, sent and matched against the ESCALATE entry.
+      return { kind: 'escalate', note: req.note.trim() };
     case 'accept_claim':
       // Trimmed as the composer and the server's parser trim it: what is approved, hashed, sent and matched.
       return { kind: 'accept_claim', acceptType: req.acceptType, note: req.note.trim(), amount };
@@ -500,6 +516,9 @@ export function sameTerms(a: ConfirmationTerms, b: unknown): boolean {
   return Object.keys(b).length === TERM_KEYS.length && TERM_KEYS.every((k) => Object.hasOwn(b, k) && b[k] === a[k]);
 }
 
+/** What an escalation does at PayPal (W-5): the inquiry becomes a claim; what follows is what PayPal offers there. */
+export const ESCALATE_CONSEQUENCE = 'The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.';
+
 /** What happens at PayPal when the action is sent, in plain words for the confirmation (refined by each action's task). */
 export function consequenceText(c: IntentContent): string {
   const m = termsAmount(c);
@@ -510,7 +529,7 @@ export function consequenceText(c: IntentContent): string {
     case 'accept_claim':
       return acceptConsequenceText(c.payload?.kind === 'accept_claim' ? c.payload.acceptType : 'REFUND', m);
     case 'escalate':
-      return 'The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.';
+      return ESCALATE_CONSEQUENCE;
     case 'make_offer':
       return `The buyer is offered ${amount}.`;
     case 'appeal':

@@ -29,6 +29,7 @@ import w2 from '../../../../packages/paypal/contracts/send_message-request-id.js
 import w3 from '../../../../packages/paypal/contracts/send_message-file.json';
 import w9 from '../../../../packages/paypal/contracts/accept_claim-partial_refund.json';
 import w10 from '../../../../packages/paypal/contracts/accept_claim-refund.json';
+import w5 from '../../../../packages/paypal/contracts/escalate.json';
 
 const upl = (n: number) => `upl-${String(n).padStart(24, '0')}`;
 const problem = (r: unknown) => (isComposeProblem(r) ? { status: r.status, error: r.error } : null);
@@ -230,7 +231,7 @@ describe('compose', () => {
     expect(err(composeAction({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh({ allowedActions: [] }) }))).toBe('409 ACTION_NOT_OFFERED');
     const r = composeActionWith({ ...base, req: { action: 'send_message', text: 'Hi', attachments: [] }, snap: khh() }, UNRECORDED);
     expect(r).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: Contract not recorded yet' });
-    expect(err(composeAction({ ...base, req: { action: 'escalate', note: 'Delivered.', attachments: [] }, snap: khh() }))).toBe('409 VARIANT_NOT_AVAILABLE');
+    expect(err(composeActionWith({ ...base, req: { action: 'escalate', note: 'Delivered.', attachments: [] }, snap: khh() }, { ...CONTRACTS, escalate: { ...CONTRACTS.escalate, status: 'not_available', reason: 'Contract not recorded yet' } }))).toBe('409 VARIANT_NOT_AVAILABLE');
     // PayPal does not allow the type now.
     const acc = { ...CONTRACTS, 'accept_claim:REFUND': testContract('accept_claim:REFUND') };
     const onlyPartial = khh({ responseOptions: { acceptClaimTypes: ['PARTIAL_REFUND'], offerTypes: [] } });
@@ -493,5 +494,43 @@ describe('accept_claim rules (Task 9, from the recorded contracts W-9 and W-10)'
     expect(text).toContain('buyer');
     expect(text).toBe('PayPal offers the buyer a partial refund of 2.00 USD. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.');
     expect(text).not.toMatch(/PayPal refunds|closes the dispute|cannot be undone/);
+  });
+});
+
+describe('escalate rules (Task 10, from the recorded contract W-5)', () => {
+  const base = { caseId: 'case-1', disputeId: 'PP-R-NDZ-10193597', seller: 'JWULA7T75ZA4Q', files: [] };
+  const escalate = (note = w5.request.body.note) => ({ action: 'escalate' as const, note, attachments: [] as [] });
+  const err = (r: unknown) => (isComposeProblem(r) ? `${r.status} ${r.error}` : 'ok');
+  const approved = (c: unknown): SubmissionIntent => ({ ...(c as SubmissionIntent), id: 'int-10', contentHash: 'e'.repeat(64), requestId: 'rk-int-10', status: 'approved' });
+
+  it('available as recorded, to the owner only; another reason is not verified with PayPal', () => {
+    expect(actionAvailability(khh(), 'escalate', OWNER)).toMatchObject({ offered: true, sendable: true, why: null, variants: [{ variant: 'escalate', type: null, available: true, why: null }] });
+    for (const who of [REVIEWER, MEMBER]) expect(actionAvailability(khh(), 'escalate', who)).toMatchObject({ sendable: false, why: 'Only the workspace owner can send this action' });
+    const nad = khh({ reason: 'MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED' });
+    expect(actionAvailability(nad, 'escalate', OWNER)).toMatchObject({ sendable: false, why: 'not verified with PayPal for this dispute reason' });
+    expect(composeAction({ ...base, req: escalate(), snap: nad })).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: not verified with PayPal for this dispute reason' });
+  });
+
+  it('the stage rule is the stage W-5 was sent from: INQUIRY only', () => {
+    expect(w5.before.dispute_life_cycle_stage).toBe('INQUIRY');
+    expect(err(composeAction({ ...base, req: escalate(), snap: khh({ stage: 'CHARGEBACK' }) }))).toBe('409 ACTION_STAGE');
+  });
+
+  it('a note (≤ 2,000, trimmed), no amount; terms MOVES_TO_CLAIM with no amount; the consequence in plain words', () => {
+    expect(Object.keys(w5.request.body)).toEqual(['note']);
+    expect(err(composeAction({ ...base, req: escalate('  '), snap: khh() }))).toBe('422 TEXT_REQUIRED');
+    expect(err(composeAction({ ...base, req: escalate('x'.repeat(ACTION_TEXT_LIMIT + 1)), snap: khh() }))).toBe('422 TEXT_TOO_LONG');
+    expect(ACTION_RULES.escalate?.(escalate(), khh())).toEqual({ stages: ['INQUIRY'], amount: 'not_allowed', text: 'required' });
+    const c = composeAction({ ...base, req: escalate(`  ${w5.request.body.note}  `), snap: khh() });
+    expect(c).toMatchObject({ action: 'escalate', payload: { kind: 'escalate', note: w5.request.body.note } });
+    const i = approved(c);
+    expect(confirmationTerms(i, false)).toEqual({ intentId: 'int-10', contentHash: 'e'.repeat(64), action: 'escalate', amount: null, currency: null, consequence: 'MOVES_TO_CLAIM' });
+    expect(consequenceText(i)).toBe('The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.');
+  });
+
+  it('a new buyer message does not hold escalate', () => {
+    const i = approved(composeAction({ ...base, req: escalate(), snap: khh() }));
+    const fresh = khh({ messages: [...khh().messages!, { postedBy: 'BUYER', time: '2026-10-19T09:00:00.000Z', content: 'Still nothing.', files: [] }] });
+    expect(relevantNewBuyerMessages(intentAction(i), khh().messages!.map(messageKey), fresh)).toEqual([]);
   });
 });

@@ -176,9 +176,15 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // Recorded 20/10/2026 (owner-approved W-5, PP-R-NDZ-10193597): JSON accepted; an attributable evidences[] entry
   // (SUBMITTED_BY_SELLER, action_info.action ESCALATE, the note) ≈3.9 s after the send started. The stage moved to
   // CHARGEBACK ≈2 min 46 s later; in between the status was UNDER_REVIEW and the links flickered (never "closed").
-  // Task 10 must map action_info.action → 'ESCALATE' in the read-back's approved values.
+  // The read-back maps action_info.action 'ESCALATE' and the note from the approved content; a stage change alone is
+  // never proof (the buyer or PayPal can escalate too).
+  // Tested locally (Task 10): owner only, the bound second confirmation (MOVES_TO_CLAIM, no amount), a note required,
+  // only from the recorded state (INQUIRY, a not-received dispute), the recorded body, the ESCALATE proof and the
+  // simulator's recorded transition (the transient UNDER_REVIEW, the claim stage after a delay). No closure lock.
   escalate: {
-    ...base('escalate', `${REF}disputes-escalate`, 'json', route('escalate'), ESCALATE_PROOF, ev('escalate'), 'Contract recorded; flow not built yet'),
+    ...base('escalate', `${REF}disputes-escalate`, 'json', route('escalate'), ESCALATE_PROOF, ev('escalate')),
+    status: 'tested_locally',
+    reason: null,
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/escalate.json',
   },
@@ -206,9 +212,14 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   'evidence:PROOF_OF_REFUND': base('evidence:PROOF_OF_REFUND', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('proof-of-refund'), 'Not verified with PayPal: pending sandbox test (W-11)'),
   // Recorded 20/10/2026 (owner-approved W-6, after W-5): evidence is accepted again in CHARGEBACK; each evidences[]
   // entry carries `dispute_life_cycle_stage` (the escalation's INQUIRY, this one CHARGEBACK), which is what ties sent
-  // evidence to a stage. Read back by the existing provide-evidence matcher (no proof here); Task 10 maps the stage.
+  // evidence to a stage. Read back by the existing provide-evidence matcher (no proof here).
+  // Tested locally (Task 10): the evidence memory by (dispute, stage) from each entry's dispute_life_cycle_stage
+  // (recorded.ts), evidence after an escalation only in the recorded state (the claim waiting for the seller), and the
+  // simulator's recorded transition (UNDER_REVIEW in the claim, no seller action).
   'evidence:after_escalation': {
-    ...base('evidence:after_escalation', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('escalate'), 'Contract recorded; flow not built yet'),
+    ...base('evidence:after_escalation', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('escalate')),
+    status: 'tested_locally',
+    reason: null,
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/evidence-after-escalation.json',
   },
