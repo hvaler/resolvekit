@@ -141,7 +141,14 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
     requestIdDedupes: false,
     recorded: 'packages/paypal/contracts/send_message-file.json',
   },
-  'accept_claim:REFUND': base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim')),
+  // Recorded 20/10/2026 (owner-approved W-10, PP-R-PAU-10193600): JSON accepted; the attributable entry (ACCEPT_CLAIM,
+  // response_option REFUND, the note) ≈5 s after the send started, a 7.00 USD refund at once, RESOLVED (buyer's favour,
+  // SELLER_ISSUED_REFUND) by +2 min after UNDER_REVIEW. Irreversible: money moved and the dispute closed.
+  'accept_claim:REFUND': {
+    ...base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim'), 'Contract recorded; flow not built yet'),
+    absentAfterMs: 60_000,
+    recorded: 'packages/paypal/contracts/accept_claim-refund.json',
+  },
   // Recorded 20/10/2026 (owner-approved W-9, PP-R-KMJ-10193602): accepted (200), but PayPal records a partial accept as
   // an OFFER awaiting the buyer: an offer.history SELLER PROPOSED entry, type REFUND, the partial amount; no evidences[]
   // entry; nothing closes, no money moves until the buyer agrees. Proof = the offer shape (the accept type is not echoed):

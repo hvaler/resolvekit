@@ -1,0 +1,172 @@
+{
+  "dispute_id": "PP-R-PAU-10193600",
+  "create_time": "2026-10-19T19:39:45.831Z",
+  "update_time": "2026-10-20T10:25:33.818Z",
+  "disputed_transactions": [
+    {
+      "buyer_transaction_id": "7T777364L04216447",
+      "seller_transaction_id": "1D883627NE5751825",
+      "create_time": "2026-10-19T19:22:36.000Z",
+      "transaction_status": "REFUNDED",
+      "gross_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "buyer": {},
+      "seller": {
+        "merchant_id": "JWULA7T75ZA4Q"
+      },
+      "items": [
+        {
+          "item_name": "Linen tote, natural",
+          "item_description": "Linen tote, natural",
+          "item_quantity": "1",
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+          "item_type": "PRODUCT"
+        }
+      ],
+      "seller_protection_eligible": true,
+      "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+    }
+  ],
+  "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+  "status": "RESOLVED",
+  "dispute_amount": {
+    "currency_code": "USD",
+    "value": "7.00"
+  },
+  "dispute_state": "RESOLVED",
+  "dispute_outcome": {
+    "outcome_code": "RESOLVED_BUYER_FAVOUR",
+    "outcome_reason": "SELLER_ISSUED_REFUND",
+    "amount_refunded": {
+      "currency_code": "USD",
+      "value": "7.00"
+    }
+  },
+  "money_movements": [
+    {
+      "affected_party": "BUYER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "initiated_time": "2026-10-20T10:23:31.813Z",
+      "type": "CREDIT",
+      "reason": "DISPUTE_SETTLEMENT"
+    },
+    {
+      "affected_party": "SELLER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "initiated_time": "2026-10-20T10:23:31.813Z",
+      "type": "DEBIT",
+      "reason": "DISPUTE_SETTLEMENT"
+    },
+    {
+      "affected_party": "SELLER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "0.57"
+      },
+      "initiated_time": "2026-10-20T10:23:31.813Z",
+      "type": "DEBIT",
+      "reason": "DISPUTE_SETTLEMENT_FEE"
+    }
+  ],
+  "fund_movements": [
+    {
+      "party": "RECEIVER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "6.43"
+      },
+      "initiated_time": "2026-10-19T19:43:04.000Z",
+      "type": "DEBIT",
+      "reason": "HOLD_PLACED"
+    },
+    {
+      "party": "BUYER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "initiated_time": "2026-10-20T10:23:31.813Z",
+      "type": "CREDIT",
+      "reason": "DISPUTE_SETTLEMENT"
+    },
+    {
+      "party": "SELLER",
+      "amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      },
+      "initiated_time": "2026-10-20T10:23:31.813Z",
+      "type": "DEBIT",
+      "reason": "DISPUTE_SETTLEMENT"
+    }
+  ],
+  "dispute_life_cycle_stage": "INQUIRY",
+  "dispute_channel": "INTERNAL",
+  "messages": [
+    {
+      "posted_by": "BUYER",
+      "time_posted": "2026-10-19T19:39:45.831Z",
+      "content": "<buyer message, 13 chars>"
+    }
+  ],
+  "extensions": {
+    "buyer_contacted_time": "2026-10-19T19:39:45.368Z"
+  },
+  "evidences": [
+    {
+      "evidence_type": "CREATE",
+      "notes": "<buyer message, 13 chars>",
+      "source": "SUBMITTED_BY_BUYER",
+      "date": "2026-10-19T19:39:45.831Z",
+      "dispute_life_cycle_stage": "INQUIRY"
+    },
+    {
+      "evidence_type": "OTHER",
+      "notes": "ResolveKit contract test W-10: full refund accepted.",
+      "source": "SUBMITTED_BY_SELLER",
+      "date": "2026-10-20T10:23:31.912Z",
+      "action_info": {
+        "action": "ACCEPT_CLAIM",
+        "response_option": "REFUND"
+      },
+      "dispute_life_cycle_stage": "INQUIRY"
+    }
+  ],
+  "offer": {
+    "buyer_requested_amount": {
+      "currency_code": "USD",
+      "value": "7.00"
+    }
+  },
+  "refund_details": {
+    "allowed_refund_amount": {
+      "currency_code": "USD",
+      "value": "7.00"
+    },
+    "transactions": [
+      {
+        "id": "91V163783G183442G",
+        "gross_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "create_time": "2026-10-20T10:23:31.000Z"
+      }
+    ]
+  },
+  "links": [
+    {
+      "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-PAU-10193600",
+      "rel": "self",
+      "method": "GET"
+    }
+  ]
+}
