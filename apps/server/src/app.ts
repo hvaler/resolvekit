@@ -22,6 +22,7 @@ import { evidenceAfterEscalationRefusal, hasSellerEvidence, sellerEvidence, sell
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
 import { toBinding, verifyBinding, type Binding, type BindingState } from './bindings.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
+import { failureText, isTimeout, json, paypalIssue, readJson, tooMany } from './http.ts';
 import { IntentStore, publicIntent, requestAttachments, type DisputeHold, type StoredIntent } from './intents.ts';
 import { intentAction, isActionRequest, isSimpleAction, type ContractRegistry, type RulesOf, type SimpleAction } from '../../web/src/domain/actions.ts';
 import { CONTRACTS } from '../../web/src/domain/actionContracts.ts';
@@ -206,16 +207,8 @@ export function guard(req: Request, opts: Pick<AppOptions, 'port' | 'token' | 'a
 
 export type Handler = (req: Request) => Promise<Response>;
 
-export const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
-
-const isTimeout = (e: unknown) => e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
-
-/** PayPal's issue code (e.g. EVIDENCE_TYPE_IS_NOT_ALLOWED), if it gave one. */
-function paypalIssue(e: PayPalError): string | undefined {
-  const b = e.body as { name?: string; details?: Array<{ issue?: string }> } | null;
-  return b?.details?.find((d) => d.issue)?.issue ?? b?.name ?? undefined;
-}
+// The shared HTTP helpers (http.ts); `json` is re-exported for the modules that import it from here.
+export { json };
 
 /** A PayPal failure as an API answer. Never includes request headers, tokens or credentials. */
 function fromPayPalError(e: unknown): Response {
@@ -227,11 +220,6 @@ function fromPayPalError(e: unknown): Response {
   return json(502, { error: 'PAYPAL_UNREACHABLE' });
 }
 
-/** A short reason for the audit log (codes, and PayPal's debug_id to trace the request with PayPal). */
-function failureText(e: unknown): string {
-  if (e instanceof PayPalError) return `PayPal ${e.status}${paypalIssue(e) ? ` ${paypalIssue(e)}` : ''}${e.debugId ? ` · debug_id ${e.debugId}` : ''}`;
-  return isTimeout(e) ? 'PayPal timed out' : 'PayPal unreachable';
-}
 
 /** Local mode: every request passes {@link guard} first. */
 export function createApp(opts: AppOptions): Handler {
@@ -847,14 +835,6 @@ export function createApi(opts: ApiOptions): Api {
     return health;
   };
 
-  const readJson = async (req: Request): Promise<{ ok: true; body: unknown } | { ok: false; res: Response }> => {
-    try {
-      return { ok: true, body: await req.json() };
-    } catch {
-      return { ok: false, res: json(400, { error: 'INVALID_JSON' }) };
-    }
-  };
-
   /**
    * POST /api/cases/:id/analysis {input} (?refresh=1 forces a live run) → 200 ready | 202 running | 429 | 503
    * GET  /api/cases/:id/analysis/progress?key=… → running (with the stages done) | ready | failed
@@ -922,11 +902,6 @@ export function createApi(opts: ApiOptions): Api {
     return json(r.status, { ...(r.body as object), input });
   };
 
-  const tooManyIntents = (x: { status: number; error: string; detail: string; retryAfterSec?: number }) => {
-    const r = json(x.status, { error: x.error, detail: x.detail, ...(x.retryAfterSec ? { retryAfterSec: x.retryAfterSec } : {}) });
-    if (x.retryAfterSec) r.headers.set('retry-after', String(x.retryAfterSec));
-    return r;
-  };
 
   /**
    * Hosted: a real dispute is answered only by its seller's own people. The person's workspace merchant id must be the
@@ -959,7 +934,7 @@ export function createApi(opts: ApiOptions): Api {
     }
     // Caps before any expensive work (PayPal read, composing, hashing); nothing changes when refused.
     const full = intents.admit(caseId, who.actor, who.client ?? 'local');
-    if (full) return tooManyIntents(full);
+    if (full) return tooMany(full);
     const st = await caseState(caseId, req);
     if (st instanceof Response) return st;
     const notSeller = sellerRefusal(req, st);
@@ -976,7 +951,7 @@ export function createApi(opts: ApiOptions): Api {
       { ...composed.content, contentHash: composed.contentHash, request: ir, rechecks: composed.rechecks, createdBy: who.actor, createdFrom: who.client ?? 'local', team: who.team ?? null, analysisHash: composed.analysisHash, inputUploads: st.uploads.map((r) => r.id) },
       composed.analysis,
     );
-    if ('ok' in intent) return tooManyIntents(intent);
+    if ('ok' in intent) return tooMany(intent);
     return json(201, publicIntent(intent));
   };
 

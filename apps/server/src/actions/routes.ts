@@ -43,6 +43,7 @@ import { SKEW_MS, proveSend, readBackBase, type ReadBackBase } from '../../../we
 import { contentHash, isComposeProblem } from '../../../web/src/domain/intent.ts';
 import type { DisputeMessage, DisputeSnapshot, SubmissionFile } from '../../../web/src/domain/types.ts';
 import type { ActingPerson, Actor, CaseState, CostlyAction, Reservation } from '../app.ts';
+import { failureText, isTimeout, json, readJson, tooMany } from '../http.ts';
 import { isActionIntent, publicIntent, type DisputeHold, type IntentStore, type Refused, type StoredIntent } from '../intents.ts';
 import { callPayPal, capOf, contractOf, isAmbiguous, issueOf, sendProblem } from './calls.ts';
 
@@ -71,9 +72,6 @@ export interface ActionRouteDeps {
   rules?: Readonly<Partial<Record<SimpleAction, RulesOf>>>;
 }
 
-const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
-
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const HASH = /^[0-9a-f]{64}$/;
 const PENDING = 'Outcome pending confirmation';
@@ -87,24 +85,10 @@ const sellerOf = (d: Dispute | null): string | null => d?.disputed_transactions?
 /** The buyer messages of a read, by key (no text): what an approval is held against ([A5]). */
 const buyerKeys = (s: DisputeSnapshot): string[] => (s.messages ?? []).filter((m) => m.postedBy === 'BUYER').map(messageKey);
 
-const isTimeout = (e: unknown) => e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
-/** A short reason for the trail: codes and PayPal's debug_id, never message text. */
-function failureText(e: unknown): string {
-  if (e instanceof PayPalError) return `PayPal ${e.status}${issueOf(e) ? ` ${issueOf(e)}` : ''}${e.debugId ? ` · debug_id ${e.debugId}` : ''}`;
-  return isTimeout(e) ? 'PayPal timed out' : 'PayPal unreachable';
-}
 /** A failed read of PayPal as an API answer. */
 function readFailure(e: unknown): Response {
   if (e instanceof PayPalError) return json(e.status === 404 ? 404 : 502, { error: 'PAYPAL_READ_FAILED', detail: failureText(e), paypalStatus: e.status, debugId: e.debugId ?? undefined });
   return json(isTimeout(e) ? 504 : 502, { error: isTimeout(e) ? 'PAYPAL_TIMEOUT' : 'PAYPAL_UNREACHABLE' });
-}
-
-async function readJson(req: Request): Promise<{ ok: true; body: unknown } | { ok: false; res: Response }> {
-  try {
-    return { ok: true, body: await req.json() };
-  } catch {
-    return { ok: false, res: json(400, { error: 'INVALID_JSON' }) };
-  }
 }
 
 /** The body is exactly `{ <key>: … }`. */
@@ -558,8 +542,3 @@ function stale(): Response {
   return json(409, { error: 'INTENT_STALE', detail: 'What would be sent now differs from what you approved (the dispute’s stage, status, amount or the content changed); compose it again' });
 }
 
-function tooMany(x: { status: number; error: string; detail: string; retryAfterSec?: number }): Response {
-  const r = json(x.status, { error: x.error, detail: x.detail, ...(x.retryAfterSec ? { retryAfterSec: x.retryAfterSec } : {}) });
-  if (x.retryAfterSec) r.headers.set('retry-after', String(x.retryAfterSec));
-  return r;
-}
