@@ -6,10 +6,16 @@ Cómo se despliegan en Render los dos servicios de ResolveKit, en qué orden y q
 Para cada variable de entorno consulta [Configuración](../technical/configuration.md); para la operación diaria, el
 [Runbook](runbook.md).
 
-**Estado (19/10/2026).** Desplegado. El propietario confirmó que el commit `fbe9621` se desplegó el 19/10 después del
-push, y `npm run demo:check` pasó todas las líneas excepto la reserva vacía del caso estándar (consulta
-[Runbook](runbook.md#rotación-de-disputas-y-reserva)). `demo:check` no puede demostrar qué commit está desplegado. El
-despliegue anterior registrado fue `bdd1fd9` el 19/10, ambos servicios, primero MeterMCP y ResolveKit a mano.
+**Estado (20/10/2026).** Desplegado. El propietario avanzó `main` hasta el commit `5111b88` (acciones de disputa) y lo
+subió el 20/10; Render lo desplegó automáticamente y se observó un bundle web nuevo. `npm run demo:check` contra las URL
+alojadas dio entonces PASS en ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado,
+webhook activo, ambas vinculaciones verificadas, ambos modelos de IA respondieron y ambos precalentamientos en caché;
+WARN en ambas reservas (0 disputas nuevas); y un FAIL, el conocido: la vinculación del caso estándar está usada y su
+reserva está vacía, con un relleno previsto el 25-30/11 (consulta [Runbook](runbook.md#rotación-de-disputas-y-reserva)).
+`demo:check` no puede demostrar qué commit está desplegado. Las acciones de disputa de ese commit aún no se han
+ejercitado en el servicio alojado. Los despliegues anteriores registrados fueron `fbe9621` el 19/10 (confirmación del
+propietario; `demo:check` pasó todas las líneas excepto la misma reserva vacía) y `bdd1fd9` el 19/10, ambos servicios,
+primero MeterMCP y ResolveKit a mano.
 
 ## Servicios
 

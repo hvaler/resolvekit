@@ -3,7 +3,7 @@
 # PayPal integration
 
 Which PayPal APIs ResolveKit calls, with which credential, what it relies on, and what was only observed in the
-sandbox. Code at commit `fbe9621`, the dispute actions at commit `076c74f` (20/10/2026); PayPal documentation checked
+sandbox. Code at commit `5111b88` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
 on 19/10/2026 (developer.paypal.com).
 
 Three kinds of statement are kept apart on this page:
@@ -35,7 +35,7 @@ refreshes it 60 s before expiry. Requests time out after 30 s (the servers' sett
 | `GET /v1/customer/disputes/{id}` | server: case read, compose, send, bindings check, webhook re-read; `demo:prepare` | seller app |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | `demo:prepare` only | seller app |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | server, `POST /api/disputes/:case/evidence` | seller app |
-| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` with a file), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | server, `POST /api/disputes/:case/send` (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026; not deployed) | seller app |
+| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` with a file), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | server, `POST /api/disputes/:case/send` (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026; Deployed as code, not yet exercised on the hosted service) | seller app |
 | `GET /v2/payments/refunds/{id}` | `npm run contract:read -- --refund <id>` only (read-only contract reads) | seller app |
 | `POST /v1/notifications/verify-webhook-signature` | server webhook handler | seller app (the webhook is registered on it) |
 | `POST /v1/billing-agreements/agreement-tokens`, `GET /v1/billing-agreements/agreement-tokens/{id}` | server sign-in | identity app |
@@ -140,7 +140,7 @@ accept, offer and escalate, because that is all the writes covered.
 ResolveKit's own flow: the server of the unmerged branch `feat/dispute-actions` (head `9f93ba0`) running locally
 against the sandbox, each run approved by the owner beforehand, each going compose → approve by hash → second
 confirmation (when the action has terms) → one send → attributable read-back. One POST to PayPal per run, with GET
-reads before and after (private evidence, 20/10/2026). Not deployed. Single observations, not PayPal rules.
+reads before and after (private evidence, 20/10/2026). The code is now deployed (`5111b88`), but nothing was sent from the hosted service. Single observations, not PayPal rules.
 
 | Run | Variant | Sandbox dispute | Observed through the app |
 |---|---|---|---|

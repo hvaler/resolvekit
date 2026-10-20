@@ -27,7 +27,24 @@ Requiere Node 24+ (TypeScript se ejecuta de forma nativa). `npm test` no hace ni
 
 ## Última ejecución registrada
 
-**2026-10-20 14:17Z · commit `076c74f` (con las acciones de disputa; no desplegado) · Node v24.19.0 · Windows
+**2026-10-20 · commit `5111b88` (desplegado; con las acciones de disputa) · Node 24 · Windows.** `npm test` pasó (se
+ejecutaron todas las suites); `npm run typecheck` salió limpio. 1,453 tests, todos superados.
+
+| Suite | Comando | Tests | Superados | Fallos |
+|---|---|---|---|---|
+| `packages/paypal` | `npm run test:paypal` | 36 | 36 | 0 |
+| `packages/hosting` | `npm run test:hosting` | 32 | 32 | 0 |
+| `packages/cases` | `npm run test:cases` | 12 | 12 | 0 |
+| `packages/analyst` | `npm run test:analyst` | 159 | 159 | 0 |
+| `packages/agent` | `npm run test:agent` | 52 | 52 | 0 |
+| `apps/server` | `npm run test:server` | 635 | 635 | 0 |
+| `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
+| `apps/web` (vitest) | `npm run test:web` | 447 | 447 | 0 |
+| Total | | 1,453 | 1,453 | 0 |
+
+La ejecución registrada anterior, antes de la fusión:
+
+**2026-10-20 14:17Z · commit `076c74f` (con las acciones de disputa; entonces no desplegado) · Node v24.19.0 · Windows
 (MINGW64_NT-10.0-26220).** `npm test` terminó con 0 (se ejecutaron todas las suites); `npm run typecheck` terminó con 0.
 
 | Suite | Comando | Tests | Superados | Fallos |
@@ -42,7 +59,7 @@ Requiere Node 24+ (TypeScript se ejecuta de forma nativa). `npm test` no hace ni
 | `apps/web` (vitest, 35 archivos) | `npm run test:web` | 435 | 435 | 0 |
 | Total | | 1,427 | 1,427 | 0 |
 
-La ejecución registrada anterior, del commit desplegado:
+La ejecución registrada anterior, del commit desplegado el 19/10/2026:
 
 **2026-10-19 12:35Z · commit `fbe9621` · Node v24.19.0 · Windows (MINGW64_NT-10.0-26220).**
 
@@ -163,6 +180,6 @@ anterior cliente con guion (scripted), no el agente dirigido por el modelo.
 - Comportamiento contra PayPal live: ninguno.
 - Acciones de disputa: probadas con fakes y una escritura de contrato registrada por variante; el flujo de la app contra
   el sandbox se ejecutó una vez por variante verificada (20/10/2026, un servidor local), no para el mensaje con archivo;
-  nada desplegado.
+  el código está desplegado (`5111b88`), pero estas acciones no se han ejercitado en el servicio alojado.
 
 La lista completa, con fuentes, está en [Problemas conocidos](known-issues.md).

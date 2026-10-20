@@ -26,7 +26,24 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 
 ## Latest recorded run
 
-**2026-10-20 14:17Z · commit `076c74f` (with the dispute actions; not deployed) · Node v24.19.0 · Windows
+**2026-10-20 · commit `5111b88` (deployed; with the dispute actions) · Node 24 · Windows.** `npm test` passed (every
+suite ran); `npm run typecheck` was clean. 1,453 tests, all passed.
+
+| Suite | Command | Tests | Pass | Fail |
+|---|---|---|---|---|
+| `packages/paypal` | `npm run test:paypal` | 36 | 36 | 0 |
+| `packages/hosting` | `npm run test:hosting` | 32 | 32 | 0 |
+| `packages/cases` | `npm run test:cases` | 12 | 12 | 0 |
+| `packages/analyst` | `npm run test:analyst` | 159 | 159 | 0 |
+| `packages/agent` | `npm run test:agent` | 52 | 52 | 0 |
+| `apps/server` | `npm run test:server` | 635 | 635 | 0 |
+| `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
+| `apps/web` (vitest) | `npm run test:web` | 447 | 447 | 0 |
+| Total | | 1,453 | 1,453 | 0 |
+
+The previous recorded run, before the merge:
+
+**2026-10-20 14:17Z · commit `076c74f` (with the dispute actions; not deployed at the time) · Node v24.19.0 · Windows
 (MINGW64_NT-10.0-26220).** `npm test` exited 0 (every suite ran); `npm run typecheck` exited 0.
 
 | Suite | Command | Tests | Pass | Fail |
@@ -41,7 +58,7 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 | `apps/web` (vitest, 35 files) | `npm run test:web` | 435 | 435 | 0 |
 | Total | | 1,427 | 1,427 | 0 |
 
-The previous recorded run, of the deployed commit:
+The earlier recorded run, of the commit deployed on 19/10/2026:
 
 **2026-10-19 12:35Z · commit `fbe9621` · Node v24.19.0 · Windows (MINGW64_NT-10.0-26220).**
 
@@ -154,6 +171,6 @@ not by the model-driven agent.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
 - Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
-  was run once per verified variant (20/10/2026, a local server), not for the message with a file; nothing deployed.
+  was run once per verified variant (20/10/2026, a local server), not for the message with a file; the code is deployed (`5111b88`) but these actions have not been exercised on the hosted service.
 
 The full list, with sources, is in [Known issues](known-issues.md).

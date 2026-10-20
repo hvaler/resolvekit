@@ -3,7 +3,7 @@
 # Local development
 
 How to install, run and test ResolveKit on your machine, and which commands reach PayPal, the model providers or
-cost money. Code at commit `fbe9621`.
+cost money. Code at commit `5111b88`.
 
 ## Requirements
 
@@ -123,20 +123,21 @@ Operational use: [runbook](../operations/runbook.md).
 
 ## Tests
 
-Last full run: 19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0, Windows. Source: the run log kept with the
-documentation work.
+Last full run: 20/10/2026, commit `5111b88`, Node 24, Windows: 1,453 tests, all passed; typecheck clean. Source: the run
+log kept with the documentation work.
 
 | Suite | Tests | Result |
 |---|---|---|
-| `test:paypal` | 31 | pass |
-| `test:hosting` | 19 | pass |
-| `test:cases` | 11 | pass |
-| `test:analyst` | 152 | pass |
+| `test:paypal` | 36 | pass |
+| `test:hosting` | 32 | pass |
+| `test:cases` | 12 | pass |
+| `test:analyst` | 159 | pass |
 | `test:agent` | 52 | pass |
-| `test:server` | 486 | 485 pass, 1 fail (see below) |
-| `test:metermcp` | 71 | pass |
-| `test:web` | 309 (26 files) | pass |
+| `test:server` | 635 | pass |
+| `test:metermcp` | 80 | pass |
+| `test:web` | 447 | pass |
 | `typecheck` | — | pass |
 
-The one failure (`uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…») got 429 `RATE_LIMITED` under
-full-suite load; run alone it passed twice. It is intermittent. Testing practices: [testing](../quality/testing.md).
+The previous full run (19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0, Windows) counted 1,131 tests with one
+failure (`uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…»), 429 `RATE_LIMITED` under full-suite load; run
+alone it passed twice. It is intermittent and did not recur on 20/10/2026. Testing practices: [testing](../quality/testing.md).

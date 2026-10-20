@@ -80,7 +80,7 @@ Useful log lines (ResolveKit unless noted). Logs never carry document text, keys
 
 | What the user or the log sees | Cause | What to do |
 |---|---|---|
-| `429 DAILY_CAP` (live analyses 60, re-checks 200, evidence sends 20, uploads 40, agent runs 20 per UTC day; in the code, not yet deployed: message sends 20 `DAILY_MESSAGE_SENDS`, settling actions 20 `DAILY_SETTLE_SENDS`) | The global daily cap of that action was reached | Wait for the UTC day to change (`GET /api/demo` shows `resetsAt`), or raise the `DAILY_*` value on Render (restarts the service; counts are kept on disk) |
+| `429 DAILY_CAP` (live analyses 60, re-checks 200, evidence sends 20, uploads 40, agent runs 20 per UTC day; message sends 20 `DAILY_MESSAGE_SENDS`, settling actions 20 `DAILY_SETTLE_SENDS`) | The global daily cap of that action was reached | Wait for the UTC day to change (`GET /api/demo` shows `resetsAt`), or raise the `DAILY_*` value on Render (restarts the service; counts are kept on disk) |
 | `429 PERSON_CAP` | 5 agent runs per person per UTC day (not configurable) | Wait for UTC midnight |
 | MeterMCP `DAILY_BUDGETS` (20) reached | Budgets opened today | Wait for the UTC day, or raise `DAILY_BUDGETS` on MeterMCP |
 | `429 RATE_LIMITED` with `Retry-After` | Per-address or hourly limit (e.g. 6 live analyses or 30 re-checks per hour server-wide; uploads, redactions and PDF page reads 20 per 10 min per address) | Wait. Per-address limits are a courtesy, not the security boundary |

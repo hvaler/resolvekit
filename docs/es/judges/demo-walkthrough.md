@@ -38,11 +38,12 @@ entrega).
    (registra una nota).
 6. En el borrador, cada frase está **Supported**, **Needs review** o *Removed: no supporting evidence* (tachada, nunca
    se envía). **Edit** una frase para ver cómo se vuelve a comprobar (*Re-checking support…*).
-7. Bajo **What to do** se listan las acciones que PayPal permite para esta disputa. En el commit desplegado
-   (`fbe9621`) solo se puede enviar **Provide evidence**; elegir otra muestra *only "Provide evidence" can be sent from
-   this screen for now*. Desde el commit `076c74f` (aún no desplegado), elegir **Send message**, **Accept claim**,
-   **Make an offer** o **Escalate** abre su propio editor, reproducido en el simulador solo con las transiciones de
-   PayPal registradas; las variantes no disponibles dicen por qué
+7. Bajo **What to do** se listan las acciones que PayPal permite para esta disputa. El commit desplegado
+   (`5111b88`) incluye las demás acciones de disputa, pero aún no se han ejercitado en el servicio alojado: elegir
+   **Send message**, **Accept claim**, **Make an offer** o **Escalate** abre su propio editor, reproducido en el
+   simulador solo con las transiciones de PayPal registradas; las acciones solo del Owner necesitan el caso de
+   liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre, y los revisores pueden enviar mensajes
+   en la disputa activa de un caso vinculado; las variantes no disponibles dicen por qué
    ([revisar y enviar](../user-guide/review-and-submit.md#otras-acciones-de-disputa)).
 8. El botón de abajo dice **Review what will be sent →** cuando no queda nada abierto (antes, *Resolve N item to
    continue*). Púlsalo: el diálogo muestra *Exactly what goes to PayPal* (*Composed in this browser (simulator only)*),

@@ -2,7 +2,7 @@
 
 # Known issues
 
-Open follow-ups, checked against the code at `fbe9621` on 19/10/2026. Each item names its source: the follow-up file
+Open follow-ups, checked against the code at `5111b88` (deployed 20/10/2026). Each item names its source: the follow-up file
 under [`docs/superpowers/plans/`](../superpowers/plans/) and, where relevant, the code location. Items marked
 **by design** are kept on purpose but worth knowing. Product limits (what ResolveKit does not do) are in
 [Limitations](../product/limitations.md).
@@ -11,7 +11,7 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 · **AG** `2026-10-18-model-driven-agent-followups.md` · **ENV** `2026-10-18-three-environments-followups.md` ·
 **EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** the test run of 19/10 ([Testing](testing.md)) ·
 **DA** the dispute-actions design `docs/superpowers/specs/2026-10-19-dispute-actions-design.md` and the code at
-`076c74f` (20/10/2026).
+`076c74f` (20/10/2026), now in `5111b88`.
 
 ## Uploads and PDFs
 
@@ -51,7 +51,7 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | Appeal not testable in the sandbox | The sandbox refused to produce an appealable dispute (W-7), so appeal stays «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
 | `provide_supporting_info` not supported | Offered by PayPal after evidence in a claim; ResolveKit shows nothing to send | DA; `apps/web/src/domain/simulatedActions.ts` |
 | Proof of refund not sent | If PayPal asks only for it, no evidence can be sent on that dispute in this delivery; W-11 is a pending sandbox test | DA; `actionContracts.ts` |
-| The app's flow verified once per variant, not deployed | Each verified variant was sent once through the app on a local server (20/10/2026, V-1 to V-6): single observations. The message with a file and the Not-available variants were not run through the app; nothing is deployed (**Pending**) | DA |
+| The app's flow verified once per variant, not exercised on the hosted service | Each verified variant was sent once through the app on a local server (20/10/2026, V-1 to V-6): single observations. The message with a file and the Not-available variants were not run through the app; the code is deployed (`5111b88`) but nothing was sent from the hosted service (**Pending**); the settlement case is not yet bound in the hosted `BINDINGS_JSON` | DA |
 
 ## Environments, sign-in and health
 

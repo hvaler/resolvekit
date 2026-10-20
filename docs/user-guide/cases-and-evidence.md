@@ -59,11 +59,10 @@ you choose:
 
 ## What to do (PayPal's actions)
 
-The **What to do** box lists the actions PayPal allows for this dispute now, read seconds ago, each «✓ allowed». On
-the deployed commit (`fbe9621`) only **Provide evidence** can be sent: any other action shows «only "Provide evidence"
-can be sent from this screen for now». From commit `076c74f` (Verified in sandbox through the app on 20/10/2026, not deployed), choosing «Send message»,
-«Accept claim», «Make an offer» or «Escalate» opens its own flow: see
-[Review and submit](review-and-submit.md#other-dispute-actions).
+The **What to do** box lists the actions PayPal allows for this dispute now, read seconds ago, each «✓ allowed». Besides
+**Provide evidence**, the deployed commit (`5111b88`, 20/10/2026) opens their own flow when you choose «Send message»,
+«Accept claim», «Make an offer» or «Escalate» (Verified in sandbox through the app on 20/10/2026; not yet exercised on
+the hosted service): see [Review and submit](review-and-submit.md#other-dispute-actions).
 «PayPal is asking for:» shows the evidence PayPal requested.
 
 ## Add your own evidence

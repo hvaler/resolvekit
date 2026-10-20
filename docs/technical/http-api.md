@@ -7,7 +7,7 @@
 > them.
 
 Source: `apps/server/src/app.ts`, `hosted.ts`, `auth.ts`, `webhook.ts`, `uploads/routes.ts`, `agent/routes.ts` at
-commit `fbe9621`; the dispute actions (`apps/server/src/actions/routes.ts`) at commit `076c74f` (20/10/2026). MeterMCP's routes are in [MCP tools](mcp-tools.md).
+commit `5111b88`; the dispute actions (`apps/server/src/actions/routes.ts`) were added in commit `076c74f` (20/10/2026). MeterMCP's routes are in [MCP tools](mcp-tools.md).
 
 ## Conventions
 
@@ -83,7 +83,7 @@ sent. Accepted ≠ recorded ≠ dispute resolved.
 ## Dispute actions
 
 Message, accept claim, make offer and escalate use the same intent chain as evidence, with their own send route.
-Status: Tested locally; Verified in sandbox through the app (20/10/2026, local server); not deployed (per-variant status:
+Status: Tested locally; Verified in sandbox through the app (20/10/2026, local server); Deployed (code) but not yet exercised on the hosted service (per-variant status:
 [Functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)). The role is
 checked at compose, approve, confirm and send: `accept_claim`, `make_offer` and `escalate` answer `403 OWNER_ONLY` to
 anyone but the workspace's Owner (a reviewer never passes).

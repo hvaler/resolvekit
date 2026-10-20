@@ -51,7 +51,7 @@ passkey) p_…» (nombre, rol, cómo se unió, id de persona).
 Una aprobación pertenece a la persona que la compuso: nadie más, ni siquiera el Owner, puede aprobar o enviar una
 respuesta compuesta por otra persona.
 
-**Acciones de disputa** (Verificadas en sandbox, aún no desplegadas; ver
+**Acciones de disputa** (Verificadas en sandbox; código desplegado, aún no ejercitadas en el servicio alojado; ver
 [Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa)): los revisores y los miembros solo pueden enviar
 **mensajes**. Aceptar una reclamación, hacer una oferta y escalar mueven dinero o cambian la disputa, así que solo el
 Owner puede hacerlos, y cada uno necesita una segunda confirmación que nombra su consecuencia y su importe; los demás

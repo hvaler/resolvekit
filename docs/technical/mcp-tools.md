@@ -8,7 +8,7 @@
 
 `apps/metermcp` is a minimal metered MCP server. An MCP client calls paid tools; the user approves a budget once in
 PayPal; MeterMCP charges only the calls that succeed and releases the rest. One seller (the PayPal sandbox app in its
-environment), no marketplace, no payouts. Source: `apps/metermcp/src/` at commit `fbe9621`.
+environment), no marketplace, no payouts. Source: `apps/metermcp/src/` at commit `5111b88`.
 
 What is real and what is synthetic: the PayPal money flow (sandbox order, authorization, partial capture or void),
 the ledger, the request and response hashes and the receipts are real records. The tools' outputs are deterministic

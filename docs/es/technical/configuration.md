@@ -3,7 +3,7 @@
 # Configuración
 
 Todas las variables de entorno que lee el código, sacadas de `apps/server/src/main.ts`, `apps/metermcp/src/main.ts`,
-`packages/*` y los scripts en el commit `fbe9621`. Hay una plantilla con valores de ejemplo seguros en
+`packages/*` y los scripts en el commit `5111b88`. Hay una plantilla con valores de ejemplo seguros en
 [`.env.example`](../../../.env.example). El servidor y MeterMCP cargan el `.env` de la raíz del repositorio con
 `node --env-file-if-exists`; en Render, los valores vienen de los ajustes del servicio y de `render.yaml`.
 

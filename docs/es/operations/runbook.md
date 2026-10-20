@@ -82,7 +82,7 @@ Líneas de log útiles (de ResolveKit salvo que se indique). Los logs nunca llev
 
 | Lo que ve el usuario o el log | Causa | Qué hacer |
 |---|---|---|
-| `429 DAILY_CAP` (análisis en directo 60, recomprobaciones 200, envíos de evidencia 20, subidas 40, ejecuciones del agente 20 por día UTC; en el código, aún no desplegado: envíos de mensajes 20 `DAILY_MESSAGE_SENDS`, acciones de liquidación 20 `DAILY_SETTLE_SENDS`) | Se alcanzó el tope diario global de esa acción | Espera a que cambie el día UTC (`GET /api/demo` muestra `resetsAt`), o sube el valor `DAILY_*` en Render (reinicia el servicio; los recuentos se conservan en disco) |
+| `429 DAILY_CAP` (análisis en directo 60, recomprobaciones 200, envíos de evidencia 20, subidas 40, ejecuciones del agente 20 por día UTC; envíos de mensajes 20 `DAILY_MESSAGE_SENDS`, acciones de liquidación 20 `DAILY_SETTLE_SENDS`) | Se alcanzó el tope diario global de esa acción | Espera a que cambie el día UTC (`GET /api/demo` muestra `resetsAt`), o sube el valor `DAILY_*` en Render (reinicia el servicio; los recuentos se conservan en disco) |
 | `429 PERSON_CAP` | 5 ejecuciones del agente por persona y día UTC (no configurable) | Espera a la medianoche UTC |
 | Se alcanzó `DAILY_BUDGETS` (20) de MeterMCP | Presupuestos abiertos hoy | Espera al día UTC siguiente, o sube `DAILY_BUDGETS` en MeterMCP |
 | `429 RATE_LIMITED` con `Retry-After` | Límite por dirección u horario (p. ej., 6 análisis en directo o 30 recomprobaciones por hora en todo el servidor; subidas, tapados y lecturas de páginas de PDF, 20 cada 10 min por dirección) | Espera. Los límites por dirección son una cortesía, no la frontera de seguridad |

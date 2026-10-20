@@ -3,7 +3,7 @@
 # Pipeline de IA (el analista de disputas)
 
 `packages/analyst`, llamado por `apps/server`. Lee los documentos de un caso y redacta una respuesta en la que cada
-frase cita evidencia literal; después comprueba cada frase. Código en el commit `fbe9621`. Las cifras de evaluación
+frase cita evidencia literal; después comprueba cada frase. Código en el commit `5111b88`. Las cifras de evaluación
 no se repiten aquí: las únicas fuentes son [evaluaciones](../quality/evaluations.md) y
 `packages/analyst/evals/results/summary.md`.
 
@@ -110,7 +110,7 @@ como respaldado; hasta qué punto se cumple se mide con conjuntos sintéticos en
 
 ## Estado
 
-Implementado · Probado en local (`packages/analyst/test/`: 152 tests superados el 19/10/2026, `fbe9621`) ·
+Implementado · Probado en local (`packages/analyst/test/`: 159 tests superados el 20/10/2026, `5111b88`; 152 el 19/10/2026, `fbe9621`) ·
 Desplegado. Se ejecutaron análisis en directo y recomprobaciones en el servicio desplegado durante la evaluación en
 sandbox (17/10/2026, evidencia privada). El párrafo del README de evaluaciones de commits anteriores queda sustituido
 por [evaluaciones](../quality/evaluations.md).

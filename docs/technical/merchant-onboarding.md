@@ -12,7 +12,7 @@ This page separates three things that must not be confused:
 1. **External sandbox test achieved**: a step tried by hand in the PayPal sandbox on 18/10/2026, **outside the app**,
    with a separate sandbox Platform app. Private evidence, summarised here without ids, accounts or links; not
    reproducible by readers.
-2. **Implemented in the app**: code in this repository. At commit `fbe9621` there is **none**: no
+2. **Implemented in the app**: code in this repository. At commit `5111b88` there is **none**: no
    `partner-referrals`, `merchant-integrations` or `PayPal-Auth-Assertion` anywhere in `apps/` or `packages/`.
 3. **Deployed**: running on the hosted service. Only the waiting screen is deployed.
 

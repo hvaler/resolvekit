@@ -2,7 +2,7 @@
 
 # Problemas conocidos
 
-Seguimientos abiertos, comprobados contra el código en `fbe9621` el 19/10/2026. Cada punto indica su fuente: el
+Seguimientos abiertos, comprobados contra el código en `5111b88` (desplegado el 20/10/2026). Cada punto indica su fuente: el
 archivo de seguimiento en [`docs/superpowers/plans/`](../../superpowers/plans/) y, cuando procede, la ubicación en el
 código. Los puntos marcados **por diseño** se mantienen a propósito, pero conviene conocerlos. Los límites del producto
 (lo que ResolveKit no hace) están en [Limitaciones](../product/limitations.md).
@@ -11,7 +11,7 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 · **AG** `2026-10-18-model-driven-agent-followups.md` · **ENV** `2026-10-18-three-environments-followups.md` ·
 **EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** la ejecución de tests del 19/10 ([Pruebas](testing.md)) ·
 **DA** el diseño de las acciones de disputa `docs/superpowers/specs/2026-10-19-dispute-actions-design.md` y el código
-en `076c74f` (20/10/2026).
+en `076c74f` (20/10/2026), ahora en `5111b88`.
 
 ## Subidas y PDF
 
@@ -51,7 +51,7 @@ en `076c74f` (20/10/2026).
 | Apelación no comprobable en el sandbox | El sandbox se negó a producir una disputa apelable (W-7), así que la apelación sigue «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
 | `provide_supporting_info` no soportado | PayPal lo ofrece tras evidencia en una reclamación; ResolveKit no muestra nada que enviar | DA; `apps/web/src/domain/simulatedActions.ts` |
 | Prueba de reembolso no enviada | Si PayPal solo pide esa, en esta entrega no se puede enviar evidencia en esa disputa; W-11 es una prueba de sandbox pendiente | DA; `actionContracts.ts` |
-| El flujo de la app, verificado una vez por variante, no desplegado | Cada variante verificada se envió una vez a través de la app en un servidor local (20/10/2026, V-1 a V-6): observaciones únicas. El mensaje con archivo y las variantes No disponibles no se ejecutaron a través de la app; nada está desplegado (**Pendiente**) | DA |
+| El flujo de la app, verificado una vez por variante, no ejercitado en el servicio alojado | Cada variante verificada se envió una vez a través de la app en un servidor local (20/10/2026, V-1 a V-6): observaciones únicas. El mensaje con archivo y las variantes No disponibles no se ejecutaron a través de la app; el código está desplegado (`5111b88`) pero no se envió nada desde el servicio alojado (**Pendiente**); el caso de liquidación aún no está vinculado en el `BINDINGS_JSON` alojado | DA |
 
 ## Entornos, inicio de sesión y health
 

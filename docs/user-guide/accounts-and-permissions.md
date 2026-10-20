@@ -49,7 +49,7 @@ passkey) p_…» (name, role, how they joined, person id).
 An approval belongs to the person who composed it: nobody else, not even the Owner, can approve or send someone
 else's composed response.
 
-**Dispute actions** (Verified in sandbox, not yet deployed; see
+**Dispute actions** (Verified in sandbox; code deployed, not yet exercised on the hosted service; see
 [Review and submit](review-and-submit.md#other-dispute-actions)): reviewers and members may send **messages only**.
 Accepting a claim, making an offer and escalating move money or change the dispute, so only the Owner can do them, and
 each needs a second confirmation that names its consequence and amount; everyone else sees a preview of the action and

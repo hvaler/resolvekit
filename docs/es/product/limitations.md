@@ -3,7 +3,7 @@
 # Limitaciones
 
 Lo que ResolveKit no hace, todavía no hace o no se ha demostrado que haga. Comprobado frente al código en el commit
-`fbe9621` (19/10/2026) y las listas de seguimiento de `docs/superpowers/plans/`; las acciones de disputa, frente al
+`5111b88` (desplegado el 20/10/2026) y las listas de seguimiento de `docs/superpowers/plans/`; las acciones de disputa, frente al
 commit `076c74f` (20/10/2026). Los problemas de código para
 colaboradores están en [Problemas conocidos](../quality/known-issues.md); esta página recoge lo que necesita saber un
 usuario, un comerciante o un jurado.
@@ -13,7 +13,7 @@ usuario, un comerciante o un jurado.
 | Función | Situación hoy | Estado |
 |---|---|---|
 | Conectar las disputas de PayPal propias de un comerciante | Un comerciante que inicia sesión con **Continue with PayPal** recibe la pantalla de espera. La app no tiene código de Partner Referrals, `merchant-integrations` ni `PayPal-Auth-Assertion`. Se hicieron experimentos en sandbox fuera de la app (ver [Alta de comerciantes](../technical/merchant-onboarding.md)); no son una función | **Pendiente** (no implementado, no desplegado, no disponible) |
-| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el 20/10/2026 cada uno se envió una vez por el flujo propio de la app en el sandbox y se releyó (el servidor de la rama ejecutado en local). El commit desplegado `fbe9621` es anterior a ellos. Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Verificado en sandbox; Desplegado: **Pendiente** |
+| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el 20/10/2026 cada uno se envió una vez por el flujo propio de la app en el sandbox y se releyó (el servidor de la rama ejecutado en local). El código está desplegado (`5111b88`, 20/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado; las solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre. Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Verificado en sandbox · Desplegado (código); aún no ejercitado en el servicio alojado |
 | Un mensaje con adjunto | La ruta del servidor está probada; el editor web aún no puede adjuntar una subida, así que la interfaz no lo ofrece | Probado en local (servidor); en la interfaz: **Pendiente** |
 | Oferta de sustitución | No disponible: «Not verified with PayPal: never offered on a sandbox dispute» | No disponible |
 | Retirar una oferta | No disponible: «PayPal documents no route to withdraw an offer» | No disponible |
@@ -40,13 +40,13 @@ usuario, un comerciante o un jurado.
   del transportista y los mensajes del comprador que lo rodean son inventados, así que una captura real puede aparecer
   como contradicción.
 - **Límites diarios compartidos** (día UTC, para todo el servidor): 60 análisis en directo, 200 recomprobaciones, 20
-  envíos de evidencia, 40 subidas, 20 ejecuciones del agente (5 por persona), 20 presupuestos de MeterMCP; en el
-  código, aún no desplegados, 20 envíos de mensajes y 20 acciones de liquidación (aceptar, ofertar, escalar). Por hora: 6
+  envíos de evidencia, 40 subidas, 20 ejecuciones del agente (5 por persona), 20 presupuestos de MeterMCP; 20 envíos de mensajes y 20 acciones de liquidación (aceptar, ofertar, escalar). Por hora: 6
   análisis en directo y 30 recomprobaciones. Por dirección: 300 peticiones a la API y 60 lecturas de PayPal cada 5
   minutos; 20 subidas, tapados y lecturas de páginas de PDF cada 10 minutos. Un rechazo dice cuándo se restablece.
 - **Los redespliegues** provocan 1–2 minutos de errores (un servicio con disco no tiene despliegue sin interrupción).
-- **Qué commit está desplegado** no se puede demostrar desde fuera: `fbe9621` se trata como desplegado por la
-  confirmación del propietario y un `demo:check` correcto el 19/10/2026.
+- **Qué commit está desplegado** no se puede demostrar desde fuera: `5111b88` se trata como desplegado por la
+  decisión del propietario de subirlo y un `demo:check` del 20/10/2026 correcto salvo la reserva vacía conocida del caso
+  estándar (`fbe9621` se trató como desplegado el 19/10/2026 del mismo modo).
 
 ## Acciones de disputa
 

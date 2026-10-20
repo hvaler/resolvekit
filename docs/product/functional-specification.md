@@ -2,11 +2,11 @@
 
 # Functional specification
 
-What ResolveKit does, for whom, under which rules, as built at commit `fbe9621` (19/10/2026). The code is the
+What ResolveKit does, for whom, under which rules, as built at commit `5111b88` (deployed 20/10/2026). The code is the
 source of truth; where behaviour was only observed in the PayPal sandbox, this page says so. Status words: Designed ·
 Implemented · Tested locally · Verified in sandbox · Deployed · Available to users · Pending.
 
-Section 5.6 (dispute actions) is checked against commit `076c74f` (20/10/2026).
+Section 5.6 (dispute actions) was checked against commit `076c74f` (20/10/2026); that code is in `5111b88`, deployed on 20/10/2026.
 
 Related: [Overview](overview.md) · [Limitations](limitations.md) · [HTTP API](../technical/http-api.md) ·
 [Trust boundaries](../architecture/trust-boundaries.md).
@@ -88,8 +88,8 @@ Notes:
 | UC-11 | Compare two runs; Keep a run; view Workspace runs | Author / Owner | Implemented · Tested locally · Verified in sandbox (Compare and Keep, 19/10/2026) |
 | UC-12 | Stop a running agent run | Author | Implemented · Tested locally; in sandbox **Pending** |
 | UC-13 | Connect a merchant's own PayPal disputes | Merchant | **Pending** (not in the app) |
-| UC-14 | Send a message to the buyer | Seller workspace | Tested locally · Verified in sandbox through the app (20/10/2026); Deployed: **Pending** |
-| UC-15 | Accept a claim (full or partial), make an offer, escalate | Owner | Tested locally · Verified in sandbox through the app (20/10/2026); Deployed: **Pending** |
+| UC-14 | Send a message to the buyer | Seller workspace | Tested locally · Verified in sandbox through the app (20/10/2026) · Deployed; not yet exercised on the hosted service |
+| UC-15 | Accept a claim (full or partial), make an offer, escalate | Owner | Tested locally · Verified in sandbox through the app (20/10/2026) · Deployed; not yet exercised on the hosted service |
 
 ## 5. States and business rules
 
@@ -185,7 +185,7 @@ Details: [Buying agent](../user-guide/buying-agent.md).
 
 ### 5.6 Dispute actions other than evidence
 
-Checked against commit `076c74f` (20/10/2026); statuses updated after the runs through the app in the sandbox on
+Checked against commit `076c74f` (20/10/2026), the code now in the deployed `5111b88`; statuses updated after the runs through the app in the sandbox on
 20/10/2026 (V-1 to V-6). Each action variant has one status, taken from the contract registry
 (`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); the product shows the same label next to each variant. A
 variant is available only when its contract is recorded: PayPal's documentation, read-only sandbox reads, and one write
@@ -212,7 +212,10 @@ unmerged branch running locally against the sandbox (V-1 to V-6, see
 [PayPal integration](../technical/paypal-integration.md#dispute-action-contracts)). Only V-4, the full accept, moved
 money (a 7.00 USD sandbox refund). Separately, the contract writes of 20/10/2026 (W-1 to W-12) were prepared requests
 that the owner approved one by one, sent outside the app's own flow; they show what PayPal does and are what each
-contract rests on. No variant is **Deployed**: the deployed commit (`fbe9621`) predates the dispute actions.
+contract rests on. The code of all of them is **Deployed** (`5111b88`, 20/10/2026), but these actions have **not** yet been exercised on
+the hosted service: the six runs above were made on a local server, so each variant keeps «Verified in sandbox» and
+nothing more. The owner-only actions need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not
+yet; reviewers can send messages on a bound case's active dispute.
 
 **Who may do what.** Accept claim, make offer, escalate and appeal are **owner-only**: only the workspace's Owner (not a
 reviewer) composes, approves, confirms and sends them. Members and reviewers may send **messages only** (and evidence,
@@ -356,7 +359,7 @@ More: [Troubleshooting](../user-guide/troubleshooting.md).
 | AI analysis | committed golden analyses, no model call | stored + live (caps) | — | live with a model key |
 | **+ Add evidence** | disabled with its reason | yes | — | yes, with the server |
 | Submit | simulator only | `provide-evidence` to the sandbox | — | sandbox for bound cases |
-| Dispute actions ([5.6](#56-dispute-actions-other-than-evidence)) | simulator, recorded transitions only | not in the deployed commit (**Pending**) | — | the server's action routes (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026) |
+| Dispute actions ([5.6](#56-dispute-actions-other-than-evidence)) | simulator, recorded transitions only | in the deployed code; not yet exercised on the hosted service (the owner-only actions also need the settlement case bound in `BINDINGS_JSON`: **Pending**) | — | the server's action routes (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026) |
 | Buying agent | not in the demo area | `/agent` (seller workspace) | start refused | `/agent` as operator |
 | Daily caps | — | yes | — | none |
 
@@ -367,4 +370,4 @@ More: [Troubleshooting](../user-guide/troubleshooting.md).
   [5.6](#56-dispute-actions-other-than-evidence) (replacement offer, offer withdrawal, appeal, proof of refund, the
   return types); creating refunds; the live (production) PayPal environment; account or workspace deletion by the
   user. Message, accept, offer, escalate and evidence after an escalation are Verified in sandbox through the app
-  (20/10/2026), not Deployed; a message with an attachment is Tested locally (server). See [Limitations](limitations.md).
+  (20/10/2026), Deployed as code and not yet exercised on the hosted service; a message with an attachment is Tested locally (server). See [Limitations](limitations.md).

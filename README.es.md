@@ -52,11 +52,14 @@ Detalles: [visión general del producto](docs/es/product/overview.md) · [pipeli
 | Google Gemini (`gemini-3.8-flash`), Groq (`openai/gpt-oss-120b`) como respaldo | Analista: hechos con citas literales, cronología, contradicciones, borrador, verificación frase a frase. Agente comprador: una llamada a herramienta por turno mediante function calling | Desplegado; analista medido solo en conjuntos sintéticos |
 | Código determinista | Comprobación de citas literales, comprobación de números, reglas para la acción y el tipo de evidencia, comprobaciones de presupuesto y límites para el agente | Implementado · Probado en local · Desplegado |
 
-Solo `provide-evidence` está verificado de extremo a extremo a través de la app y desplegado. Enviar un mensaje,
-aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial, escalar y enviar evidencia
-tras un escalado están construidos desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato de sandbox
-aprobado por el propietario, y **Verificados en sandbox** a través de la app el 20/10/2026 (un envío cada uno, en un
-servidor local); no están desplegados. Un mensaje con adjunto solo está Probado en local en el servidor. Las ofertas de sustitución, retirar una
+Solo `provide-evidence` se ha ejercitado de extremo a extremo a través de la app en el servicio alojado. Enviar un
+mensaje, aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial, escalar y
+enviar evidencia tras un escalado están construidos desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato
+de sandbox aprobado por el propietario, y **Verificados en sandbox** a través de la app el 20/10/2026 (un envío cada
+uno, en un servidor local). El código está **Desplegado** (`5111b88`, 20/10/2026), pero estas acciones **no** se han
+ejercitado todavía en el servicio alojado: las solo del Owner necesitan el caso de liquidación vinculado en el
+`BINDINGS_JSON` alojado, cosa que aún no ocurre, y los revisores pueden enviar mensajes en la disputa activa de un caso
+vinculado. Un mensaje con adjunto solo está Probado en local en el servidor. Las ofertas de sustitución, retirar una
 oferta, las apelaciones, la prueba de reembolso y los tipos con devolución están **No disponibles**, cada uno con su
 motivo. ResolveKit nunca crea un reembolso. Estado por variante:
 [especificación funcional](docs/es/product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
@@ -153,12 +156,18 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 
 ## Verificación
 
-- **Tests**: 19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0 en Windows: 1,131 tests, 1,130 superados, 1 falló de
-  forma intermitente (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…»,
-  `429 RATE_LIMITED` bajo la carga de la suite completa; pasó 3 de 3 ejecutado solo, dos veces). El typecheck pasó.
-  No se ejecutó en Linux. Detalles: [tests](docs/es/quality/testing.md) · [problemas conocidos](docs/es/quality/known-issues.md).
-- **Despliegue**: el propietario informó de que `fbe9621` estaba desplegado el 19/10/2026; `demo:check` pasó todas las
-  líneas salvo la reserva vacía del caso estándar (no puede demostrar qué commit está desplegado).
+- **Tests**: 20/10/2026, commit `5111b88` (`main`), Node 24 en Windows: 1,453 tests, todos superados (node:test
+  36 + 32 + 12 + 159 + 52 + 635 + 80, vitest 447). Typecheck limpio. No se ejecutó en Linux. Ejecución anterior,
+  19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 superados, 1 falló de forma intermitente
+  (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` bajo la carga de
+  la suite completa; pasó 3 de 3 ejecutado solo, dos veces). Detalles: [tests](docs/es/quality/testing.md) ·
+  [problemas conocidos](docs/es/quality/known-issues.md).
+- **Despliegue**: `5111b88` desplegado el 20/10/2026 (el propietario lo subió; Render lo desplegó automáticamente y se
+  observó un bundle web nuevo). `demo:check` contra las URL alojadas: PASS en ResolveKit activo, página de inicio,
+  MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones verificadas, ambos modelos de IA
+  respondieron, ambos precalentamientos en caché; WARN en ambas reservas (0 disputas nuevas); un FAIL, el conocido: la
+  vinculación del caso estándar está usada y su reserva está vacía (relleno previsto el 25-30/11). No puede demostrar
+  qué commit está desplegado. Antes: `fbe9621`, 19/10/2026.
 - **Evaluaciones** (solo el analista, casos sintéticos): [evaluaciones](docs/es/quality/evaluations.md). Titular: en 12
   casos reservados (held-out) × 3 ejecuciones, 0 de 66 notas verdaderas rechazadas y 0 de 72 notas falsas plantadas
   enviadas, pero solo 17 de 66 notas verdaderas se juzgaron respaldadas (6 + 6 + 5; fuente: [evaluaciones](docs/es/quality/evaluations.md)); el resto fue a revisión.
@@ -167,8 +176,9 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 ## Limitaciones actuales
 
 - Conexión del comerciante a sus propias disputas: Pendiente (ver arriba).
-- Solo `provide-evidence` está verificado a través de la app y desplegado; mensaje, aceptación, oferta y escalado están
-  Verificados en sandbox a través de la app (no desplegados); nunca se crea un reembolso.
+- Solo `provide-evidence` se ha ejercitado en el servicio alojado; mensaje, aceptación, oferta y escalado están
+  desplegados (código) y Verificados en sandbox a través de la app (ejecución local), aún no ejercitados en el servicio
+  alojado; nunca se crea un reembolso.
 - Solo sandbox; PayPal live nunca se ha probado. Los tiempos y comportamientos del sandbox pueden
   diferir en live.
 - La reserva de disputas nuevas del sandbox del caso de evaluación estándar estaba vacía el 19/10/2026: hasta que se

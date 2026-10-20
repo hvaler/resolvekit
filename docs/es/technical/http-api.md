@@ -7,7 +7,7 @@
 > construyas sobre ellas.
 
 Fuente: `apps/server/src/app.ts`, `hosted.ts`, `auth.ts`, `webhook.ts`, `uploads/routes.ts`, `agent/routes.ts` en el
-commit `fbe9621`; las acciones de disputa (`apps/server/src/actions/routes.ts`), en el commit `076c74f` (20/10/2026). Las rutas de MeterMCP están en [herramientas MCP](mcp-tools.md).
+commit `5111b88`; las acciones de disputa (`apps/server/src/actions/routes.ts`) se añadieron en el commit `076c74f` (20/10/2026). Las rutas de MeterMCP están en [herramientas MCP](mcp-tools.md).
 
 ## Convenciones
 
@@ -84,7 +84,7 @@ coincide con lo enviado. Aceptado ≠ registrado ≠ disputa resuelta.
 ## Acciones de disputa
 
 Mensaje, aceptar la reclamación, hacer una oferta y escalar usan la misma cadena de intents que la evidencia, con su
-propia ruta de envío. Estado: Probado en local; Verificado en sandbox a través de la app (20/10/2026, servidor local); no desplegado (estado
+propia ruta de envío. Estado: Probado en local; Verificado en sandbox a través de la app (20/10/2026, servidor local); Desplegado (código), aún no ejercitado en el servicio alojado (estado
 por variante:
 [Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
 El rol se comprueba al componer, aprobar, confirmar y enviar: `accept_claim`, `make_offer` y `escalate` responden

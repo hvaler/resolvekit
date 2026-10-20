@@ -5,7 +5,7 @@
 Un agente dirigido por el modelo que alcanza el objetivo de una persona comprando llamadas a herramientas de MeterMCP
 con un presupuesto que esa persona aprueba en PayPal. Un único motor, `packages/agent`, funciona detrás de la página
 `/agent` (`apps/server/src/agent/`), de la CLI `npm run demo-agent` y de `npm run demo:prepare --agent`. Código en el
-commit `fbe9621`. Cómo usar la página: [guía de usuario](../user-guide/buying-agent.md).
+commit `5111b88`. Cómo usar la página: [guía de usuario](../user-guide/buying-agent.md).
 
 ## Cómo funciona una ejecución
 
@@ -152,7 +152,7 @@ evidencia).
 
 | Qué | Estado |
 |---|---|
-| Motor, rutas, página | Implementado · Probado en local (`packages/agent`: 52 tests; suites del servidor y de la web, 19/10/2026, `fbe9621`) · Desplegado (`bdd1fd9` el 19/10/2026, después `fbe9621`) |
+| Motor, rutas, página | Implementado · Probado en local (`packages/agent`: 52 tests; suites del servidor y de la web, 20/10/2026, `5111b88`) · Desplegado (`bdd1fd9` el 19/10/2026, después `fbe9621`, después `5111b88` el 20/10/2026) |
 | Dos ejecuciones de `/agent` en el sandbox, 19/10/2026 (ejemplos, no una garantía general de autonomía) | Verificado en sandbox, con Gemini como proveedor y presupuestos aprobados con una cuenta personal (compradora) de sandbox: una terminó en `cannot_do` con un fallo inyectado, capturó 0.05 USD y liberó 1.95; otra terminó en `done`, capturó 0.92 USD y liberó 1.08. Se observaron Compare, Keep y la vuelta a `/agent?run=` |
 | Groq como respaldo del agente en el sandbox | Pendiente |
 | El caso del agente confirmado en el repositorio (1.37 de 5.00 USD, cuatro llamadas, un fallo no cobrado, sesión `mm-sess-20261008-01`) y las evaluaciones EV-11/EV-12 | **Datos de demo.** Prueban el **analista** de disputas, no el agente. La cifra de 1.37 USD coincide con una sesión de sandbox creada el 09/10/2026 por un cliente MCP con guion, no por el agente dirigido por el modelo |

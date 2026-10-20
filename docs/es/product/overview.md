@@ -15,7 +15,7 @@ llamada como evidencia.
 
 ResolveKit prepara la respuesta; PayPal decide la disputa. No está afiliado a PayPal.
 
-Los datos de esta página proceden del código en el commit `fbe9621` (19/10/2026) salvo que una fecha diga otra cosa.
+Los datos de esta página proceden del código en el commit `5111b88` (desplegado el 20/10/2026) salvo que una fecha diga otra cosa.
 Las palabras de estado siguen un único vocabulario: Diseñado · Implementado · Probado en local · Verificado en sandbox ·
 Desplegado · Disponible para usuarios · Pendiente.
 
@@ -65,10 +65,11 @@ PayPal; ResolveKit nunca se ha ejecutado contra el entorno live (producción) de
 | Agente comprador (`/agent`) | Un modelo elige las herramientas de pago de MeterMCP, una acción cada vez, dentro de un presupuesto aprobado en el sandbox de PayPal; pasos, recibo, liquidación, uso del modelo | Implementado · Probado en local · Desplegado · Verificado en sandbox (dos ejecuciones el 19/10/2026, solo ejemplos) |
 | MeterMCP | Un servidor MCP de pago por uso: presupuestos como autorizaciones de PayPal Orders v2, solo se capturan las llamadas con éxito, recibos por llamada | Implementado · Probado en local · Verificado en sandbox · Desplegado |
 
-Solo una acción de disputa de PayPal está conectada de extremo a extremo: **Provide evidence**. El expediente muestra
-las acciones que PayPal permite (por ejemplo «Send message», «Accept claim»), pero elegir cualquier otra acción solo
-muestra «only "Provide evidence" can be sent from this screen for now». No hay función de reembolso, oferta,
-escalado ni mensajería.
+Solo una acción de disputa de PayPal se ha ejercitado de extremo a extremo en el servicio alojado: **Provide evidence**.
+El expediente muestra las acciones que PayPal permite (por ejemplo «Send message», «Accept claim»). El código para
+enviar un mensaje, aceptar una reclamación, hacer una oferta y escalar está desplegado (`5111b88`, 20/10/2026) y
+Verificado en sandbox en una ejecución local, pero esas acciones aún no se han ejercitado en el servicio alojado.
+ResolveKit no crea ningún reembolso.
 
 ## Qué es real y qué es sintético
 

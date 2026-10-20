@@ -3,7 +3,7 @@
 # Limitations
 
 What ResolveKit does not do, does not do yet, or has not been shown to do. Checked against the code at commit
-`fbe9621` (19/10/2026) and the follow-up lists in `docs/superpowers/plans/`; the dispute actions against commit
+`5111b88` (deployed 20/10/2026) and the follow-up lists in `docs/superpowers/plans/`; the dispute actions against commit
 `076c74f` (20/10/2026). Code-level issues for contributors are in
 [Known issues](../quality/known-issues.md); this page is what a user, merchant or judge needs to know.
 
@@ -12,7 +12,7 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
 | Function | State today | Status |
 |---|---|---|
 | Connecting a merchant's own PayPal disputes | A merchant who signs in with **Continue with PayPal** gets the waiting screen. The app has no Partner Referrals, `merchant-integrations` or `PayPal-Auth-Assertion` code. Sandbox experiments were made outside the app (see [Merchant onboarding](../technical/merchant-onboarding.md)); they are not a feature | **Pending** (not implemented, not deployed, not available) |
-| Send message, accept claim (full or partial), make a partial-refund offer, escalate, evidence after an escalation | Built on recorded contracts and run with fakes; on 20/10/2026 each was sent once through the app's own flow in the sandbox and read back (the branch's server run locally). The deployed commit `fbe9621` predates them. Per-variant status: [Functional specification](functional-specification.md#56-dispute-actions-other-than-evidence) | Verified in sandbox; Deployed: **Pending** |
+| Send message, accept claim (full or partial), make a partial-refund offer, escalate, evidence after an escalation | Built on recorded contracts and run with fakes; on 20/10/2026 each was sent once through the app's own flow in the sandbox and read back (the branch's server run locally). The code is deployed (`5111b88`, 20/10/2026) but these actions have not yet been exercised on the hosted service; the owner-only ones need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet. Per-variant status: [Functional specification](functional-specification.md#56-dispute-actions-other-than-evidence) | Verified in sandbox · Deployed (code); not yet exercised on the hosted service |
 | A message with an attachment | The server path is tested; the web composer cannot attach an upload yet, so the UI does not offer it | Tested locally (server); in the UI: **Pending** |
 | Replacement offer | Not available: Not verified with PayPal: never offered on a sandbox dispute | Not available |
 | Withdrawing an offer | Not available: PayPal documents no route to withdraw an offer | Not available |
@@ -38,13 +38,14 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
 - **Case documents are synthetic.** What you upload is real in what it does; the order, label, carrier record and
   buyer messages around it are invented, so a real screenshot can show up as a contradiction.
 - **Shared daily caps** (UTC day, server-wide): 60 live analyses, 200 re-checks, 20 evidence sends, 40 uploads, 20
-  agent runs (5 per person), 20 MeterMCP budgets; in the code, not yet deployed, 20 message sends and 20 settling
+  agent runs (5 per person), 20 MeterMCP budgets; 20 message sends and 20 settling
   actions (accept, offer, escalate). Per hour: 6 live analyses and 30 re-checks. Per address: 300 API
   requests and 60 PayPal reads per 5 minutes, 20 uploads, redactions and PDF page reads per 10 minutes. A refusal
   says when it resets.
 - **Redeploys** cause 1–2 minutes of errors (a service with a disk has no zero-downtime deploy).
-- **Which commit is live** cannot be proven from outside: `fbe9621` is treated as deployed on the owner's
-  confirmation and a passing `demo:check` on 19/10/2026.
+- **Which commit is live** cannot be proven from outside: `5111b88` is treated as deployed on the owner's
+  decision to push it and a `demo:check` on 20/10/2026 that passed apart from the known empty reserve of the standard
+  case (`fbe9621` was treated as deployed on 19/10/2026 the same way).
 
 ## Dispute actions
 

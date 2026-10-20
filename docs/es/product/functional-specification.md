@@ -2,12 +2,12 @@
 
 # Especificación funcional
 
-Qué hace ResolveKit, para quién y con qué reglas, tal como está construido en el commit `fbe9621` (19/10/2026). El
+Qué hace ResolveKit, para quién y con qué reglas, tal como está construido en el commit `5111b88` (desplegado el 20/10/2026). El
 código es la fuente de verdad; cuando un comportamiento solo se ha observado en el sandbox de PayPal, esta página lo
 dice. Palabras de estado: Diseñado · Implementado · Probado en local · Verificado en sandbox · Desplegado · Disponible
 para usuarios · Pendiente.
 
-La sección 5.6 (acciones de disputa) está comprobada contra el commit `076c74f` (20/10/2026).
+La sección 5.6 (acciones de disputa) se comprobó contra el commit `076c74f` (20/10/2026); ese código está en `5111b88`, desplegado el 20/10/2026.
 
 Relacionado: [Visión general](overview.md) · [Limitaciones](limitations.md) · [API HTTP](../technical/http-api.md) ·
 [Fronteras de confianza](../architecture/trust-boundaries.md).
@@ -92,8 +92,8 @@ Notas:
 | UC-11 | Comparar dos ejecuciones; Keep de una ejecución; ver Workspace runs | Autor / Owner | Implementado · Probado en local · Verificado en sandbox (Compare y Keep, 19/10/2026) |
 | UC-12 | Detener una ejecución del agente en curso | Autor | Implementado · Probado en local; en sandbox **Pendiente** |
 | UC-13 | Conectar las disputas de PayPal propias de un comerciante | Comerciante | **Pendiente** (no está en la app) |
-| UC-14 | Enviar un mensaje al comprador | Espacio del vendedor | Probado en local · Verificado en sandbox a través de la app (20/10/2026); Desplegado: **Pendiente** |
-| UC-15 | Aceptar una reclamación (total o parcial), hacer una oferta, escalar | Owner | Probado en local · Verificado en sandbox a través de la app (20/10/2026); Desplegado: **Pendiente** |
+| UC-14 | Enviar un mensaje al comprador | Espacio del vendedor | Probado en local · Verificado en sandbox a través de la app (20/10/2026) · Desplegado; aún no ejercitado en el servicio alojado |
+| UC-15 | Aceptar una reclamación (total o parcial), hacer una oferta, escalar | Owner | Probado en local · Verificado en sandbox a través de la app (20/10/2026) · Desplegado; aún no ejercitado en el servicio alojado |
 
 ## 5. Estados y reglas de negocio
 
@@ -223,8 +223,11 @@ atribuible), con el servidor de la rama sin fusionar ejecutado en local contra e
 [Integración con PayPal](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)). Solo V-4, la
 aceptación total, movió dinero (un reembolso de sandbox de 7.00 USD). Aparte, las escrituras de contrato del 20/10/2026
 (W-1 a W-12) fueron peticiones preparadas que el propietario aprobó una a una, enviadas fuera del flujo propio de la
-app; muestran lo que hace PayPal y son la base de cada contrato. Ninguna variante está **Desplegada**: el commit
-desplegado (`fbe9621`) es anterior a las acciones de disputa.
+app; muestran lo que hace PayPal y son la base de cada contrato. El código de todas ellas está **Desplegado**
+(`5111b88`, 20/10/2026), pero estas acciones **no** se han ejercitado todavía en el servicio alojado: las seis
+ejecuciones anteriores se hicieron en un servidor local, así que cada variante conserva «Verificado en sandbox» y nada
+más. Las acciones solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que
+aún no ocurre; los revisores pueden enviar mensajes en la disputa activa de un caso vinculado.
 
 **Quién puede hacer qué.** Aceptar la reclamación, hacer una oferta, escalar y apelar son **solo del Owner**: solo el
 Owner del espacio de trabajo (no un revisor) los compone, aprueba, confirma y envía. Los miembros y los revisores solo
@@ -375,7 +378,7 @@ Más: [Solución de problemas](../user-guide/troubleshooting.md).
 | Análisis de IA | análisis golden incluidos en el código, sin llamada al modelo | guardados + en directo (con límites) | — | en directo con una clave de modelo |
 | **+ Add evidence** | desactivado con su motivo | sí | — | sí, con el servidor |
 | Envío | solo simulador | `provide-evidence` al sandbox | — | sandbox para los casos vinculados |
-| Acciones de disputa ([5.6](#56-acciones-de-disputa-distintas-de-la-evidencia)) | simulador, solo transiciones registradas | no están en el commit desplegado (**Pendiente**) | — | las rutas de acciones del servidor (Probado en local con fakes; Verificado en sandbox a través de la app en un servidor local, 20/10/2026) |
+| Acciones de disputa ([5.6](#56-acciones-de-disputa-distintas-de-la-evidencia)) | simulador, solo transiciones registradas | en el código desplegado; aún no ejercitadas en el servicio alojado (las acciones solo del Owner necesitan además el caso de liquidación vinculado en `BINDINGS_JSON`: **Pendiente**) | — | las rutas de acciones del servidor (Probado en local con fakes; Verificado en sandbox a través de la app en un servidor local, 20/10/2026) |
 | Agente comprador | no está en la zona de demo | `/agent` (espacio del vendedor) | inicio rechazado | `/agent` como operador |
 | Límites diarios | — | sí | — | ninguno |
 
@@ -386,5 +389,5 @@ Más: [Solución de problemas](../user-guide/troubleshooting.md).
   available» en [5.6](#56-acciones-de-disputa-distintas-de-la-evidencia) (oferta de sustitución, retirar una oferta,
   apelación, prueba de reembolso, los tipos con devolución); crear reembolsos; el entorno live (producción) de PayPal;
   borrado de la cuenta o del espacio de trabajo por el propio usuario. El mensaje, la aceptación, la oferta, el
-  escalado y la evidencia tras un escalado están Verificados en sandbox a través de la app (20/10/2026), no
-  Desplegados; un mensaje con adjunto está Probado en local (servidor). Ver [Limitaciones](limitations.md).
+  escalado y la evidencia tras un escalado están Verificados en sandbox a través de la app (20/10/2026), con el código
+  Desplegado y aún no ejercitados en el servicio alojado; un mensaje con adjunto está Probado en local (servidor). Ver [Limitaciones](limitations.md).

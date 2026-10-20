@@ -8,7 +8,7 @@ aprueba el contenido exacto antes de que se envíe nada a PayPal. Un segundo sis
 pasarela MCP de pago por uso que un **agente comprador** paga a través de PayPal; sus recibos se convierten en
 evidencia de uno de los casos.
 
-Esta página describe la arquitectura tal como está en el código en el commit `fbe9621` (19/10/2026). Los términos de
+Esta página describe la arquitectura tal como está en el código en el commit `5111b88` (desplegado el 20/10/2026). Los términos de
 estado siguen el vocabulario del proyecto: Diseñado · Implementado · Probado en local · Verificado en sandbox ·
 Desplegado · Disponible para usuarios · Pendiente.
 
@@ -79,8 +79,13 @@ Los paquetes compartidos (`packages/*`) son bibliotecas dentro de esos procesos,
 | Entorno de PayPal | `PAYPAL_ENV=sandbox`; el modo alojado se niega a arrancar con otro valor salvo `live` más `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, que el blueprint nunca establece |
 | Despliegue automático | `commit` en ambos servicios (el seguimiento del agente recomienda desactivarlo para `resolvekit`: Pendiente, operativo) |
 
-`fbe9621` se considera Desplegado: el propietario confirmó el despliegue el 19/10/2026 y `demo:check` pasó todas las
-líneas salvo una reserva de disputas vacía. `demo:check` no puede demostrar qué commit está desplegado. Un disco
+`5111b88` se considera Desplegado: el 20/10/2026 el propietario avanzó `main` hasta él (fast-forward) y lo subió,
+Render lo desplegó automáticamente (se observó un bundle web nuevo) y `demo:check` contra las URL alojadas dio PASS en
+ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones
+verificadas, ambos modelos de IA respondieron y ambos precalentamientos en caché; dio WARN en ambas reservas (0 disputas
+nuevas) y FAIL en una línea conocida: la vinculación del caso estándar está usada y su reserva está vacía (relleno
+previsto el 25-30/11). Antes, `fbe9621` se desplegó el 19/10/2026 (confirmación del propietario; la misma reserva
+vacía). `demo:check` no puede demostrar qué commit está desplegado. Un disco
 persistente impide los despliegues sin tiempo de inactividad; se observaron de uno a dos minutos de 502 por despliegue
 (evidencia privada). Detalles: [despliegue](../operations/deployment.md).
 
@@ -131,11 +136,11 @@ sequenceDiagram
   W->>W: «Recorded by PayPal» solo para evidencia SUBMITTED_BY_SELLER nueva y coincidente
 ```
 
-Solo `provide-evidence` está verificado de extremo a extremo y desplegado. Desde el commit `076c74f` (20/10/2026, no
-desplegado) el servidor también envía mensajes, aceptaciones, ofertas y escalados por la misma cadena (componer,
+Solo `provide-evidence` se ha ejercitado de extremo a extremo en el servicio alojado. Desde el commit `5111b88`
+(desplegado el 20/10/2026) el servidor también envía mensajes, aceptaciones, ofertas y escalados por la misma cadena (componer,
 aprobar por hash, una segunda confirmación para las acciones del Owner, una lectura fresca, `send_started` en disco, un
-único POST, una relectura atribuible), solo para las variantes cuyo contrato está registrado; estado: Verificado en sandbox a través de la app (20/10/2026,
-servidor local), no desplegado
+único POST, una relectura atribuible), solo para las variantes cuyo contrato está registrado; estado: Desplegado (código), Verificado en sandbox a través de la app (20/10/2026,
+servidor local), aún no ejercitado en el servicio alojado
 ([especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
 No hay código que cree reembolsos. Detalles: [integración con PayPal](../technical/paypal-integration.md),
 [API HTTP](../technical/http-api.md).
@@ -188,10 +193,10 @@ No hay carpeta `docs/architecture/decisions/`: las especificaciones anteriores s
 
 ## Arquitectura actual y evolución futura
 
-| Área | Hoy (código en `fbe9621`) | No construido (futuro, no prometido) |
+| Área | Hoy (código en `5111b88`) | No construido (futuro, no prometido) |
 |---|---|---|
 | Comerciantes | Un espacio de trabajo de evaluación: el vendedor de las disputas de sandbox vinculadas | Conectar las disputas propias de cualquier comerciante mediante PayPal Platform (Partner Referrals, `PayPal-Auth-Assertion`): solo pruebas externas en sandbox, sin código en la app |
-| Acciones sobre disputas | `provide-evidence` | enviar mensaje, hacer oferta, aceptar reclamación, escalar, reembolsar |
+| Acciones sobre disputas | `provide-evidence`; enviar mensaje, hacer oferta, aceptar reclamación, escalar (Desplegado; Verificado en sandbox en una ejecución local; aún no ejercitado en el servicio alojado) | reembolsar |
 | Entorno de PayPal | Sandbox | Producción (nunca ejecutado; el modo alojado lo rechaza sin una activación explícita) |
 | Escala | Una instancia por servicio, archivos en un disco | Base de datos, varias instancias, copias de seguridad |
 | Herramientas del agente | Tres herramientas sintéticas de MeterMCP | Fuentes de datos reales |

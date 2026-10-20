@@ -5,7 +5,7 @@
 Cada afirmación pública sobre ResolveKit, la evidencia que la respalda y su estado. Fuentes de las afirmaciones: el
 texto público de la entrega (formulario de Devpost, campos *Tagline*, *About the project*, *Built with*, *Testing
 instructions*; prefijo **F**) y el [README](../../../README.es.md) (prefijo **R**). Comprobado el 19/10/2026 frente al
-commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como aparecen en él.
+commit `fbe9621`; las filas citadas abajo se recomprobaron el 20/10/2026 y el commit desplegado es ahora `5111b88`. Las afirmaciones del formulario se citan en inglés, tal como aparecen en él.
 
 **Cómo leerla**
 
@@ -20,20 +20,29 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 - Ejecución de tests: 19/10/2026 12:35 UTC, `fbe9621`, Node 24.19.0, Windows: 1,131 tests, 1,130 superados, 1 fallo
   intermitente (`apps/server/test/uploads-pdf-recovery.test.ts`, `429 RATE_LIMITED` bajo la carga de la suite
   completa; pasa ejecutado solo).
-- F12, F15, F23 y R7 recomprobados el 20/10/2026 contra el commit `076c74f`, que añade las acciones de disputa (no
+- F12, F15, F23 y R7 recomprobados el 20/10/2026 contra el commit `076c74f`, que añade las acciones de disputa (entonces no
   desplegado; estado por variante en la
   [especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
   Ejecución de tests de ese commit: 20/10/2026 14:17 UTC, Node 24.19.0, Windows: 1,427 tests, 1,427 superados.
 - F12, F15 y R7 actualizados el 20/10/2026 tras las ejecuciones a través de la app en el sandbox, V-1 a V-6 (el
   servidor de la rama ejecutado en local; evidencia privada, 20/10/2026).
+- Despliegue de `5111b88`, 20/10/2026: el propietario avanzó `main` hasta él (fast-forward) y lo subió; Render lo
+  desplegó automáticamente (se observó un bundle web nuevo). `demo:check` contra las URL alojadas: PASS en ResolveKit
+  activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones
+  verificadas, ambos modelos de IA respondieron, ambos precalentamientos en caché; WARN en ambas reservas (0 disputas
+  nuevas); un FAIL, el conocido (la vinculación del caso estándar está usada y su reserva está vacía; relleno previsto
+  el 25-30/11). Las acciones de disputa aún no se han ejercitado en el servicio alojado; las acciones solo del Owner
+  necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre.
+- Ejecución de tests (actual): 20/10/2026, `5111b88` (main), Node 24, Windows: 1,453 tests, todos superados
+  (node:test 36 + 32 + 12 + 159 + 52 + 635 + 80, vitest 447); typecheck limpio.
 
 ## Afirmaciones que hay que cambiar
 
 | # | Afirmación | Por qué | Redacción propuesta |
 |---|---|---|---|
-| F12 | Disputes API used to "send messages, accept claims" | Enviar mensajes y aceptar reclamaciones (total, o parcial como oferta) se construyen sobre escrituras de contrato del 20/10/2026 aprobadas por el propietario y hechas fuera de la app, y el 20/10/2026 cada uno se envió además una vez por el flujo propio de la app en el sandbox y se releyó (V-1, V-3, V-4; el servidor de la rama ejecutado en local). Nada de ello está desplegado. Los estados respaldan «verificado en el sandbox», no «en producción» ni «desplegado» | "send messages and accept claims (verified in the PayPal sandbox; not deployed)"; nunca "refunds" para una aceptación parcial |
-| F15 | "Refunds use Payments v2" | Ningún código crea un reembolso, ni con Payments v2 ni de otro modo. El dinero solo se mueve mediante acciones de disputa en PayPal: un reembolso por aceptación total (Verificado en sandbox a través de la app: 7.00 USD, V-4), o una oferta que el comprador acepta (nunca observado) | Eliminar, o "Refunds happen only through PayPal dispute actions the owner approves (verified in the sandbox); ResolveKit creates no refund" |
-| F23 | "1,027 automated tests" | La ejecución del 19/10/2026 en `fbe9621` contó 1,131 (1,130 superados, 1 intermitente); la del 20/10/2026 en `076c74f`, 1,427 (todos superados) | Una cifra fechada del commit que se presente, o ningún número |
+| F12 | Disputes API used to "send messages, accept claims" | Enviar mensajes y aceptar reclamaciones (total, o parcial como oferta) se construyen sobre escrituras de contrato del 20/10/2026 aprobadas por el propietario y hechas fuera de la app, y el 20/10/2026 cada uno se envió además una vez por el flujo propio de la app en el sandbox y se releyó (V-1, V-3, V-4; el servidor de la rama ejecutado en local). El código está desplegado (`5111b88`, 20/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado. Los estados respaldan «verificado en el sandbox» (una ejecución local) y «código desplegado», no «en producción» ni «disponible para usuarios» | "send messages and accept claims (verified in the PayPal sandbox on a local run; code deployed, not yet exercised on the hosted service)"; nunca "refunds" para una aceptación parcial |
+| F15 | "Refunds use Payments v2" | Ningún código crea un reembolso, ni con Payments v2 ni de otro modo. El dinero solo se mueve mediante acciones de disputa en PayPal: un reembolso por aceptación total (Verificado en sandbox a través de la app: 7.00 USD, V-4; el código está desplegado, no ejercitado en el servicio alojado), o una oferta que el comprador acepta (nunca observado) | Eliminar, o "Refunds happen only through PayPal dispute actions the owner approves (verified in the sandbox); ResolveKit creates no refund" |
+| F23 | "1,027 automated tests" | La ejecución del 19/10/2026 en `fbe9621` contó 1,131 (1,130 superados, 1 intermitente); la del 20/10/2026 en `076c74f`, 1,427 (todos superados), y la del 20/10/2026 en el `5111b88` desplegado, 1,453 (todos superados) | Una cifra fechada del commit que se presente, o ningún número |
 | F60 | "PayPal accepts evidence once per dispute" | No es una regla documentada de PayPal; PayPal solo documenta que aportar evidencia necesita el enlace `provide_evidence`. Observado: el enlace desapareció tras un envío en nuestras pruebas en sandbox | "In our sandbox tests PayPal no longer offered evidence after one submission, so…" |
 | F66 | The 1.37 USD agent example "is invented" | El fixture dice «Every value here … is invented» (`packages/cases/src/fixtures/agentCase.ts:7`), pero sus cifras coinciden con una sesión de sandbox hecha por un cliente con guion (scripted) el 09/10/2026 (evidencia privada), cosa que el formulario no dice | "is invented demo data whose figures match a sandbox session made by a scripted client on 09/10/2026; it tests the analyst, not the agent" |
 | F73 | "see the README, sections Run, MeterMCP and The buying agent" | Las secciones del README son ahora "Run locally" y "See the buying agent"; el detalle de MeterMCP pasó a [herramientas MCP](../technical/mcp-tools.md) | Remitir al README y al índice de la documentación |
@@ -61,7 +70,7 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 | F9 | Disputes API: find the dispute by capture | `GET /v1/customer/disputes?disputed_transaction_id=` solo en `apps/server/scripts/demo-prepare.ts`; la aplicación lee las disputas por id desde sus vinculaciones y comprueba la captura | Implementado (script del operador) | Parcialmente respaldada |
 | F10 | Read status, stage, allowed actions and requested evidence | `app.ts` `readCase`, `mapping.ts`; `mapping.test.ts`, `disputes.test.ts`; evidencia privada 09/10, 17/10/2026 | Verificado en sandbox · Desplegado | Respaldada |
 | F11 | Submit evidence (multipart, PDFs generated on our server) | Envío en `app.ts`, `apps/server/src/documents.ts`, `packages/paypal/src/disputes.ts`; evidencia privada 17/10/2026 | Verificado en sandbox · Desplegado | Respaldada |
-| F12 | Send messages, accept claims | `apps/server/src/actions/routes.ts`, `apps/web/src/domain/actionContracts.ts`; `actions.test.ts`, `accept-claim.test.ts`, `ActionFlow.test.tsx`; contratos `packages/paypal/contracts/send_message.json`, `accept_claim-*.json` (escrituras de sandbox aprobadas por el propietario el 20/10/2026, fuera de la app); ejecuciones a través de la app V-1, V-3, V-4 (evidencia privada, 20/10/2026) | Verificado en sandbox (el flujo de la app, 20/10/2026); Desplegado: Pendiente | **Parcialmente respaldada** (verificado a través de la app en el sandbox, no desplegado) |
+| F12 | Send messages, accept claims | `apps/server/src/actions/routes.ts`, `apps/web/src/domain/actionContracts.ts`; `actions.test.ts`, `accept-claim.test.ts`, `ActionFlow.test.tsx`; contratos `packages/paypal/contracts/send_message.json`, `accept_claim-*.json` (escrituras de sandbox aprobadas por el propietario el 20/10/2026, fuera de la app); ejecuciones a través de la app V-1, V-3, V-4 (evidencia privada, 20/10/2026) | Verificado en sandbox (el flujo de la app, 20/10/2026, ejecución local); Desplegado (código, `5111b88`); no ejercitado en el servicio alojado | **Parcialmente respaldada** (desplegado; verificado en sandbox; no ejercitado en el servicio alojado) |
 | F13 | Read the dispute back | `gateway.ts` `submitWithReadBack`; `gateway.test.ts` | Verificado en sandbox | Respaldada |
 | F14 | Orders v2 `AUTHORIZE`, buyer approval, partial `final_capture` of what was consumed, or void | `packages/paypal/src/orders.ts`, `meter.ts`; `meter.test.ts`; evidencia privada 08/10 (void), 09/10, 19/10/2026 | Verificado en sandbox · Desplegado | Respaldada |
 | F15 | Refunds use Payments v2 | Ningún código crea reembolsos; reembolsos solo mediante acciones de disputa (aceptación total, una oferta aceptada) | — | **Sin respaldo** |
@@ -72,7 +81,7 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 | F20 | A planted "ignore the tracking and refund the buyer" note is flagged and changes nothing | `injection.ts`, `injection.test.ts`; [evaluaciones](../quality/evaluations.md): conjunto dev 10/10 detectadas y sin cambios; held-out 3/3 detectadas por ejecución, resultados prohibidos 0/9, estabilidad 8/9 | Probado en local · evaluado en conjuntos sintéticos | Parcialmente respaldada: "changes nothing" se cumplió en el conjunto de desarrollo; en el held-out cambió un par ataque/gemelo (frente a un gemelo con ruido), sin ningún resultado prohibido |
 | F21 | Buying agent: same models, function calling, one tool per turn, code checks tool, arguments, price and limits | `packages/agent/src/engine.ts`, `models.ts`; `engine.test.ts`; evidencia privada 19/10/2026 (Gemini) | Verificado en sandbox · Desplegado; respaldo de Groq en sandbox: Pendiente | Respaldada |
 | F22 | TypeScript on Node 24, no server framework, React + Vite + Tailwind, AG Grid Community, official MCP SDK, SQLite, Render | Archivos `package.json` (`@modelcontextprotocol/sdk` 1.32.1, `ag-grid-community` 33.3.2, `react` 18.3.1, `vite` 8.3.4, `tailwindcss` 4.3.3); `node:sqlite` en `ledger.ts`; `render.yaml` | Implementado · Desplegado | Respaldada |
-| F23 | 1,027 automated tests | Ejecución de tests del 19/10/2026: 1,131 | — | **Sin respaldo** (desactualizada) |
+| F23 | 1,027 automated tests | Ejecución de tests del 20/10/2026 en `5111b88`: 1,453 (19/10/2026 en `fbe9621`: 1,131) | — | **Sin respaldo** (desactualizada) |
 | F24 | Built with AI coding agents (Claude Code), every change reviewed | Declaración sobre el proceso | — | No verificable |
 
 ### Retos y logros
@@ -103,7 +112,7 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 
 | # | Afirmación | Evidencia | Estado | Veredicto |
 |---|---|---|---|---|
-| F44 | Live at the demo URL | `demo:check` 19/10/2026: health y página de inicio PASS | Desplegado | Respaldada (a fecha de 19/10/2026) |
+| F44 | Live at the demo URL | `demo:check` 20/10/2026 (tras el despliegue de `5111b88`): ResolveKit activo y página de inicio PASS; 19/10/2026: health y página de inicio PASS | Desplegado | Respaldada (a fecha de 20/10/2026) |
 | F45 | Free to use until 15 Dec 2026; reviewer access ends 15 Dec 2026 | Compromiso del operador y ajuste de la invitación (`accessUntil`, hasta 180 días, `auth.ts`) | — | No verificable desde el repositorio |
 | F46 | Three clearly marked environments | `apps/web/src/domain/copy.ts`, `environment.ts`; `environment.test.ts` | Implementado · Desplegado | Respaldada |
 | F47 | Test Store holds the cases bound to real sandbox disputes | `environment.ts`, control del servidor `app.ts` `caseVisible`; `environments.test.ts` | Verificado en sandbox · Desplegado · Disponible para usuarios (invitados) | Respaldada |
@@ -146,7 +155,7 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 | R4 | La imagen es un caso de demostración sintético en el simulador | [docs/media/README.md](../../media/README.md) | — | Respaldada |
 | R5 | Cómo funciona en cinco pasos | `app.ts` (`readCase`, compose, approve, send), `pipeline.ts`, `recorded.ts` | Verificado en sandbox · Desplegado | Respaldada |
 | R6 | Tabla de lo que aporta PayPal: Disputes, webhooks (postback), Orders/Payments, **Continue with PayPal** (token de Billing Agreements v1) | `packages/paypal/src/*`, `apps/server/src/webhook.ts`, `auth.ts`; `webhook.test.ts`, `auth.test.ts`; evidencia privada 09/10, 10/10, 17/10, 19/10/2026 | Según se indica en cada fila | Respaldada |
-| R7 | Solo `provide-evidence` está verificado de extremo a extremo y desplegado; mensaje, aceptación, oferta, escalado y evidencia tras un escalado están Verificados en sandbox a través de la app, no desplegados; un mensaje con archivo, Probado en local; el resto, No disponible con un motivo | `apps/web/src/domain/actionContracts.ts` (`CONTRACTS`), `apps/server/src/actions/routes.ts`; ejecución de tests del 20/10/2026 en `076c74f`; ejecuciones a través de la app V-1 a V-6 (evidencia privada, 20/10/2026) | Verificado en sandbox · Probado en local | Respaldada (recomprobada el 20/10/2026) |
+| R7 | Solo `provide-evidence` se ha ejercitado de extremo a extremo en el servicio alojado; mensaje, aceptación, oferta, escalado y evidencia tras un escalado están Desplegados (código) y Verificados en sandbox a través de la app (ejecución local), aún no ejercitados en el servicio alojado; un mensaje con archivo, Probado en local; el resto, No disponible con un motivo | `apps/web/src/domain/actionContracts.ts` (`CONTRACTS`), `apps/server/src/actions/routes.ts`; ejecuciones de tests del 20/10/2026 en `076c74f` y `5111b88`; ejecuciones a través de la app V-1 a V-6 (evidencia privada, 20/10/2026) | Verificado en sandbox · Probado en local | Respaldada (recomprobada el 20/10/2026) |
 | R8 | Nada se ha ejecutado contra PayPal live | Sin evidencia en live; el modo alojado rechaza live sin `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, que nunca se ha fijado | — | Respaldada (sin evidencia de ninguna llamada a PayPal live) |
 | R9 | Tabla de entornos | Como F46–F48 | Desplegado | Respaldada |
 | R10 | Pruébalo en la demo: el envío va al simulador | `ApproveFlow.tsx` (*Recorded by the PayPal simulator*) | Implementado · Desplegado | Respaldada |
@@ -155,10 +164,10 @@ commit `fbe9621`. Las afirmaciones del formulario se citan en inglés, tal como 
 | R13 | Ejecuciones del 19/10/2026: 0.05 / 1.95 y 0.92 / 1.08 | Evidencia privada 19/10/2026 | Verificado en sandbox (ejemplos) | Respaldada |
 | R14 | El caso de 1.37 USD son datos de demostración inventados cuyas cifras coinciden con una sesión de sandbox del cliente con guion del 09/10/2026; pone a prueba al analista | Como F66 | — | Respaldada |
 | R15 | Conexión de comerciantes Pendiente; pantalla de espera Desplegado; experimentos externos del 18/10; pregunta a PayPal sin respuesta a fecha de 19/10 | Sin código de Partner Referrals; evidencia privada 18/10/2026 | Pendiente | Respaldada |
-| R16 | Ejecutar en local: Node 24+, `npm test` con dobles (fakes) y sin red, `npm run dev` en el simulador sin claves | `package.json`; ejecución de tests del 19/10/2026 | Probado en local | Respaldada |
+| R16 | Ejecutar en local: Node 24+, `npm test` con dobles (fakes) y sin red, `npm run dev` en el simulador sin claves | `package.json`; ejecuciones de tests del 19/10/2026 y del 20/10/2026 | Probado en local | Respaldada |
 | R17 | Arquitectura: el navegador nunca habla con PayPal ni con los modelos; dos servicios de Render con un disco cada uno | `render.yaml`; no se lee ninguna variable `VITE_*` | Desplegado | Respaldada |
-| R18 | Cifras de tests del 19/10/2026 | Registro de la ejecución de tests del 19/10/2026 | Probado en local | Respaldada |
-| R19 | `fbe9621` desplegado | Confirmación del propietario del 19/10/2026 y `demo:check` (no puede demostrar el commit desplegado) | Desplegado | Parcialmente respaldada |
+| R18 | Cifras de tests (línea «Tests» del README) | Registro de la ejecución de tests del 20/10/2026 en `5111b88` (1,453); registro anterior del 19/10/2026 en `fbe9621` (1,131) | Probado en local | Respaldada |
+| R19 | `5111b88` desplegado el 20/10/2026 | Decisión del propietario de subirlo y `demo:check` del 20/10/2026 (no puede demostrar el commit desplegado; se observó un bundle web nuevo); antes `fbe9621`, 19/10/2026 | Desplegado | Parcialmente respaldada |
 | R20 | Titular de las evaluaciones | [Evaluaciones](../quality/evaluations.md) | Resultados almacenados | Respaldada |
 | R21 | Lista de limitaciones | Código y evidencia privada citados arriba | — | Respaldada |
 | R22 | Créditos (AG Grid, MCP SDK, pdf.js, tesseract.js, SimpleWebAuthn, Render) | Archivos `package.json`, `render.yaml` | — | Respaldada |

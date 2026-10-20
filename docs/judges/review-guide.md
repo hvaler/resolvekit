@@ -45,20 +45,22 @@ in-browser simulator instead of PayPal.
 | Buying agent (same models, function calling) | Picks one MeterMCP tool per turn; code validates tool, arguments, price and limits before each call | Verified in sandbox (two runs, 19/10/2026, examples) · Deployed |
 | MeterMCP | A metered MCP gateway: paid tools (`quote_lookup` 0.05, `deep_report` 0.40, `bulk_export` 0.92 USD), failed calls never charged, receipts with request hashes | Verified in sandbox · Deployed |
 
-Only `provide-evidence` is verified end to end through the app **and** deployed. The other dispute actions are in
-the code, not deployed, one status per variant ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)):
+Only `provide-evidence` has been exercised end to end through the app on the hosted service. The other dispute actions
+are in the deployed code (`5111b88`, 20/10/2026) but have not yet been exercised on the hosted service; one status per
+variant ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)):
 
 | Dispute action | Status |
 |---|---|
-| Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Verified in sandbox** through the app (20/10/2026: the branch's server run locally, one send each, read back). Not Deployed (the deployed commit `fbe9621` predates them) |
+| Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Verified in sandbox** through the app (20/10/2026: the branch's server run locally, one send each, read back). The code is Deployed (`5111b88`, 20/10/2026); these actions have **not** yet been exercised on the hosted service |
 | A message with an attachment | Tested locally on the server; the UI cannot attach an upload yet |
 | Replacement offer · offer withdrawal · appeal · proof of refund · return types | **Not available**, each with its reason in the product |
 
 Each available variant rests on one write the owner approved in the sandbox on 20/10/2026 and its read-back
 ([dispute action contracts](../technical/paypal-integration.md#dispute-action-contracts)); those writes were made
 outside the app's flow, so they show PayPal's behaviour. The app's own flow was then run once per verified variant
-(V-1 to V-6, same page); only the full accept (V-4) moved money, a 7.00 USD sandbox refund. Reviewers may send messages only; accept, offer
-and escalate are the Owner's, with a second confirmation, and others see a preview. ResolveKit never creates a refund.
+(V-1 to V-6, same page); only the full accept (V-4) moved money, a 7.00 USD sandbox refund. Reviewers may send messages only (on a bound case's active dispute); accept, offer
+and escalate are the Owner's, with a second confirmation, and others see a preview. The owner-only actions need the
+settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet. ResolveKit never creates a refund.
 
 ## What is real, synthetic, simulated or stored
 

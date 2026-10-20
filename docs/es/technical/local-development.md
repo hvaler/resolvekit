@@ -3,7 +3,7 @@
 # Desarrollo local
 
 Cómo instalar, ejecutar y probar ResolveKit en tu máquina, y qué comandos llegan a PayPal, a los proveedores de
-modelos o cuestan dinero. Código en el commit `fbe9621`.
+modelos o cuestan dinero. Código en el commit `5111b88`.
 
 ## Requisitos
 
@@ -125,21 +125,22 @@ Opciones de `demo:prepare` (ver `USAGE` en `apps/server/scripts/demo-prepare-lib
 
 ## Tests
 
-Última ejecución completa: 19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0, Windows. Fuente: el registro de la
-ejecución guardado con el trabajo de documentación.
+Última ejecución completa: 20/10/2026, commit `5111b88`, Node 24, Windows: 1,453 tests, todos superados; typecheck
+limpio. Fuente: el registro de la ejecución guardado con el trabajo de documentación.
 
 | Suite | Tests | Resultado |
 |---|---|---|
-| `test:paypal` | 31 | pasa |
-| `test:hosting` | 19 | pasa |
-| `test:cases` | 11 | pasa |
-| `test:analyst` | 152 | pasa |
+| `test:paypal` | 36 | pasa |
+| `test:hosting` | 32 | pasa |
+| `test:cases` | 12 | pasa |
+| `test:analyst` | 159 | pasa |
 | `test:agent` | 52 | pasa |
-| `test:server` | 486 | 485 pasan, 1 falla (ver abajo) |
-| `test:metermcp` | 71 | pasa |
-| `test:web` | 309 (26 archivos) | pasa |
+| `test:server` | 635 | pasa |
+| `test:metermcp` | 80 | pasa |
+| `test:web` | 447 | pasa |
 | `typecheck` | — | pasa |
 
-El único fallo (`uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…») recibió 429 `RATE_LIMITED` con la
-carga de la suite completa; ejecutado solo, pasó dos veces. Es intermitente. Prácticas de pruebas:
+La ejecución completa anterior (19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0, Windows) contó 1,131 tests con un
+fallo (`uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…»), 429 `RATE_LIMITED` con la carga de la suite
+completa; ejecutado solo, pasó dos veces. Es intermitente y no se repitió el 20/10/2026. Prácticas de pruebas:
 [pruebas](../quality/testing.md).

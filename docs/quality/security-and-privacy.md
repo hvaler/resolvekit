@@ -7,7 +7,7 @@ guarantees. For the trust boundaries as a design, see [Trust boundaries](../arch
 report a vulnerability, see [SECURITY.md](../../SECURITY.md).
 
 Status words follow the project vocabulary. Unless a row says otherwise: **Implemented · Tested locally** (fake
-PayPal, fake model) at `fbe9621`, deployed on the sandbox demo.
+PayPal, fake model) at `5111b88`, deployed on the sandbox demo.
 
 ## Literal validity is not semantic support
 
@@ -98,7 +98,7 @@ Multi-merchant isolation is untested in practice: only one seller workspace is c
   newer intent or binding change invalidates it; the send re-reads PayPal and refuses on any difference; one
   `PayPal-Request-Id` per intent; a per-dispute lock; a durable audit entry before anything goes to PayPal. Details:
   [HTTP API](../technical/http-api.md).
-- Dispute actions (Verified in sandbox through the app, not deployed): the same chain, plus the role checked at compose, approve, confirm
+- Dispute actions (Deployed; Verified in sandbox through the app, not yet exercised on the hosted service): the same chain, plus the role checked at compose, approve, confirm
   and send (accept, offer and escalate are the Owner's only, `403 OWNER_ONLY`); a second confirmation bound to the
   intent id, content hash, action, canonical amount, currency and consequence; amounts as exact decimal strings, never
   floats; a dispute held after any send whose outcome PayPal does not prove, until a read-back settles it; no automatic

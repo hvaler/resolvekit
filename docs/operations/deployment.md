@@ -6,10 +6,15 @@ How ResolveKit's two services are deployed on Render, in which order, and what t
 every environment variable see [Configuration](../technical/configuration.md); for day-to-day operation see the
 [Runbook](runbook.md).
 
-**Status (19/10/2026).** Deployed. The owner confirmed that commit `fbe9621` was deployed on 19/10 after the push, and
-`npm run demo:check` passed every line except the empty reserve of the standard case (see
-[Runbook](runbook.md#dispute-rotation-and-the-reserve)). `demo:check` cannot prove which commit is live. The previous
-recorded deployment was `bdd1fd9` on 19/10, both services, MeterMCP first and ResolveKit by hand.
+**Status (20/10/2026).** Deployed. The owner fast-forwarded `main` to commit `5111b88` (dispute actions) and pushed it
+on 20/10; Render auto-deployed it and a new web bundle was observed. `npm run demo:check` against the hosted URLs then
+gave PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox connected, webhook on, both bindings verified, both AI
+models answered and both warm-ups cached; WARN on both reserves (0 fresh disputes); and one FAIL, the known one: the
+standard case's binding is used and its reserve is empty, with a refill planned for 25-30/11 (see
+[Runbook](runbook.md#dispute-rotation-and-the-reserve)). `demo:check` cannot prove which commit is live. The dispute
+actions in that commit have not yet been exercised on the hosted service. The previous recorded deployments were
+`fbe9621` on 19/10 (the owner's confirmation; `demo:check` passed every line except the same empty reserve) and
+`bdd1fd9` on 19/10, both services, MeterMCP first and ResolveKit by hand.
 
 ## Services
 

@@ -50,11 +50,13 @@ Details: [product overview](docs/product/overview.md) · [AI pipeline](docs/tech
 | Google Gemini (`gemini-3.8-flash`), Groq (`openai/gpt-oss-120b`) as fallback | Analyst: facts with verbatim quotes, timeline, contradictions, draft, per-sentence verification. Buying agent: one tool call per turn through function calling | Deployed; analyst measured on synthetic sets only |
 | Deterministic code | Verbatim-quote check, numbers check, rules for action and evidence type, budget and limit checks for the agent | Implemented · Tested locally · Deployed |
 
-Only `provide-evidence` is verified end to end through the app and deployed. Sending a message, accepting a claim
-(full, or partial as an offer), making a partial-refund offer, escalating and sending evidence after an escalation are
-built from commit `076c74f` (20/10/2026), each on a sandbox contract the owner approved, and **Verified in sandbox**
-through the app on 20/10/2026 (one send each, on a local server); they are not deployed. A message with an attachment
-is Tested locally on the server only. Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
+Only `provide-evidence` has been exercised end to end through the app on the hosted service. Sending a message,
+accepting a claim (full, or partial as an offer), making a partial-refund offer, escalating and sending evidence after
+an escalation are built from commit `076c74f` (20/10/2026), each on a sandbox contract the owner approved, and
+**Verified in sandbox** through the app on 20/10/2026 (one send each, on a local server). The code is **Deployed**
+(`5111b88`, 20/10/2026), but these actions have **not** yet been exercised on the hosted service: the owner-only ones
+need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on
+a bound case's active dispute. A message with an attachment is Tested locally on the server only. Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
 **Not available**, each with its reason. ResolveKit never creates a refund. Per-variant status:
 [functional specification](docs/product/functional-specification.md#56-dispute-actions-other-than-evidence). Nothing
 has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).
@@ -143,12 +145,17 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 
 ## Verification
 
-- **Tests**: 19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0 on Windows: 1,131 tests, 1,130 passed, 1 failed
-  intermittently (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED`
-  under full-suite load; it passed 3 of 3 run alone, twice). Typecheck passed. Not run on Linux. Details:
-  [testing](docs/quality/testing.md) · [known issues](docs/quality/known-issues.md).
-- **Deployment**: `fbe9621` reported deployed by the owner on 19/10/2026; `demo:check` passed every line except the
-  standard case's empty reserve (it cannot prove which commit is live).
+- **Tests**: 20/10/2026, commit `5111b88` (`main`), Node 24 on Windows: 1,453 tests, all passed (node:test 36 + 32 + 12 +
+  159 + 52 + 635 + 80, vitest 447). Typecheck clean. Not run on Linux. Earlier run, 19/10/2026 12:35 UTC, commit
+  `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 passed, 1 failed intermittently
+  (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` under full-suite
+  load; it passed 3 of 3 run alone, twice). Details: [testing](docs/quality/testing.md) ·
+  [known issues](docs/quality/known-issues.md).
+- **Deployment**: `5111b88` deployed on 20/10/2026 (the owner pushed it; Render auto-deployed it and a new web bundle
+  was observed). `demo:check` against the hosted URLs: PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
+  connected, webhook on, both bindings verified, both AI models answered, both warm-ups cached; WARN on both reserves
+  (0 fresh disputes); one FAIL, the known one: the standard case's binding is used and its reserve is empty (refill
+  planned 25-30/11). It cannot prove which commit is live. Earlier: `fbe9621`, 19/10/2026.
 - **Evaluations** (analyst only, synthetic cases): [evaluations](docs/quality/evaluations.md). Headline: on 12 held-out
   cases × 3 runs, 0 of 66 true notes rejected and 0 of 72 planted false notes sent, but only 17 of 66 true notes were
   judged supported (6 + 6 + 5; source: [evaluations](docs/quality/evaluations.md)); the rest went to review.
@@ -157,8 +164,9 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 ## Current limitations
 
 - Merchant connection to their own disputes: Pending (see above).
-- Only `provide-evidence` is verified through the app and deployed; messages, accept, offer and escalate are Verified
-  in sandbox through the app (not deployed); no refund is ever created.
+- Only `provide-evidence` has been exercised on the hosted service; messages, accept, offer and escalate are deployed
+  (code) and Verified in sandbox through the app (local run), not yet exercised on the hosted service; no refund is ever
+  created.
 - Sandbox only; live PayPal never exercised. Sandbox timings and behaviours may differ in live.
 - The standard evaluation case's reserve of fresh sandbox disputes was empty on 19/10/2026: until it is refilled, new
   sends there are refused and the case shows the earlier read-back.
