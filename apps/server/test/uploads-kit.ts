@@ -100,10 +100,15 @@ export const pasteText = (app: App, cookie: string, text = 'From: buyer\nThe par
 /** `dispute`: fields over the standard dispute on every read (e.g. another status), read each time. */
 export function sendSetup(o: { maxSendBytes?: number; dispute?: () => Record<string, unknown> } = {}) {
   const sends: FormData[] = [];
+  /** Every write to PayPal (`METHOD path`, any non-GET but the OAuth token): provide-evidence, send-message, any action. */
+  const writes: string[] = [];
   let hold: Promise<void> | null = null;
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     const u = new URL(String(url));
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
+    const method = (init.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') writes.push(`${method} ${u.pathname}`);
+    if (method !== 'GET' && !u.pathname.endsWith('/provide-evidence')) return new Response(JSON.stringify({ links: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     if (u.pathname.endsWith('/provide-evidence')) {
       sends.push(init.body as FormData);
       if (hold) await hold;
@@ -162,7 +167,7 @@ export function sendSetup(o: { maxSendBytes?: number; dispute?: () => Record<str
     return i.body;
   };
   const send = (cookie: string, intentId: string) => call(app, `/api/disputes/${CASE}/evidence`, { body: { intentId }, cookie }) as unknown as Promise<{ status: number; body: { error?: string; detail?: string } }>;
-  return { app, people, store, intents, lines, analyst, analyses, sends, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
+  return { app, people, store, intents, lines, analyst, analyses, sends, writes, analyse, confirmText, intent, approved, send, holdSends: (p: Promise<void> | null) => (hold = p) };
 }
 export type SentIntent = { id: string; contentHash: string; status: string; files: { name: string; size: string; sha256?: string; source?: string }[] };
 export const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');

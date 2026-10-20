@@ -1038,7 +1038,7 @@ test("a message with a file (send_message:file, W-3): one confirmed upload of th
   const two = await message([e7.id, e8.id]);
   assert.deepEqual([two.status, two.body.error], [400, 'INVALID_ACTION_REQUEST']);
   // Nothing went to PayPal: composing only reads.
-  assert.equal(s.sends.length, 0);
+  assert.deepEqual(s.writes, []);
 });
 
 test('a message with a file only from W-3’s status: refused while PayPal waits for the seller (compose and the recompose at send); the text message is not', TIMEOUT, async () => {
@@ -1063,7 +1063,8 @@ test('a message with a file only from W-3’s status: refused while PayPal waits
   at.status = 'WAITING_FOR_SELLER_RESPONSE';
   const sent = (await call(s.app, `/api/disputes/${CASE}/send`, { body: { intentId: i.body.id }, cookie })) as unknown as { status: number; body: { error?: string; detail?: string } };
   assert.deepEqual([sent.status, sent.body.error], [409, 'VARIANT_NOT_AVAILABLE'], JSON.stringify(sent.body));
-  assert.equal(s.sends.length, 0);
+  // No write of any kind reached PayPal (send-message included).
+  assert.deepEqual(s.writes, []);
 });
 
 test("the uploaded file name never leaves the server: not in PayPal's file names or bytes, not in the model's input; it is still shown to the workspace", TIMEOUT, async () => {
