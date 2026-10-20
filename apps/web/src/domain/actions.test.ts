@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { CONTRACTS, type VariantContract } from './actionContracts';
 import {
+  RECORDED_STATUSES,
+  statusOutsideContract,
   ACTION_EVIDENCE_BLANK,
   ACTION_RULES,
   ACTION_TEXT_LIMIT,
@@ -20,11 +22,12 @@ import {
   pendingSellerOffer,
   relevantNewBuyerMessages,
   sameTerms,
+  type ActionRequest,
   type ActionRules,
   type Viewer,
 } from './actions';
 import { isComposeProblem, parseAnyIntentRequest, parseIntentRequest, type SubmissionIntent } from './intent';
-import type { DisputeSnapshot } from './types';
+import type { DisputeSnapshot, DisputeStatus } from './types';
 import w1 from '../../../../packages/paypal/contracts/send_message.json';
 import w2 from '../../../../packages/paypal/contracts/send_message-request-id.json';
 import w3 from '../../../../packages/paypal/contracts/send_message-file.json';
@@ -378,7 +381,7 @@ describe('send_message rules (Task 8, from the recorded contract)', () => {
   it('the stage rule is the stages the contract recorded: INQUIRY only', () => {
     const stages = new Set(recorded.flatMap((c) => [c.before.dispute_life_cycle_stage, ...c.after.map((a) => a.dispute.dispute_life_cycle_stage)]));
     expect([...stages]).toEqual(['INQUIRY']);
-    expect(ACTION_RULES.send_message?.(msg(), khh())).toEqual({ stages: ['INQUIRY'], amount: 'not_allowed', text: 'required' });
+    expect(ACTION_RULES.send_message?.(msg(), khh())).toEqual({ stages: ['INQUIRY'], statuses: ['WAITING_FOR_SELLER_RESPONSE', 'WAITING_FOR_BUYER_RESPONSE'], amount: 'not_allowed', text: 'required' });
     expect(composeAction({ ...base, req: msg(), snap: khh({ stage: 'CHARGEBACK' }) })).toMatchObject({ status: 409, error: 'ACTION_STAGE' });
     expect(err(composeAction({ ...base, req: msg(), snap: khh({ stage: null }) }))).toBe('409 ACTION_STAGE');
   });
@@ -522,7 +525,7 @@ describe('escalate rules (Task 10, from the recorded contract W-5)', () => {
     expect(Object.keys(w5.request.body)).toEqual(['note']);
     expect(err(composeAction({ ...base, req: escalate('  '), snap: khh() }))).toBe('422 TEXT_REQUIRED');
     expect(err(composeAction({ ...base, req: escalate('x'.repeat(ACTION_TEXT_LIMIT + 1)), snap: khh() }))).toBe('422 TEXT_TOO_LONG');
-    expect(ACTION_RULES.escalate?.(escalate(), khh())).toEqual({ stages: ['INQUIRY'], amount: 'not_allowed', text: 'required' });
+    expect(ACTION_RULES.escalate?.(escalate(), khh())).toEqual({ stages: ['INQUIRY'], statuses: ['WAITING_FOR_SELLER_RESPONSE'], amount: 'not_allowed', text: 'required' });
     const c = composeAction({ ...base, req: escalate(`  ${w5.request.body.note}  `), snap: khh() });
     expect(c).toMatchObject({ action: 'escalate', payload: { kind: 'escalate', note: w5.request.body.note } });
     const i = approved(c);
@@ -630,5 +633,61 @@ describe('make_offer rules (Task 11, from the recorded contract W-4)', () => {
     const i = approved(composeAction({ ...base, req: offer(), snap: khh() }));
     const buyer = { postedBy: 'BUYER', time: '2026-10-19T09:00:00.000Z', content: 'Still nothing.', files: [] };
     expect(relevantNewBuyerMessages(intentAction(i), khh().messages!.map(messageKey), khh({ messages: [...khh().messages!, buyer] }))).toEqual([buyer]);
+  });
+});
+
+describe('recorded statuses (IMP1): each action only from the statuses its writes were sent from', () => {
+  const base = { caseId: 'case-1', disputeId: 'PP-R-KHH-10193360', seller: 'JWULA7T75ZA4Q', files: [] };
+  const NOT_VERIFIED = 'not verified with PayPal from this dispute status';
+  const reqs: ActionRequest[] = [
+    { action: 'accept_claim', acceptType: 'REFUND', note: 'Refund accepted.', amount: null, attachments: [] },
+    { action: 'accept_claim', acceptType: 'PARTIAL_REFUND', note: 'Part back.', amount: { value: '2.00', currency: 'USD' }, attachments: [] },
+    { action: 'escalate', note: 'Delivered; see the tracking.', attachments: [] },
+    { action: 'make_offer', offerType: 'REFUND', note: 'Half back.', amount: { value: '2.00', currency: 'USD' }, attachments: [] },
+    { action: 'send_message', text: 'Shipped on 7 Oct.', attachments: [] },
+  ];
+
+  it('the statuses are the recorded writes’ before-reads', () => {
+    expect(w9.before.status).toBe('WAITING_FOR_SELLER_RESPONSE');
+    expect(w10.before.status).toBe('WAITING_FOR_SELLER_RESPONSE');
+    expect(w5.before.status).toBe('WAITING_FOR_SELLER_RESPONSE');
+    expect(w4.before.status).toBe('WAITING_FOR_SELLER_RESPONSE');
+    expect(w1.before.status).toBe('WAITING_FOR_SELLER_RESPONSE');
+    expect([w2.before.status, w3.before.status]).toEqual(['WAITING_FOR_BUYER_RESPONSE', 'WAITING_FOR_BUYER_RESPONSE']);
+    expect(RECORDED_STATUSES).toEqual({
+      send_message: ['WAITING_FOR_SELLER_RESPONSE', 'WAITING_FOR_BUYER_RESPONSE'],
+      accept_claim: ['WAITING_FOR_SELLER_RESPONSE'],
+      escalate: ['WAITING_FOR_SELLER_RESPONSE'],
+      make_offer: ['WAITING_FOR_SELLER_RESPONSE'],
+    });
+  });
+
+  it('waiting for the buyer: accept, escalate and offer are Not available (availability and compose); a message is not', () => {
+    const buyer = khh({ status: 'WAITING_FOR_BUYER_RESPONSE' });
+    for (const req of reqs.filter((r) => r.action !== 'send_message')) {
+      expect(composeAction({ ...base, req, snap: buyer }), JSON.stringify(req)).toEqual({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${NOT_VERIFIED}` });
+      const a = actionAvailability(buyer, req.action, OWNER);
+      expect(a.sendable, req.action).toBe(false);
+      expect(a.why, req.action).toBe(NOT_VERIFIED);
+      expect(a.variants.every((v) => !v.available && v.why === NOT_VERIFIED), req.action).toBe(true);
+    }
+    expect(composeAction({ ...base, req: reqs[4]!, snap: buyer })).toMatchObject({ action: 'send_message' });
+    expect(actionAvailability(buyer, 'send_message', REVIEWER)).toMatchObject({ sendable: true, why: null });
+  });
+
+  it('another status (UNDER_REVIEW, RESOLVED, …): nothing is composable, a message included', () => {
+    for (const status of ['UNDER_REVIEW', 'RESOLVED', 'OPEN', ''] as DisputeStatus[]) {
+      for (const req of reqs) {
+        expect(composeAction({ ...base, req, snap: khh({ status }) }), `${status} ${req.action}`).toMatchObject({ status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${NOT_VERIFIED}` });
+        expect(actionAvailability(khh({ status }), req.action, OWNER).sendable).toBe(false);
+      }
+    }
+    expect(statusOutsideContract('provide_evidence', khh({ status: 'UNDER_REVIEW' }))).toBeNull();
+    expect(statusOutsideContract('appeal', khh({ status: 'UNDER_REVIEW' }))).toBeNull();
+  });
+
+  it('test-only rules without statuses keep any status (the injected registry of the route tests)', () => {
+    const rules = { send_message: (): ActionRules => ({ stages: null, amount: 'not_allowed', text: 'required' }) };
+    expect(composeActionWith({ ...base, req: reqs[4]!, snap: khh({ status: 'UNDER_REVIEW' }) }, CONTRACTS, rules)).toMatchObject({ action: 'send_message' });
   });
 });

@@ -237,13 +237,14 @@ export function actionAvailabilityWith(snap: DisputeSnapshot, action: IntentActi
     const c = contracts[variant];
     if (c.status === 'not_available') return { variant, type, available: false, why: c.reason ?? 'Not available' };
     const outside =
-      action === 'accept_claim' && type
+      statusOutsideContract(action, snap) ??
+      (action === 'accept_claim' && type
         ? acceptOutsideContract(type, snap)
         : action === 'escalate'
           ? escalateOutsideContract(snap)
           : action === 'make_offer' && type
             ? (offerOutsideContract(type, snap) ?? (pendingSellerOffer(snap) ? OFFER_PENDING : null))
-            : null;
+            : null);
     return { variant, type, available: !outside, why: outside };
   });
   // Evidence keeps its own flow (its variants are checked where it is composed).
@@ -267,6 +268,11 @@ export function disputePin(snap: DisputeSnapshot, disputeId: string | null, sell
 export interface ActionRules {
   /** Stages the contract recorded the action on; null: any stage. */
   stages: readonly string[] | null;
+  /**
+   * Dispute statuses the contracts recorded the action sent from; another is refused VARIANT_NOT_AVAILABLE. Absent or
+   * null: any status (test-only rules).
+   */
+  statuses?: readonly string[] | null;
   amount: 'required' | 'not_allowed' | 'optional';
   /** The amount must be below the dispute amount (a partial refund), not just at most it. */
   belowDispute?: boolean;
@@ -299,12 +305,32 @@ export const RECORDED_STAGES: Readonly<Partial<Record<SimpleAction, readonly str
 });
 
 /**
+ * The dispute statuses the recorded writes were sent from ([A2]); another status is «Not available» (VARIANT_NOT_AVAILABLE),
+ * in availability, compose and the recompose at send, live and on the simulator alike.
+ * accept_claim (W-9 PARTIAL_REFUND, W-10 REFUND), escalate (W-5) and make_offer (W-4): WAITING_FOR_SELLER_RESPONSE only.
+ * send_message: WAITING_FOR_SELLER_RESPONSE (W-1) and WAITING_FOR_BUYER_RESPONSE (W-2, W-3).
+ */
+export const RECORDED_STATUSES: Readonly<Record<SimpleAction, readonly string[]>> = Object.freeze({
+  send_message: Object.freeze(['WAITING_FOR_SELLER_RESPONSE', 'WAITING_FOR_BUYER_RESPONSE']),
+  accept_claim: Object.freeze(['WAITING_FOR_SELLER_RESPONSE']),
+  escalate: Object.freeze(['WAITING_FOR_SELLER_RESPONSE']),
+  make_offer: Object.freeze(['WAITING_FOR_SELLER_RESPONSE']),
+});
+export const STATUS_NOT_VERIFIED = 'not verified with PayPal from this dispute status';
+
+/** Why sending this action from the dispute's status is outside what the contracts recorded, or null. */
+export function statusOutsideContract(action: IntentAction, snap: Pick<DisputeSnapshot, 'status'>): string | null {
+  if (!isSimpleAction(action)) return null;
+  return RECORDED_STATUSES[action].includes(snap.status) ? null : STATUS_NOT_VERIFIED;
+}
+
+/**
  * Each action's rules, from its contract; an action without rules is refused VARIANT_NOT_AVAILABLE (Tasks 9–12 add
  * theirs). send_message: the text is required (at most ACTION_TEXT_LIMIT), no amount; at most one confirmed upload,
  * which makes it the `send_message:file` variant and so needs that variant available in the registry.
  */
 export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Object.freeze({
-  send_message: (): ActionRules => ({ stages: RECORDED_STAGES.send_message!, amount: 'not_allowed', text: 'required' }),
+  send_message: (): ActionRules => ({ stages: RECORDED_STAGES.send_message!, statuses: RECORDED_STATUSES.send_message, amount: 'not_allowed', text: 'required' }),
   // accept_claim, as recorded on not-received disputes: REFUND takes no amount (W-10: PayPal refunded the disputed
   // amount, which equalled its allowed_refund_amount); PARTIAL_REFUND takes `refund_amount`, below the dispute amount
   // and below what PayPal would refund (W-9: 2.00 of 7.00). A note is required: no accept without one was recorded.
@@ -314,15 +340,15 @@ export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Ob
     const outside = acceptOutsideContract(req.acceptType, snap);
     const r: ActionRules =
       req.acceptType === 'REFUND'
-        ? { stages: RECORDED_STAGES.accept_claim!, amount: 'not_allowed', text: 'required' }
-        : { stages: RECORDED_STAGES.accept_claim!, amount: 'required', belowDispute: true, ...(snap.allowedRefund ? { belowAmount: snap.allowedRefund } : {}), text: 'required' };
+        ? { stages: RECORDED_STAGES.accept_claim!, statuses: RECORDED_STATUSES.accept_claim, amount: 'not_allowed', text: 'required' }
+        : { stages: RECORDED_STAGES.accept_claim!, statuses: RECORDED_STATUSES.accept_claim, amount: 'required', belowDispute: true, ...(snap.allowedRefund ? { belowAmount: snap.allowedRefund } : {}), text: 'required' };
     return outside ? { ...r, unavailable: outside } : r;
   },
   // escalate, as recorded (W-5): from an inquiry on a not-received dispute, a note (PayPal: 1–2,000 characters), no
   // amount. Another reason was never escalated in the sandbox: unavailable.
   escalate: (req, snap): ActionRules | null => {
     if (req.action !== 'escalate') return null;
-    const r: ActionRules = { stages: RECORDED_STAGES.escalate!, amount: 'not_allowed', text: 'required' };
+    const r: ActionRules = { stages: RECORDED_STAGES.escalate!, statuses: RECORDED_STATUSES.escalate, amount: 'not_allowed', text: 'required' };
     const outside = escalateOutsideContract(snap);
     return outside ? { ...r, unavailable: outside } : r;
   },
@@ -333,6 +359,7 @@ export const ACTION_RULES: Readonly<Partial<Record<SimpleAction, RulesOf>>> = Ob
     if (req.action !== 'make_offer' || req.offerType !== 'REFUND') return null;
     const r: ActionRules = {
       stages: RECORDED_STAGES.make_offer!,
+      statuses: RECORDED_STATUSES.make_offer,
       amount: 'required',
       belowDispute: true,
       fullAmountUnavailable: FULL_OFFER_NOT_VERIFIED,
@@ -442,7 +469,7 @@ function canonicalValue(m: Money): string {
 
 /**
  * Compose an action intent against the dispute as just read. Checks, in this order: availability (link, variant,
- * type allowed now), the contract's stage rule, currency, amount, text. Each action's rules come with its task;
+ * type allowed now, the recorded statuses), the contract's stage rule, currency, amount, text. Each action's rules come with its task;
  * without them the action is refused VARIANT_NOT_AVAILABLE.
  */
 export interface ComposeActionInput {
@@ -474,6 +501,7 @@ export function composeActionWith(x: ComposeActionInput, contracts: ContractRegi
   }
   const r = rules[req.action]?.(req, snap) ?? null;
   if (!r) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: not implemented yet' };
+  if (r.statuses && !r.statuses.includes(snap.status)) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${STATUS_NOT_VERIFIED}` };
   if (r.unavailable) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${r.unavailable}` };
   if (r.duplicate) return { status: 409, error: 'DUPLICATE_ACTION', detail: r.duplicate };
 

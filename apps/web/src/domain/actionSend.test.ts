@@ -34,6 +34,18 @@ function sim(over: Partial<DisputeSnapshot> = {}, transitions?: Record<string, S
   const g = new SimulatedDisputeGateway([start(over)], { outcome: () => 'waiting_for_buyer', now: () => new Date(clock.t), ...(transitions ? { transitions } : {}) });
   return { g, clock };
 }
+/**
+ * An approved intent built by hand for a state compose refuses (live and simulator agree, so composing it is refused
+ * first): what the simulator does if one reached it anyway. The content is composed on the waiting-for-seller status the
+ * contracts recorded, then pinned to the real status.
+ */
+function handBuilt(snap: DisputeSnapshot, req: Parameters<typeof composeAction>[0]['req']): SubmissionIntent {
+  const c = composeAction({ caseId: 'CASE-1', req, snap: { ...snap, status: 'WAITING_FOR_SELLER_RESPONSE' }, disputeId: null, seller: null, files: [] }) as SubmissionIntent;
+  expect(c).toHaveProperty('payload');
+  return { ...c, pin: { ...c.pin!, status: snap.status }, id: 'int-h', contentHash: 'a'.repeat(64), requestId: 'rk-h', status: 'approved', createdAt: '', expiresAt: '', approvedBy: 'x', approvedAt: '', sentAt: null, reason: null };
+}
+const statusRefused = { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: 'Not available: not verified with PayPal from this dispute status' };
+
 async function localIntent(snap: DisputeSnapshot, req: Parameters<LocalIntentClient['createAction']>[1] = { action: 'send_message', text: TEXT, attachments: [] }) {
   const l = new LocalIntentClient();
   const i = await l.createAction('CASE-1', req, { snapshot: snap });
@@ -75,7 +87,9 @@ describe('the simulator only plays recorded transitions', () => {
     const under = await g.getDispute('CASE-1');
     expect(under.status).toBe('UNDER_REVIEW');
     // PayPal gives no links then: another message is refused, and the dispute still moves on as recorded.
-    const { i: early } = await localIntent({ ...under, allowedActions: ['send_message'] }, { action: 'send_message', text: 'Second.', attachments: [] });
+    const second = { action: 'send_message' as const, text: 'Second.', attachments: [] };
+    expect(composeAction({ caseId: 'CASE-1', req: second, snap: { ...under, allowedActions: ['send_message'] }, disputeId: null, seller: null, files: [] })).toMatchObject(statusRefused);
+    const early = handBuilt({ ...under, allowedActions: ['send_message'] }, second);
     await expect(g.sendAction(early, { requestId: early.requestId })).rejects.toThrow('NOT_AUTHORIZED: send_message is not allowed for this dispute');
     clock.t += 30_000;
     expect((await g.getDispute('CASE-1')).status).toBe('WAITING_FOR_BUYER_RESPONSE');
@@ -195,7 +209,9 @@ describe('the simulator plays the recorded accept transitions (W-10, W-9)', () =
     const { g } = sim({ ...waitingSeller(), status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'], responseOptions: { acceptClaimTypes: ['REFUND'], offerTypes: [] } });
     const intents = new LocalIntentClient();
     const snap = await g.getDispute('CASE-1');
-    const i = await intents.approve(await intents.createAction('CASE-1', accept('REFUND', 'x'), { snapshot: snap }));
+    // Compose refuses it first (no accept was recorded from WAITING_FOR_BUYER_RESPONSE), as on the server.
+    await expect(intents.createAction('CASE-1', accept('REFUND', 'x'), { snapshot: snap })).rejects.toThrow('Not available: not verified with PayPal from this dispute status');
+    const i = handBuilt(snap, accept('REFUND', 'x'));
     await expect(g.sendAction(i, { requestId: i.requestId })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
     expect(g.sentActions).toEqual([]);
   });
@@ -264,12 +280,13 @@ describe('the simulator plays the recorded offer (W-4)', () => {
     const tryOn = async (over: Partial<DisputeSnapshot>) => {
       const { g } = sim({ ...waitingSeller(), ...over });
       const snap = await g.getDispute('CASE-1');
-      const c = composeAction({ caseId: 'CASE-1', req: offer(), snap: { ...snap, offerHistory: [] }, disputeId: null, seller: null, files: [] }) as SubmissionIntent;
-      const i = { ...c, id: 'int-o', contentHash: 'a'.repeat(64), requestId: 'rk-o', status: 'approved' as const, createdAt: '', expiresAt: '', approvedBy: 'x', approvedAt: '', sentAt: null, reason: null };
+      const i = handBuilt({ ...snap, offerHistory: [] }, offer());
       await expect(g.sendAction(i, { requestId: i.requestId })).rejects.toThrow(/^NOT_AUTHORIZED/);
       expect(g.sentActions).toEqual([]);
     };
     await tryOn({ status: 'WAITING_FOR_BUYER_RESPONSE' });
+    // Composing it is refused first there, live and on the simulator alike (W-4 was sent from WAITING_FOR_SELLER_RESPONSE).
+    expect(composeAction({ caseId: 'CASE-1', req: offer(), snap: { ...start(waitingSeller()), status: 'WAITING_FOR_BUYER_RESPONSE' }, disputeId: null, seller: null, files: [] })).toMatchObject(statusRefused);
     // Task 8's rule: after a seller message PayPal stops offering make_offer; W-4 had none before.
     await tryOn({ messages: [BUYER, { postedBy: 'SELLER', time: '2026-10-19T20:00:00.000Z', content: 'Shipped.', files: [] }] });
     await tryOn({ offerHistory: [{ time: '2026-10-19T20:00:00.000Z', actor: 'SELLER', event: 'PROPOSED', type: 'REFUND', amount: { value: '2.00', currency: 'USD' } }] });
@@ -330,7 +347,8 @@ describe('the simulator plays the recorded escalation (W-5) and the evidence aft
     const { g } = sim({ ...waitingSeller(), status: 'WAITING_FOR_BUYER_RESPONSE', allowedActions: ['provide_evidence', 'send_message', 'accept_claim', 'escalate'] });
     const intents = new LocalIntentClient();
     const snap = await g.getDispute('CASE-1');
-    const i = await intents.approve(await intents.createAction('CASE-1', escalate, { snapshot: snap }));
+    await expect(intents.createAction('CASE-1', escalate, { snapshot: snap })).rejects.toThrow('Not available: not verified with PayPal from this dispute status');
+    const i = handBuilt(snap, escalate);
     await expect(g.sendAction(i, { requestId: i.requestId })).rejects.toThrow('NOT_AUTHORIZED: not available in the simulator');
     expect(g.sentActions).toEqual([]);
   });
