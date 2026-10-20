@@ -124,9 +124,21 @@ compone uno nuevo.
 | Resultado | Qué significa |
 |---|---|
 | **Recorded by PayPal** (con «claim accepted», «offer waiting for the buyer» o «inquiry escalated») | Una lectura fresca muestra la entrada que hizo este envío |
-| **Outcome pending confirmation** | PayPal aún no ha mostrado prueba en ningún sentido. La disputa queda retenida: no se puede enviar nada más en ella hasta que **Check again** (solo una relectura, nunca un envío) lo resuelva |
+| **Outcome pending confirmation** | PayPal aún no ha mostrado prueba en ningún sentido. La disputa queda retenida: no se puede enviar nada más en ella hasta que **Check again** (solo una relectura, nunca un envío) lo resuelva. Si otro envío retiene la disputa (uno tuyo anterior, o de un compañero), el tuyo no se envió, y **Check again** relee *ese* envío; cuando queda resuelto, **Send it now** envía el tuyo repitiendo todas las comprobaciones |
 | Not recorded by PayPal | PayPal no muestra rastro del envío y sigue ofreciendo la acción |
 | Not sent | PayPal lo rechazó; no se hizo nada |
+
+**Una disputa retenida tras recargar.** La página del caso pregunta al servidor qué retiene su disputa: si un envío
+sigue sin probar, muestra «Outcome pending confirmation» con ese envío (el tuyo, o «an earlier send by someone in your
+workspace») y **Check again** sobre él. Cualquiera del espacio de trabajo del vendedor (Owner, miembros, revisores)
+puede pulsarlo; solo lee PayPal. Registrado, o probado ausente mientras PayPal sigue ofreciendo la acción, libera la
+disputa. Si el aviso dice que el servidor ya no tiene el contenido aprobado de ese envío, una relectura no puede
+resolverlo: avisa al operador (ver el [Runbook](../operations/runbook.md)).
+
+Cada acción solo se ofrece desde el estado de la disputa desde el que se envió su escritura registrada en el sandbox:
+aceptar, ofertar y escalar solo mientras PayPal espera tu respuesta (`WAITING_FOR_SELLER_RESPONSE`); un mensaje también
+mientras PayPal espera al comprador. Desde cualquier otro estado la acción dice «Not available: not verified with PayPal
+from this dispute status».
 
 Tras un escalado, el caso muestra «PayPal is reviewing; the claim stage can take a few minutes» hasta que se abre la
 reclamación. Nada se reintenta automáticamente. La evidencia de prueba de reembolso no está disponible en esta entrega;
@@ -161,7 +173,8 @@ de modelos conservan lo que recibieron según sus propias políticas.
 | `NOT_THE_SELLER` | Solo el espacio del vendedor puede responder |
 | `DAILY_CAP` | Se han agotado los envíos de evidencia (o de mensajes, o las acciones de liquidación) de la demo por hoy; el mensaje dice cuándo se restablecen |
 | `OWNER_ONLY` | Solo el Owner puede aceptar, ofertar o escalar |
-| `DISPUTE_UNCERTAIN` | El último envío a esta disputa aún no está confirmado: **Check again** |
+| `DISPUTE_UNCERTAIN` | Un envío anterior a esta disputa (nombrado en la respuesta) aún no está confirmado, y el tuyo no se envió: **Check again** relee ese envío; cuando queda resuelto, **Send it now**. Tras recargar, la página del caso muestra la misma retención con **Check again** |
+| `VARIANT_NOT_AVAILABLE` «Not available: not verified with PayPal from this dispute status» | La acción nunca se registró desde el estado actual de la disputa: espera a que cambie el estado en PayPal, o usa otra acción |
 | `NEEDS_REVIEW` | El comprador escribió después de tu aprobación: léelo y después envía el mismo contenido o edítalo |
 | «The PayPal connection changed while you were reviewing. Close this and open the case again.» | Cierra y vuelve a abrir el caso |
 

@@ -51,7 +51,8 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
 - Only the Owner can accept, offer or escalate; members and reviewers send messages only and see a preview of the rest.
   The owner's settlement case (`PP-R-STL-10190667`) exists for these actions; only the Owner sees it.
 - Every rule comes from one recorded sandbox write per variant (20/10/2026), all on «item not received» disputes in
-  the inquiry stage: other reasons and stages are refused, not guessed.
+  the inquiry stage, sent while PayPal waited for the seller (a message also while it waited for the buyer): other
+  reasons, stages and statuses are refused, not guessed.
 - A partial accept is an offer the buyer must agree to; it does not refund or close anything by itself.
 - A send whose outcome PayPal does not yet prove holds the dispute («Outcome pending confirmation») until **Check
   again** settles it; nothing else can be sent on that dispute in the meantime.

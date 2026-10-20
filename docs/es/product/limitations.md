@@ -54,7 +54,8 @@ usuario, un comerciante o un jurado.
   previa del resto. El caso de liquidación del propietario (`PP-R-STL-10190667`) existe para estas acciones; solo lo ve
   el Owner.
 - Cada regla sale de una escritura registrada en el sandbox por variante (20/10/2026), todas en disputas de «artículo
-  no recibido» en la fase de consulta: otros motivos y fases se rechazan, no se adivinan.
+  no recibido» en la fase de consulta, enviadas mientras PayPal esperaba al vendedor (un mensaje también mientras
+  esperaba al comprador): otros motivos, fases y estados se rechazan, no se adivinan.
 - Una aceptación parcial es una oferta que el comprador debe aceptar; por sí sola no reembolsa ni cierra nada.
 - Un envío cuyo resultado PayPal aún no prueba retiene la disputa («Outcome pending confirmation») hasta que **Check
   again** lo resuelve; mientras tanto no se puede enviar nada más en esa disputa.

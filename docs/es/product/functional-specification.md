@@ -238,9 +238,13 @@ envío sin ellos se rechaza (`CONFIRMATION_REQUIRED`). Cambiar cualquiera de ell
 **Reglas, tal como las registraron los contratos.**
 
 - Todas las escrituras registradas partieron de la fase `INQUIRY`, así que el mensaje, la aceptación, la oferta y el
-  escalado solo se componen ahí (otra fase: `ACTION_STAGE`). Lo que se puede hacer se reconstruye siempre a partir de
-  una lectura fresca de PayPal (sus enlaces y tipos permitidos), antes de componer, en el momento del envío y tras cada
-  acción.
+  escalado solo se componen ahí (otra fase: `ACTION_STAGE`). Cada uno solo se compone además desde el estado de la
+  disputa desde el que se enviaron sus escrituras: aceptar, ofertar y escalar desde `WAITING_FOR_SELLER_RESPONSE` (W-4,
+  W-5, W-9, W-10); un mensaje desde ese (W-1) y desde `WAITING_FOR_BUYER_RESPONSE` (W-2, W-3). Otro estado es «Not
+  available: not verified with PayPal from this dispute status» (`VARIANT_NOT_AVAILABLE`) en la disponibilidad, al
+  componer y al volver a componer en el envío, igual en vivo que en el simulador. Lo que se puede hacer se reconstruye
+  siempre a partir de una lectura fresca de PayPal (sus enlaces y tipos permitidos), antes de componer, en el momento
+  del envío y tras cada acción.
 - **Mensaje:** texto obligatorio, como máximo 2,000 caracteres, sin importe. El comprador ve exactamente ese texto.
 - **Aceptación:** solo en disputas `MERCHANDISE_OR_SERVICE_NOT_RECEIVED`, con una nota. Una aceptación **total**
   necesita que el importe reembolsable de PayPal sea igual al importe de la disputa (si no, «PayPal's refundable amount

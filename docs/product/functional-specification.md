@@ -226,8 +226,12 @@ and stage (`REPEATS_MESSAGE`). Other terms are refused (`CONFIRMATION_MISMATCH`)
 **Rules, as the contracts recorded them.**
 
 - Every recorded write started in the `INQUIRY` stage, so message, accept, offer and escalate are composed only there
-  (another stage: `ACTION_STAGE`). What is possible is always rebuilt from a fresh PayPal read (its links and allowed
-  types), before composing, at send time and after every action.
+  (another stage: `ACTION_STAGE`). Each is also composed only from the dispute status its writes were sent from: accept,
+  offer and escalate from `WAITING_FOR_SELLER_RESPONSE` (W-4, W-5, W-9, W-10); a message from it (W-1) and from
+  `WAITING_FOR_BUYER_RESPONSE` (W-2, W-3). Another status is «Not available: not verified with PayPal from this dispute
+  status» (`VARIANT_NOT_AVAILABLE`) in the availability, at compose and when composing again at send, live and on the
+  simulator alike. What is possible is always rebuilt from a fresh PayPal read (its links and allowed types), before
+  composing, at send time and after every action.
 - **Message:** text required, at most 2,000 characters, no amount. The buyer sees exactly that text.
 - **Accept:** only on `MERCHANDISE_OR_SERVICE_NOT_RECEIVED` disputes, with a note. A **full** accept needs PayPal's
   refundable amount to equal the dispute amount (otherwise «PayPal's refundable amount differs from the dispute

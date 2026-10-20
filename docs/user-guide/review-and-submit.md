@@ -118,9 +118,21 @@ approved this» and shows the new message: **Send it anyway** sends the same con
 | Result | What it means |
 |---|---|
 | **Recorded by PayPal** (with «claim accepted», «offer waiting for the buyer» or «inquiry escalated») | A fresh read shows the entry this send made |
-| **Outcome pending confirmation** | PayPal has not yet shown proof either way. The dispute is held: nothing else can be sent on it until **Check again** (a read-back only, never a send) settles it |
+| **Outcome pending confirmation** | PayPal has not yet shown proof either way. The dispute is held: nothing else can be sent on it until **Check again** (a read-back only, never a send) settles it. If another send holds the dispute (yours from before, or a colleague's), yours was not sent, and **Check again** reads back *that* send; once it is settled, **Send it now** sends yours with every check again |
 | Not recorded by PayPal | PayPal shows no trace of the send while still offering the action |
 | Not sent | PayPal refused; nothing was done |
+
+**A held dispute after a reload.** The case page asks the server what holds its dispute: if a send is still
+unproven, it shows «Outcome pending confirmation» with that send (yours, or «an earlier send by someone in your
+workspace») and **Check again** on it. Anyone in the seller's workspace (Owner, members, reviewers) can press it; it
+only reads PayPal. Recorded, or proven absent while PayPal still offers the action, frees the dispute. If the notice
+says the server no longer has that send's approved content, a read-back cannot settle it: ask the operator (see the
+[Runbook](../operations/runbook.md)).
+
+Each action is offered only from the dispute status its recorded sandbox write was sent from: accept, offer and
+escalate only while PayPal is waiting for your response (`WAITING_FOR_SELLER_RESPONSE`); a message also while PayPal
+is waiting for the buyer. From any other status the action reads «Not available: not verified with PayPal from this
+dispute status».
 
 After an escalation the case shows «PayPal is reviewing; the claim stage can take a few minutes» until the claim opens.
 Nothing is retried automatically. Proof of refund evidence is not available in this delivery; if PayPal asks only for
@@ -155,7 +167,8 @@ providers retain what they received according to their own policies.
 | `NOT_THE_SELLER` | Only the seller's workspace can respond |
 | `DAILY_CAP` | The demo's evidence sends (or message sends, or settling actions) for today are used up; the message says when it resets |
 | `OWNER_ONLY` | Only the Owner can accept, offer or escalate |
-| `DISPUTE_UNCERTAIN` | The last send to this dispute is not confirmed yet: **Check again** |
+| `DISPUTE_UNCERTAIN` | An earlier send to this dispute (named in the answer) is not confirmed yet, and yours was not sent: **Check again** reads back that send; when it is settled, **Send it now**. After a reload, the case page shows the same hold with **Check again** |
+| `VARIANT_NOT_AVAILABLE` «Not available: not verified with PayPal from this dispute status» | The action was never recorded from the dispute's current status: wait for PayPal's status to change, or use another action |
 | `NEEDS_REVIEW` | The buyer wrote since your approval: read it, then send the same content or edit |
 | «The PayPal connection changed while you were reviewing. Close this and open the case again.» | Close and reopen the case |
 
