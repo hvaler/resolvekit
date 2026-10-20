@@ -11,7 +11,7 @@ import type { ConfirmationTerms, ContractRegistry } from './actions';
 import { GatewayTimeoutError, type DisputeGateway } from './gateway';
 import { GatewayRequestError, type GatewayMode } from './httpGateway';
 import type { SubmissionIntent } from './intent';
-import { IntentError, type IntentRef, type IntentSource } from './intentClient';
+import { IntentError, type DisputeHoldView, type IntentRef, type IntentSource } from './intentClient';
 import type { DisputeMessage, DisputeSnapshot } from './types';
 
 export type ActionPhase = 'reading' | 'sending' | 'rereading';
@@ -203,16 +203,38 @@ export const HOLDER_SETTLED = 'HOLDER_SETTLED';
  * sent now (its own send re-checks everything).
  */
 async function holderReadBack(o: ActionSendOptions, holder: IntentRef): Promise<ActionResult> {
-  const r = await serverReadBack(o, PENDING, holder);
-  if (r.kind === 'pending') return { ...r, holder };
-  const what = r.kind === 'recorded' ? 'PayPal recorded it' : r.kind === 'absent' ? 'PayPal shows no trace of it' : 'it is not held any more';
-  return {
+  const settled = (what: string, snapshot: DisputeSnapshot | null): ActionResult => ({
     kind: 'not_sent',
     detail: `The earlier send on this dispute is settled (${what}). Yours was not sent: it waited for that send. Send it now; it is checked again against PayPal first.`,
-    snapshot: r.snapshot,
+    snapshot,
     base: null,
     refusal: { code: HOLDER_SETTLED },
-  };
+  });
+  let r: ActionResult;
+  try {
+    const rb = await o.intents.readBack(holder);
+    r = rb ? { kind: rb.readBack.state, detail: rb.readBack.detail, snapshot: rb.snapshot, base: null } : { kind: 'pending', detail: PENDING, snapshot: null, base: null };
+  } catch (e) {
+    // A colleague's send that no longer holds the dispute is unknown to this person (404): the hold route says whether
+    // anything still holds it. Nothing, or another send: this holder is settled.
+    if (e instanceof IntentError && e.status === 404 && e.code === 'UNKNOWN_INTENT') {
+      const now = await currentHold(o.intents, holder.caseId);
+      if (now !== undefined && now?.intentId !== holder.id) return settled('it is not held any more', null);
+    }
+    if (e instanceof IntentError && e.code === 'INTENT_NOT_SENT') return settled('it is not held any more', null);
+    return { kind: 'pending', detail: `${PENDING}: ${message(e)}`, snapshot: null, base: null, holder };
+  }
+  if (r.kind === 'pending') return { ...r, holder };
+  return settled(r.kind === 'recorded' ? 'PayPal recorded it' : r.kind === 'absent' ? 'PayPal shows no trace of it' : 'it is not held any more', r.snapshot);
+}
+
+/** What holds the case's dispute now (null: nothing); undefined when the server could not say. */
+export async function currentHold(intents: Pick<IntentSource, 'hold'>, caseId: string): Promise<DisputeHoldView | null | undefined> {
+  try {
+    return await intents.hold(caseId);
+  } catch {
+    return undefined;
+  }
 }
 
 /** «Check again»: read back only, never send. With `holder`, the send holding the dispute is the one read back. */

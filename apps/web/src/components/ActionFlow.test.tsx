@@ -640,3 +640,29 @@ describe('a dispute held by another send (IMP2): check again reads THAT send; ne
     expect(f.state).toMatchObject({ step: 'result', result: { kind: 'recorded' } });
   });
 });
+
+describe('a holder unknown to this person (N2)', () => {
+  it('check again on the holder → 404 UNKNOWN_INTENT → the hold route says nothing holds it → settled, Send it now', async () => {
+    const HOLDER = `int-${'g'.repeat(32)}`;
+    const calls: string[] = [];
+    const replies: Array<[number, unknown]> = [
+      [201, { ...intent, status: 'proposed', repeat: false }],
+      [200, { ...intent, confirmation: null }],
+      [409, { error: 'DISPUTE_UNCERTAIN', detail: 'held', holder: { intentId: HOLDER, caseId: 'CASE-1' } }],
+      [404, { error: 'UNKNOWN_INTENT' }],
+      [200, { hold: null }],
+    ];
+    const fetch = (async (url: string | URL, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? 'GET'} ${String(url)}`);
+      const [status, body] = replies.shift() ?? [500, {}];
+      return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    }) as typeof globalThis.fetch;
+    const f = new ActionFlowController({ caseId: 'CASE-1', request: { action: 'send_message', text: TEXT, attachments: [] }, onState: noop, audit: noop, applySnapshot: noop, source: new HttpIntentClient({ fetch }), gateway: new HttpDisputeGateway({ fetch }), mode: paypal });
+    await f.start();
+    await f.approve();
+    await f.checkAgain();
+    expect(calls.slice(3)).toEqual([`POST /api/disputes/CASE-1/intent/${HOLDER}/readback`, 'GET /api/disputes/CASE-1/hold']);
+    expect(f.state).toMatchObject({ step: 'result', result: { kind: 'not_sent', refusal: { code: 'HOLDER_SETTLED' } } });
+    expect((f.state as { result: { detail: string } }).result.detail).toContain('it is not held any more');
+  });
+});

@@ -70,3 +70,26 @@ describe('a held send after a reload (IMP2)', () => {
     expect(renderToString(<HeldSendNotice hold={null} message={null} busy={false} onCheck={() => {}} />)).toBe('');
   });
 });
+
+describe('a holder that is no longer the person’s to read (N2)', () => {
+  it('404 UNKNOWN_INTENT → the hold route: nothing or another send holds it → settled; the same send → still held', async () => {
+    const other = { ...hold, intentId: `int-${'b'.repeat(32)}` };
+    const { calls, intents } = server([
+      [404, { error: 'UNKNOWN_INTENT' }],
+      [200, { hold: null }],
+      [404, { error: 'UNKNOWN_INTENT' }],
+      [200, { hold: other }],
+      [404, { error: 'UNKNOWN_INTENT' }],
+      [200, { hold }],
+    ]);
+    const gone = await checkHeldSend(intents, hold);
+    expect(calls[1]).toBe('GET /api/disputes/CASE-1/hold');
+    expect(gone.hold).toBeNull();
+    expect(gone.message).toContain('no longer holds this dispute');
+    const moved = await checkHeldSend(intents, hold);
+    expect(moved.hold).toEqual(other);
+    const same = await checkHeldSend(intents, hold);
+    expect(same.hold).toEqual(hold);
+    expect(same.message).toMatch(/^Outcome pending confirmation/);
+  });
+});

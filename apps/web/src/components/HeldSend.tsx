@@ -5,7 +5,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useServices } from '../app/services';
-import type { DisputeHoldView, IntentSource } from '../domain/intentClient';
+import { currentHold } from '../domain/actionSend';
+import { IntentError, type DisputeHoldView, type IntentSource } from '../domain/intentClient';
 import type { DisputeSnapshot } from '../domain/types';
 import { Button } from './ui';
 
@@ -21,7 +22,7 @@ export interface HeldCheck {
 }
 
 /** «Check again» on the holding send: read it back (never send) and say what PayPal proves. */
-export async function checkHeldSend(intents: Pick<IntentSource, 'readBack'>, hold: DisputeHoldView): Promise<HeldCheck> {
+export async function checkHeldSend(intents: Pick<IntentSource, 'readBack' | 'hold'>, hold: DisputeHoldView): Promise<HeldCheck> {
   try {
     const r = await intents.readBack({ caseId: hold.caseId, id: hold.intentId });
     if (!r) return { hold, message: PENDING, snapshot: null };
@@ -31,6 +32,11 @@ export async function checkHeldSend(intents: Pick<IntentSource, 'readBack'>, hol
     if (state === 'absent') return { hold: after, message: 'PayPal shows no trace of the earlier send and still offers the action: the dispute is free again. Nothing was resent.', snapshot: r.snapshot };
     return { hold: after, message: r.readBack.detail || PENDING, snapshot: r.snapshot };
   } catch (e) {
+    // A colleague's send that no longer holds the dispute is unknown to this person (404): ask what holds it now.
+    if (e instanceof IntentError && e.status === 404 && e.code === 'UNKNOWN_INTENT') {
+      const now = await currentHold(intents, hold.caseId);
+      if (now !== undefined && now?.intentId !== hold.intentId) return { hold: now, message: 'The earlier send no longer holds this dispute (another read-back settled it): the dispute is free again.', snapshot: null };
+    }
     return { hold, message: `${PENDING}: ${e instanceof Error ? e.message : String(e)}`, snapshot: null };
   }
 }
