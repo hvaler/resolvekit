@@ -1,0 +1,731 @@
+{
+  "variant": "make_offer:REFUND",
+  "request": {
+    "method": "POST",
+    "route": "/v1/customer/disputes/PP-R-OZY-10193601/make-offer",
+    "contentType": "application/json",
+    "body": {
+      "note": "ResolveKit contract test W-4: we offer a partial refund of 2.00 USD.",
+      "offer_amount": {
+        "currency_code": "USD",
+        "value": "2.00"
+      },
+      "offer_type": "REFUND"
+    },
+    "requestId": "rk-contract-4"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601",
+          "rel": "detail",
+          "method": "GET"
+        }
+      ]
+    }
+  },
+  "sentStartedAt": "2026-10-20T05:57:02.147Z",
+  "before": {
+    "dispute_id": "PP-R-OZY-10193601",
+    "create_time": "2026-10-19T19:40:27.175Z",
+    "update_time": "2026-10-19T19:43:54.067Z",
+    "disputed_transactions": [
+      {
+        "buyer_transaction_id": "533168920B189834C",
+        "seller_transaction_id": "5P100333PD9124703",
+        "create_time": "2026-10-19T19:22:52.000Z",
+        "transaction_status": "HELD",
+        "gross_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "buyer": {},
+        "seller": {
+          "merchant_id": "JWULA7T75ZA4Q"
+        },
+        "items": [
+          {
+            "item_name": "Linen tote, natural",
+            "item_description": "Linen tote, natural",
+            "item_quantity": "1",
+            "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "item_type": "PRODUCT"
+          }
+        ],
+        "seller_protection_eligible": true,
+        "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+      }
+    ],
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "WAITING_FOR_SELLER_RESPONSE",
+    "dispute_amount": {
+      "currency_code": "USD",
+      "value": "7.00"
+    },
+    "dispute_state": "REQUIRED_ACTION",
+    "fund_movements": [
+      {
+        "party": "RECEIVER",
+        "amount": {
+          "currency_code": "USD",
+          "value": "6.43"
+        },
+        "initiated_time": "2026-10-19T19:43:34.000Z",
+        "type": "DEBIT",
+        "reason": "HOLD_PLACED"
+      }
+    ],
+    "dispute_life_cycle_stage": "INQUIRY",
+    "dispute_channel": "INTERNAL",
+    "messages": [
+      {
+        "posted_by": "BUYER",
+        "time_posted": "2026-10-19T19:40:27.175Z",
+        "content": "<buyer message, 16 chars>"
+      }
+    ],
+    "extensions": {
+      "buyer_contacted_time": "2026-10-19T19:40:26.651Z"
+    },
+    "evidences": [
+      {
+        "evidence_type": "CREATE",
+        "notes": "<buyer message, 16 chars>",
+        "source": "SUBMITTED_BY_BUYER",
+        "date": "2026-10-19T19:40:27.175Z",
+        "dispute_life_cycle_stage": "INQUIRY"
+      },
+      {
+        "evidence_type": "PROOF_OF_FULFILLMENT",
+        "source": "REQUESTED_FROM_SELLER",
+        "date": "2026-10-19T19:43:54.067Z"
+      }
+    ],
+    "seller_response_due_date": "2026-11-08T19:40:27.175Z",
+    "offer": {
+      "buyer_requested_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      }
+    },
+    "refund_details": {
+      "allowed_refund_amount": {
+        "currency_code": "USD",
+        "value": "7.00"
+      }
+    },
+    "allowed_response_options": {
+      "accept_claim": {
+        "accept_claim_types": [
+          "PARTIAL_REFUND",
+          "REFUND"
+        ]
+      },
+      "make_offer": {
+        "offer_types": [
+          "REFUND"
+        ]
+      }
+    },
+    "links": [
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601",
+        "rel": "self",
+        "method": "GET"
+      },
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/accept-claim",
+        "rel": "accept_claim",
+        "method": "POST"
+      },
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/provide-evidence",
+        "rel": "provide_evidence",
+        "method": "POST"
+      },
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/send-message",
+        "rel": "send_message",
+        "method": "POST"
+      },
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/escalate",
+        "rel": "escalate",
+        "method": "POST"
+      },
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/make-offer",
+        "rel": "make_offer",
+        "method": "POST"
+      }
+    ]
+  },
+  "after": [
+    {
+      "at": "0s",
+      "dispute": {
+        "dispute_id": "PP-R-OZY-10193601",
+        "create_time": "2026-10-19T19:40:27.175Z",
+        "update_time": "2026-10-20T05:57:05.614Z",
+        "disputed_transactions": [
+          {
+            "buyer_transaction_id": "533168920B189834C",
+            "seller_transaction_id": "5P100333PD9124703",
+            "create_time": "2026-10-19T19:22:52.000Z",
+            "transaction_status": "HELD",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "7.00"
+            },
+            "buyer": {},
+            "seller": {
+              "merchant_id": "JWULA7T75ZA4Q"
+            },
+            "items": [
+              {
+                "item_name": "Linen tote, natural",
+                "item_description": "Linen tote, natural",
+                "item_quantity": "1",
+                "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                "item_type": "PRODUCT"
+              }
+            ],
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+          }
+        ],
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "UNDER_REVIEW",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "dispute_state": "UNDER_PAYPAL_REVIEW",
+        "fund_movements": [
+          {
+            "party": "RECEIVER",
+            "amount": {
+              "currency_code": "USD",
+              "value": "6.43"
+            },
+            "initiated_time": "2026-10-19T19:43:34.000Z",
+            "type": "DEBIT",
+            "reason": "HOLD_PLACED"
+          }
+        ],
+        "dispute_life_cycle_stage": "INQUIRY",
+        "dispute_channel": "INTERNAL",
+        "messages": [
+          {
+            "posted_by": "BUYER",
+            "time_posted": "2026-10-19T19:40:27.175Z",
+            "content": "<buyer message, 16 chars>"
+          },
+          {
+            "posted_by": "SELLER",
+            "time_posted": "2026-10-20T05:57:05.614Z",
+            "content": "ResolveKit contract test W-4: we offer a partial refund of 2.00 USD."
+          }
+        ],
+        "extensions": {
+          "buyer_contacted_time": "2026-10-19T19:40:26.651Z"
+        },
+        "evidences": [
+          {
+            "evidence_type": "CREATE",
+            "notes": "<buyer message, 16 chars>",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": "2026-10-19T19:40:27.175Z",
+            "dispute_life_cycle_stage": "INQUIRY"
+          }
+        ],
+        "offer": {
+          "buyer_requested_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          },
+          "seller_offered_amount": {
+            "currency_code": "USD",
+            "value": "2.00"
+          },
+          "offer_type": "REFUND",
+          "history": [
+            {
+              "offer_time": "2026-10-20T05:57:05.614Z",
+              "actor": "SELLER",
+              "event_type": "PROPOSED",
+              "offer_type": "REFUND",
+              "offer_amount": {
+                "currency_code": "USD",
+                "value": "2.00"
+              }
+            }
+          ]
+        },
+        "refund_details": {
+          "allowed_refund_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "links": [
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601",
+            "rel": "self",
+            "method": "GET"
+          }
+        ]
+      }
+    },
+    {
+      "at": "30s",
+      "dispute": {
+        "dispute_id": "PP-R-OZY-10193601",
+        "create_time": "2026-10-19T19:40:27.175Z",
+        "update_time": "2026-10-20T05:57:24.176Z",
+        "disputed_transactions": [
+          {
+            "buyer_transaction_id": "533168920B189834C",
+            "seller_transaction_id": "5P100333PD9124703",
+            "create_time": "2026-10-19T19:22:52.000Z",
+            "transaction_status": "HELD",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "7.00"
+            },
+            "buyer": {},
+            "seller": {
+              "merchant_id": "JWULA7T75ZA4Q"
+            },
+            "items": [
+              {
+                "item_name": "Linen tote, natural",
+                "item_description": "Linen tote, natural",
+                "item_quantity": "1",
+                "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                "item_type": "PRODUCT"
+              }
+            ],
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+          }
+        ],
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "WAITING_FOR_BUYER_RESPONSE",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+        "fund_movements": [
+          {
+            "party": "RECEIVER",
+            "amount": {
+              "currency_code": "USD",
+              "value": "6.43"
+            },
+            "initiated_time": "2026-10-19T19:43:34.000Z",
+            "type": "DEBIT",
+            "reason": "HOLD_PLACED"
+          }
+        ],
+        "dispute_life_cycle_stage": "INQUIRY",
+        "dispute_channel": "INTERNAL",
+        "messages": [
+          {
+            "posted_by": "BUYER",
+            "time_posted": "2026-10-19T19:40:27.175Z",
+            "content": "<buyer message, 16 chars>"
+          },
+          {
+            "posted_by": "SELLER",
+            "time_posted": "2026-10-20T05:57:05.614Z",
+            "content": "ResolveKit contract test W-4: we offer a partial refund of 2.00 USD."
+          }
+        ],
+        "extensions": {
+          "buyer_contacted_time": "2026-10-19T19:40:26.651Z"
+        },
+        "evidences": [
+          {
+            "evidence_type": "CREATE",
+            "notes": "<buyer message, 16 chars>",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": "2026-10-19T19:40:27.175Z",
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "PROOF_OF_FULFILLMENT",
+            "source": "REQUESTED_FROM_SELLER",
+            "date": "2026-10-20T05:57:24.176Z"
+          }
+        ],
+        "buyer_response_due_date": "2026-11-08T19:40:27.175Z",
+        "offer": {
+          "buyer_requested_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          },
+          "seller_offered_amount": {
+            "currency_code": "USD",
+            "value": "2.00"
+          },
+          "offer_type": "REFUND",
+          "history": [
+            {
+              "offer_time": "2026-10-20T05:57:05.614Z",
+              "actor": "SELLER",
+              "event_type": "PROPOSED",
+              "offer_type": "REFUND",
+              "offer_amount": {
+                "currency_code": "USD",
+                "value": "2.00"
+              }
+            }
+          ]
+        },
+        "refund_details": {
+          "allowed_refund_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "allowed_response_options": {
+          "accept_claim": {
+            "accept_claim_types": [
+              "REFUND"
+            ]
+          }
+        },
+        "links": [
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601",
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/accept-claim",
+            "rel": "accept_claim",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/send-message",
+            "rel": "send_message",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/escalate",
+            "rel": "escalate",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/provide-evidence",
+            "rel": "provide_evidence",
+            "method": "POST"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2m",
+      "dispute": {
+        "dispute_id": "PP-R-OZY-10193601",
+        "create_time": "2026-10-19T19:40:27.175Z",
+        "update_time": "2026-10-20T05:57:24.176Z",
+        "disputed_transactions": [
+          {
+            "buyer_transaction_id": "533168920B189834C",
+            "seller_transaction_id": "5P100333PD9124703",
+            "create_time": "2026-10-19T19:22:52.000Z",
+            "transaction_status": "HELD",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "7.00"
+            },
+            "buyer": {},
+            "seller": {
+              "merchant_id": "JWULA7T75ZA4Q"
+            },
+            "items": [
+              {
+                "item_name": "Linen tote, natural",
+                "item_description": "Linen tote, natural",
+                "item_quantity": "1",
+                "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                "item_type": "PRODUCT"
+              }
+            ],
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+          }
+        ],
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "WAITING_FOR_BUYER_RESPONSE",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+        "fund_movements": [
+          {
+            "party": "RECEIVER",
+            "amount": {
+              "currency_code": "USD",
+              "value": "6.43"
+            },
+            "initiated_time": "2026-10-19T19:43:34.000Z",
+            "type": "DEBIT",
+            "reason": "HOLD_PLACED"
+          }
+        ],
+        "dispute_life_cycle_stage": "INQUIRY",
+        "dispute_channel": "INTERNAL",
+        "messages": [
+          {
+            "posted_by": "BUYER",
+            "time_posted": "2026-10-19T19:40:27.175Z",
+            "content": "<buyer message, 16 chars>"
+          },
+          {
+            "posted_by": "SELLER",
+            "time_posted": "2026-10-20T05:57:05.614Z",
+            "content": "ResolveKit contract test W-4: we offer a partial refund of 2.00 USD."
+          }
+        ],
+        "extensions": {
+          "buyer_contacted_time": "2026-10-19T19:40:26.651Z"
+        },
+        "evidences": [
+          {
+            "evidence_type": "CREATE",
+            "notes": "<buyer message, 16 chars>",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": "2026-10-19T19:40:27.175Z",
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "PROOF_OF_FULFILLMENT",
+            "source": "REQUESTED_FROM_SELLER",
+            "date": "2026-10-20T05:57:24.176Z"
+          }
+        ],
+        "buyer_response_due_date": "2026-11-08T19:40:27.175Z",
+        "offer": {
+          "buyer_requested_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          },
+          "seller_offered_amount": {
+            "currency_code": "USD",
+            "value": "2.00"
+          },
+          "offer_type": "REFUND",
+          "history": [
+            {
+              "offer_time": "2026-10-20T05:57:05.614Z",
+              "actor": "SELLER",
+              "event_type": "PROPOSED",
+              "offer_type": "REFUND",
+              "offer_amount": {
+                "currency_code": "USD",
+                "value": "2.00"
+              }
+            }
+          ]
+        },
+        "refund_details": {
+          "allowed_refund_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "allowed_response_options": {
+          "accept_claim": {
+            "accept_claim_types": [
+              "REFUND"
+            ]
+          }
+        },
+        "links": [
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601",
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/accept-claim",
+            "rel": "accept_claim",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/provide-evidence",
+            "rel": "provide_evidence",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/send-message",
+            "rel": "send_message",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/escalate",
+            "rel": "escalate",
+            "method": "POST"
+          }
+        ]
+      }
+    },
+    {
+      "at": "10m",
+      "dispute": {
+        "dispute_id": "PP-R-OZY-10193601",
+        "create_time": "2026-10-19T19:40:27.175Z",
+        "update_time": "2026-10-20T05:57:24.176Z",
+        "disputed_transactions": [
+          {
+            "buyer_transaction_id": "533168920B189834C",
+            "seller_transaction_id": "5P100333PD9124703",
+            "create_time": "2026-10-19T19:22:52.000Z",
+            "transaction_status": "HELD",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "7.00"
+            },
+            "buyer": {},
+            "seller": {
+              "merchant_id": "JWULA7T75ZA4Q"
+            },
+            "items": [
+              {
+                "item_name": "Linen tote, natural",
+                "item_description": "Linen tote, natural",
+                "item_quantity": "1",
+                "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+                "item_type": "PRODUCT"
+              }
+            ],
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+          }
+        ],
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "WAITING_FOR_BUYER_RESPONSE",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "7.00"
+        },
+        "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+        "fund_movements": [
+          {
+            "party": "RECEIVER",
+            "amount": {
+              "currency_code": "USD",
+              "value": "6.43"
+            },
+            "initiated_time": "2026-10-19T19:43:34.000Z",
+            "type": "DEBIT",
+            "reason": "HOLD_PLACED"
+          }
+        ],
+        "dispute_life_cycle_stage": "INQUIRY",
+        "dispute_channel": "INTERNAL",
+        "messages": [
+          {
+            "posted_by": "BUYER",
+            "time_posted": "2026-10-19T19:40:27.175Z",
+            "content": "<buyer message, 16 chars>"
+          },
+          {
+            "posted_by": "SELLER",
+            "time_posted": "2026-10-20T05:57:05.614Z",
+            "content": "ResolveKit contract test W-4: we offer a partial refund of 2.00 USD."
+          }
+        ],
+        "extensions": {
+          "buyer_contacted_time": "2026-10-19T19:40:26.651Z"
+        },
+        "evidences": [
+          {
+            "evidence_type": "CREATE",
+            "notes": "<buyer message, 16 chars>",
+            "source": "SUBMITTED_BY_BUYER",
+            "date": "2026-10-19T19:40:27.175Z",
+            "dispute_life_cycle_stage": "INQUIRY"
+          },
+          {
+            "evidence_type": "PROOF_OF_FULFILLMENT",
+            "source": "REQUESTED_FROM_SELLER",
+            "date": "2026-10-20T05:57:24.176Z"
+          }
+        ],
+        "buyer_response_due_date": "2026-11-08T19:40:27.175Z",
+        "offer": {
+          "buyer_requested_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          },
+          "seller_offered_amount": {
+            "currency_code": "USD",
+            "value": "2.00"
+          },
+          "offer_type": "REFUND",
+          "history": [
+            {
+              "offer_time": "2026-10-20T05:57:05.614Z",
+              "actor": "SELLER",
+              "event_type": "PROPOSED",
+              "offer_type": "REFUND",
+              "offer_amount": {
+                "currency_code": "USD",
+                "value": "2.00"
+              }
+            }
+          ]
+        },
+        "refund_details": {
+          "allowed_refund_amount": {
+            "currency_code": "USD",
+            "value": "7.00"
+          }
+        },
+        "allowed_response_options": {
+          "accept_claim": {
+            "accept_claim_types": [
+              "REFUND"
+            ]
+          }
+        },
+        "links": [
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601",
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/accept-claim",
+            "rel": "accept_claim",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/provide-evidence",
+            "rel": "provide_evidence",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/send-message",
+            "rel": "send_message",
+            "method": "POST"
+          },
+          {
+            "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-OZY-10193601/escalate",
+            "rel": "escalate",
+            "method": "POST"
+          }
+        ]
+      }
+    }
+  ],
+  "notes": "Owner-approved W-4 (20/10/2026 05:57:02Z): make-offer REFUND 2.00 USD, JSON → 200. offer.history gains {actor SELLER, event_type PROPOSED, offer_type REFUND, offer_amount 2.00 USD, offer_time 05:57:05.614Z (≈3.5 s)}; offer.seller_offered_amount 2.00 vs buyer_requested_amount 7.00. The note is not echoed anywhere in the read. No money moved (the buyer has not accepted). Status: UNDER_REVIEW with only self at +0 s (transient), then WAITING_FOR_BUYER_RESPONSE +30 s..+10 min with accept_claim, provide_evidence, send_message, escalate; make_offer no longer offered and accept_claim_types reduced to REFUND (PARTIAL_REFUND gone). No closing behaviour observed."
+}

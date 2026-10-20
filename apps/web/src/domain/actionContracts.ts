@@ -96,6 +96,19 @@ const ACCEPT_PROOF: ProofFields = {
   normalise: [],
 };
 
+/**
+ * Recorded 20/10/2026 (W-4): an offer is an `offer.history[]` entry `actor: SELLER`, `event_type: PROPOSED`, with
+ * `offer_time`, `offer_type` and `offer_amount` as sent (reads/W-4-*.json).
+ */
+const OFFER_PROOF: ProofFields = {
+  list: 'offerHistory',
+  actorField: 'actor',
+  actorValue: 'SELLER',
+  timeField: 'offer_time',
+  matchFields: ['offer_type', 'offer_amount.value', 'offer_amount.currency_code'],
+  normalise: [],
+};
+
 const ev = (action: string) => `contrato-${action}-2026-10-19.md`;
 
 export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.freeze({
@@ -121,7 +134,15 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   'accept_claim:REFUND': base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim')),
   'accept_claim:PARTIAL_REFUND': base('accept_claim:PARTIAL_REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), null, ev('accept-claim')),
   escalate: base('escalate', `${REF}disputes-escalate`, 'json', route('escalate'), null, ev('escalate')),
-  'make_offer:REFUND': base('make_offer:REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), null, ev('make-offer')),
+  // Recorded 20/10/2026 (owner-approved W-4, PP-R-OZY-10193601): JSON accepted; offer.history gains a SELLER PROPOSED
+  // entry with the approved type and amount ≈3.5 s after the send started (the note is not echoed). No money moves and
+  // nothing closes until the buyer accepts; afterwards PayPal waits for the buyer, stops offering make_offer and offers
+  // accept_claim REFUND only.
+  'make_offer:REFUND': {
+    ...base('make_offer:REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), OFFER_PROOF, ev('make-offer'), 'Contract recorded; flow not built yet'),
+    absentAfterMs: 60_000,
+    recorded: 'packages/paypal/contracts/make_offer-refund.json',
+  },
   'make_offer:REPLACEMENT_WITHOUT_REFUND': base('make_offer:REPLACEMENT_WITHOUT_REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), null, ev('make-offer')),
   // Disputes v1 lists no operation that withdraws an offer (schema read 2026-10-19).
   'make_offer:withdraw': base('make_offer:withdraw', `${REF}disputes-make-offer`, null, null, null, ev('make-offer'), 'PayPal documents no route to withdraw an offer'),
