@@ -44,7 +44,12 @@ export class GatewayTimeoutError extends Error {
 
 export type SendPhase = 'checking' | 'sending' | 'awaiting' | 'rereading';
 
-export type SendResult =
+/**
+ * Every result says whether this attempt may have reached PayPal (`attemptReached`): PayPal accepted it, or its answer
+ * was lost (network, timeout, a 5xx that is not a known pre-PayPal refusal, a reply without a code). A definite refusal
+ * before any PayPal POST (a 4xx with its code, 503 AUDIT_UNAVAILABLE or PAYPAL_UNCONFIGURED) did not. Absent: no attempt.
+ */
+export type SendResult = (
   | { kind: 'recorded'; snapshot: DisputeSnapshot; recorded: RecordedEvidence; resent: boolean; baseline: DisputeSnapshot }
   | {
       kind: 'not_recorded';
@@ -61,7 +66,8 @@ export type SendResult =
    * PayPal shows new seller evidence that is not what we sent (another operator or process, or PayPal stored something
    * else). Never reported as "recorded"; no automatic retry: a person reviews it.
    */
-  | { kind: 'mismatch'; snapshot: DisputeSnapshot; recorded: RecordedEvidence; differs: string[]; baseline: DisputeSnapshot };
+  | { kind: 'mismatch'; snapshot: DisputeSnapshot; recorded: RecordedEvidence; differs: string[]; baseline: DisputeSnapshot }
+) & { attemptReached?: boolean };
 
 /** A new seller entry is ours only if it matches what we sent field by field. */
 function classify(submission: EvidenceSubmission, snapshot: DisputeSnapshot, recorded: RecordedEvidence, baseline: DisputeSnapshot, resent: boolean): SendResult {
@@ -91,6 +97,23 @@ export interface SendOptions {
 
 const sleep = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
 
+/** 503 codes the ResolveKit server answers before any PayPal POST. */
+const PRE_PAYPAL_503: ReadonlySet<string> = new Set(['AUDIT_UNAVAILABLE', 'PAYPAL_UNCONFIGURED']);
+
+/**
+ * Whether a failed send may have reached PayPal (its answer was lost): a timeout, no answer, a 5xx other than the known
+ * pre-PayPal 503 codes, a reply without a code (non-JSON or garbled), or any other error. A 4xx with its code is a
+ * definite refusal (by the ResolveKit server before any PayPal POST, or by PayPal itself): false.
+ */
+export function attemptMayHaveReached(e: unknown): boolean {
+  const x = e as { status?: unknown; code?: unknown } | null;
+  if (!x || typeof x.status !== 'number' || typeof x.code !== 'string') return true;
+  if (x.code.startsWith('HTTP ')) return true;
+  if (x.status >= 400 && x.status < 500) return false;
+  if (x.status === 503 && PRE_PAYPAL_503.has(x.code)) return false;
+  return true;
+}
+
 /** The send holding the dispute, when the server refused with 409 DISPUTE_UNCERTAIN (httpGateway's GatewayRequestError). */
 function holderOf(e: unknown): { id: string; caseId: string } | null {
   const x = e as { code?: unknown; status?: unknown; body?: { holder?: { intentId?: unknown; caseId?: unknown } } } | null;
@@ -111,6 +134,7 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
   const baseline = opts.baseline ?? (await gw.getDispute(id));
   let error: string | null = null;
   let held: { id: string; caseId: string } | null = null;
+  let attemptReached = true;
   opts.onPhase?.('sending');
   try {
     await gw.provideEvidence(submission, { requestId: opts.requestId });
@@ -119,12 +143,13 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
     held = holderOf(e);
+    attemptReached = attemptMayHaveReached(e);
   }
   opts.onPhase?.('rereading');
   let snapshot = await gw.getDispute(id);
   // Refused before PayPal because another send holds the dispute. On a first attempt nothing new on it can be this
   // submission; on a retry an earlier attempt may be what PayPal shows, so the read decides as usual.
-  if (held && !opts.mayHaveReached) return { kind: 'not_recorded', snapshot, error: error ?? 'DISPUTE_UNCERTAIN', baseline, held };
+  if (held && !opts.mayHaveReached) return { kind: 'not_recorded', snapshot, error: error ?? 'DISPUTE_UNCERTAIN', baseline, held, attemptReached };
   let recorded = newSellerEvidence(snapshot, baseline);
   // PayPal accepted the send: give it a moment to show the evidence before saying it is not there.
   for (let i = 0; !recorded && error == null && i < (opts.rereads ?? 0); i++) {
@@ -132,8 +157,8 @@ export async function submitWithReadBack(gw: DisputeGateway, submission: Evidenc
     snapshot = await gw.getDispute(id);
     recorded = newSellerEvidence(snapshot, baseline);
   }
-  if (recorded) return classify(submission, snapshot, recorded, baseline, false);
-  return { kind: 'not_recorded', snapshot, error: error ?? 'PayPal shows no evidence recorded', baseline, ...(held ? { held } : {}) };
+  if (recorded) return { ...classify(submission, snapshot, recorded, baseline, false), attemptReached };
+  return { kind: 'not_recorded', snapshot, error: error ?? 'PayPal shows no evidence recorded', baseline, ...(held ? { held } : {}), attemptReached };
 }
 
 /** The key that re-runs the hold lookup: bumped on every held result, so the same holder held again is asked again. */

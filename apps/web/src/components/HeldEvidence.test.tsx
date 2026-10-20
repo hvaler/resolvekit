@@ -6,7 +6,9 @@
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { heldRefreshKey, sendAfterHold, submitWithReadBack, type SendResult } from '../domain/gateway';
+import { attemptMayHaveReached, heldRefreshKey, sendAfterHold, submitWithReadBack, type SendResult } from '../domain/gateway';
+import { GatewayRequestError } from '../domain/httpGateway';
+import { GatewayTimeoutError, GatewayUnavailableError } from '../domain/gateway';
 import { HttpDisputeGateway } from '../domain/httpGateway';
 import { HttpIntentClient, type DisputeHoldView } from '../domain/intentClient';
 import type { DisputeSnapshot, EvidenceSubmission, RecordedEvidence } from '../domain/types';
@@ -41,11 +43,13 @@ const entry = (over: Partial<RecordedEvidence> = {}): RecordedEvidence => ({
 const withEvidence = (e: RecordedEvidence): DisputeSnapshot => ({ ...before, status: 'UNDER_REVIEW', allowedActions: [], evidences: [e], readAt: 'b' });
 const uncertain = [409, { error: 'DISPUTE_UNCERTAIN', detail: 'The last send to this dispute is not confirmed by PayPal yet; check it again before anything else is sent', holder: { intentId: HOLDER, caseId: 'CASE-1' } }] as [number, unknown];
 
-function server(replies: Array<[number, unknown]>) {
+function server(replies: Array<[number, unknown] | 'network'>) {
   const calls: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {
     calls.push(`${init.method ?? 'GET'} ${String(url)}${init.body ? ` ${String(init.body)}` : ''}`);
-    const [status, body] = replies.shift() ?? [500, {}];
+    const next = replies.shift() ?? [500, {}];
+    if (next === 'network') throw new TypeError('fetch failed');
+    const [status, body] = next;
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   return { calls, gateway: new HttpDisputeGateway({ fetch }), intents: new HttpIntentClient({ fetch }) };
@@ -169,5 +173,42 @@ describe('a retry that is held back (an earlier attempt may have reached PayPal)
     expect(heldRefreshKey(1, heldResult)).toBe(2);
     expect(heldRefreshKey(2, other)).toBe(2);
     expect(heldRefreshKey(2, null)).toBe(2);
+  });
+});
+
+describe('which earlier attempt may have reached PayPal (its answer was lost)', () => {
+  it('a definite refusal before any PayPal POST never counts; a lost answer does', () => {
+    for (const [status, error] of [[409, 'DISPUTE_BUSY'], [409, 'INTENT_SENDING'], [409, 'NEEDS_REVIEW'], [409, 'CONFIRMATION_REQUIRED'], [409, 'VARIANT_NOT_AVAILABLE'], [409, 'SELLER_EVIDENCE_EXISTS'], [401, 'UNAUTHENTICATED'], [403, 'NOT_THE_SELLER'], [422, 'PAYPAL_REFUSED'], [429, 'DAILY_CAP'], [503, 'AUDIT_UNAVAILABLE'], [503, 'PAYPAL_UNCONFIGURED'], [409, 'DISPUTE_UNCERTAIN']] as const) {
+      expect(attemptMayHaveReached(new GatewayRequestError(status, { error })), `${status} ${error}`).toBe(false);
+    }
+    expect(attemptMayHaveReached(new GatewayTimeoutError())).toBe(true);
+    expect(attemptMayHaveReached(new GatewayUnavailableError())).toBe(true);
+    expect(attemptMayHaveReached(new GatewayRequestError(502, { error: 'PAYPAL_UNREACHABLE' }))).toBe(true);
+    expect(attemptMayHaveReached(new GatewayRequestError(500, {}))).toBe(true);
+    // A garbled or non-JSON reply has no code: nothing proves it was refused before PayPal.
+    expect(attemptMayHaveReached(new GatewayRequestError(400, {}))).toBe(true);
+    expect(attemptMayHaveReached(new GatewayRequestError(503, { error: 'SOMETHING_ELSE' }))).toBe(true);
+  });
+
+  it('first attempt DISPUTE_BUSY → retry held by another send → matching evidence: NOT ours (held, first-attempt words)', async () => {
+    const { gateway } = server([
+      [409, { error: 'DISPUTE_BUSY', detail: 'Another response to this dispute is being sent right now' }],
+      [200, before],
+      uncertain,
+      [200, withEvidence(entry())],
+    ]);
+    const one = await submitWithReadBack(gateway, submission, { requestId: 'rk-int-mine', baseline: before });
+    expect(one).toMatchObject({ kind: 'not_recorded', attemptReached: false });
+    const two = await submitWithReadBack(gateway, submission, { requestId: 'rk-int-mine', baseline: before, mayHaveReached: one.attemptReached ?? false });
+    expect(two).toMatchObject({ kind: 'not_recorded', held: { id: HOLDER } });
+    expect(held({ hold, known: true, earlier: false })).toContain('none of it reached PayPal');
+  });
+
+  it('first attempt lost on the network → retry held → matching evidence: recorded as ours', async () => {
+    const { gateway } = server(['network', [200, before], uncertain, [200, withEvidence(entry())]]);
+    const one = await submitWithReadBack(gateway, submission, { requestId: 'rk-int-mine', baseline: before });
+    expect(one).toMatchObject({ kind: 'not_recorded', attemptReached: true });
+    const two = await submitWithReadBack(gateway, submission, { requestId: 'rk-int-mine', baseline: before, mayHaveReached: one.attemptReached ?? false });
+    expect(two.kind).toBe('recorded');
   });
 });

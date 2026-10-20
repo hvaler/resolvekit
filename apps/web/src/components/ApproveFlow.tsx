@@ -345,7 +345,8 @@ function ApproveIntent({
         if (mounted.current) setFlow('error');
         return;
       }
-      r = { kind: 'not_recorded', snapshot: snap, error: e instanceof Error ? e.message : String(e), baseline: base };
+      // The send may have gone out before the read-back failed.
+      r = { kind: 'not_recorded', snapshot: snap, error: e instanceof Error ? e.message : String(e), baseline: base, attemptReached: true };
     }
     applySnapshot(r.snapshot);
     addAudit(
@@ -361,7 +362,8 @@ function ApproveIntent({
     setResult(r);
     setHeldKey((k) => heldRefreshKey(k, r));
     setHeldEarlier(mayHaveReached);
-    if (!(r.kind === 'not_recorded' && r.held && !mayHaveReached)) mayHaveSent.current = true;
+    // Only an attempt whose answer was lost (or that PayPal accepted) may be ours later; a definite refusal never is.
+    if (r.attemptReached) mayHaveSent.current = true;
     void source.events(id).then((ev) => mounted.current && setServerEvents(ev));
     setFlow(r.kind === 'recorded' ? 'recorded' : 'error');
   };
