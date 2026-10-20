@@ -142,7 +142,15 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
     recorded: 'packages/paypal/contracts/send_message-file.json',
   },
   'accept_claim:REFUND': base('accept_claim:REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), ACCEPT_PROOF, ev('accept-claim')),
-  'accept_claim:PARTIAL_REFUND': base('accept_claim:PARTIAL_REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), null, ev('accept-claim')),
+  // Recorded 20/10/2026 (owner-approved W-9, PP-R-KMJ-10193602): accepted (200), but PayPal records a partial accept as
+  // an OFFER awaiting the buyer: an offer.history SELLER PROPOSED entry, type REFUND, the partial amount; no evidences[]
+  // entry; nothing closes, no money moves until the buyer agrees. Proof = the offer shape (the accept type is not echoed):
+  // Task 9 must map offer_type 'REFUND' and offer_amount from the accept payload in the read-back's approved values.
+  'accept_claim:PARTIAL_REFUND': {
+    ...base('accept_claim:PARTIAL_REFUND', `${REF}disputes-accept-claim`, 'json', route('accept-claim'), OFFER_PROOF, ev('accept-claim'), 'Contract recorded; flow not built yet'),
+    absentAfterMs: 60_000,
+    recorded: 'packages/paypal/contracts/accept_claim-partial_refund.json',
+  },
   // Recorded 20/10/2026 (owner-approved W-5, PP-R-NDZ-10193597): JSON accepted; an attributable evidences[] entry
   // (SUBMITTED_BY_SELLER, action_info.action ESCALATE, the note) ≈3.9 s after the send started. The stage moved to
   // CHARGEBACK ≈2 min 46 s later; in between the status was UNDER_REVIEW and the links flickered (never "closed").

@@ -50,7 +50,7 @@ describe('action contracts', () => {
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded !== null)) expect(CONTRACTS[id]).toMatchObject({ status: 'not_available', reason: 'Contract recorded; flow not built yet' });
     expect(CONTRACTS.send_message).toMatchObject({ recorded: 'packages/paypal/contracts/send_message.json', absentAfterMs: 60_000, requestIdDedupes: false, body: 'json' });
     const withProof = IDS.filter((i) => CONTRACTS[i].proof !== null).sort();
-    expect(withProof).toEqual(['accept_claim:REFUND', 'escalate', 'make_offer:REFUND', 'send_message', 'send_message:file']);
+    expect(withProof).toEqual(['accept_claim:PARTIAL_REFUND', 'accept_claim:REFUND', 'escalate', 'make_offer:REFUND', 'send_message', 'send_message:file']);
   });
 
   it('nothing is available yet', () => {
