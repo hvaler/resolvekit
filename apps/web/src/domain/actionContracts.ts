@@ -176,7 +176,9 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
     absentAfterMs: 60_000,
     recorded: 'packages/paypal/contracts/make_offer-refund.json',
   },
-  'make_offer:REPLACEMENT_WITHOUT_REFUND': base('make_offer:REPLACEMENT_WITHOUT_REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), null, ev('make-offer')),
+  // 20/10/2026: the not-as-described sandbox dispute F (PP-R-GCV-10193596) offered only REFUND and REFUND_WITH_RETURN
+  // (reads/W-12-pre.json), so the prepared W-12 was not sent: never observed, not available.
+  'make_offer:REPLACEMENT_WITHOUT_REFUND': base('make_offer:REPLACEMENT_WITHOUT_REFUND', `${REF}disputes-make-offer`, 'json', route('make-offer'), null, ev('make-offer'), 'Not verified with PayPal: never offered on a sandbox dispute'),
   // Disputes v1 lists no operation that withdraws an offer (schema read 2026-10-19).
   'make_offer:withdraw': base('make_offer:withdraw', `${REF}disputes-make-offer`, null, null, null, ev('make-offer'), 'PayPal documents no route to withdraw an offer'),
   // 20/10/2026 (owner-approved W-7): the sandbox's adjudicate helper was refused on the escalated dispute B while it was
