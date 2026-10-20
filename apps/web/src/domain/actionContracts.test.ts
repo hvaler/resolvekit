@@ -48,8 +48,9 @@ describe('action contracts', () => {
     expect(CONTRACTS['make_offer:withdraw'].reason).toBe('PayPal documents no route to withdraw an offer');
     expect(CONTRACTS.return_address.reason).toBe('Not in this delivery (owner decision)');
     expect(CONTRACTS['make_offer:REPLACEMENT_WITHOUT_REFUND']).toMatchObject({ status: 'not_available', recorded: null, reason: 'Not verified with PayPal: never offered on a sandbox dispute' });
+    expect(CONTRACTS['evidence:PROOF_OF_REFUND']).toMatchObject({ status: 'not_available', recorded: null, reason: 'Not verified with PayPal: pending sandbox test (W-11)' });
     expect(CONTRACTS.appeal).toMatchObject({ status: 'not_available', recorded: null, reason: 'Not verified with PayPal: the sandbox could not produce an appealable dispute' });
-    for (const id of IDS.filter((i) => CONTRACTS[i].recorded === null && i !== 'make_offer:withdraw' && i !== 'return_address' && i !== 'appeal' && i !== 'make_offer:REPLACEMENT_WITHOUT_REFUND')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
+    for (const id of IDS.filter((i) => CONTRACTS[i].recorded === null && i !== 'make_offer:withdraw' && i !== 'return_address' && i !== 'appeal' && i !== 'make_offer:REPLACEMENT_WITHOUT_REFUND' && i !== 'evidence:PROOF_OF_REFUND')) expect(CONTRACTS[id].reason).toBe('Contract not recorded yet');
     // A recorded contract whose flow is not built stays Not available, and says so.
     for (const id of IDS.filter((i) => CONTRACTS[i].recorded !== null && !BUILT.includes(i))) expect(CONTRACTS[id]).toMatchObject({ status: 'not_available', reason: 'Contract recorded; flow not built yet' });
     // Built and tested on this machine (Task 8): the message variants, with no reason left.

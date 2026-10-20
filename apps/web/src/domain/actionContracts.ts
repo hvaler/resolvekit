@@ -192,7 +192,10 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   // UNDER_REVIEW (400 ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE; packages/paypal/contracts/appeal-setup-adjudicate.json),
   // so no appealable state could be produced and no appeal was ever sent.
   appeal: base('appeal', `${REF}disputes-appeal`, 'multipart', route('appeal'), null, ev('appeal'), 'Not verified with PayPal: the sandbox could not produce an appealable dispute'),
-  'evidence:PROOF_OF_REFUND': base('evidence:PROOF_OF_REFUND', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('proof-of-refund')),
+  // Owner decision 20/10/2026: not sent in this delivery. W-11 stays a pending sandbox test (sequence in the evidence
+  // file): a payment refunded in part before its dispute opens (a disputed payment is held and cannot be refunded
+  // outside the case, observed 19/10), then PROOF_OF_REFUND with the refund id, approved, then read back.
+  'evidence:PROOF_OF_REFUND': base('evidence:PROOF_OF_REFUND', `${REF}disputes-provide-evidence`, 'multipart', route('provide-evidence'), null, ev('proof-of-refund'), 'Not verified with PayPal: pending sandbox test (W-11)'),
   // Recorded 20/10/2026 (owner-approved W-6, after W-5): evidence is accepted again in CHARGEBACK; each evidences[]
   // entry carries `dispute_life_cycle_stage` (the escalation's INQUIRY, this one CHARGEBACK), which is what ties sent
   // evidence to a stage. Read back by the existing provide-evidence matcher (no proof here); Task 10 maps the stage.
