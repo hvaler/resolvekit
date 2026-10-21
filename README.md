@@ -145,7 +145,7 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 
 ## Verification
 
-- **Tests**: 21/10/2026, commit `81c6242` (`main`), Node 24 on Windows: 1,474 tests, all passed (node:test 36 + 32 + 12 +
+- **Tests**: 21/10/2026, commit `81c6242` (`main`), Node 24 on Windows: 1,479 tests, all passed (node:test 36 + 32 + 12 +
   159 + 52 + 637 + 80 = 1,008, vitest 471). Typecheck clean; web build OK. Not run on Linux. Earlier run, 20/10/2026,
   commit `5111b88`: 1,453 tests, all passed (vitest 447). Earlier run, 19/10/2026 12:35 UTC, commit
   `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 passed, 1 failed intermittently

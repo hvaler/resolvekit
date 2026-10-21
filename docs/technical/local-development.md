@@ -123,7 +123,7 @@ Operational use: [runbook](../operations/runbook.md).
 
 ## Tests
 
-Last full run: 21/10/2026, commit `81c6242`, Node 24, Windows: 1,474 tests, all passed; typecheck clean, web build OK (20/10/2026, `5111b88`: 1,453). Source: the run
+Last full run: 21/10/2026, commit `81c6242`, Node 24, Windows: 1,479 tests, all passed; typecheck clean, web build OK (20/10/2026, `5111b88`: 1,453). Source: the run
 log kept with the documentation work.
 
 | Suite | Tests | Result |

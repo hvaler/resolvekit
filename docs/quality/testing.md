@@ -27,7 +27,7 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 ## Latest recorded run
 
 **2026-10-21 · commit `81c6242` (deployed) · Node 24 · Windows.** `npm test` passed (every
-suite ran); `npm run typecheck` was clean; the web build was OK. 1,474 tests, all passed.
+suite ran); `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed.
 
 | Suite | Command | Tests | Pass | Fail |
 |---|---|---|---|---|
@@ -39,7 +39,7 @@ suite ran); `npm run typecheck` was clean; the web build was OK. 1,474 tests, al
 | `apps/server` | `npm run test:server` | 637 | 637 | 0 |
 | `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
 | `apps/web` (vitest) | `npm run test:web` | 471 | 471 | 0 |
-| Total | | 1,474 | 1,474 | 0 |
+| Total | | 1,479 | 1,479 | 0 |
 
 The run before that: **2026-10-20 · commit `5111b88` (deployed; with the dispute actions) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean. 1,453 tests, all passed (server 635, web 447, the other suites as above).
 

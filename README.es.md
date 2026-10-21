@@ -156,7 +156,7 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 
 ## Verificación
 
-- **Tests**: 21/10/2026, commit `81c6242` (`main`), Node 24 en Windows: 1,474 tests, todos superados (node:test
+- **Tests**: 21/10/2026, commit `81c6242` (`main`), Node 24 en Windows: 1,479 tests, todos superados (node:test
   36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Typecheck limpio; build web correcto. No se ejecutó en Linux.
   Ejecución anterior, 20/10/2026, commit `5111b88`: 1,453 tests, todos superados (vitest 447). Ejecución anterior,
   19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 superados, 1 falló de forma intermitente
