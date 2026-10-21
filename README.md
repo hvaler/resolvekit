@@ -172,7 +172,7 @@ For real sandbox disputes, copy `.env.example` to `.env` (a PayPal **sandbox** a
 flowchart TB
   subgraph clients["Clients"]
     direction LR
-    UI["Browser · React SPA<br/>inbox · case file · approval · /agent<br/>holds no secret"]
+    UI["Browser<br/>React SPA<br/>no secrets"]
     MCPC["Any MCP client"]
     BUY["Sandbox buyer<br/>PayPal account"]
   end
@@ -181,12 +181,12 @@ flowchart TB
     direction LR
     subgraph rk["apps/server · Node 24"]
       direction TB
-      API["/api<br/>sign-in · roles · daily caps"]
-      AN["Analyst<br/>quotes → verdicts → draft"]
-      INT["Intents + audit<br/>approve hash → one POST → read-back"]
-      AG["Buying agent<br/>one tool call per turn"]
-      WH["Webhook receiver<br/>signature verified"]
-      D1[("disk · intents, audit,<br/>uploads, agent runs")]
+      API["/api<br/>sign-in · roles<br/>daily caps"]
+      AN["Analyst<br/>quotes, verdicts<br/>draft"]
+      INT["Intents + audit<br/>approve hash<br/>one POST<br/>read-back"]
+      AG["Buying agent<br/>one tool<br/>per turn"]
+      WH["Webhooks<br/>signature<br/>verified"]
+      D1[("disk<br/>intents, audit<br/>uploads, runs")]
       API --> AN
       API --> INT
       API --> AG
@@ -194,8 +194,8 @@ flowchart TB
     end
     subgraph mm["apps/metermcp"]
       direction TB
-      GW["MCP gateway<br/>/mcp · /agent/mcp"]
-      LED[("SQLite ledger<br/>budgets · paid calls")]
+      GW["MCP gateway<br/>/mcp<br/>/agent/mcp"]
+      LED[("SQLite ledger<br/>budgets<br/>paid calls")]
       GW --> LED
     end
   end
@@ -203,16 +203,16 @@ flowchart TB
   subgraph ext["External · sandbox only"]
     direction LR
     LLM[("Gemini · Groq")]
-    PP[("PayPal sandbox<br/>Disputes v1<br/>Orders v2 · Payments v2")]
+    PP[("PayPal sandbox<br/>Disputes v1<br/>Orders v2<br/>Payments v2")]
   end
 
   UI -->|"/api"| API
-  MCPC -->|"public /mcp · demo code"| GW
+  MCPC -->|"public /mcp<br/>demo code"| GW
   BUY -->|"approves budget"| PP
   AG -->|"private network"| GW
   AN -->|"analysis + verifier"| LLM
   AG -->|"function calls"| LLM
-  INT -->|"evidence · messages<br/>offers · escalate"| PP
+  INT -->|"evidence, messages<br/>offers, escalate"| PP
   API -->|"sign-in token"| PP
   GW -->|"Orders v2 · Payments v2"| PP
   PP -->|"dispute webhooks"| WH

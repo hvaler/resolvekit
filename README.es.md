@@ -182,21 +182,21 @@ Para disputas reales del sandbox, copia `.env.example` a `.env` (una aplicación
 flowchart TB
   subgraph clients["Clientes"]
     direction LR
-    UI["Browser · React SPA<br/>bandeja · expediente · aprobación · /agent<br/>sin secretos"]
+    UI["Navegador<br/>React SPA<br/>sin secretos"]
     MCPC["Cualquier cliente MCP"]
     BUY["Comprador sandbox<br/>cuenta PayPal"]
   end
 
-  subgraph render["Render · dos servicios, disco de 1 GB cada uno"]
+  subgraph render["Render · dos servicios, 1 GB de disco cada uno"]
     direction LR
     subgraph rk["apps/server · Node 24"]
       direction TB
-      API["/api<br/>acceso · roles · límites diarios"]
-      AN["Analista<br/>citas → veredictos → borrador"]
-      INT["Intenciones + auditoría<br/>aprobar hash → un POST → relectura"]
-      AG["Agente comprador<br/>una herramienta por turno"]
-      WH["Receptor de webhooks<br/>firma verificada"]
-      D1[("disco · intenciones, auditoría,<br/>subidas, ejecuciones")]
+      API["/api<br/>acceso · roles<br/>límites diarios"]
+      AN["Analista<br/>citas, veredictos<br/>borrador"]
+      INT["Intenciones<br/>+ auditoría<br/>aprobar hash<br/>un POST<br/>relectura"]
+      AG["Agente<br/>comprador<br/>una herramienta<br/>por turno"]
+      WH["Webhooks<br/>firma<br/>verificada"]
+      D1[("disco<br/>intenciones<br/>auditoría<br/>subidas")]
       API --> AN
       API --> INT
       API --> AG
@@ -204,8 +204,8 @@ flowchart TB
     end
     subgraph mm["apps/metermcp"]
       direction TB
-      GW["Pasarela MCP<br/>/mcp · /agent/mcp"]
-      LED[("ledger SQLite<br/>presupuestos · llamadas pagadas")]
+      GW["Pasarela MCP<br/>/mcp<br/>/agent/mcp"]
+      LED[("ledger SQLite<br/>presupuestos<br/>llamadas<br/>pagadas")]
       GW --> LED
     end
   end
@@ -213,19 +213,19 @@ flowchart TB
   subgraph ext["Externos · solo sandbox"]
     direction LR
     LLM[("Gemini · Groq")]
-    PP[("PayPal sandbox<br/>Disputes v1<br/>Orders v2 · Payments v2")]
+    PP[("PayPal sandbox<br/>Disputes v1<br/>Orders v2<br/>Payments v2")]
   end
 
   UI -->|"/api"| API
-  MCPC -->|"/mcp público · código de demo"| GW
-  BUY -->|"aprueba el presupuesto"| PP
+  MCPC -->|"/mcp público<br/>código de demo"| GW
+  BUY -->|"aprueba el<br/>presupuesto"| PP
   AG -->|"red privada"| GW
-  AN -->|"análisis + verificador"| LLM
-  AG -->|"llamadas a funciones"| LLM
-  INT -->|"evidencia · mensajes<br/>ofertas · escalado"| PP
+  AN -->|"análisis<br/>+ verificador"| LLM
+  AG -->|"llamadas<br/>a funciones"| LLM
+  INT -->|"evidencia, mensajes<br/>ofertas, escalado"| PP
   API -->|"token de acceso"| PP
   GW -->|"Orders v2 · Payments v2"| PP
-  PP -->|"webhooks de disputas"| WH
+  PP -->|"webhooks<br/>de disputas"| WH
 ```
 
 El navegador nunca habla con PayPal ni con los modelos; las claves se quedan en el servidor. Dos servicios de Render,
