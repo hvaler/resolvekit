@@ -133,11 +133,54 @@ For real sandbox disputes, copy `.env.example` to `.env` (a PayPal **sandbox** a
 
 ## Architecture at a glance
 
-```
-Browser (React) ──/api──▶ apps/server (Node 24) ──▶ PayPal sandbox (Disputes v1, webhooks, sign-in token)
-                               │   │
-                               │   └──▶ Gemini / Groq (analyst, buying agent)
-                               └──private network──▶ apps/metermcp (MCP gateway, SQLite ledger) ──▶ PayPal Orders v2 / Payments v2
+```mermaid
+flowchart TB
+  subgraph clients["Clients"]
+    direction LR
+    UI["Browser · React SPA<br/>inbox · case file · approval · /agent<br/>holds no secret"]
+    MCPC["Any MCP client"]
+    BUY["Sandbox buyer<br/>PayPal account"]
+  end
+
+  subgraph render["Render · two services, 1 GB disk each"]
+    direction LR
+    subgraph rk["apps/server · Node 24"]
+      direction TB
+      API["/api<br/>sign-in · roles · daily caps"]
+      AN["Analyst<br/>quotes → verdicts → draft"]
+      INT["Intents + audit<br/>approve hash → one POST → read-back"]
+      AG["Buying agent<br/>one tool call per turn"]
+      WH["Webhook receiver<br/>signature verified"]
+      D1[("disk · intents, audit,<br/>uploads, agent runs")]
+      API --> AN
+      API --> INT
+      API --> AG
+      INT -.- D1
+    end
+    subgraph mm["apps/metermcp"]
+      direction TB
+      GW["MCP gateway<br/>/mcp · /agent/mcp"]
+      LED[("SQLite ledger<br/>budgets · paid calls")]
+      GW --> LED
+    end
+  end
+
+  subgraph ext["External · sandbox only"]
+    direction LR
+    LLM[("Gemini · Groq")]
+    PP[("PayPal sandbox<br/>Disputes v1<br/>Orders v2 · Payments v2")]
+  end
+
+  UI -->|"/api"| API
+  MCPC -->|"public /mcp · demo code"| GW
+  BUY -->|"approves budget"| PP
+  AG -->|"private network"| GW
+  AN -->|"analysis + verifier"| LLM
+  AG -->|"function calls"| LLM
+  INT -->|"evidence · messages<br/>offers · escalate"| PP
+  API -->|"sign-in token"| PP
+  GW -->|"Orders v2 · Payments v2"| PP
+  PP -->|"dispute webhooks"| WH
 ```
 
 The browser never talks to PayPal or the models; keys stay on the server. Two Render services, each with a disk.
