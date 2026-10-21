@@ -7,7 +7,7 @@
 > construyas sobre ellas.
 
 Fuente: `apps/server/src/app.ts`, `hosted.ts`, `auth.ts`, `webhook.ts`, `uploads/routes.ts`, `agent/routes.ts` en el
-commit `81c6242`; las acciones de disputa (`apps/server/src/actions/routes.ts`) se añadieron en el commit `076c74f` (20/10/2026). Las rutas de MeterMCP están en [herramientas MCP](mcp-tools.md).
+commit `c12faea`; las acciones de disputa (`apps/server/src/actions/routes.ts`) se añadieron en el commit `076c74f` (20/10/2026). Las rutas de MeterMCP están en [herramientas MCP](mcp-tools.md).
 
 ## Convenciones
 

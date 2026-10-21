@@ -7,7 +7,7 @@ guarantees. For the trust boundaries as a design, see [Trust boundaries](../arch
 report a vulnerability, see [SECURITY.md](../../SECURITY.md).
 
 Status words follow the project vocabulary. Unless a row says otherwise: **Implemented · Tested locally** (fake
-PayPal, fake model) at `81c6242`, deployed on the sandbox demo.
+PayPal, fake model) at `c12faea`, deployed on the sandbox demo.
 
 ## Literal validity is not semantic support
 

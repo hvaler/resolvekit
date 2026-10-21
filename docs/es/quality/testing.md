@@ -27,7 +27,7 @@ Requiere Node 24+ (TypeScript se ejecuta de forma nativa). `npm test` no hace ni
 
 ## Última ejecución registrada
 
-**2026-10-21 · commit `81c6242` (desplegado) · Node 24 · Windows.** `npm test` pasó (se
+**2026-10-21 · commit `c12faea` (desplegado) · Node 24 · Windows.** `npm test` pasó (se
 ejecutaron todas las suites); `npm run typecheck` salió limpio; el build web fue correcto. 1,479 tests, todos superados.
 
 | Suite | Comando | Tests | Superados | Fallos |
@@ -41,6 +41,8 @@ ejecutaron todas las suites); `npm run typecheck` salió limpio; el build web fu
 | `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
 | `apps/web` (vitest) | `npm run test:web` | 471 | 471 | 0 |
 | Total | | 1,479 | 1,479 | 0 |
+
+La ejecución anterior: **2026-10-21 · commit `81c6242` (desplegado antes ese día) · Node 24 · Windows.** `npm test` pasó; `npm run typecheck` salió limpio; el build web fue correcto. 1,479 tests, todos superados (mismas cifras por suite que arriba).
 
 La ejecución anterior: **2026-10-20 · commit `5111b88` (desplegado; con las acciones de disputa) · Node 24 · Windows.** `npm test` pasó; `npm run typecheck` salió limpio. 1,453 tests, todos superados (servidor 635, web 447, las demás suites como arriba).
 
@@ -182,6 +184,6 @@ anterior cliente con guion (scripted), no el agente dirigido por el modelo.
 - Comportamiento contra PayPal live: ninguno.
 - Acciones de disputa: probadas con fakes y una escritura de contrato registrada por variante; el flujo de la app contra
   el sandbox se ejecutó una vez por variante verificada (20/10/2026 y, para el mensaje con archivo, 21/10/2026; un servidor local);
-  el código está desplegado (`81c6242`), pero estas acciones no se han ejercitado en el servicio alojado.
+  el código está desplegado (`c12faea`), pero estas acciones no se han ejercitado en el servicio alojado.
 
 La lista completa, con fuentes, está en [Problemas conocidos](known-issues.md).

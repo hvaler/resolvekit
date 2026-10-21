@@ -2,7 +2,7 @@
 
 # Retention and deletion
 
-What ResolveKit and MeterMCP keep, for how long, and what deletes it. Everything here is from the code at `81c6242`
+What ResolveKit and MeterMCP keep, for how long, and what deletes it. Everything here is from the code at `c12faea`
 (Implemented · Tested locally unless noted). There is no account-deletion feature and no data-export feature; a
 request to erase someone's data is handled by the operator by hand on the disk (**Pending**: no procedure or tool).
 

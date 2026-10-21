@@ -26,7 +26,7 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 
 ## Latest recorded run
 
-**2026-10-21 · commit `81c6242` (deployed) · Node 24 · Windows.** `npm test` passed (every
+**2026-10-21 · commit `c12faea` (deployed) · Node 24 · Windows.** `npm test` passed (every
 suite ran); `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed.
 
 | Suite | Command | Tests | Pass | Fail |
@@ -40,6 +40,8 @@ suite ran); `npm run typecheck` was clean; the web build was OK. 1,479 tests, al
 | `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
 | `apps/web` (vitest) | `npm run test:web` | 471 | 471 | 0 |
 | Total | | 1,479 | 1,479 | 0 |
+
+The run before that: **2026-10-21 · commit `81c6242` (deployed earlier that day) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed (the same per-suite counts as above).
 
 The run before that: **2026-10-20 · commit `5111b88` (deployed; with the dispute actions) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean. 1,453 tests, all passed (server 635, web 447, the other suites as above).
 
@@ -173,6 +175,6 @@ not by the model-driven agent.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
 - Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
-  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`81c6242`) but these actions have not been exercised on the hosted service.
+  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`c12faea`) but these actions have not been exercised on the hosted service.
 
 The full list, with sources, is in [Known issues](known-issues.md).

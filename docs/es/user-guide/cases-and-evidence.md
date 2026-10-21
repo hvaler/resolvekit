@@ -64,7 +64,7 @@ cronología muestra una tarjeta **Contradiction** con ambos valores lado a lado,
 ## Qué hacer (las acciones de PayPal)
 
 El cuadro **What to do** muestra las acciones que PayPal permite ahora para esta disputa, leídas hace unos segundos,
-cada una con «✓ allowed». Además de **Provide evidence**, el commit desplegado (`81c6242`, 21/10/2026) abre su propio flujo al elegir
+cada una con «✓ allowed». Además de **Provide evidence**, el commit desplegado (`c12faea`, 21/10/2026) abre su propio flujo al elegir
 «Send message», «Accept claim», «Make an offer» o «Escalate» (Verificado en sandbox a través de la app el 20/10/2026;
 aún no ejercitado en el servicio alojado): ver
 [Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa). «PayPal is asking for:» muestra la evidencia que ha pedido PayPal.

@@ -3,7 +3,7 @@
 # Limitations
 
 What ResolveKit does not do, does not do yet, or has not been shown to do. Checked against the code at commit
-`81c6242` (deployed 21/10/2026) and the follow-up lists in `docs/superpowers/plans/`; the dispute actions against commit
+`c12faea` (deployed 21/10/2026) and the follow-up lists in `docs/superpowers/plans/`; the dispute actions against commit
 `076c74f` (20/10/2026). Code-level issues for contributors are in
 [Known issues](../quality/known-issues.md); this page is what a user, merchant or judge needs to know.
 
@@ -12,7 +12,7 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
 | Function | State today | Status |
 |---|---|---|
 | Connecting a merchant's own PayPal disputes | A merchant who signs in with **Continue with PayPal** gets the waiting screen. The app has no Partner Referrals, `merchant-integrations` or `PayPal-Auth-Assertion` code. Sandbox experiments were made outside the app (see [Merchant onboarding](../technical/merchant-onboarding.md)); they are not a feature | **Pending** (not implemented, not deployed, not available) |
-| Send message, accept claim (full or partial), make a partial-refund offer, escalate, evidence after an escalation | Built on recorded contracts and run with fakes; on 20/10/2026 each was sent once through the app's own flow in the sandbox and read back (the branch's server run locally). The code is deployed (`81c6242`, 21/10/2026) but these actions have not yet been exercised on the hosted service; the owner-only ones need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet. Per-variant status: [Functional specification](functional-specification.md#56-dispute-actions-other-than-evidence) | Verified in sandbox · Deployed (code); not yet exercised on the hosted service |
+| Send message, accept claim (full or partial), make a partial-refund offer, escalate, evidence after an escalation | Built on recorded contracts and run with fakes; on 20/10/2026 each was sent once through the app's own flow in the sandbox and read back (the branch's server run locally). The code is deployed (`c12faea`, 21/10/2026) but these actions have not yet been exercised on the hosted service; the owner-only ones need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet. Per-variant status: [Functional specification](functional-specification.md#56-dispute-actions-other-than-evidence) | Verified in sandbox · Deployed (code); not yet exercised on the hosted service |
 | A message with an attachment | The server path and the web composer are tested (one confirmed upload of the case); one message with a file was sent to PayPal through the app in the sandbox (V-7, 21/10/2026, a local run) | Verified in sandbox through the app (V-7); the code with this status is not deployed yet |
 | Replacement offer | Not available: Not verified with PayPal: never offered on a sandbox dispute | Not available |
 | Withdrawing an offer | Not available: PayPal documents no route to withdraw an offer | Not available |
@@ -43,9 +43,9 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
   requests and 60 PayPal reads per 5 minutes, 20 uploads, redactions and PDF page reads per 10 minutes. A refusal
   says when it resets.
 - **Redeploys** cause 1–2 minutes of errors (a service with a disk has no zero-downtime deploy).
-- **Which commit is live** cannot be proven from outside: `81c6242` is treated as deployed on the owner's
+- **Which commit is live** cannot be proven from outside: `c12faea` is treated as deployed on the owner's
   decision to push it and a `demo:check` on 21/10/2026 that passed apart from the known empty reserve of the standard
-  case (`5111b88` on 20/10/2026 and `fbe9621` on 19/10/2026 were treated as deployed the same way).
+  case (`81c6242` earlier on 21/10/2026, `5111b88` on 20/10/2026 and `fbe9621` on 19/10/2026 were treated as deployed the same way).
 
 ## Dispute actions
 

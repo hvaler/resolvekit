@@ -3,7 +3,7 @@
 # Integración con PayPal
 
 Qué API de PayPal llama ResolveKit, con qué credencial, en qué se apoya y qué solo se ha observado en el sandbox.
-Código en el commit `81c6242` (las acciones de disputa se añadieron en `076c74f`, 20/10/2026); documentación de PayPal
+Código en el commit `c12faea` (las acciones de disputa se añadieron en `076c74f`, 20/10/2026); documentación de PayPal
 consultada el 19/10/2026 (developer.paypal.com).
 
 En esta página se separan tres tipos de afirmación:
@@ -147,7 +147,7 @@ escrituras.
 por el flujo propio de ResolveKit: el servidor de la rama sin fusionar `feat/dispute-actions` (head `9f93ba0`) ejecutado
 en local contra el sandbox, cada ejecución aprobada antes por el propietario, y cada una por componer → aprobar por
 hash → segunda confirmación (cuando la acción tiene términos) → un envío → relectura atribuible. Un POST a PayPal por
-ejecución, con lecturas GET antes y después (evidencia privada, 20/10/2026). El código está ahora desplegado (`81c6242`), pero no se envió nada desde el servicio alojado. Son observaciones únicas, no
+ejecución, con lecturas GET antes y después (evidencia privada, 20/10/2026). El código está ahora desplegado (`c12faea`), pero no se envió nada desde el servicio alojado. Son observaciones únicas, no
 reglas de PayPal.
 
 | Ejecución | Variante | Disputa de sandbox | Observado a través de la app |
@@ -160,7 +160,7 @@ reglas de PayPal.
 | V-6 | `evidence:after_escalation` | la misma, en `CHARGEBACK` | Tras un análisis en directo del caso vinculado, una frase editada recomprobada y una contradicción resuelta por el propietario: un único `provide-evidence`, registrado como entrada `PROVIDE_EVIDENCE` en la fase `CHARGEBACK` con 2 documentos, junto a la entrada `ESCALATE` de la fase de consulta |
 | V-7 | `send_message:file` | PP-R-GCV-10193596 (`WAITING_FOR_BUYER_RESPONSE`) | 21/10/2026 05:30Z, servidor local de `main` (`81c6242`): una subida confirmada y saneada (un PNG sintético, enviado como `E7-upload.png`), con el hash igual al aprobado; un envío multipart (202); «Recorded by PayPal» a ~1 s y de nuevo a +30 s; el nuevo mensaje del vendedor tiene el texto exacto y 1 documento; sin movimiento de dinero |
 
-No verificado a través de la app: todas las variantes «Not available». El estado del registro de `send_message:file` (Verificado en sandbox) está en `main` pero aún no desplegado.
+No verificado a través de la app: todas las variantes «Not available». El estado del registro de `send_message:file` (Verificado en sandbox) está desplegado (`c12faea`, 21/10/2026).
 
 **W-11, la prueba pendiente de la prueba de reembolso.** El 19/10/2026 un pago en disputa apareció retenido en el
 sandbox, y las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso. La secuencia prevista es,

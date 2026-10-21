@@ -8,7 +8,7 @@ aprueba el contenido exacto antes de que se envíe nada a PayPal. Un segundo sis
 pasarela MCP de pago por uso que un **agente comprador** paga a través de PayPal; sus recibos se convierten en
 evidencia de uno de los casos.
 
-Esta página describe la arquitectura tal como está en el código en el commit `81c6242` (desplegado el 21/10/2026). Los términos de
+Esta página describe la arquitectura tal como está en el código en el commit `c12faea` (desplegado el 21/10/2026). Los términos de
 estado siguen el vocabulario del proyecto: Diseñado · Implementado · Probado en local · Verificado en sandbox ·
 Desplegado · Disponible para usuarios · Pendiente.
 
@@ -79,8 +79,8 @@ Los paquetes compartidos (`packages/*`) son bibliotecas dentro de esos procesos,
 | Entorno de PayPal | `PAYPAL_ENV=sandbox`; el modo alojado se niega a arrancar con otro valor salvo `live` más `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, que el blueprint nunca establece |
 | Despliegue automático | `commit` en ambos servicios (el seguimiento del agente recomienda desactivarlo para `resolvekit`: Pendiente, operativo) |
 
-`81c6242` se considera Desplegado: el 21/10/2026 se subió,
-Render lo desplegó automáticamente (se observó un bundle web nuevo) y `demo:check` contra las URL alojadas dio PASS en
+`c12faea` se considera Desplegado (antes, el mismo día, `81c6242`): el 21/10/2026 se subió,
+Render lo desplegó automáticamente (se observó un bundle web nuevo) y `demo:check` contra las URL alojadas (tras `81c6242` y de nuevo tras `c12faea`, mismo resultado) dio PASS en
 ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones
 verificadas, ambos modelos de IA respondieron y ambos precalentamientos en caché; dio WARN en ambas reservas (0 disputas
 nuevas) y FAIL en una línea conocida: la vinculación del caso estándar está usada y su reserva está vacía (relleno
@@ -137,7 +137,7 @@ sequenceDiagram
 ```
 
 Solo `provide-evidence` se ha ejercitado de extremo a extremo en el servicio alojado. Desde el commit `5111b88`
-(desplegado el 20/10/2026; ahora `81c6242`, 21/10/2026) el servidor también envía mensajes, aceptaciones, ofertas y escalados por la misma cadena (componer,
+(desplegado el 20/10/2026; ahora `c12faea`, 21/10/2026) el servidor también envía mensajes, aceptaciones, ofertas y escalados por la misma cadena (componer,
 aprobar por hash, una segunda confirmación para las acciones del Owner, una lectura fresca, `send_started` en disco, un
 único POST, una relectura atribuible), solo para las variantes cuyo contrato está registrado; estado: Desplegado (código), Verificado en sandbox a través de la app (20/10/2026,
 servidor local), aún no ejercitado en el servicio alojado
@@ -193,7 +193,7 @@ No hay carpeta `docs/architecture/decisions/`: las especificaciones anteriores s
 
 ## Arquitectura actual y evolución futura
 
-| Área | Hoy (código en `81c6242`) | No construido (futuro, no prometido) |
+| Área | Hoy (código en `c12faea`) | No construido (futuro, no prometido) |
 |---|---|---|
 | Comerciantes | Un espacio de trabajo de evaluación: el vendedor de las disputas de sandbox vinculadas | Conectar las disputas propias de cualquier comerciante mediante PayPal Platform (Partner Referrals, `PayPal-Auth-Assertion`): solo pruebas externas en sandbox, sin código en la app |
 | Acciones sobre disputas | `provide-evidence`; enviar mensaje, hacer oferta, aceptar reclamación, escalar (Desplegado; Verificado en sandbox en una ejecución local; aún no ejercitado en el servicio alojado) | reembolsar |

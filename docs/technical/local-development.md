@@ -3,7 +3,7 @@
 # Local development
 
 How to install, run and test ResolveKit on your machine, and which commands reach PayPal, the model providers or
-cost money. Code at commit `81c6242`.
+cost money. Code at commit `c12faea`.
 
 ## Requirements
 
@@ -123,7 +123,7 @@ Operational use: [runbook](../operations/runbook.md).
 
 ## Tests
 
-Last full run: 21/10/2026, commit `81c6242`, Node 24, Windows: 1,479 tests, all passed; typecheck clean, web build OK (20/10/2026, `5111b88`: 1,453). Source: the run
+Last full run: 21/10/2026, commit `c12faea`, Node 24, Windows: 1,479 tests, all passed; typecheck clean, web build OK (21/10/2026, `81c6242`: 1,479; 20/10/2026, `5111b88`: 1,453). Source: the run
 log kept with the documentation work.
 
 | Suite | Tests | Result |

@@ -4,7 +4,7 @@
 
 Cómo convierte ResolveKit una captura de pantalla, un PDF o un texto pegado por el comerciante en evidencia que el
 analista puede citar y PayPal puede recibir, sin que nada salga del servidor antes de que el comerciante haya tapado
-lo que quiera y haya confirmado. Código en `apps/server/src/uploads/` en el commit `81c6242`. Cómo usarlo:
+lo que quiera y haya confirmado. Código en `apps/server/src/uploads/` en el commit `c12faea`. Cómo usarlo:
 [casos y evidencias](../user-guide/cases-and-evidence.md), [revisión de PDF](../user-guide/pdf-review.md).
 
 ## Principios
