@@ -59,7 +59,7 @@ de sandbox aprobado por el propietario, y **Verificados en sandbox** a través d
 uno, en un servidor local). El código está **Desplegado** (`81c6242`, 21/10/2026), pero estas acciones **no** se han
 ejercitado todavía en el servicio alojado: las solo del Owner necesitan el caso de liquidación vinculado en el
 `BINDINGS_JSON` alojado, cosa que aún no ocurre, y los revisores pueden enviar mensajes en la disputa activa de un caso
-vinculado. Un mensaje con archivo se puede elegir en el editor web (una subida confirmada, solo mientras PayPal espera al comprador) y sigue Probado en local; su verificación del flujo de la app en el sandbox, V-7, está preparada y pendiente de la aprobación del propietario. Las ofertas de sustitución, retirar una
+vinculado. Un mensaje con archivo se puede elegir en el editor web (una subida confirmada, solo mientras PayPal espera al comprador) y está Verificado en sandbox a través de la app (V-7, 21/10/2026, ejecución local; ese estado del registro está en `main` pero aún no desplegado). Las ofertas de sustitución, retirar una
 oferta, las apelaciones, la prueba de reembolso y los tipos con devolución están **No disponibles**, cada uno con su
 motivo. ResolveKit nunca crea un reembolso. Estado por variante:
 [especificación funcional](docs/es/product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).

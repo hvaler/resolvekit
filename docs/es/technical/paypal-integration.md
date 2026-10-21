@@ -158,9 +158,9 @@ reglas de PayPal.
 | V-4 | `accept_claim:REFUND` | PP-R-TYE-10193787 | «Recorded by PayPal» por la entrada atribuible `ACCEPT_CLAIM` (`response_option: REFUND`, la nota), no por el cambio de estado; `UNDER_REVIEW` y después `RESOLVED` a favor del comprador (`SELLER_ISSUED_REFUND`) hacia los +2 min; un reembolso de sandbox de 7.00 USD. La única ejecución que movió dinero |
 | V-5 | `escalate` | PP-R-JHY-10193786 | «Recorded by PayPal» por la entrada `ESCALATE` (la nota, fase `INQUIRY`) unos 1.5 s después; `UNDER_REVIEW` durante unos 10 min con `provide_evidence` intermitente, nunca mostrado como cerrado; después `CHARGEBACK` · `WAITING_FOR_SELLER_RESPONSE` |
 | V-6 | `evidence:after_escalation` | la misma, en `CHARGEBACK` | Tras un análisis en directo del caso vinculado, una frase editada recomprobada y una contradicción resuelta por el propietario: un único `provide-evidence`, registrado como entrada `PROVIDE_EVIDENCE` en la fase `CHARGEBACK` con 2 documentos, junto a la entrada `ESCALATE` de la fase de consulta |
+| V-7 | `send_message:file` | PP-R-GCV-10193596 (`WAITING_FOR_BUYER_RESPONSE`) | 21/10/2026 05:30Z, servidor local de `main` (`81c6242`): una subida confirmada y saneada (un PNG sintético, enviado como `E7-upload.png`), con el hash igual al aprobado; un envío multipart (202); «Recorded by PayPal» a ~1 s y de nuevo a +30 s; el nuevo mensaje del vendedor tiene el texto exacto y 1 documento; sin movimiento de dinero |
 
-No verificado a través de la app: `send_message:file` (el editor web adjunta una subida confirmada; Probado en local
-en el servidor, escritura de contrato W-3; su verificación del flujo de la app, V-7, está preparada y pendiente de la aprobación del propietario) y todas las variantes «Not available».
+No verificado a través de la app: todas las variantes «Not available». El estado del registro de `send_message:file` (Verificado en sandbox) está en `main` pero aún no desplegado.
 
 **W-11, la prueba pendiente de la prueba de reembolso.** El 19/10/2026 un pago en disputa apareció retenido en el
 sandbox, y las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso. La secuencia prevista es,
@@ -289,6 +289,7 @@ envío tardó unos 1.9 s (lectura y POST multipart); PayPal lo aceptó, y la rel
 | 19/10 | Un pago con una disputa abierta apareció retenido; las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso |
 | 20/10 | Escrituras de contrato W-1 a W-12 aprobadas por el propietario: [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
 | 20/10 | Seis variantes enviadas una vez cada una por el flujo propio de ResolveKit (servidor local de la rama sin fusionar) y releídas, V-1 a V-6; solo V-4 movió dinero (un reembolso de 7.00 USD): [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
+| 21/10 | Un mensaje con una subida confirmada y saneada enviado por el flujo propio de ResolveKit (servidor local de `main`, `81c6242`) y releído «Recorded by PayPal» con 1 documento, V-7; sin movimiento de dinero: [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
 
 ## Desconocido y no afirmado
 

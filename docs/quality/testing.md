@@ -126,9 +126,9 @@ evidence). An observation is one example, not a guarantee.
 | A payment with an open dispute showed as held; the seller's sandbox web pages offered no refund outside the case | 19/10 |
 | Owner-approved dispute-action contract writes W-1 to W-12, sent outside the app's flow (contract level, not the app): W-1 to W-6, W-9 and W-10 recorded, W-7 refused, W-8, W-11 and W-12 not sent ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 20/10 |
 | Six dispute-action variants sent once each through the app's own flow (the branch's server run locally) and read back «Recorded by PayPal», V-1 to V-6; only V-4 moved money, a 7.00 USD refund ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 20/10 |
+| A message with one confirmed, sanitised upload sent once through the app's own flow (local server of `main`, `81c6242`) and read back «Recorded by PayPal» with 1 document, V-7; no money moved ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 21/10 |
 
-**Not observed in the sandbox (Pending):** a message with an attachment sent through the app (the UI attaches one
-confirmed upload, Tested locally; V-7 is prepared and pending the owner's approval); the dispute actions on the deployed service; a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
+**Not observed in the sandbox (Pending):** the dispute actions on the deployed service; a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
 restart recovery; **Stop** on a real run; the Groq fallback for the agent; pasted-text and PDF uploads sent to PayPal;
 passkey creation on the deployed service; the E5 run record on a bound case; `npm run demo-agent` against the hosted
 MeterMCP.
@@ -173,6 +173,6 @@ not by the model-driven agent.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
 - Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
-  was run once per verified variant (20/10/2026, a local server), not for the message with a file; the code is deployed (`81c6242`) but these actions have not been exercised on the hosted service.
+  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`81c6242`) but these actions have not been exercised on the hosted service.
 
 The full list, with sources, is in [Known issues](known-issues.md).

@@ -56,7 +56,7 @@ an escalation are built from commit `076c74f` (20/10/2026), each on a sandbox co
 **Verified in sandbox** through the app on 20/10/2026 (one send each, on a local server). The code is **Deployed**
 (`81c6242`, 21/10/2026), but these actions have **not** yet been exercised on the hosted service: the owner-only ones
 need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on
-a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and stays Tested locally; its app-flow sandbox verification, V-7, is prepared and pending the owner's approval. Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
+a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and is Verified in sandbox through the app (V-7, 21/10/2026, a local run; that registry status is in `main` but not yet deployed). Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
 **Not available**, each with its reason. ResolveKit never creates a refund. Per-variant status:
 [functional specification](docs/product/functional-specification.md#56-dispute-actions-other-than-evidence). Nothing
 has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).

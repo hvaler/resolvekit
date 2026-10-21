@@ -95,7 +95,7 @@ después, en su siguiente lectura, **solo si** queda alguna (a 19/10/2026 el cas
 ## Otras acciones de disputa
 
 Estado: **Probado en local** (con fakes construidos a partir de respuestas registradas de PayPal) · **Verificado en
-sandbox** a través de la app (20/10/2026, un envío cada una en un servidor local; salvo el mensaje con archivo). El
+sandbox** a través de la app (20/10/2026, un envío cada una en un servidor local; el mensaje con archivo el 21/10/2026, V-7). El estado del registro del mensaje con archivo está en `main` pero aún no desplegado. El
 código está Desplegado (`81c6242`, 21/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado;
 las solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre, y
 los revisores pueden enviar mensajes en la disputa activa de un caso vinculado. Estado y reglas por variante:
@@ -106,7 +106,7 @@ variante muestra su estado («Verified in sandbox», «Tested locally», o «Not
 
 | Acción | Quién | Qué escribes | Qué hace PayPal |
 |---|---|---|---|
-| Send message | Owner, miembros, revisores | **Message to the buyer** (hasta 2,000 caracteres). «The buyer sees exactly this text in PayPal.» Opcionalmente, en **Attach a file (optional, at most one)**, una de las subidas confirmadas del caso, listadas por número de evidencia y título («Message with a file · Tested locally») | Añade el mensaje, con el archivo si elegiste uno, al hilo. No fusiona repeticiones |
+| Send message | Owner, miembros, revisores | **Message to the buyer** (hasta 2,000 caracteres). «The buyer sees exactly this text in PayPal.» Opcionalmente, en **Attach a file (optional, at most one)**, una de las subidas confirmadas del caso, listadas por número de evidencia y título («Message with a file · Verified in sandbox») | Añade el mensaje, con el archivo si elegiste uno, al hilo. No fusiona repeticiones |
 | Accept claim · full refund | Owner | **Note to PayPal** | «PayPal refunds <amount> to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.» (reembolsa al comprador y cierra la disputa a su favor; no se puede deshacer) |
 | Accept claim · partial refund offer | Owner | Importe y **Note to PayPal** | «PayPal offers the buyer a partial refund of <amount>. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.» (el comprador debe aceptarlo; si no, no se mueve dinero y la disputa sigue abierta) |
 | Make offer · refund offer | Owner | Importe (menor que el de la disputa) y **Note to PayPal** | «The buyer is offered <amount>; no money moves unless the buyer accepts.» |
@@ -126,7 +126,7 @@ antes), una como máximo; «No confirmed upload of this case to attach» si no h
 lo muestran tal como lo recibe PayPal, «Attached file: E8-pasted.pdf · 2 KB · E8 <título>, uploaded by <nombre>». El
 servidor solo lo adjunta si sigue siendo una subida confirmada de la disputa activa del caso en tu espacio de trabajo (si
 no, `UNKNOWN_UPLOAD`). «Recorded by PayPal» prueba el texto del mensaje; el archivo en sí no se comprueba. Esta variante
-está Probada en local: no se ha enviado a PayPal a través de la app. Sin el servidor de ResolveKit dice «Not available:
+está Verificada en sandbox: se envió una vez a través de la app (V-7, 21/10/2026, ejecución local). Sin el servidor de ResolveKit dice «Not available:
 attaching a file needs the ResolveKit server». Solo se ofrece mientras PayPal espera al comprador, el estado desde el
 que se envió la escritura registrada; mientras PayPal te espera a ti dice «Not available: not verified with PayPal from
 this dispute status», y el mensaje de texto solo se sigue ofreciendo. En el simulador, un estado desde el que no se

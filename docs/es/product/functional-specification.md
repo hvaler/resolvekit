@@ -196,7 +196,7 @@ evidencia. Detalles: [Agente comprador](../user-guide/buying-agent.md).
 ### 5.6 Acciones de disputa distintas de la evidencia
 
 Comprobado contra el commit `076c74f` (20/10/2026); estados actualizados tras las ejecuciones a través de la app en el
-sandbox del 20/10/2026 (V-1 a V-6). Cada variante de acción tiene un único estado, tomado del registro
+sandbox del 20/10/2026 (V-1 a V-7). Cada variante de acción tiene un único estado, tomado del registro
 de contratos (`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); el producto muestra la misma etiqueta junto a cada
 variante (**Verified in sandbox**, **Tested locally**, o **Not available: <motivo>**, «No disponible»). Una variante solo está disponible cuando
 su contrato está registrado: la documentación de PayPal, lecturas de solo lectura en el sandbox y una escritura que el
@@ -205,7 +205,7 @@ propietario aprobó petición a petición, con su respuesta y su relectura (`pac
 | Variante | Qué es | Estado | Escritura de contrato (sandbox, 20/10/2026) | A través de la app (sandbox, 20/10/2026) |
 |---|---|---|---|---|
 | `send_message` | Un mensaje de texto al comprador (1–2,000 caracteres) | Verificado en sandbox | Registrada (W-1, W-2) | Registrada (V-1) |
-| `send_message:file` | Un mensaje con una subida confirmada adjunta | Probado en local: la ruta del servidor y el editor web (una subida confirmada del caso, mostrada en la revisión y la confirmación; solo desde `WAITING_FOR_BUYER_RESPONSE`, como W-3, en real y en el simulador; el mensaje de texto mantiene ambos estados) | Registrada (W-3) | No ejecutada (V-7: preparada, pendiente de la aprobación del propietario) |
+| `send_message:file` | Un mensaje con una subida confirmada adjunta | Verificado en sandbox (V-7, 21/10/2026; también Probado en local: la ruta del servidor y el editor web con una subida confirmada del caso, mostrada en la revisión y la confirmación; solo desde `WAITING_FOR_BUYER_RESPONSE`, como W-3, en real y en el simulador; el código con este estado aún no está desplegado) | Registrada (W-3) | Registrada (V-7): «Recorded by PayPal»; un mensaje del vendedor con el texto exacto y 1 documento; sin movimiento de dinero |
 | `accept_claim:REFUND` | Aceptar la reclamación con un reembolso total | Verificado en sandbox | Registrada (W-10) | Registrada (V-4): resuelta a favor del comprador, 7.00 USD reembolsados |
 | `accept_claim:PARTIAL_REFUND` | Aceptar la reclamación con un reembolso parcial, que PayPal registra como una oferta al comprador | Verificado en sandbox | Registrada (W-9) | Registrada como oferta pendiente (V-3); no se movió dinero |
 | `escalate` | Escalar una consulta a reclamación | Verificado en sandbox | Registrada (W-5) | Registrada (V-5); reclamación unos 10 min después |
@@ -217,9 +217,9 @@ propietario aprobó petición a petición, con su respuesta y su relectura (`pac
 | `evidence:PROOF_OF_REFUND` | — | No disponible: «Not verified with PayPal: pending sandbox test (W-11)» | No enviada (W-11, decisión del propietario) | — |
 | `return_address` | Los tipos de aceptación y de oferta con devolución (`REFUND_WITH_RETURN`, `REFUND_WITH_RETURN_SHIPMENT_LABEL`) | No disponible: «Not in this delivery (owner decision)» | — | — |
 
-Seis variantes están **Verificadas en sandbox**: el 20/10/2026 cada una se envió una vez por el flujo propio de la app
+Siete variantes están **Verificadas en sandbox**: el 20/10/2026 (V-1 a V-6) y el 21/10/2026 (V-7, el mensaje con archivo) cada una se envió una vez por el flujo propio de la app
 (componer, aprobar por hash, una segunda confirmación cuando la acción tiene términos, un envío, una relectura
-atribuible), con el servidor de la rama sin fusionar ejecutado en local contra el sandbox (V-1 a V-6, ver
+atribuible), con el servidor de la rama sin fusionar ejecutado en local contra el sandbox (V-1 a V-7, ver
 [Integración con PayPal](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)). Solo V-4, la
 aceptación total, movió dinero (un reembolso de sandbox de 7.00 USD). Aparte, las escrituras de contrato del 20/10/2026
 (W-1 a W-12) fueron peticiones preparadas que el propietario aprobó una a una, enviadas fuera del flujo propio de la
@@ -390,4 +390,4 @@ Más: [Solución de problemas](../user-guide/troubleshooting.md).
   apelación, prueba de reembolso, los tipos con devolución); crear reembolsos; el entorno live (producción) de PayPal;
   borrado de la cuenta o del espacio de trabajo por el propio usuario. El mensaje, la aceptación, la oferta, el
   escalado y la evidencia tras un escalado están Verificados en sandbox a través de la app (20/10/2026), con el código
-  Desplegado y aún no ejercitados en el servicio alojado; un mensaje con adjunto está Probado en local (servidor y editor web). Ver [Limitaciones](limitations.md).
+  Desplegado y aún no ejercitados en el servicio alojado; un mensaje con adjunto está Verificado en sandbox a través de la app (V-7, 21/10/2026; el código con este estado aún no está desplegado). Ver [Limitaciones](limitations.md).

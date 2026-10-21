@@ -91,7 +91,7 @@ read, **only if** one is left (as of 19/10/2026 the standard case has none).
 ## Other dispute actions
 
 Status: **Tested locally** (with fakes built from recorded PayPal responses) · **Verified in sandbox** through the
-app (20/10/2026, one send each on a local server; the message with a file excepted). The code is Deployed (`81c6242`, 21/10/2026) but these actions have not yet been exercised on the hosted service; the owner-only ones need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on a bound case's active dispute. Per-variant status and rules:
+app (20/10/2026, one send each on a local server; the message with a file on 21/10/2026, V-7). The registry status of the message with a file is in `main` but not deployed yet. The code is Deployed (`81c6242`, 21/10/2026) but these actions have not yet been exercised on the hosted service; the owner-only ones need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on a bound case's active dispute. Per-variant status and rules:
 [Functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence).
 
 Choose the action in **What to do**. Only what PayPal offers on the dispute right now can be composed, and each variant
@@ -99,7 +99,7 @@ shows its status («Verified in sandbox», «Tested locally», or «Not availabl
 
 | Action | Who | What you write | What PayPal does |
 |---|---|---|---|
-| Send message | Owner, members, reviewers | **Message to the buyer** (up to 2,000 characters). «The buyer sees exactly this text in PayPal.» Optionally, under **Attach a file (optional, at most one)**, one of the case's confirmed uploads, listed by evidence number and title («Message with a file · Tested locally») | Adds the message, with the file if you chose one, to the thread. It does not merge repeats |
+| Send message | Owner, members, reviewers | **Message to the buyer** (up to 2,000 characters). «The buyer sees exactly this text in PayPal.» Optionally, under **Attach a file (optional, at most one)**, one of the case's confirmed uploads, listed by evidence number and title («Message with a file · Verified in sandbox») | Adds the message, with the file if you chose one, to the thread. It does not merge repeats |
 | Accept claim · full refund | Owner | **Note to PayPal** | «PayPal refunds <amount> to the buyer and closes the dispute in the buyer’s favour. This cannot be undone.» |
 | Accept claim · partial refund offer | Owner | Amount and **Note to PayPal** | «PayPal offers the buyer a partial refund of <amount>. The buyer has to agree to it: unless they accept, no money moves and the dispute stays open.» |
 | Make offer · refund offer | Owner | Amount (below the dispute amount) and **Note to PayPal** | «The buyer is offered <amount>; no money moves unless the buyer accepts.» |
@@ -117,8 +117,7 @@ confirmation («PayPal already shows this exact message on this dispute…»).
 at most; «No confirmed upload of this case to attach» when there is none. The review and the confirmation show it as
 PayPal receives it, «Attached file: E8-pasted.pdf · 2 KB · E8 <title>, uploaded by <name>». The server attaches it only
 if it is still a confirmed upload of the case's active dispute in your workspace (otherwise `UNKNOWN_UPLOAD`).
-«Recorded by PayPal» proves the message text; the file itself is not checked. This variant is Tested locally: it has not
-been sent to PayPal through the app. Without the ResolveKit server it reads «Not available: attaching a file needs the
+«Recorded by PayPal» proves the message text; the file itself is not checked. This variant is Verified in sandbox: it was sent once through the app (V-7, 21/10/2026, a local run). Without the ResolveKit server it reads «Not available: attaching a file needs the
 ResolveKit server». It is offered only while PayPal waits for the buyer, the status the recorded write was sent from;
 while PayPal waits for you it reads «Not available: not verified with PayPal from this dispute status», and the text
 message alone is still offered. On the simulator, a state the sandbox write was not recorded from reads «Not

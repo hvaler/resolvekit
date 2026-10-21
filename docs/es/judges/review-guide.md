@@ -55,13 +55,13 @@ alojado; un estado por variante
 | Acción de disputa | Estado |
 |---|---|
 | Enviar mensaje; aceptar la reclamación (reembolso total, o parcial, que PayPal registra como oferta); hacer una oferta de reembolso parcial; escalar; evidencia tras un escalado | **Verificado en sandbox** a través de la app (20/10/2026: el servidor de la rama ejecutado en local, un envío cada una, releído). El código está Desplegado (`81c6242`, 21/10/2026); estas acciones **no** se han ejercitado todavía en el servicio alojado |
-| Un mensaje con adjunto | Probado en local en el servidor y en el editor web (una subida confirmada); no enviado a PayPal a través de la app (V-7: preparada, pendiente de la aprobación del propietario) |
+| Un mensaje con adjunto | Verificado en sandbox a través de la app (V-7, 21/10/2026, ejecución local: una subida confirmada, registrada por PayPal con 1 documento); también Probado en local en el servidor y en el editor web. El código con este estado aún no está desplegado |
 | Oferta de sustitución · retirar una oferta · apelación · prueba de reembolso · tipos con devolución | **No disponible**, cada una con su motivo en el producto |
 
 Cada variante disponible se apoya en una escritura que el propietario aprobó en el sandbox el 20/10/2026 y en su
 relectura ([contratos de las acciones de disputa](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa));
 esas escrituras se hicieron fuera del flujo de la app, así que muestran el comportamiento de PayPal. Después se ejecutó
-el flujo propio de la app una vez por variante verificada (V-1 a V-6, misma página); solo la aceptación total (V-4)
+el flujo propio de la app una vez por variante verificada (V-1 a V-7, misma página); solo la aceptación total (V-4)
 movió dinero, un reembolso de sandbox de 7.00 USD.
 Los revisores solo pueden enviar mensajes (en la disputa activa de un caso vinculado); aceptar, ofertar y escalar son
 del Owner, con una segunda confirmación, y los demás ven una vista previa. Las acciones solo del Owner necesitan el

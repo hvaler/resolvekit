@@ -1,5 +1,5 @@
 /**
- * A message with one confirmed upload (send_message:file, W-3, Tested locally): the composer offers the case's
+ * A message with one confirmed upload (send_message:file, W-3, Verified in sandbox): the composer offers the case's
  * confirmed uploads only, one at most; the review and the confirmation show the file; the request carries its upload
  * id; the simulator plays it only from WAITING_FOR_BUYER_RESPONSE (W-3's starting state) and says why elsewhere. The
  * text-only message is unchanged.
@@ -70,7 +70,7 @@ const flowView = (state: ActionFlowState) =>
 describe('the composer: one confirmed upload of the case, at most', () => {
   it('offers the confirmed uploads only, by evidence number and title, with the variant label as the registry gives it', () => {
     const html = composer({ uploads: UPLOADS });
-    expect(html).toContain('Message with a file · Tested locally');
+    expect(html).toContain('Message with a file · Verified in sandbox');
     expect(html).toContain('E7');
     expect(html).toContain('tracking.txt');
     expect(html).toContain('E8');
@@ -93,7 +93,7 @@ describe('the composer: one confirmed upload of the case, at most', () => {
 
   it('no confirmed upload: says so (no upload UI here); no server: «Not available» with the reason', () => {
     const none = composer({ uploads: [PENDING] });
-    expect(none).toContain('Message with a file · Tested locally');
+    expect(none).toContain('Message with a file · Verified in sandbox');
     expect(none).toContain('No confirmed upload of this case to attach');
     expect(radios(none)).toHaveLength(0);
     const demo = composer({ uploads: null });

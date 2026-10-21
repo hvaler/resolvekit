@@ -150,9 +150,9 @@ reads before and after (private evidence, 20/10/2026). The code is now deployed 
 | V-4 | `accept_claim:REFUND` | PP-R-TYE-10193787 | «Recorded by PayPal» from the attributable `ACCEPT_CLAIM` entry (`response_option: REFUND`, the note), not from the state change; `UNDER_REVIEW`, then `RESOLVED` in the buyer's favour (`SELLER_ISSUED_REFUND`) by about +2 min; a 7.00 USD sandbox refund. The only run that moved money |
 | V-5 | `escalate` | PP-R-JHY-10193786 | «Recorded by PayPal» from the `ESCALATE` entry (the note, stage `INQUIRY`) about 1.5 s after; `UNDER_REVIEW` for about 10 min with `provide_evidence` flickering, never shown as closed; then `CHARGEBACK` · `WAITING_FOR_SELLER_RESPONSE` |
 | V-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | After one live analysis of the bound case, an edited sentence re-checked and a contradiction resolved by the owner: one `provide-evidence`, recorded as a `PROVIDE_EVIDENCE` entry in stage `CHARGEBACK` with 2 documents, next to the inquiry-stage `ESCALATE` entry |
+| V-7 | `send_message:file` | PP-R-GCV-10193596 (`WAITING_FOR_BUYER_RESPONSE`) | 21/10/2026 05:30Z, local server of `main` (`81c6242`): one confirmed, sanitised upload (a synthetic PNG, sent as `E7-upload.png`), its hash matching the approved one; one multipart send (202); «Recorded by PayPal» at about 1 s and again at +30 s; the new seller message has the exact text and 1 document; no money moved |
 
-Not verified through the app: `send_message:file` (the web composer attaches one confirmed upload; Tested locally on the
-server, contract write W-3; its app-flow verification, V-7, is prepared and pending the owner's approval) and every «Not available» variant.
+Not verified through the app: every «Not available» variant. The registry status of `send_message:file` (Verified in sandbox) is in `main` but not deployed yet.
 
 **W-11, the pending proof-of-refund test.** A disputed payment showed as held in the sandbox on 19/10/2026, and the
 seller's sandbox web pages offered no refund outside the case. The planned sequence is therefore: a new sandbox
@@ -274,6 +274,7 @@ in `WAITING_FOR_SELLER_RESPONSE` through `apps/server`, with our own `PayPal-Req
 | 19/10 | A payment with an open dispute showed as held; the seller's sandbox web pages offered no refund outside the case |
 | 20/10 | Owner-approved contract writes W-1 to W-12: [dispute action contracts](#dispute-action-contracts) |
 | 20/10 | Six variants sent once each through ResolveKit's own flow (local server of the unmerged branch) and read back, V-1 to V-6; only V-4 moved money (a 7.00 USD refund): [dispute action contracts](#dispute-action-contracts) |
+| 21/10 | A message with one confirmed, sanitised upload sent through ResolveKit's own flow (local server of `main`, `81c6242`) and read back «Recorded by PayPal» with 1 document, V-7; no money moved: [dispute action contracts](#dispute-action-contracts) |
 
 ## Unknown and not claimed
 

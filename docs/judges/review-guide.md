@@ -52,13 +52,13 @@ variant ([functional specification](../product/functional-specification.md#56-di
 | Dispute action | Status |
 |---|---|
 | Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Verified in sandbox** through the app (20/10/2026: the branch's server run locally, one send each, read back). The code is Deployed (`81c6242`, 21/10/2026); these actions have **not** yet been exercised on the hosted service |
-| A message with an attachment | Tested locally on the server and in the web composer (one confirmed upload); not sent to PayPal through the app (V-7: prepared, pending the owner's approval) |
+| A message with an attachment | Verified in sandbox through the app (V-7, 21/10/2026, a local run: one confirmed upload, recorded by PayPal with 1 document); also Tested locally on the server and in the web composer. The code with this status is not deployed yet |
 | Replacement offer · offer withdrawal · appeal · proof of refund · return types | **Not available**, each with its reason in the product |
 
 Each available variant rests on one write the owner approved in the sandbox on 20/10/2026 and its read-back
 ([dispute action contracts](../technical/paypal-integration.md#dispute-action-contracts)); those writes were made
 outside the app's flow, so they show PayPal's behaviour. The app's own flow was then run once per verified variant
-(V-1 to V-6, same page); only the full accept (V-4) moved money, a 7.00 USD sandbox refund. Reviewers may send messages only (on a bound case's active dispute); accept, offer
+(V-1 to V-7, same page); only the full accept (V-4) moved money, a 7.00 USD sandbox refund. Reviewers may send messages only (on a bound case's active dispute); accept, offer
 and escalate are the Owner's, with a second confirmation, and others see a preview. The owner-only actions need the
 settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet. ResolveKit never creates a refund.
 

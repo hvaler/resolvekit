@@ -186,7 +186,7 @@ Details: [Buying agent](../user-guide/buying-agent.md).
 ### 5.6 Dispute actions other than evidence
 
 Checked against commit `076c74f` (20/10/2026), the code now in the deployed `81c6242`; statuses updated after the runs through the app in the sandbox on
-20/10/2026 (V-1 to V-6). Each action variant has one status, taken from the contract registry
+20/10/2026 (V-1 to V-7). Each action variant has one status, taken from the contract registry
 (`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); the product shows the same label next to each variant. A
 variant is available only when its contract is recorded: PayPal's documentation, read-only sandbox reads, and one write
 the owner approved request by request, with its response and read-back (`packages/paypal/contracts/`).
@@ -194,7 +194,7 @@ the owner approved request by request, with its response and read-back (`package
 | Variant | What it is | Status | Contract write (sandbox, 20/10/2026) | Through the app (sandbox, 20/10/2026) |
 |---|---|---|---|---|
 | `send_message` | A text message to the buyer (1–2,000 characters) | Verified in sandbox | Recorded (W-1, W-2) | Recorded (V-1) |
-| `send_message:file` | A message with one confirmed upload attached | Tested locally: the server path and the web composer (one confirmed upload of the case, shown in the review and the confirmation; only from `WAITING_FOR_BUYER_RESPONSE`, as W-3, live and on the simulator; the text message keeps both statuses) | Recorded (W-3) | Not run (V-7: prepared, pending the owner's approval) |
+| `send_message:file` | A message with one confirmed upload attached | Verified in sandbox (V-7, 21/10/2026; also Tested locally: the server path and the web composer with one confirmed upload of the case, shown in the review and the confirmation; only from `WAITING_FOR_BUYER_RESPONSE`, as W-3, live and on the simulator; the code with this status is not deployed yet) | Recorded (W-3) | Recorded (V-7): «Recorded by PayPal»; one seller message with the exact text and 1 document; no money moved |
 | `accept_claim:REFUND` | Accept the claim with a full refund | Verified in sandbox | Recorded (W-10) | Recorded (V-4): resolved in the buyer's favour, 7.00 USD refunded |
 | `accept_claim:PARTIAL_REFUND` | Accept the claim with a partial refund, which PayPal records as an offer to the buyer | Verified in sandbox | Recorded (W-9) | Recorded as a pending offer (V-3); no money moved |
 | `escalate` | Escalate an inquiry to a claim | Verified in sandbox | Recorded (W-5) | Recorded (V-5); a claim about 10 min later |
@@ -206,9 +206,9 @@ the owner approved request by request, with its response and read-back (`package
 | `evidence:PROOF_OF_REFUND` | — | Not available: Not verified with PayPal: pending sandbox test (W-11) | Not sent (W-11, owner decision) | — |
 | `return_address` | The accept and offer types with a return (`REFUND_WITH_RETURN`, `REFUND_WITH_RETURN_SHIPMENT_LABEL`) | Not available: Not in this delivery (owner decision) | — | — |
 
-Six variants are **Verified in sandbox**: on 20/10/2026 each was sent once through the app's own flow (compose, approve
+Seven variants are **Verified in sandbox**: on 20/10/2026 (V-1 to V-6) and 21/10/2026 (V-7, the message with a file) each was sent once through the app's own flow (compose, approve
 by hash, a second confirmation when the action has terms, one send, an attributable read-back), by the server of the
-unmerged branch running locally against the sandbox (V-1 to V-6, see
+unmerged branch running locally against the sandbox (V-1 to V-7, see
 [PayPal integration](../technical/paypal-integration.md#dispute-action-contracts)). Only V-4, the full accept, moved
 money (a 7.00 USD sandbox refund). Separately, the contract writes of 20/10/2026 (W-1 to W-12) were prepared requests
 that the owner approved one by one, sent outside the app's own flow; they show what PayPal does and are what each
@@ -370,4 +370,4 @@ More: [Troubleshooting](../user-guide/troubleshooting.md).
   [5.6](#56-dispute-actions-other-than-evidence) (replacement offer, offer withdrawal, appeal, proof of refund, the
   return types); creating refunds; the live (production) PayPal environment; account or workspace deletion by the
   user. Message, accept, offer, escalate and evidence after an escalation are Verified in sandbox through the app
-  (20/10/2026), Deployed as code and not yet exercised on the hosted service; a message with an attachment is Tested locally (server and web composer). See [Limitations](limitations.md).
+  (20/10/2026), Deployed as code and not yet exercised on the hosted service; a message with an attachment is Verified in sandbox through the app (V-7, 21/10/2026; the code with this status is not deployed yet). See [Limitations](limitations.md).
