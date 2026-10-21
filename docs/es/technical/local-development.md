@@ -3,7 +3,7 @@
 # Desarrollo local
 
 Cómo instalar, ejecutar y probar ResolveKit en tu máquina, y qué comandos llegan a PayPal, a los proveedores de
-modelos o cuestan dinero. Código en el commit `5111b88`.
+modelos o cuestan dinero. Código en el commit `81c6242`.
 
 ## Requisitos
 
@@ -125,8 +125,8 @@ Opciones de `demo:prepare` (ver `USAGE` en `apps/server/scripts/demo-prepare-lib
 
 ## Tests
 
-Última ejecución completa: 20/10/2026, commit `5111b88`, Node 24, Windows: 1,453 tests, todos superados; typecheck
-limpio. Fuente: el registro de la ejecución guardado con el trabajo de documentación.
+Última ejecución completa: 21/10/2026, commit `81c6242`, Node 24, Windows: 1,474 tests, todos superados; typecheck
+limpio, build web correcto (20/10/2026, `5111b88`: 1,453). Fuente: el registro de la ejecución guardado con el trabajo de documentación.
 
 | Suite | Tests | Resultado |
 |---|---|---|

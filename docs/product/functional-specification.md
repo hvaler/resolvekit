@@ -2,11 +2,11 @@
 
 # Functional specification
 
-What ResolveKit does, for whom, under which rules, as built at commit `5111b88` (deployed 20/10/2026). The code is the
+What ResolveKit does, for whom, under which rules, as built at commit `81c6242` (deployed 21/10/2026). The code is the
 source of truth; where behaviour was only observed in the PayPal sandbox, this page says so. Status words: Designed ·
 Implemented · Tested locally · Verified in sandbox · Deployed · Available to users · Pending.
 
-Section 5.6 (dispute actions) was checked against commit `076c74f` (20/10/2026); that code is in `5111b88`, deployed on 20/10/2026.
+Section 5.6 (dispute actions) was checked against commit `076c74f` (20/10/2026); that code is in `81c6242`, deployed on 21/10/2026.
 
 Related: [Overview](overview.md) · [Limitations](limitations.md) · [HTTP API](../technical/http-api.md) ·
 [Trust boundaries](../architecture/trust-boundaries.md).
@@ -185,7 +185,7 @@ Details: [Buying agent](../user-guide/buying-agent.md).
 
 ### 5.6 Dispute actions other than evidence
 
-Checked against commit `076c74f` (20/10/2026), the code now in the deployed `5111b88`; statuses updated after the runs through the app in the sandbox on
+Checked against commit `076c74f` (20/10/2026), the code now in the deployed `81c6242`; statuses updated after the runs through the app in the sandbox on
 20/10/2026 (V-1 to V-6). Each action variant has one status, taken from the contract registry
 (`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); the product shows the same label next to each variant. A
 variant is available only when its contract is recorded: PayPal's documentation, read-only sandbox reads, and one write
@@ -194,7 +194,7 @@ the owner approved request by request, with its response and read-back (`package
 | Variant | What it is | Status | Contract write (sandbox, 20/10/2026) | Through the app (sandbox, 20/10/2026) |
 |---|---|---|---|---|
 | `send_message` | A text message to the buyer (1–2,000 characters) | Verified in sandbox | Recorded (W-1, W-2) | Recorded (V-1) |
-| `send_message:file` | A message with one confirmed upload attached | Tested locally: the server path and the web composer (one confirmed upload of the case, shown in the review and the confirmation; only from `WAITING_FOR_BUYER_RESPONSE`, as W-3, live and on the simulator; the text message keeps both statuses) | Recorded (W-3) | Not run |
+| `send_message:file` | A message with one confirmed upload attached | Tested locally: the server path and the web composer (one confirmed upload of the case, shown in the review and the confirmation; only from `WAITING_FOR_BUYER_RESPONSE`, as W-3, live and on the simulator; the text message keeps both statuses) | Recorded (W-3) | Not run (V-7: prepared, pending the owner's approval) |
 | `accept_claim:REFUND` | Accept the claim with a full refund | Verified in sandbox | Recorded (W-10) | Recorded (V-4): resolved in the buyer's favour, 7.00 USD refunded |
 | `accept_claim:PARTIAL_REFUND` | Accept the claim with a partial refund, which PayPal records as an offer to the buyer | Verified in sandbox | Recorded (W-9) | Recorded as a pending offer (V-3); no money moved |
 | `escalate` | Escalate an inquiry to a claim | Verified in sandbox | Recorded (W-5) | Recorded (V-5); a claim about 10 min later |
@@ -212,7 +212,7 @@ unmerged branch running locally against the sandbox (V-1 to V-6, see
 [PayPal integration](../technical/paypal-integration.md#dispute-action-contracts)). Only V-4, the full accept, moved
 money (a 7.00 USD sandbox refund). Separately, the contract writes of 20/10/2026 (W-1 to W-12) were prepared requests
 that the owner approved one by one, sent outside the app's own flow; they show what PayPal does and are what each
-contract rests on. The code of all of them is **Deployed** (`5111b88`, 20/10/2026), but these actions have **not** yet been exercised on
+contract rests on. The code of all of them is **Deployed** (`81c6242`, 21/10/2026), but these actions have **not** yet been exercised on
 the hosted service: the six runs above were made on a local server, so each variant keeps «Verified in sandbox» and
 nothing more. The owner-only actions need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not
 yet; reviewers can send messages on a bound case's active dispute.

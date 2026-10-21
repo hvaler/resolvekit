@@ -4,7 +4,7 @@
 
 Each service keeps its state in files on one data directory: on Render a 1 GB persistent disk mounted at
 `/var/data`, locally `apps/server/data/` and `apps/metermcp/data/` (both git-ignored). There is no database server.
-Code at commit `5111b88`.
+Code at commit `81c6242`.
 
 ## ResolveKit server data directory
 

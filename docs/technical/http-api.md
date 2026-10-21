@@ -7,7 +7,7 @@
 > them.
 
 Source: `apps/server/src/app.ts`, `hosted.ts`, `auth.ts`, `webhook.ts`, `uploads/routes.ts`, `agent/routes.ts` at
-commit `5111b88`; the dispute actions (`apps/server/src/actions/routes.ts`) were added in commit `076c74f` (20/10/2026). MeterMCP's routes are in [MCP tools](mcp-tools.md).
+commit `81c6242`; the dispute actions (`apps/server/src/actions/routes.ts`) were added in commit `076c74f` (20/10/2026). MeterMCP's routes are in [MCP tools](mcp-tools.md).
 
 ## Conventions
 

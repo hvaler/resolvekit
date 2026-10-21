@@ -13,7 +13,7 @@ that spends such a budget, so that a disputed agent purchase arrives with a per-
 
 ResolveKit prepares the response; PayPal decides the dispute. It is not affiliated with PayPal.
 
-Facts on this page come from the code at commit `5111b88` (deployed 20/10/2026) unless a date says otherwise. Status words
+Facts on this page come from the code at commit `81c6242` (deployed 21/10/2026) unless a date says otherwise. Status words
 follow one vocabulary: Designed · Implemented · Tested locally · Verified in sandbox · Deployed · Available to users ·
 Pending.
 
@@ -64,7 +64,7 @@ never run against the live (production) PayPal environment.
 
 Only one PayPal dispute action has been exercised end to end on the hosted service: **Provide evidence**. The case file
 lists the actions PayPal allows (for example «Send message», «Accept claim»). The code for sending a message, accepting
-a claim, making an offer and escalating is deployed (`5111b88`, 20/10/2026) and Verified in sandbox on a local run, but
+a claim, making an offer and escalating is deployed (`81c6242`, 21/10/2026) and Verified in sandbox on a local run, but
 those actions have not yet been exercised on the hosted service. ResolveKit creates no refund.
 
 ## What is real and what is synthetic

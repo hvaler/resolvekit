@@ -34,7 +34,7 @@ submission).
    Press **Explain in response** (adds a neutral sentence citing both) or **Mark resolved…** (records a note).
 6. In the draft, each sentence is **Supported**, **Needs review** or *Removed: no supporting evidence* (struck, never
    sent). **Edit** a sentence to see it checked again (*Re-checking support…*).
-7. Under **What to do**, the actions PayPal allows for this dispute are listed. The deployed commit (`5111b88`)
+7. Under **What to do**, the actions PayPal allows for this dispute are listed. The deployed commit (`81c6242`)
    includes the other dispute actions, but they have not yet been exercised on the hosted service: choosing **Send
    message**, **Accept claim**, **Make an offer** or **Escalate** opens its own composer, played on the simulator with
    the recorded PayPal transitions only; owner-only actions need the settlement case bound in the hosted

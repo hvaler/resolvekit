@@ -48,14 +48,14 @@ pero se envía al simulador del navegador en lugar de a PayPal.
 | MeterMCP | Una pasarela MCP de pago por uso: herramientas de pago (`quote_lookup` 0.05, `deep_report` 0.40, `bulk_export` 0.92 USD), las llamadas fallidas nunca se cobran, recibos con hashes de las peticiones | Verificado en sandbox · Desplegado |
 
 Solo `provide-evidence` se ha ejercitado de extremo a extremo a través de la app en el servicio alojado. Las demás
-acciones de disputa están en el código desplegado (`5111b88`, 20/10/2026), pero aún no se han ejercitado en el servicio
+acciones de disputa están en el código desplegado (`81c6242`, 21/10/2026), pero aún no se han ejercitado en el servicio
 alojado; un estado por variante
 ([especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)):
 
 | Acción de disputa | Estado |
 |---|---|
-| Enviar mensaje; aceptar la reclamación (reembolso total, o parcial, que PayPal registra como oferta); hacer una oferta de reembolso parcial; escalar; evidencia tras un escalado | **Verificado en sandbox** a través de la app (20/10/2026: el servidor de la rama ejecutado en local, un envío cada una, releído). El código está Desplegado (`5111b88`, 20/10/2026); estas acciones **no** se han ejercitado todavía en el servicio alojado |
-| Un mensaje con adjunto | Probado en local en el servidor y en el editor web (una subida confirmada); no enviado a PayPal a través de la app |
+| Enviar mensaje; aceptar la reclamación (reembolso total, o parcial, que PayPal registra como oferta); hacer una oferta de reembolso parcial; escalar; evidencia tras un escalado | **Verificado en sandbox** a través de la app (20/10/2026: el servidor de la rama ejecutado en local, un envío cada una, releído). El código está Desplegado (`81c6242`, 21/10/2026); estas acciones **no** se han ejercitado todavía en el servicio alojado |
+| Un mensaje con adjunto | Probado en local en el servidor y en el editor web (una subida confirmada); no enviado a PayPal a través de la app (V-7: preparada, pendiente de la aprobación del propietario) |
 | Oferta de sustitución · retirar una oferta · apelación · prueba de reembolso · tipos con devolución | **No disponible**, cada una con su motivo en el producto |
 
 Cada variante disponible se apoya en una escritura que el propietario aprobó en el sandbox el 20/10/2026 y en su

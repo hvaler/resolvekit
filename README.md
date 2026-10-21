@@ -54,9 +54,9 @@ Only `provide-evidence` has been exercised end to end through the app on the hos
 accepting a claim (full, or partial as an offer), making a partial-refund offer, escalating and sending evidence after
 an escalation are built from commit `076c74f` (20/10/2026), each on a sandbox contract the owner approved, and
 **Verified in sandbox** through the app on 20/10/2026 (one send each, on a local server). The code is **Deployed**
-(`5111b88`, 20/10/2026), but these actions have **not** yet been exercised on the hosted service: the owner-only ones
+(`81c6242`, 21/10/2026), but these actions have **not** yet been exercised on the hosted service: the owner-only ones
 need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on
-a bound case's active dispute. A message with an attachment is Tested locally on the server only. Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
+a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and stays Tested locally; its app-flow sandbox verification, V-7, is prepared and pending the owner's approval. Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
 **Not available**, each with its reason. ResolveKit never creates a refund. Per-variant status:
 [functional specification](docs/product/functional-specification.md#56-dispute-actions-other-than-evidence). Nothing
 has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).
@@ -145,17 +145,18 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 
 ## Verification
 
-- **Tests**: 20/10/2026, commit `5111b88` (`main`), Node 24 on Windows: 1,453 tests, all passed (node:test 36 + 32 + 12 +
-  159 + 52 + 635 + 80, vitest 447). Typecheck clean. Not run on Linux. Earlier run, 19/10/2026 12:35 UTC, commit
+- **Tests**: 21/10/2026, commit `81c6242` (`main`), Node 24 on Windows: 1,474 tests, all passed (node:test 36 + 32 + 12 +
+  159 + 52 + 637 + 80 = 1,008, vitest 471). Typecheck clean; web build OK. Not run on Linux. Earlier run, 20/10/2026,
+  commit `5111b88`: 1,453 tests, all passed (vitest 447). Earlier run, 19/10/2026 12:35 UTC, commit
   `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 passed, 1 failed intermittently
   (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` under full-suite
   load; it passed 3 of 3 run alone, twice). Details: [testing](docs/quality/testing.md) ·
   [known issues](docs/quality/known-issues.md).
-- **Deployment**: `5111b88` deployed on 20/10/2026 (the owner pushed it; Render auto-deployed it and a new web bundle
-  was observed). `demo:check` against the hosted URLs: PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
+- **Deployment**: `81c6242` deployed on 21/10/2026 (pushed; a new web bundle was observed). `demo:check` against the hosted URLs: PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
   connected, webhook on, both bindings verified, both AI models answered, both warm-ups cached; WARN on both reserves
   (0 fresh disputes); one FAIL, the known one: the standard case's binding is used and its reserve is empty (refill
-  planned 25-30/11). It cannot prove which commit is live. Earlier: `fbe9621`, 19/10/2026.
+  planned 25-30/11, when the owner-only settlement case will also be bound in the hosted `BINDINGS_JSON`). It cannot prove
+  which commit is live. Earlier: `5111b88`, 20/10/2026 (same `demo:check` result); `fbe9621`, 19/10/2026.
 - **Evaluations** (analyst only, synthetic cases): [evaluations](docs/quality/evaluations.md). Headline: on 12 held-out
   cases × 3 runs, 0 of 66 true notes rejected and 0 of 72 planted false notes sent, but only 17 of 66 true notes were
   judged supported (6 + 6 + 5; source: [evaluations](docs/quality/evaluations.md)); the rest went to review.

@@ -3,7 +3,7 @@
 # PayPal integration
 
 Which PayPal APIs ResolveKit calls, with which credential, what it relies on, and what was only observed in the
-sandbox. Code at commit `5111b88` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
+sandbox. Code at commit `81c6242` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
 on 19/10/2026 (developer.paypal.com).
 
 Three kinds of statement are kept apart on this page:
@@ -140,7 +140,7 @@ accept, offer and escalate, because that is all the writes covered.
 ResolveKit's own flow: the server of the unmerged branch `feat/dispute-actions` (head `9f93ba0`) running locally
 against the sandbox, each run approved by the owner beforehand, each going compose → approve by hash → second
 confirmation (when the action has terms) → one send → attributable read-back. One POST to PayPal per run, with GET
-reads before and after (private evidence, 20/10/2026). The code is now deployed (`5111b88`), but nothing was sent from the hosted service. Single observations, not PayPal rules.
+reads before and after (private evidence, 20/10/2026). The code is now deployed (`81c6242`), but nothing was sent from the hosted service. Single observations, not PayPal rules.
 
 | Run | Variant | Sandbox dispute | Observed through the app |
 |---|---|---|---|
@@ -152,7 +152,7 @@ reads before and after (private evidence, 20/10/2026). The code is now deployed 
 | V-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | After one live analysis of the bound case, an edited sentence re-checked and a contradiction resolved by the owner: one `provide-evidence`, recorded as a `PROVIDE_EVIDENCE` entry in stage `CHARGEBACK` with 2 documents, next to the inquiry-stage `ESCALATE` entry |
 
 Not verified through the app: `send_message:file` (the web composer attaches one confirmed upload; Tested locally on the
-server, contract write W-3) and every «Not available» variant.
+server, contract write W-3; its app-flow verification, V-7, is prepared and pending the owner's approval) and every «Not available» variant.
 
 **W-11, the pending proof-of-refund test.** A disputed payment showed as held in the sandbox on 19/10/2026, and the
 seller's sandbox web pages offered no refund outside the case. The planned sequence is therefore: a new sandbox

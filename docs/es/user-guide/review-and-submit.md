@@ -96,7 +96,7 @@ después, en su siguiente lectura, **solo si** queda alguna (a 19/10/2026 el cas
 
 Estado: **Probado en local** (con fakes construidos a partir de respuestas registradas de PayPal) · **Verificado en
 sandbox** a través de la app (20/10/2026, un envío cada una en un servidor local; salvo el mensaje con archivo). El
-código está Desplegado (`5111b88`, 20/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado;
+código está Desplegado (`81c6242`, 21/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado;
 las solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre, y
 los revisores pueden enviar mensajes en la disputa activa de un caso vinculado. Estado y reglas por variante:
 [Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).

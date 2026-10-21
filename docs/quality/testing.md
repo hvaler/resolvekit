@@ -26,8 +26,8 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 
 ## Latest recorded run
 
-**2026-10-20 · commit `5111b88` (deployed; with the dispute actions) · Node 24 · Windows.** `npm test` passed (every
-suite ran); `npm run typecheck` was clean. 1,453 tests, all passed.
+**2026-10-21 · commit `81c6242` (deployed) · Node 24 · Windows.** `npm test` passed (every
+suite ran); `npm run typecheck` was clean; the web build was OK. 1,474 tests, all passed.
 
 | Suite | Command | Tests | Pass | Fail |
 |---|---|---|---|---|
@@ -36,10 +36,12 @@ suite ran); `npm run typecheck` was clean. 1,453 tests, all passed.
 | `packages/cases` | `npm run test:cases` | 12 | 12 | 0 |
 | `packages/analyst` | `npm run test:analyst` | 159 | 159 | 0 |
 | `packages/agent` | `npm run test:agent` | 52 | 52 | 0 |
-| `apps/server` | `npm run test:server` | 635 | 635 | 0 |
+| `apps/server` | `npm run test:server` | 637 | 637 | 0 |
 | `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
-| `apps/web` (vitest) | `npm run test:web` | 447 | 447 | 0 |
-| Total | | 1,453 | 1,453 | 0 |
+| `apps/web` (vitest) | `npm run test:web` | 471 | 471 | 0 |
+| Total | | 1,474 | 1,474 | 0 |
+
+The run before that: **2026-10-20 · commit `5111b88` (deployed; with the dispute actions) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean. 1,453 tests, all passed (server 635, web 447, the other suites as above).
 
 The previous recorded run, before the merge:
 
@@ -126,7 +128,7 @@ evidence). An observation is one example, not a guarantee.
 | Six dispute-action variants sent once each through the app's own flow (the branch's server run locally) and read back «Recorded by PayPal», V-1 to V-6; only V-4 moved money, a 7.00 USD refund ([details](../technical/paypal-integration.md#dispute-action-contracts)) | 20/10 |
 
 **Not observed in the sandbox (Pending):** a message with an attachment sent through the app (the UI attaches one
-confirmed upload, Tested locally); the dispute actions on the deployed service; a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
+confirmed upload, Tested locally; V-7 is prepared and pending the owner's approval); the dispute actions on the deployed service; a PayPal timeout or uncertain send; MeterMCP `capture_pending`; agent
 restart recovery; **Stop** on a real run; the Groq fallback for the agent; pasted-text and PDF uploads sent to PayPal;
 passkey creation on the deployed service; the E5 run record on a bound case; `npm run demo-agent` against the hosted
 MeterMCP.
@@ -171,6 +173,6 @@ not by the model-driven agent.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
 - Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
-  was run once per verified variant (20/10/2026, a local server), not for the message with a file; the code is deployed (`5111b88`) but these actions have not been exercised on the hosted service.
+  was run once per verified variant (20/10/2026, a local server), not for the message with a file; the code is deployed (`81c6242`) but these actions have not been exercised on the hosted service.
 
 The full list, with sources, is in [Known issues](known-issues.md).

@@ -3,7 +3,7 @@
 # Limitaciones
 
 Lo que ResolveKit no hace, todavía no hace o no se ha demostrado que haga. Comprobado frente al código en el commit
-`5111b88` (desplegado el 20/10/2026) y las listas de seguimiento de `docs/superpowers/plans/`; las acciones de disputa, frente al
+`81c6242` (desplegado el 21/10/2026) y las listas de seguimiento de `docs/superpowers/plans/`; las acciones de disputa, frente al
 commit `076c74f` (20/10/2026). Los problemas de código para
 colaboradores están en [Problemas conocidos](../quality/known-issues.md); esta página recoge lo que necesita saber un
 usuario, un comerciante o un jurado.
@@ -13,8 +13,8 @@ usuario, un comerciante o un jurado.
 | Función | Situación hoy | Estado |
 |---|---|---|
 | Conectar las disputas de PayPal propias de un comerciante | Un comerciante que inicia sesión con **Continue with PayPal** recibe la pantalla de espera. La app no tiene código de Partner Referrals, `merchant-integrations` ni `PayPal-Auth-Assertion`. Se hicieron experimentos en sandbox fuera de la app (ver [Alta de comerciantes](../technical/merchant-onboarding.md)); no son una función | **Pendiente** (no implementado, no desplegado, no disponible) |
-| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el 20/10/2026 cada uno se envió una vez por el flujo propio de la app en el sandbox y se releyó (el servidor de la rama ejecutado en local). El código está desplegado (`5111b88`, 20/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado; las solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre. Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Verificado en sandbox · Desplegado (código); aún no ejercitado en el servicio alojado |
-| Un mensaje con adjunto | La ruta del servidor y el editor web están probados (una subida confirmada del caso); ningún mensaje con archivo se ha enviado a PayPal a través de la app | Probado en local (servidor e interfaz); a través de la app con PayPal: **Pendiente** |
+| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el 20/10/2026 cada uno se envió una vez por el flujo propio de la app en el sandbox y se releyó (el servidor de la rama ejecutado en local). El código está desplegado (`81c6242`, 21/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado; las solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre. Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Verificado en sandbox · Desplegado (código); aún no ejercitado en el servicio alojado |
+| Un mensaje con adjunto | La ruta del servidor y el editor web están probados (una subida confirmada del caso); ningún mensaje con archivo se ha enviado a PayPal a través de la app | Probado en local (servidor e interfaz); a través de la app con PayPal: **Pendiente** (V-7, preparada, pendiente de la aprobación del propietario) |
 | Oferta de sustitución | No disponible: «Not verified with PayPal: never offered on a sandbox dispute» | No disponible |
 | Retirar una oferta | No disponible: «PayPal documents no route to withdraw an offer» | No disponible |
 | Apelación | No disponible: «Not verified with PayPal: the sandbox could not produce an appealable dispute» | No disponible |
@@ -44,9 +44,9 @@ usuario, un comerciante o un jurado.
   análisis en directo y 30 recomprobaciones. Por dirección: 300 peticiones a la API y 60 lecturas de PayPal cada 5
   minutos; 20 subidas, tapados y lecturas de páginas de PDF cada 10 minutos. Un rechazo dice cuándo se restablece.
 - **Los redespliegues** provocan 1–2 minutos de errores (un servicio con disco no tiene despliegue sin interrupción).
-- **Qué commit está desplegado** no se puede demostrar desde fuera: `5111b88` se trata como desplegado por la
-  decisión del propietario de subirlo y un `demo:check` del 20/10/2026 correcto salvo la reserva vacía conocida del caso
-  estándar (`fbe9621` se trató como desplegado el 19/10/2026 del mismo modo).
+- **Qué commit está desplegado** no se puede demostrar desde fuera: `81c6242` se trata como desplegado por la
+  decisión del propietario de subirlo y un `demo:check` del 21/10/2026 correcto salvo la reserva vacía conocida del caso
+  estándar (`5111b88` el 20/10/2026 y `fbe9621` el 19/10/2026 se trataron como desplegados del mismo modo).
 
 ## Acciones de disputa
 

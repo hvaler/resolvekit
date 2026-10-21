@@ -2,7 +2,7 @@
 
 # Problemas conocidos
 
-Seguimientos abiertos, actualizados para el código en `5111b88` (desplegado el 20/10/2026); revisados línea a línea por primera vez en `fbe9621` (19/10/2026). Cada punto indica su fuente: el
+Seguimientos abiertos, actualizados para el código en `81c6242` (desplegado el 21/10/2026); revisados línea a línea por primera vez en `fbe9621` (19/10/2026). Cada punto indica su fuente: el
 archivo de seguimiento en [`docs/superpowers/plans/`](../../superpowers/plans/) y, cuando procede, la ubicación en el
 código. Los puntos marcados **por diseño** se mantienen a propósito, pero conviene conocerlos. Los límites del producto
 (lo que ResolveKit no hace) están en [Limitaciones](../product/limitations.md).
@@ -11,7 +11,7 @@ Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 · **AG** `2026-10-18-model-driven-agent-followups.md` · **ENV** `2026-10-18-three-environments-followups.md` ·
 **EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** la ejecución de tests del 19/10 ([Pruebas](testing.md)) ·
 **DA** el diseño de las acciones de disputa `docs/superpowers/specs/2026-10-19-dispute-actions-design.md` y el código
-en `076c74f` (20/10/2026), ahora en `5111b88`.
+en `076c74f` (20/10/2026), ahora en `81c6242`.
 
 ## Subidas y PDF
 
@@ -43,7 +43,7 @@ en `076c74f` (20/10/2026), ahora en `5111b88`.
 |---|---|---|
 | Importe reembolsable en otra moneda | Si el importe reembolsable de PayPal estuviera en una moneda distinta de la de la disputa, un importe se rechaza con `AMOUNT_ABOVE_REFUNDABLE` («The amount must be below / at most what PayPal would refund, <amount>») citando la otra moneda, sin decir que las monedas difieren. Nunca visto en el sandbox (todas las disputas eran en USD) | DA; `apps/web/src/domain/actions.ts` (comprobaciones de importe en `composeActionWith`) |
 | README de contratos desactualizado | `packages/paypal/contracts/README.md` sigue diciendo que no se envió ninguna escritura y que todas las variantes están «Not available»; el registro (`actionContracts.ts`) y los archivos registrados son el estado actual | DA; `packages/paypal/contracts/README.md` |
-| Mensaje con archivo no ejecutado a través de la app | El editor adjunta una subida confirmada (`send_message:file`, Probado en local en el servidor y en la interfaz), pero ningún mensaje con archivo se ha enviado a PayPal a través de la app; su relectura prueba el texto, no el archivo | DA; `apps/web/src/components/ActionComposer.tsx` |
+| Mensaje con archivo no ejecutado a través de la app | El editor adjunta una subida confirmada (`send_message:file`, Probado en local en el servidor y en la interfaz), pero ningún mensaje con archivo se ha enviado a PayPal a través de la app; su relectura prueba el texto, no el archivo; su verificación del flujo de la app, V-7, está preparada y pendiente de la aprobación del propietario | DA; `apps/web/src/components/ActionComposer.tsx` |
 | La respuesta del comprador a una oferta nunca se registró | Una oferta pendiente se juzga por el enlace `make_offer` en directo de PayPal y, como respaldo, cualquier entrada de oferta posterior la termina; los nombres de evento del comprador son desconocidos | DA; `actions.ts` (`pendingSellerOffer`) |
 | Las reglas cubren un motivo, una fase y los estados registrados | Aceptar, ofertar y escalar solo se componen en disputas de artículo no recibido que esperan al vendedor, un mensaje también mientras PayPal espera al comprador, y toda acción solo en `INQUIRY`, porque las escrituras registradas no cubrieron nada más; lo demás se rechaza, no se adivina (**por diseño**) | DA; `actions.ts` (`RECORDED_STAGES`, `RECORDED_STATUSES`, `ACTION_RULES`) |
 | «Ausente» tras 60 s es un riesgo residual | Una relectura prueba un envío ausente cuando PayPal no muestra ninguna entrada nueva del vendedor 60 s después de `send_started` y sigue ofreciendo la acción (`absentAfterMs`, el doble del retraso que mostró el sandbox). Si PayPal registrara alguna vez una entrada más tarde, un reintento tras «ausente» podría publicar la acción dos veces; nunca observado en el sandbox | DA; `actionContracts.ts` (`absentAfterMs`), `actionReadback.ts` (`proveSend`) |
@@ -51,7 +51,7 @@ en `076c74f` (20/10/2026), ahora en `5111b88`.
 | Apelación no comprobable en el sandbox | El sandbox se negó a producir una disputa apelable (W-7), así que la apelación sigue «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
 | `provide_supporting_info` no soportado | PayPal lo ofrece tras evidencia en una reclamación; ResolveKit no muestra nada que enviar | DA; `apps/web/src/domain/simulatedActions.ts` |
 | Prueba de reembolso no enviada | Si PayPal solo pide esa, en esta entrega no se puede enviar evidencia en esa disputa; W-11 es una prueba de sandbox pendiente | DA; `actionContracts.ts` |
-| El flujo de la app, verificado una vez por variante, no ejercitado en el servicio alojado | Cada variante verificada se envió una vez a través de la app en un servidor local (20/10/2026, V-1 a V-6): observaciones únicas. El mensaje con archivo y las variantes No disponibles no se ejecutaron a través de la app; el código está desplegado (`5111b88`) pero no se envió nada desde el servicio alojado (**Pendiente**); el caso de liquidación aún no está vinculado en el `BINDINGS_JSON` alojado | DA |
+| El flujo de la app, verificado una vez por variante, no ejercitado en el servicio alojado | Cada variante verificada se envió una vez a través de la app en un servidor local (20/10/2026, V-1 a V-6): observaciones únicas. El mensaje con archivo y las variantes No disponibles no se ejecutaron a través de la app; el código está desplegado (`81c6242`) pero no se envió nada desde el servicio alojado (**Pendiente**); el caso de liquidación aún no está vinculado en el `BINDINGS_JSON` alojado | DA |
 
 ## Entornos, inicio de sesión y health
 

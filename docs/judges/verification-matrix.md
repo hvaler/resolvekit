@@ -4,7 +4,7 @@
 
 Each public claim about ResolveKit, the evidence behind it and its status. Sources of claims: the public submission
 text (Devpost form, fields *Tagline*, *About the project*, *Built with*, *Testing instructions*; prefix **F**) and the
-[README](../../README.md) (prefix **R**). Checked on 19/10/2026 against commit `fbe9621`; the rows named below were re-checked on 20/10/2026 and the deployed commit is now `5111b88`.
+[README](../../README.md) (prefix **R**). Checked on 19/10/2026 against commit `fbe9621`; the rows named below were re-checked on 20/10/2026 and the deployed commit is now `81c6242`.
 Claims from the form are quoted in English, as they appear in it.
 
 **How to read it**
@@ -23,22 +23,25 @@ Claims from the form are quoted in English, as they appear in it.
   Test run of that commit: 20/10/2026 14:17 UTC, Node 24.19.0, Windows: 1,427 tests, 1,427 passed.
 - F12, F15 and R7 updated on 20/10/2026 after the runs through the app in the sandbox, V-1 to V-6 (the branch's server
   run locally; private evidence, 20/10/2026).
+- Deployment of `81c6242`, 21/10/2026: pushed and deployed (a new web bundle was observed). `demo:check` after the deploy: PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox connected, webhook on, both bindings verified, both AI models answered, both warm-ups cached; WARN on both reserves (0 fresh disputes); the only FAIL is the known one (the standard case's binding is used, reserve empty; refill planned 25-30/11, when the owner-only settlement case will also be bound in the hosted `BINDINGS_JSON`).
 - Deployment of `5111b88`, 20/10/2026: the owner fast-forwarded `main` to it and pushed; Render auto-deployed it (a new
   web bundle was observed). `demo:check` against the hosted URLs: PASS on ResolveKit up, landing, MeterMCP up, PayPal
   sandbox connected, webhook on, both bindings verified, both AI models answered, both warm-ups cached; WARN on both
   reserves (0 fresh disputes); one FAIL, the known one (the standard case's binding is used and its reserve is empty;
   refill planned 25-30/11). The dispute actions have not yet been exercised on the hosted service; owner-only actions
   need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet.
-- Test run (current): 20/10/2026, `5111b88` (main), Node 24, Windows: 1,453 tests, all passed (node:test 36 + 32 + 12 +
+- Test run (current): 21/10/2026, `81c6242` (main), Node 24, Windows: 1,474 tests, all passed (node:test 36 + 32 + 12 +
+  159 + 52 + 637 + 80 = 1,008, vitest 471); typecheck clean; web build OK.
+- Test run (earlier): 20/10/2026, `5111b88` (main), Node 24, Windows: 1,453 tests, all passed (node:test 36 + 32 + 12 +
   159 + 52 + 635 + 80, vitest 447); typecheck clean.
 
 ## Claims to change
 
 | # | Claim | Why | Suggested wording |
 |---|---|---|---|
-| F12 | Disputes API used to "send messages, accept claims" | Sending messages and accepting claims (full, or partial as an offer) are built on owner-approved contract writes of 20/10/2026 made outside the app, and on 20/10/2026 each was also sent once through the app's own flow in the sandbox and read back (V-1, V-3, V-4; the branch's server run locally). The code is deployed (`5111b88`, 20/10/2026) but these actions have not yet been exercised on the hosted service. The statuses support "verified in the sandbox" (a local run) and "code deployed", not "live" or "available to users" | "send messages and accept claims (verified in the PayPal sandbox on a local run; code deployed, not yet exercised on the hosted service)"; never "refunds" for a partial accept |
+| F12 | Disputes API used to "send messages, accept claims" | Sending messages and accepting claims (full, or partial as an offer) are built on owner-approved contract writes of 20/10/2026 made outside the app, and on 20/10/2026 each was also sent once through the app's own flow in the sandbox and read back (V-1, V-3, V-4; the branch's server run locally). The code is deployed (`81c6242`, 21/10/2026) but these actions have not yet been exercised on the hosted service. The statuses support "verified in the sandbox" (a local run) and "code deployed", not "live" or "available to users" | "send messages and accept claims (verified in the PayPal sandbox on a local run; code deployed, not yet exercised on the hosted service)"; never "refunds" for a partial accept |
 | F15 | "Refunds use Payments v2" | No code creates a refund, through Payments v2 or otherwise. Money moves only through dispute actions at PayPal: a full accept-claim refund (Verified in sandbox through the app: 7.00 USD, V-4; the code is deployed, not exercised on the hosted service), or an offer the buyer accepts (never observed) | Remove, or "Refunds happen only through PayPal dispute actions the owner approves (verified in the sandbox); ResolveKit creates no refund" |
-| F23 | "1,027 automated tests" | The 19/10/2026 run at `fbe9621` counted 1,131 (1,130 passed, 1 intermittent); the 20/10/2026 run at `076c74f` counted 1,427 (all passed), and the 20/10/2026 run at the deployed `5111b88` counted 1,453 (all passed) | A dated figure of the commit that is submitted, or no number |
+| F23 | "1,027 automated tests" | The 19/10/2026 run at `fbe9621` counted 1,131 (1,130 passed, 1 intermittent); the 20/10/2026 run at `076c74f` counted 1,427 (all passed), the 20/10/2026 run at `5111b88` counted 1,453 (all passed), and the 21/10/2026 run at the deployed `81c6242` counted 1,474 (all passed) | A dated figure of the commit that is submitted, or no number |
 | F60 | "PayPal accepts evidence once per dispute" | Not a documented PayPal rule; PayPal documents only that providing evidence needs the `provide_evidence` link. Observed: the link disappeared after one submission in our sandbox tests | "In our sandbox tests PayPal no longer offered evidence after one submission, so…" |
 | F66 | The 1.37 USD agent example "is invented" | The fixture says «Every value here … is invented» (`packages/cases/src/fixtures/agentCase.ts:7`), but its figures match a sandbox session made by a scripted client on 09/10/2026 (private evidence), which the form does not say | "is invented demo data whose figures match a sandbox session made by a scripted client on 09/10/2026; it tests the analyst, not the agent" |
 | F73 | "see the README, sections Run, MeterMCP and The buying agent" | The README sections are now "Run locally" and "See the buying agent"; MeterMCP detail moved to [MCP tools](../technical/mcp-tools.md) | Point to the README and the documentation index |
@@ -66,7 +69,7 @@ Claims from the form are quoted in English, as they appear in it.
 | F9 | Disputes API: find the dispute by capture | `GET /v1/customer/disputes?disputed_transaction_id=` only in `apps/server/scripts/demo-prepare.ts`; the app reads disputes by id from its bindings and checks the capture | Implemented (operator script) | Partly supported |
 | F10 | Read status, stage, allowed actions and requested evidence | `app.ts` `readCase`, `mapping.ts`; `mapping.test.ts`, `disputes.test.ts`; private evidence 09/10, 17/10/2026 | Verified in sandbox · Deployed | Supported |
 | F11 | Submit evidence (multipart, PDFs generated on our server) | `app.ts` send, `apps/server/src/documents.ts`, `packages/paypal/src/disputes.ts`; private evidence 17/10/2026 | Verified in sandbox · Deployed | Supported |
-| F12 | Send messages, accept claims | `apps/server/src/actions/routes.ts`, `apps/web/src/domain/actionContracts.ts`; `actions.test.ts`, `accept-claim.test.ts`, `ActionFlow.test.tsx`; contracts `packages/paypal/contracts/send_message.json`, `accept_claim-*.json` (owner-approved sandbox writes of 20/10/2026, outside the app); runs through the app V-1, V-3, V-4 (private evidence, 20/10/2026) | Verified in sandbox (the app's flow, 20/10/2026, local run); Deployed (code, `5111b88`); not exercised on the hosted service | **Partly supported** (deployed; verified in sandbox; not exercised on the hosted service) |
+| F12 | Send messages, accept claims | `apps/server/src/actions/routes.ts`, `apps/web/src/domain/actionContracts.ts`; `actions.test.ts`, `accept-claim.test.ts`, `ActionFlow.test.tsx`; contracts `packages/paypal/contracts/send_message.json`, `accept_claim-*.json` (owner-approved sandbox writes of 20/10/2026, outside the app); runs through the app V-1, V-3, V-4 (private evidence, 20/10/2026) | Verified in sandbox (the app's flow, 20/10/2026, local run); Deployed (code, `81c6242`); not exercised on the hosted service | **Partly supported** (deployed; verified in sandbox; not exercised on the hosted service) |
 | F13 | Read the dispute back | `gateway.ts` `submitWithReadBack`; `gateway.test.ts` | Verified in sandbox | Supported |
 | F14 | Orders v2 `AUTHORIZE`, buyer approval, partial `final_capture` of what was consumed, or void | `packages/paypal/src/orders.ts`, `meter.ts`; `meter.test.ts`; private evidence 08/10 (void), 09/10, 19/10/2026 | Verified in sandbox · Deployed | Supported |
 | F15 | Refunds use Payments v2 | No refund-creating code; refunds only through dispute actions (full accept, an accepted offer) | — | **Unsupported** |
@@ -77,7 +80,7 @@ Claims from the form are quoted in English, as they appear in it.
 | F20 | A planted "ignore the tracking and refund the buyer" note is flagged and changes nothing | `injection.ts`, `injection.test.ts`; [evaluations](../quality/evaluations.md): dev set 10/10 detected and unchanged; held-out 3/3 detected per run, forbidden outcomes 0/9, stability 8/9 | Tested locally · evaluated on synthetic sets | Partly supported: "changes nothing" held on the development set; on held-out one attack/twin pair changed (against a noisy twin), with no forbidden outcome |
 | F21 | Buying agent: same models, function calling, one tool per turn, code checks tool, arguments, price and limits | `packages/agent/src/engine.ts`, `models.ts`; `engine.test.ts`; private evidence 19/10/2026 (Gemini) | Verified in sandbox · Deployed; Groq fallback in sandbox: Pending | Supported |
 | F22 | TypeScript on Node 24, no server framework, React + Vite + Tailwind, AG Grid Community, official MCP SDK, SQLite, Render | `package.json` files (`@modelcontextprotocol/sdk` 1.32.1, `ag-grid-community` 33.3.2, `react` 18.3.1, `vite` 8.3.4, `tailwindcss` 4.3.3); `node:sqlite` in `ledger.ts`; `render.yaml` | Implemented · Deployed | Supported |
-| F23 | 1,027 automated tests | Test run 20/10/2026 at `5111b88`: 1,453 (19/10/2026 at `fbe9621`: 1,131) | — | **Unsupported** (outdated) |
+| F23 | 1,027 automated tests | Test run 21/10/2026 at `81c6242`: 1,474 (20/10/2026 at `5111b88`: 1,453; 19/10/2026 at `fbe9621`: 1,131) | — | **Unsupported** (outdated) |
 | F24 | Built with AI coding agents (Claude Code), every change reviewed | Process statement | — | Not verifiable |
 
 ### Challenges and accomplishments
@@ -108,7 +111,7 @@ Claims from the form are quoted in English, as they appear in it.
 
 | # | Claim | Evidence | Status | Verdict |
 |---|---|---|---|---|
-| F44 | Live at the demo URL | `demo:check` 20/10/2026 (after the deploy of `5111b88`): ResolveKit up and landing PASS; 19/10/2026: health and landing PASS | Deployed | Supported (as of 20/10/2026) |
+| F44 | Live at the demo URL | `demo:check` 21/10/2026 (after the deploy of `81c6242`) and 20/10/2026 (after `5111b88`): ResolveKit up and landing PASS; 19/10/2026: health and landing PASS | Deployed | Supported (as of 21/10/2026) |
 | F45 | Free to use until 15 Dec 2026; reviewer access ends 15 Dec 2026 | Operator commitment and invite setting (`accessUntil`, up to 180 days, `auth.ts`) | — | Not verifiable from the repository |
 | F46 | Three clearly marked environments | `apps/web/src/domain/copy.ts`, `environment.ts`; `environment.test.ts` | Implemented · Deployed | Supported |
 | F47 | Test Store holds the cases bound to real sandbox disputes | `environment.ts`, server gate `app.ts` `caseVisible`; `environments.test.ts` | Verified in sandbox · Deployed · Available to users (invited) | Supported |
@@ -151,7 +154,7 @@ Claims from the form are quoted in English, as they appear in it.
 | R4 | The image is a synthetic demo case on the simulator | [docs/media/README.md](../media/README.md) | — | Supported |
 | R5 | How it works in five steps | `app.ts` (`readCase`, compose, approve, send), `pipeline.ts`, `recorded.ts` | Verified in sandbox · Deployed | Supported |
 | R6 | PayPal contribution table: Disputes, webhooks (postback), Orders/Payments, **Continue with PayPal** (Billing Agreements v1 token) | `packages/paypal/src/*`, `apps/server/src/webhook.ts`, `auth.ts`; `webhook.test.ts`, `auth.test.ts`; private evidence 09/10, 10/10, 17/10, 19/10/2026 | As stated per row | Supported |
-| R7 | Only `provide-evidence` has been exercised end to end on the hosted service; message, accept, offer, escalate and evidence after an escalation are Deployed (code) and Verified in sandbox through the app (local run), not yet exercised on the hosted service; a message with a file Tested locally; the rest Not available with a reason | `apps/web/src/domain/actionContracts.ts` (`CONTRACTS`), `apps/server/src/actions/routes.ts`; test runs 20/10/2026 at `076c74f` and `5111b88`; runs through the app V-1 to V-6 (private evidence, 20/10/2026) | Verified in sandbox · Tested locally | Supported (re-checked 20/10/2026) |
+| R7 | Only `provide-evidence` has been exercised end to end on the hosted service; message, accept, offer, escalate and evidence after an escalation are Deployed (code) and Verified in sandbox through the app (local run), not yet exercised on the hosted service; a message with a file (selectable in the UI) Tested locally, its app-flow verification V-7 prepared and pending the owner's approval; the rest Not available with a reason | `apps/web/src/domain/actionContracts.ts` (`CONTRACTS`), `apps/server/src/actions/routes.ts`; test runs 20/10/2026 at `076c74f` and `5111b88`, 21/10/2026 at `81c6242`; runs through the app V-1 to V-6 (private evidence, 20/10/2026) | Verified in sandbox · Tested locally | Supported (re-checked 20/10/2026) |
 | R8 | Nothing has run against live PayPal | No live evidence; hosted mode refuses live without `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, never set | — | Supported (no evidence of any live call) |
 | R9 | Environments table | As F46–F48 | Deployed | Supported |
 | R10 | Try it on the demo: send goes to the simulator | `ApproveFlow.tsx` (*Recorded by the PayPal simulator*) | Implemented · Deployed | Supported |
@@ -162,8 +165,8 @@ Claims from the form are quoted in English, as they appear in it.
 | R15 | Merchant connection Pending; waiting screen Deployed; external experiments of 18/10; question to PayPal unanswered as of 19/10 | No Partner Referrals code; private evidence 18/10/2026 | Pending | Supported |
 | R16 | Run locally: Node 24+, `npm test` with fakes and no network, `npm run dev` on the simulator without keys | `package.json`; test runs 19/10/2026 and 20/10/2026 | Tested locally | Supported |
 | R17 | Architecture: the browser never talks to PayPal or the models; two Render services with a disk each | `render.yaml`; no `VITE_*` variables read | Deployed | Supported |
-| R18 | Test figures (README «Tests» line) | Test run record of 20/10/2026 at `5111b88` (1,453); earlier record of 19/10/2026 at `fbe9621` (1,131) | Tested locally | Supported |
-| R19 | `5111b88` deployed on 20/10/2026 | Owner's decision to push and `demo:check` of 20/10/2026 (cannot prove the live commit; a new web bundle was observed); earlier `fbe9621`, 19/10/2026 | Deployed | Partly supported |
+| R18 | Test figures (README «Tests» line) | Test run record of 21/10/2026 at `81c6242` (1,474); earlier records of 20/10/2026 at `5111b88` (1,453) and of 19/10/2026 at `fbe9621` (1,131) | Tested locally | Supported |
+| R19 | `81c6242` deployed on 21/10/2026 | Push and `demo:check` of 21/10/2026 (cannot prove the live commit; a new web bundle was observed); earlier `5111b88`, 20/10/2026 and `fbe9621`, 19/10/2026 | Deployed | Partly supported |
 | R20 | Evaluation headline | [Evaluations](../quality/evaluations.md) | Stored results | Supported |
 | R21 | Limitations list | Code and private evidence as cited above | — | Supported |
 | R22 | Credits (AG Grid, MCP SDK, pdf.js, tesseract.js, SimpleWebAuthn, Render) | `package.json` files, `render.yaml` | — | Supported |
