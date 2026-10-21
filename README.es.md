@@ -1,6 +1,41 @@
 [English](README.md) | [Español](README.es.md)
 
-# ResolveKit
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/brand/banner-dark.png">
+    <img alt="ResolveKit — respuestas a disputas de PayPal en las que cada frase cita su evidencia" src="docs/media/brand/banner-light.png" width="100%">
+  </picture>
+</h1>
+
+<p align="center">
+  <img alt="PayPal Disputes v1" src="https://img.shields.io/badge/PayPal-Disputes%20v1-0E5E61?style=flat-square&logo=paypal&logoColor=white">
+  <img alt="PayPal Orders v2" src="https://img.shields.io/badge/PayPal-Orders%20v2-0E5E61?style=flat-square&logo=paypal&logoColor=white">
+  <img alt="PayPal Payments v2" src="https://img.shields.io/badge/PayPal-Payments%20v2-0E5E61?style=flat-square&logo=paypal&logoColor=white">
+  <img alt="PayPal Webhooks" src="https://img.shields.io/badge/PayPal-Webhooks-0E5E61?style=flat-square&logo=paypal&logoColor=white">
+  <img alt="PayPal Sandbox" src="https://img.shields.io/badge/PayPal-Sandbox-0E5E61?style=flat-square&logo=paypal&logoColor=white">
+  <br>
+  <img alt="Gemini gemini-3.8-flash" src="https://img.shields.io/badge/Gemini-gemini--3.8--flash-4B3FA8?style=flat-square&logo=googlegemini&logoColor=white">
+  <img alt="Groq gpt-oss-120b" src="https://img.shields.io/badge/Groq-gpt--oss--120b-4B3FA8?style=flat-square">
+  <img alt="MCP SDK 1.32" src="https://img.shields.io/badge/MCP%20SDK-1.32-4B3FA8?style=flat-square&logo=modelcontextprotocol&logoColor=white">
+  <img alt="MeterMCP metered MCP gateway" src="https://img.shields.io/badge/MeterMCP-metered%20MCP%20gateway-4B3FA8?style=flat-square">
+  <br>
+  <img alt="TypeScript 5.6" src="https://img.shields.io/badge/TypeScript-5.6-1A1C1D?style=flat-square&logo=typescript&logoColor=white">
+  <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-1A1C1D?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="React 18" src="https://img.shields.io/badge/React-18-1A1C1D?style=flat-square&logo=react&logoColor=white">
+  <img alt="React Router 7" src="https://img.shields.io/badge/React%20Router-7-1A1C1D?style=flat-square&logo=reactrouter&logoColor=white">
+  <img alt="Vite 8" src="https://img.shields.io/badge/Vite-8-1A1C1D?style=flat-square&logo=vite&logoColor=white">
+  <img alt="Tailwind CSS 4" src="https://img.shields.io/badge/Tailwind%20CSS-4-1A1C1D?style=flat-square&logo=tailwindcss&logoColor=white">
+  <img alt="AG Grid 33" src="https://img.shields.io/badge/AG%20Grid-33-1A1C1D?style=flat-square">
+  <br>
+  <img alt="SQLite node:sqlite" src="https://img.shields.io/badge/SQLite-node%3Asqlite-2D6B68?style=flat-square&logo=sqlite&logoColor=white">
+  <img alt="Zod 3" src="https://img.shields.io/badge/Zod-3-2D6B68?style=flat-square&logo=zod&logoColor=white">
+  <img alt="Tesseract.js 7 · OCR" src="https://img.shields.io/badge/Tesseract.js-7%20%C2%B7%20OCR-2D6B68?style=flat-square">
+  <img alt="PDF.js 6" src="https://img.shields.io/badge/PDF.js-6-2D6B68?style=flat-square&logo=mozilla&logoColor=white">
+  <img alt="WebAuthn passkeys" src="https://img.shields.io/badge/WebAuthn-passkeys-2D6B68?style=flat-square&logo=webauthn&logoColor=white">
+  <img alt="Vitest 5" src="https://img.shields.io/badge/Vitest-5-2D6B68?style=flat-square&logo=vitest&logoColor=white">
+  <img alt="node:test 1,479 tests" src="https://img.shields.io/badge/node%3Atest-1%2C479%20tests-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="Render 2 services" src="https://img.shields.io/badge/Render-2%20services-2D6B68?style=flat-square&logo=render&logoColor=white">
+</p>
 
 **ResolveKit ayuda a un pequeño comerciante a responder a una disputa de PayPal con una respuesta en la que cada frase
 cita su evidencia, nada se envía sin la aprobación del comerciante y el resultado se relee desde PayPal.**

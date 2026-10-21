@@ -17,3 +17,10 @@ synthetic demo case; 5 and 6 are real PayPal sandbox disputes read through the l
 Notes: in 5 the bound sandbox dispute is for 1.37 USD while the demo order is 7.00 USD, and the app says so
 ("Demo binding mismatch"). In 6 the failed call is injected by MeterMCP's test switch, and the tool outputs are
 synthetic; the budget, capture and dispute are real sandbox records.
+
+## Brand
+
+| File | Use |
+|---|---|
+| `brand/banner-light.png`, `brand/banner-dark.png` | README header (2560×640), chosen by the reader's colour scheme. The draft card is illustrative: a struck sentence is one without evidence, never sent. |
+| `brand/logo.svg` | The mark (same shape as the web app's favicon), teal `#0E5E61`, `#5BBDB8` in dark mode. |
