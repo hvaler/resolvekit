@@ -4,7 +4,7 @@
 
 Each public claim about ResolveKit, the evidence behind it and its status. Sources of claims: the public submission
 text (Devpost form, fields *Tagline*, *About the project*, *Built with*, *Testing instructions*; prefix **F**) and the
-[README](../../README.md) (prefix **R**). Checked on 19/10/2026 against commit `fbe9621`; the rows named below were re-checked on 20/10/2026 and the deployed commit is now `c12faea`.
+[README](../../README.md) (prefix **R**). Checked on 19/10/2026 against commit `fbe9621`. Re-checked afterwards: F12, F15, F23 and R7 on 20/10/2026 (against `076c74f`), and F12 and R7 again on 21/10/2026; F71 updated on 29/10/2026 (daily caps). The other rows keep their 19/10/2026 check. The deployed code is `c12faea` (21/10/2026); it was last checked against the code on 29/10/2026.
 Claims from the form are quoted in English, as they appear in it.
 
 **How to read it**
@@ -140,7 +140,7 @@ Claims from the form are quoted in English, as they appear in it.
 | F68 | **Re-run with AI** about 30–60 s with stages; an edited sentence goes to the verifier | `AnalysisBar.tsx`, `app.ts` verify; private evidence 17/10/2026 (35 s re-analysis) | Verified in sandbox · Deployed | Supported |
 | F69 | MeterMCP from your own MCP client: `x-demo-code`, free tools, `payment_required` + `approval_url`, `get_balance`, `close_session` captures only successful calls, `get_receipt` with hashes, `capture_pending`, `demo_code_required` | `apps/metermcp/src/mcp.ts`, `tools.ts`, `app.ts`; `app.test.ts`, `hosted.test.ts` | Implemented · Tested locally · Deployed; an external client against the hosted endpoint: Pending; `capture_pending` never observed in sandbox | Partly supported (`get_receipt` is not charged but `price_list` does not list it as free) |
 | F70 | Run the same agent with `npm run demo-agent` against the hosted MeterMCP | `apps/metermcp/scripts/demo-agent.ts`; `demo-agent.test.ts` | Implemented · Tested locally; run against the hosted service: Pending | Partly supported |
-| F71 | Limits: per day 60 live runs, 200 re-checks, 20 sends, 20 agent runs (5 per person, one at a time), 20 budgets; per hour 6 and 30; per-IP limits | `apps/server/src/main.ts`, `hosted.ts`, `apps/metermcp/src/main.ts`, `render.yaml` | Implemented · Tested locally · Deployed | Supported (also 40 uploads per day) |
+| F71 | Limits: per day 60 live runs, 200 re-checks, 20 sends, 20 agent runs (5 per person, one at a time), 20 budgets, 20 messages, 20 settling actions; per hour 6 and 30; per-IP limits | `apps/server/src/main.ts`, `hosted.ts`, `apps/metermcp/src/main.ts`, `render.yaml` | Implemented · Tested locally · Deployed | Supported (also 40 uploads per day) |
 | F72 | Services may take a few seconds to answer after a redeploy | Private evidence: 1–2 minutes of 502 per deploy | Deployed | Partly supported (minutes, not seconds) |
 | F73 | README sections "Run", "MeterMCP", "The buying agent" | New README structure | — | **Unsupported** (outdated) |
 | F74 | Built with `playwright` | Not in any `package.json` | — | **Unsupported** |
@@ -164,7 +164,7 @@ Claims from the form are quoted in English, as they appear in it.
 | R12 | Agent: goal ≤300, cap 0.50–5.00, one tool per turn, budget = exactly the cap, approve with a buyer account, receipt, usage apart, injected outage | `apps/server/src/agent/routes.ts`, `engine.ts`; private evidence 19/10/2026 | Verified in sandbox · Deployed | Supported |
 | R13 | Runs of 19/10/2026: 0.05 / 1.95 and 0.92 / 1.08 | Private evidence 19/10/2026 | Verified in sandbox (examples) | Supported |
 | R14 | 1.37 USD case is invented demo data whose figures match a 09/10/2026 scripted-client sandbox session; tests the analyst | As F66 | — | Supported |
-| R15 | Merchant connection Pending; waiting screen Deployed; external experiments of 18/10; question to PayPal unanswered as of 19/10 | No Partner Referrals code; private evidence 18/10/2026 | Pending | Supported |
+| R15 | Merchant connection Pending; waiting screen Deployed; external experiments of 18/10; question to PayPal: no answer recorded as of 19/10/2026 | No Partner Referrals code; private evidence 18/10/2026 | Pending | Supported |
 | R16 | Run locally: Node 24+, `npm test` with fakes and no network, `npm run dev` on the simulator without keys | `package.json`; test runs 19/10/2026 and 20/10/2026 | Tested locally | Supported |
 | R17 | Architecture: the browser never talks to PayPal or the models; two Render services with a disk each | `render.yaml`; no `VITE_*` variables read | Deployed | Supported |
 | R18 | Test figures (README «Tests» line) | Test run record of 21/10/2026 at `c12faea` (1,479); earlier records of 21/10/2026 at `81c6242` (1,479), 20/10/2026 at `5111b88` (1,453) and of 19/10/2026 at `fbe9621` (1,131) | Tested locally | Supported |

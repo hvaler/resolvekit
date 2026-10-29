@@ -90,7 +90,7 @@ el envío.
 
 En nuestras pruebas en sandbox PayPal dejó de ofrecer `provide_evidence` tras un envío (una observación, no una regla
 documentada). En la evaluación en sandbox, un caso usado pasa a la siguiente disputa de su reserva unos 15 minutos
-después, en su siguiente lectura, **solo si** queda alguna (a 19/10/2026 el caso estándar no tiene ninguna).
+después, en su siguiente lectura, **solo si** queda alguna (a 29/10/2026 ningún caso tiene ninguna).
 
 ## Otras acciones de disputa
 

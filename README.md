@@ -147,7 +147,7 @@ merchant's own disputes or answer on their behalf. What is Deployed is the waiti
 app, on 18/10/2026, we ran sandbox experiments with a separate PayPal Platform app (Partner Referrals and
 `PayPal-Auth-Assertion`). In those few cases, a dispute on a payment the platform processed could be read and answered,
 while disputes on the seller's own invoices answered `403`. This is an observation of a few sandbox cases, not a
-PayPal rule; we asked PayPal on 18/10 and have no answer as of 19/10. Details:
+PayPal rule; we asked PayPal on 18/10 and have no answer recorded as of 19/10/2026. Details:
 [merchant onboarding](docs/technical/merchant-onboarding.md) · [limitations](docs/product/limitations.md).
 
 ## Run locally

@@ -219,7 +219,7 @@ propietario aprobó petición a petición, con su respuesta y su relectura (`pac
 
 Siete variantes están **Verificadas en sandbox**: el 20/10/2026 (V-1 a V-6) y el 21/10/2026 (V-7, el mensaje con archivo) cada una se envió una vez por el flujo propio de la app
 (componer, aprobar por hash, una segunda confirmación cuando la acción tiene términos, un envío, una relectura
-atribuible), con el servidor de la rama sin fusionar ejecutado en local contra el sandbox (V-1 a V-7, ver
+atribuible), con el servidor de la rama de acciones de disputa (ya fusionada en `main` y desplegada) ejecutado en local contra el sandbox (V-1 a V-7, ver
 [Integración con PayPal](../technical/paypal-integration.md#contratos-de-las-acciones-de-disputa)). Solo V-4, la
 aceptación total, movió dinero (un reembolso de sandbox de 7.00 USD). Aparte, las escrituras de contrato del 20/10/2026
 (W-1 a W-12) fueron peticiones preparadas que el propietario aprobó una a una, enviadas fuera del flujo propio de la

@@ -47,7 +47,7 @@ merchant's disputes, and an empty list must not be read as "this merchant has no
 
 A question asking whether third-party dispute access is limited to transactions processed through the partner, and
 whether a platform can manage all of a consented seller's disputes, was sent through the hackathon developer
-channel on **18/10/2026**. **No answer as of 19/10/2026.**
+channel on **18/10/2026**. **No answer recorded as of 19/10/2026.**
 
 ## What PayPal documents
 

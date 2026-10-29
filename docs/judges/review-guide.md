@@ -76,7 +76,7 @@ settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet. Resolv
 | An injected failure | **Simulated on purpose** | Only when *Simulate an outage* is ticked; labelled *injected*, never charged |
 | Every case in the Explore demo | **Simulated** | In-browser simulator, stored ("golden") analyses; nothing reaches PayPal |
 | The 1.37 USD agent case as it opens in the demo | **Synthetic demo data** | Invented demo data whose figures match a sandbox session made by a scripted client on 09/10/2026; tests the analyst, not the agent |
-| The bound agent case **PP-R-MMC-10190702** | **Real (sandbox)**, scripted client | Its receipt is from a session made by the earlier scripted client, not a model-driven run (as of 19/10/2026) |
+| The bound agent case **PP-R-MMC-10190702** | **Real (sandbox)**, scripted client | Its receipt is from a session made by the earlier scripted client, not a model-driven run (as of 29/10/2026) |
 
 ## Access and recommended environment
 
@@ -157,7 +157,7 @@ pasted-text sends to PayPal Pending. Details: [PDF review](../user-guide/pdf-rev
 | The send button reads **Evidence recorded by PayPal** and the draft is read-only | Someone already sent evidence to this sandbox dispute; in our sandbox tests PayPal's `provide_evidence` action disappeared after one submission (observed, not a documented rule) | Read the read-back, then come back later: about 15 minutes after a send, the next read moves the case to its next reserve dispute, **if the reserve has one**. Or walk the same flow in the Explore demo |
 | The case stays on a used dispute | The reserve of fresh sandbox disputes is empty (as of 29/10/2026 for both cases; new disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026) | Use the Explore demo for the send step (the default path until then); everything else in Test Store still works |
 | *PayPal is processing this new dispute. Actions appear shortly.* | A new sandbox dispute first shows `UNDER_REVIEW` with no seller actions; it opened after a few minutes in our tests | Wait a few minutes and open the case again |
-| A message with a reset time (for example *The demo's daily agent runs are used up; they reset at …*) | Shared caps: per day 60 live analyses, 200 re-checks, 20 evidence sends, 40 uploads, 20 agent runs (5 per person), 20 MeterMCP budgets; per hour 6 live analyses and 30 re-checks; per-address request limits | Wait for the stated time, or use the stored analysis and the Explore demo |
+| A message with a reset time (for example *The demo's daily agent runs are used up; they reset at …*) | Shared caps: per day 60 live analyses, 200 re-checks, 20 evidence sends, 40 uploads, 20 agent runs (5 per person), 20 MeterMCP budgets, 20 messages, 20 settling actions; per hour 6 live analyses and 30 re-checks; per-address request limits | Wait for the stated time, or use the stored analysis and the Explore demo |
 | *Seller workspace only* / *Sign in required* on **Re-run with AI** | You are not in the Test Store workspace | Open the reviewer link again |
 | One to two minutes of errors (502) right after a deploy (observed, private evidence) | Each service has a disk, so a deploy restarts it with no zero-downtime switch | Reload after two minutes |
 

@@ -5,7 +5,7 @@
 Cada afirmación pública sobre ResolveKit, la evidencia que la respalda y su estado. Fuentes de las afirmaciones: el
 texto público de la entrega (formulario de Devpost, campos *Tagline*, *About the project*, *Built with*, *Testing
 instructions*; prefijo **F**) y el [README](../../../README.es.md) (prefijo **R**). Comprobado el 19/10/2026 frente al
-commit `fbe9621`; las filas citadas abajo se recomprobaron el 20/10/2026 y el commit desplegado es ahora `c12faea`. Las afirmaciones del formulario se citan en inglés, tal como aparecen en él.
+commit `fbe9621`. Recomprobadas después: F12, F15, F23 y R7 el 20/10/2026 (frente a `076c74f`), y F12 y R7 de nuevo el 21/10/2026; F71 actualizada el 29/10/2026 (topes diarios). Las demás filas conservan su comprobación del 19/10/2026. El código desplegado es `c12faea` (21/10/2026); se comprobó por última vez contra el código el 29/10/2026. Las afirmaciones del formulario se citan en inglés, tal como aparecen en él.
 
 **Cómo leerla**
 
@@ -144,7 +144,7 @@ commit `fbe9621`; las filas citadas abajo se recomprobaron el 20/10/2026 y el co
 | F68 | **Re-run with AI** about 30–60 s with stages; an edited sentence goes to the verifier | `AnalysisBar.tsx`, verificación en `app.ts`; evidencia privada 17/10/2026 (reanálisis de 35 s) | Verificado en sandbox · Desplegado | Respaldada |
 | F69 | MeterMCP from your own MCP client: `x-demo-code`, free tools, `payment_required` + `approval_url`, `get_balance`, `close_session` captures only successful calls, `get_receipt` with hashes, `capture_pending`, `demo_code_required` | `apps/metermcp/src/mcp.ts`, `tools.ts`, `app.ts`; `app.test.ts`, `hosted.test.ts` | Implementado · Probado en local · Desplegado; un cliente externo contra el endpoint alojado: Pendiente; `capture_pending` nunca observado en sandbox | Parcialmente respaldada (`get_receipt` no se cobra, pero `price_list` no la lista como gratuita) |
 | F70 | Run the same agent with `npm run demo-agent` against the hosted MeterMCP | `apps/metermcp/scripts/demo-agent.ts`; `demo-agent.test.ts` | Implementado · Probado en local; ejecución contra el servicio alojado: Pendiente | Parcialmente respaldada |
-| F71 | Limits: per day 60 live runs, 200 re-checks, 20 sends, 20 agent runs (5 per person, one at a time), 20 budgets; per hour 6 and 30; per-IP limits | `apps/server/src/main.ts`, `hosted.ts`, `apps/metermcp/src/main.ts`, `render.yaml` | Implementado · Probado en local · Desplegado | Respaldada (también 40 subidas al día) |
+| F71 | Limits: per day 60 live runs, 200 re-checks, 20 sends, 20 agent runs (5 per person, one at a time), 20 budgets, 20 messages, 20 settling actions; per hour 6 and 30; per-IP limits | `apps/server/src/main.ts`, `hosted.ts`, `apps/metermcp/src/main.ts`, `render.yaml` | Implementado · Probado en local · Desplegado | Respaldada (también 40 subidas al día) |
 | F72 | Services may take a few seconds to answer after a redeploy | Evidencia privada: 1–2 minutos de 502 por despliegue | Desplegado | Parcialmente respaldada (minutos, no segundos) |
 | F73 | README sections "Run", "MeterMCP", "The buying agent" | Nueva estructura del README | — | **Sin respaldo** (desactualizada) |
 | F74 | Built with `playwright` | No está en ningún `package.json` | — | **Sin respaldo** |
@@ -168,7 +168,7 @@ commit `fbe9621`; las filas citadas abajo se recomprobaron el 20/10/2026 y el co
 | R12 | Agente: objetivo ≤300, tope 0.50–5.00, una herramienta por turno, presupuesto = exactamente el tope, aprobar con una cuenta buyer, recibo, uso aparte, caída inyectada | `apps/server/src/agent/routes.ts`, `engine.ts`; evidencia privada 19/10/2026 | Verificado en sandbox · Desplegado | Respaldada |
 | R13 | Ejecuciones del 19/10/2026: 0.05 / 1.95 y 0.92 / 1.08 | Evidencia privada 19/10/2026 | Verificado en sandbox (ejemplos) | Respaldada |
 | R14 | El caso de 1.37 USD son datos de demostración inventados cuyas cifras coinciden con una sesión de sandbox del cliente con guion del 09/10/2026; pone a prueba al analista | Como F66 | — | Respaldada |
-| R15 | Conexión de comerciantes Pendiente; pantalla de espera Desplegado; experimentos externos del 18/10; pregunta a PayPal sin respuesta a fecha de 19/10 | Sin código de Partner Referrals; evidencia privada 18/10/2026 | Pendiente | Respaldada |
+| R15 | Conexión de comerciantes Pendiente; pantalla de espera Desplegado; experimentos externos del 18/10; pregunta a PayPal: sin respuesta registrada a fecha de 19/10/2026 | Sin código de Partner Referrals; evidencia privada 18/10/2026 | Pendiente | Respaldada |
 | R16 | Ejecutar en local: Node 24+, `npm test` con dobles (fakes) y sin red, `npm run dev` en el simulador sin claves | `package.json`; ejecuciones de tests del 19/10/2026 y del 20/10/2026 | Probado en local | Respaldada |
 | R17 | Arquitectura: el navegador nunca habla con PayPal ni con los modelos; dos servicios de Render con un disco cada uno | `render.yaml`; no se lee ninguna variable `VITE_*` | Desplegado | Respaldada |
 | R18 | Cifras de tests (línea «Tests» del README) | Registro de la ejecución de tests del 21/10/2026 en `c12faea` (1,479); registros anteriores del 21/10/2026 en `81c6242` (1,479), del 20/10/2026 en `5111b88` (1,453) y del 19/10/2026 en `fbe9621` (1,131) | Probado en local | Respaldada |

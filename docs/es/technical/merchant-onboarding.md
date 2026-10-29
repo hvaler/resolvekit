@@ -49,7 +49,7 @@ comerciante no tiene disputas».
 
 El **18/10/2026** se envió, por el canal de desarrolladores del hackathon, una pregunta sobre si el acceso de
 terceros a las disputas está limitado a las transacciones procesadas a través del partner y si una plataforma puede
-gestionar todas las disputas de un vendedor que ha dado su consentimiento. **Sin respuesta a fecha de 19/10/2026.**
+gestionar todas las disputas de un vendedor que ha dado su consentimiento. **Sin respuesta registrada a fecha de 19/10/2026.**
 
 ## Qué documenta PayPal
 

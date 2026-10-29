@@ -156,7 +156,7 @@ espera que lo dice. Fuera de la aplicación, el 18/10/2026, hicimos experimentos
 PayPal Platform (Partner Referrals y `PayPal-Auth-Assertion`). En esos pocos casos, una disputa sobre un pago que había
 procesado la plataforma se pudo leer y responder, mientras que las disputas sobre facturas propias del vendedor
 respondieron `403`. Es una observación de unos pocos casos en sandbox, no una regla de PayPal; preguntamos a PayPal el
-18/10 y no tenemos respuesta a fecha de 19/10. Detalles:
+18/10 y no hay respuesta registrada a fecha de 19/10/2026. Detalles:
 [alta de comerciantes](docs/es/technical/merchant-onboarding.md) · [limitaciones](docs/es/product/limitations.md).
 
 ## Ejecutar en local
