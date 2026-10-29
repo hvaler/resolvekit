@@ -87,6 +87,21 @@ Detalles: [visión general del producto](docs/es/product/overview.md) · [pipeli
 | Google Gemini (`gemini-3.8-flash`), Groq (`openai/gpt-oss-120b`) como respaldo | Analista: hechos con citas literales, cronología, contradicciones, borrador, verificación frase a frase. Agente comprador: una llamada a herramienta por turno mediante function calling | Desplegado; analista medido solo en conjuntos sintéticos |
 | Código determinista | Comprobación de citas literales, comprobación de números, reglas para la acción y el tipo de evidencia, comprobaciones de presupuesto y límites para el agente | Implementado · Probado en local · Desplegado |
 
+**APIs de PayPal usadas** (endpoint → para qué; todas solo en sandbox; la tabla completa con quién las llama está en
+[Integración con PayPal](docs/es/technical/paypal-integration.md#endpoints-que-se-llaman-realmente)):
+
+- `POST /v1/oauth2/token`: token de acceso de cada app de PayPal (vendedor, identidad).
+- `GET /v1/customer/disputes/{id}`: leer una disputa (lectura del caso, composición, comprobación de vinculaciones, relectura por webhook, relectura tras el envío).
+- `POST /v1/customer/disputes/{id}/provide-evidence`: enviar la evidencia (notas y archivos PDF/PNG).
+- `POST /v1/customer/disputes/{id}/send-message` · `accept-claim` · `make-offer` · `escalate`: el resto de las acciones de disputa.
+- `POST /v1/notifications/verify-webhook-signature`: verificar los webhooks `CUSTOMER.DISPUTE.*` con el método de postback de PayPal.
+- `POST` y `GET /v1/billing-agreements/agreement-tokens`: inicio de sesión con un token de acuerdo sin cargo.
+- `POST /v2/checkout/orders` (`AUTHORIZE`) · `GET …/{id}` · `POST …/{id}/authorize`: el presupuesto del agente en MeterMCP.
+- `GET /v2/payments/authorizations/{id}` · `POST …/capture` · `POST …/void`, `GET /v2/payments/captures/{id}`:
+  liquidación y conciliación de MeterMCP.
+
+El código está en `packages/paypal/src/` (`disputes.ts`, `webhooks.ts`, `identity.ts`, `orders.ts`).
+
 Solo `provide-evidence` se ha ejercitado de extremo a extremo a través de la app en el servicio alojado. Enviar un
 mensaje, aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial, escalar y
 enviar evidencia tras un escalado están construidos desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato

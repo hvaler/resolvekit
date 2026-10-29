@@ -85,6 +85,21 @@ Details: [product overview](docs/product/overview.md) · [AI pipeline](docs/tech
 | Google Gemini (`gemini-3.8-flash`), Groq (`openai/gpt-oss-120b`) as fallback | Analyst: facts with verbatim quotes, timeline, contradictions, draft, per-sentence verification. Buying agent: one tool call per turn through function calling | Deployed; analyst measured on synthetic sets only |
 | Deterministic code | Verbatim-quote check, numbers check, rules for action and evidence type, budget and limit checks for the agent | Implemented · Tested locally · Deployed |
 
+**PayPal APIs used** (endpoint → what for; all of them sandbox only; the full table with callers is in
+[PayPal integration](docs/technical/paypal-integration.md#endpoints-actually-called)):
+
+- `POST /v1/oauth2/token`: access token for each PayPal app (seller, identity).
+- `GET /v1/customer/disputes/{id}`: read a dispute (case read, composing, bindings check, webhook re-read, read-back).
+- `POST /v1/customer/disputes/{id}/provide-evidence`: send the evidence (notes and PDF/PNG files).
+- `POST /v1/customer/disputes/{id}/send-message` · `accept-claim` · `make-offer` · `escalate`: the other dispute actions.
+- `POST /v1/notifications/verify-webhook-signature`: verify `CUSTOMER.DISPUTE.*` webhooks by PayPal's postback method.
+- `POST` and `GET /v1/billing-agreements/agreement-tokens`: sign-in with a no-charge agreement token.
+- `POST /v2/checkout/orders` (`AUTHORIZE`) · `GET …/{id}` · `POST …/{id}/authorize`: MeterMCP's agent budget.
+- `GET /v2/payments/authorizations/{id}` · `POST …/capture` · `POST …/void`, `GET /v2/payments/captures/{id}`:
+  MeterMCP's settlement and reconciliation.
+
+The code is in `packages/paypal/src/` (`disputes.ts`, `webhooks.ts`, `identity.ts`, `orders.ts`).
+
 Only `provide-evidence` has been exercised end to end through the app on the hosted service. Sending a message,
 accepting a claim (full, or partial as an offer), making a partial-refund offer, escalating and sending evidence after
 an escalation are built from commit `076c74f` (20/10/2026), each on a sandbox contract the owner approved, and
