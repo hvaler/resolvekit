@@ -104,7 +104,7 @@ if (hosted) {
 const allowedOrigins = process.env.METERMCP_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
 
 const app = createApp({ meter, env, port, token, allowedOrigins, log, hosted: hostedOpts });
-const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`));
+const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`, { log }));
 server.listen(port, host, () => {
   log(`MeterMCP on http://${host}:${port}/mcp · public ${publicUrl} · PayPal ${paypal ? env : 'unconfigured'} · budget ${minBudget}–${budget} USD · idle close ${idleMs / 60_000} min${hosted ? ' · hosted mode' : ''}`);
   if (failFirst.length) log(`TEST SWITCH: the first ${failFirst.join(', ')} call of each payment_required session fails (not charged; open_budget sessions follow their own fail_first)`);
