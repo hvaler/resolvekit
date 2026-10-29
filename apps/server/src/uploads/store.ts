@@ -10,9 +10,9 @@
  * here logs bytes or text.
  */
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeFileDurable } from '@resolvekit/hosting';
+import { preserveCorrupt, writeFileDurable } from '@resolvekit/hosting';
 import { UploadError, type Rect } from './image.ts';
 import { PDF_MAX_PAGES, PENDING_TTL_MS } from './limits.ts';
 import type { TextRemoval } from './text.ts';
@@ -76,6 +76,8 @@ export type NewUpload = Pick<UploadRecord, 'workspaceId' | 'caseId' | 'boundDisp
 
 const ID = /^upl-[0-9a-f]{24}$/;
 const WORKSPACE = /^[A-Za-z0-9_-]{1,64}$/;
+/** The suffix of an upload directory moved aside because its record could not be read (preserveCorrupt). */
+const CORRUPT = '.corrupt-';
 const LIVE: UploadStatus[] = ['pending', 'reviewing'];
 /** Statuses that keep the record only: no files, no text. */
 const STRIPPED: UploadStatus[] = ['discarded', 'deleted', 'archived'];
@@ -292,8 +294,11 @@ export class UploadStore {
     return gone;
   }
 
-  /** Discard expired pending/reviewing uploads (record kept), and remove directories and files nothing refers to. */
-  sweep(): { expired: number; orphans: number } {
+  /**
+   * Discard expired pending/reviewing uploads (record kept), and remove directories and files nothing refers to. A
+   * directory with an unreadable record is moved aside instead (`corrupt`), never removed.
+   */
+  sweep(): { expired: number; orphans: number; corrupt: number } {
     const nowIso = this.now().toISOString();
     let expired = 0, orphans = 0;
     for (const r of [...this.records.values()]) {
@@ -321,8 +326,8 @@ export class UploadStore {
         }
       }
     }
-    if (this.dir) orphans += this.sweepDisk();
-    return { expired, orphans };
+    const disk = this.dir ? this.sweepDisk() : { orphans: 0, corrupt: 0 };
+    return { expired, orphans: orphans + disk.orphans, corrupt: disk.corrupt };
   }
 
   /**
@@ -478,20 +483,33 @@ export class UploadStore {
     }
   }
 
-  /** Directories without a readable record, and stray tmp files in the others. */
-  private sweepDisk(): number {
-    let n = 0;
+  /**
+   * Directories without a record (a crash before the record was written), and stray tmp files in the others. A
+   * directory whose record.json exists but cannot be read is never deleted (it may hold confirmed evidence): it is
+   * moved aside as `<id>.corrupt-<time>`, counted in `corrupt`, and left alone afterwards.
+   */
+  private sweepDisk(): { orphans: number; corrupt: number } {
+    let orphans = 0, corrupt = 0;
     for (const ws of this.subdirs(this.dir!)) {
       if (!WORKSPACE.test(ws)) continue;
       for (const id of this.subdirs(join(this.dir!, ws))) {
+        if (id.includes(CORRUPT)) continue;
         const known = this.records.get(id);
         const d = join(this.dir!, ws, id);
         try {
-          if (!known || known.workspaceId !== ws) { rmSync(d, { recursive: true, force: true }); n++; continue; }
+          if (!known || known.workspaceId !== ws) {
+            if (existsSync(join(d, 'record.json')) && !this.readRecord(ws, id)) {
+              if (preserveCorrupt(d, this.now())) corrupt++;
+              continue;
+            }
+            rmSync(d, { recursive: true, force: true });
+            orphans++;
+            continue;
+          }
           for (const f of readdirSync(d)) if (f.endsWith('.tmp')) rmSync(join(d, f), { recursive: true, force: true });
         } catch { /* leave it for the next sweep */ }
       }
     }
-    return n;
+    return { orphans, corrupt };
   }
 }

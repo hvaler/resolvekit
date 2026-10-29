@@ -163,6 +163,8 @@ const sweepStores = (when: string) => {
   try {
     const s = uploads.sweep();
     if (when === 'at start' || s.expired || s.orphans) log(`uploads · sweep ${when} · ${s.expired} expired · ${s.orphans} leftover(s) removed`);
+    // Never deleted: kept on disk for a person to inspect and restore.
+    if (s.corrupt) log(`ERROR uploads · sweep ${when} · ${s.corrupt} upload folder(s) with an unreadable record.json moved aside as <id>.corrupt-<time>`);
   } catch (e) {
     log(`uploads · sweep ${when} failed · ${(e as Error).name}`);
   }

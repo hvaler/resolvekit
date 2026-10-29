@@ -101,6 +101,28 @@ test('sweep removes directories with no record (a crash mid-write) and leftover 
   assert.equal(s.sanitised(r.id)!.length, 2);
 });
 
+test('sweep never deletes a directory whose record.json is unreadable: it is moved aside as <id>.corrupt-<time> and reported', () => {
+  const dir = tmp();
+  const t = new Date('2026-10-29T10:00:00Z');
+  const first = new UploadStore({ dir, now: () => t });
+  const r = first.create(base(), bytes(5));
+  first.update(r.id, { status: 'confirmed', mime: 'image/png' }, { original: null, sanitised: bytes(2) });
+  // The disk damaged the record of a confirmed upload; its evidence file is still there.
+  writeFileSync(join(dir, 'ws1', r.id, 'record.json'), '{"id": "upl-trunc');
+  const s = new UploadStore({ dir, now: () => t });
+  assert.equal(s.get(r.id), null);
+  const res = s.sweep();
+  assert.equal(res.corrupt, 1);
+  assert.equal(res.orphans, 0);
+  const aside = `${r.id}.corrupt-2026-10-29T10-00-00.000Z`;
+  assert.deepEqual(readdirSync(join(dir, 'ws1')), [aside]);
+  assert.deepEqual(readdirSync(join(dir, 'ws1', aside)).sort(), ['record.json', 'sanitised.png']);
+  // Later sweeps and restarts leave the moved-aside folder alone.
+  assert.deepEqual(s.sweep(), { expired: 0, orphans: 0, corrupt: 0 });
+  assert.deepEqual(new UploadStore({ dir }).sweep(), { expired: 0, orphans: 0, corrupt: 0 });
+  assert.deepEqual(readdirSync(join(dir, 'ws1')), [aside]);
+});
+
 test('archiveCase moves pending, reviewing and confirmed uploads of that case and dispute to archived; other cases and disputes untouched', () => {
   const s = new UploadStore({ dir: null });
   const a = s.create(base(), bytes(1));
