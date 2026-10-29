@@ -71,7 +71,6 @@ No las ejecutes salvo que sea tu intención, con tus propias claves y cuentas de
   exactamente como en el producto.
 - Indica el estado con las palabras del proyecto (Diseñado, Implementado, Probado en local, Verificado en sandbox,
   Desplegado, Disponible para usuarios, Pendiente) y da a cada cifra su fecha y su commit.
-- `docs/superpowers/` guarda planes y especificaciones como historial: no lo reescribas.
 
 ## Licencia
 

@@ -68,7 +68,6 @@ Do not run these unless you mean to, with your own keys and sandbox accounts:
 - Keep commands, environment variables, API routes and UI control names exactly as in the product.
 - State status with the project's words (Designed, Implemented, Tested locally, Verified in sandbox, Deployed,
   Available to users, Pending), and give every figure its date and commit.
-- `docs/superpowers/` holds plans and specs as history: do not rewrite it.
 
 ## License
 

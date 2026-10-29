@@ -8,7 +8,7 @@ What is tested, how, with which result, and what is not. Three kinds of evidence
 |---|---|---|
 | **Automated tests (simulated)** | `node --test` and `vitest` suites with a fake PayPal, a fake model and in-memory or temporary stores. No network, no keys, no cost | The repository (`npm test`) |
 | **Sandbox observations** | Things done by hand, or by the deployed app, against the real PayPal sandbox and real models, and recorded at the time | The owner's private evidence notes (dates below). Not reproducible by readers; ids and screenshots are withheld |
-| **Browser checks** | Manual walk-throughs in a browser | Plan follow-ups (`docs/superpowers/`) and private evidence. There are **no automated browser tests** |
+| **Browser checks** | Manual walk-throughs in a browser | The maintainers' follow-up lists and private evidence. There are **no automated browser tests** |
 
 The **analyst evaluations** (model quality on synthetic cases) are a fourth thing, with their own page:
 [Analyst evaluations](evaluations.md). They are not part of `npm test`.

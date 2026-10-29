@@ -3,7 +3,7 @@
 # Limitaciones
 
 Lo que ResolveKit no hace, todavía no hace o no se ha demostrado que haga. Comprobado frente al código en el commit
-`c12faea` (desplegado el 21/10/2026) y las listas de seguimiento de `docs/superpowers/plans/`; las acciones de disputa, frente al
+`c12faea` (desplegado el 21/10/2026) y las listas de seguimiento de los mantenedores; las acciones de disputa, frente al
 commit `076c74f` (20/10/2026). Los problemas de código para
 colaboradores están en [Problemas conocidos](../quality/known-issues.md); esta página recoge lo que necesita saber un
 usuario, un comerciante o un jurado.

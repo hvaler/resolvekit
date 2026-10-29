@@ -171,23 +171,22 @@ Details: [buying agent](../technical/buying-agent.md), [MCP tools](../technical/
 
 ## Key decisions
 
-The recorded design decisions live in the specs and plans under [`docs/superpowers/`](../superpowers/specs/)
-(history; not rewritten). The decisions that shape the current architecture:
+The decisions that shape the current architecture, with the reason and where to see them in the code:
 
 | Decision | Why / trade-off | Source |
 |---|---|---|
 | The browser never talks to PayPal or a model; the server builds every analyst input and every submission itself | Request bodies cannot inject notes, files or documents; costs one server round-trip per action | `apps/server/src/app.ts` (analyst input built on the server), `apps/web/src/domain/intent.ts` (`parseIntentRequest`, refused fields) |
-| The merchant approves a server-composed intent by its content hash; the send re-composes from a fresh PayPal read and refuses any difference | Approval binds exact content; a changed dispute, document or binding forces a new review | [three environments spec](../superpowers/specs/2026-10-18-three-environments-design.md) («Evaluation keeps today's guarantees») |
-| Three environments, decided on the server; the demo never touches the send path | Judges and visitors cannot reach real PayPal by accident; a third "connected" source stays possible | [three environments spec](../superpowers/specs/2026-10-18-three-environments-design.md), [plan](../superpowers/plans/2026-10-18-three-environments.md) |
-| Uploads are read on our own server; redaction by the merchant before any model or PayPal sees the file; one sanitised version for the AI and for PayPal | No external service sees unredacted files; OCR quality is limited to local tesseract | [merchant evidence spec](../superpowers/specs/2026-10-17-merchant-evidence-design.md), [plan](../superpowers/plans/2026-10-17-merchant-evidence-phase1.md) |
-| PDFs are rasterised in a child process, covered, OCR'd from pixels, and rebuilt as image-only PDFs | Covered content cannot survive in text layers, metadata or attachments; the PDF sent has no selectable text | [PDF spec](../superpowers/specs/2026-10-18-merchant-evidence-pdf-design.md), [plan](../superpowers/plans/2026-10-18-merchant-evidence-pdf.md) |
-| The buying agent is model-driven (function calling, one action per turn) and code validates every action; settlement is code's | Real decisions with hard limits; no scripted fallback, so without a model the run stops | [agent spec](../superpowers/specs/2026-10-18-model-driven-agent-design.md), [plan](../superpowers/plans/2026-10-18-model-driven-agent.md) |
+| The merchant approves a server-composed intent by its content hash; the send re-composes from a fresh PayPal read and refuses any difference | Approval binds exact content; a changed dispute, document or binding forces a new review | `apps/server/src/app.ts` (send route), [trust boundaries](trust-boundaries.md) |
+| Three environments, decided on the server; the demo never touches the send path | Judges and visitors cannot reach real PayPal by accident; a third "connected" source stays possible | [trust boundaries](trust-boundaries.md), [configuration](../technical/configuration.md) |
+| Uploads are read on our own server; redaction by the merchant before any model or PayPal sees the file; one sanitised version for the AI and for PayPal | No external service sees unredacted files; OCR quality is limited to local tesseract | [evidence processing](../technical/evidence-processing.md), [data and storage](data-and-storage.md) |
+| PDFs are rasterised in a child process, covered, OCR'd from pixels, and rebuilt as image-only PDFs | Covered content cannot survive in text layers, metadata or attachments; the PDF sent has no selectable text | `packages/pdf`, [evidence processing](../technical/evidence-processing.md) |
+| The buying agent is model-driven (function calling, one action per turn) and code validates every action; settlement is code's | Real decisions with hard limits; no scripted fallback, so without a model the run stops | [buying agent](../technical/buying-agent.md) |
 | MeterMCP budget = Orders v2 `AUTHORIZE` for exactly the cap; settlement = one final partial capture or a void | The buyer approves once; failed calls are never charged; an authorization is valid for a limited time | `apps/metermcp/src/meter.ts`, [PayPal integration](../technical/paypal-integration.md) |
 | Sign-in uses a no-charge Billing Agreements token of a second PayPal app | Log in with PayPal answered 400 in our sandbox and a seller cannot approve its own app; the API family is deprecated | `packages/paypal/src/identity.ts`, [trust boundaries](trust-boundaries.md) |
 | Files on a persistent disk (JSON, JSONL, SQLite), one instance per service | Simple and inspectable; no horizontal scaling, no zero-downtime deploy, no backups in code | [data and storage](data-and-storage.md) |
-| Evaluations: fixed sets, figures quoted only from the committed summary | Rates are never compared across different sets | [H-04 spec](../superpowers/specs/2026-10-19-analyst-evals-h04-design.md), [evaluations](../quality/evaluations.md) |
+| Evaluations: fixed sets, figures quoted only from the committed summary | Rates are never compared across different sets | [evaluations](../quality/evaluations.md) |
 
-There is no `docs/architecture/decisions/` folder: the specs above are the decision record.
+There is no `docs/architecture/decisions/` folder: the table above is the decision record.
 
 ## Current architecture and future evolution
 

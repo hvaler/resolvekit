@@ -157,6 +157,6 @@ test, no varios comerciantes reales.
 - Las acciones de disputa se apoyan en una escritura de sandbox por variante (20/10/2026); PayPal puede comportarse de
   otro modo en otras disputas, motivos o fases, y en producción. El texto aprobado del mensaje está en el disco del
   servidor, con los intents.
-- No consta ninguna auditoría de seguridad externa ni prueba de penetración. Las revisiones internas constan en los
-  planes de `docs/superpowers/`.
+- No consta ninguna auditoría de seguridad externa ni prueba de penetración. Las revisiones internas constan en las
+  listas de seguimiento de los mantenedores.
 - Consulta [Problemas conocidos](known-issues.md) para los puntos abiertos.

@@ -2,15 +2,14 @@
 
 # Known issues
 
-Open follow-ups, updated for the code at `c12faea` (deployed 21/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source: the follow-up file
-under [`docs/superpowers/plans/`](../superpowers/plans/) and, where relevant, the code location. Items marked
+Open follow-ups, updated for the code at `c12faea` (deployed 21/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source (the maintainers' follow-up lists, keyed below) and, where relevant, the code location. Items marked
 **by design** are kept on purpose but worth knowing. Product limits (what ResolveKit does not do) are in
 [Limitations](../product/limitations.md).
 
-Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2026-10-18-merchant-evidence-pdf-followups.md`
-· **AG** `2026-10-18-model-driven-agent-followups.md` · **ENV** `2026-10-18-three-environments-followups.md` ·
-**EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** the test run of 19/10 ([Testing](testing.md)) ·
-**DA** the dispute-actions design `docs/superpowers/specs/2026-10-19-dispute-actions-design.md` and the code at
+Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** follow-ups of the PDF work (18/10)
+· **AG** follow-ups of the buying agent (18/10) · **ENV** follow-ups of the three environments (18/10) ·
+**EV** follow-ups of the analyst evaluations (19/10) · **TR** the test run of 19/10 ([Testing](testing.md)) ·
+**DA** the dispute-actions design (19/10) and the code at
 `076c74f` (20/10/2026), now in `c12faea`.
 
 ## Uploads and PDFs

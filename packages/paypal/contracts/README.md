@@ -1,7 +1,7 @@
 # PayPal dispute-action contracts
 
 What PayPal's documentation says and what the PayPal **sandbox** actually returned, for each dispute action
-ResolveKit may send besides evidence (design: `docs/superpowers/specs/2026-10-19-dispute-actions-design.md`, [A2]).
+ResolveKit may send besides evidence ([A2]).
 Tests build their fakes from these files; no test calls PayPal.
 
 A variant becomes available (`apps/web/src/domain/actionContracts.ts`) only when three things agree:

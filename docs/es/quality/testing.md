@@ -8,7 +8,7 @@ Qué se prueba, cómo, con qué resultado y qué no. Se mantienen separados tres
 |---|---|---|
 | **Tests automatizados (simulados)** | Suites de `node --test` y `vitest` con un PayPal falso, un modelo falso y almacenes en memoria o temporales. Sin red, sin claves, sin coste | El repositorio (`npm test`) |
 | **Observaciones en sandbox** | Cosas hechas a mano, o por la app desplegada, contra el sandbox real de PayPal y modelos reales, y registradas en el momento | Las notas de evidencia privadas del propietario (fechas abajo). Los lectores no pueden reproducirlas; los ids y las capturas de pantalla se omiten |
-| **Comprobaciones en navegador** | Recorridos manuales en un navegador | Seguimientos de los planes (`docs/superpowers/`) y evidencia privada. **No hay tests automatizados de navegador** |
+| **Comprobaciones en navegador** | Recorridos manuales en un navegador | Listas de seguimiento de los mantenedores y evidencia privada. **No hay tests automatizados de navegador** |
 
 Las **evaluaciones del analista** (calidad del modelo en casos sintéticos) son una cuarta cosa, con su propia página:
 [Evaluaciones del analista](evaluations.md). No forman parte de `npm test`.

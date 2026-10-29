@@ -3,7 +3,7 @@
 # Limitations
 
 What ResolveKit does not do, does not do yet, or has not been shown to do. Checked against the code at commit
-`c12faea` (deployed 21/10/2026) and the follow-up lists in `docs/superpowers/plans/`; the dispute actions against commit
+`c12faea` (deployed 21/10/2026) and the maintainers' follow-up lists; the dispute actions against commit
 `076c74f` (20/10/2026). Code-level issues for contributors are in
 [Known issues](../quality/known-issues.md); this page is what a user, merchant or judge needs to know.
 

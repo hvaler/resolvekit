@@ -2,15 +2,14 @@
 
 # Problemas conocidos
 
-Seguimientos abiertos, actualizados para el código en `c12faea` (desplegado el 21/10/2026); revisados línea a línea por primera vez en `fbe9621` (19/10/2026). Cada punto indica su fuente: el
-archivo de seguimiento en [`docs/superpowers/plans/`](../../superpowers/plans/) y, cuando procede, la ubicación en el
-código. Los puntos marcados **por diseño** se mantienen a propósito, pero conviene conocerlos. Los límites del producto
+Seguimientos abiertos, actualizados para el código en `c12faea` (desplegado el 21/10/2026); revisados línea a línea por primera vez en `fbe9621` (19/10/2026). Cada punto indica su fuente (las listas de seguimiento de los mantenedores, con la clave de abajo) y, cuando procede,
+la ubicación en el código. Los puntos marcados **por diseño** se mantienen a propósito, pero conviene conocerlos. Los límites del producto
 (lo que ResolveKit no hace) están en [Limitaciones](../product/limitations.md).
 
-Fuentes: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2026-10-18-merchant-evidence-pdf-followups.md`
-· **AG** `2026-10-18-model-driven-agent-followups.md` · **ENV** `2026-10-18-three-environments-followups.md` ·
-**EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** la ejecución de tests del 19/10 ([Pruebas](testing.md)) ·
-**DA** el diseño de las acciones de disputa `docs/superpowers/specs/2026-10-19-dispute-actions-design.md` y el código
+Fuentes: **P1** seguimientos del trabajo de evidencia del comerciante (17/10) · **PDF** seguimientos del trabajo de PDF (18/10)
+· **AG** seguimientos del agente comprador (18/10) · **ENV** seguimientos de los tres entornos (18/10) ·
+**EV** seguimientos de las evaluaciones del analista (19/10) · **TR** la ejecución de tests del 19/10 ([Pruebas](testing.md)) ·
+**DA** el diseño de las acciones de disputa (19/10) y el código
 en `076c74f` (20/10/2026), ahora en `c12faea`.
 
 ## Subidas y PDF
