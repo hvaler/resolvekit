@@ -156,6 +156,26 @@ export class Ledger {
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.db.exec(SCHEMA);
     this.migrate(opts);
+    this.recover(opts);
+  }
+
+  /**
+   * What a previous process left half-done when it stopped (crash, deploy kill, OOM), resolved once at open, in one
+   * transaction. A session still `closing` was mid-settlement: it becomes `settlement_failed`, so close retries it
+   * (beginClose counts the attempt; a capture that did reach PayPal is replayed with the same PayPal-Request-Id and
+   * recorded once). A call still PENDING never got its answer: it becomes FAILED, released and never charged. A
+   * ledger with nothing interrupted changes nothing.
+   */
+  private recover(opts: LedgerOptions): void {
+    const now = new Date().toISOString();
+    const why = `interrupted by a restart at ${now}`;
+    const { sessions, calls } = this.tx(() => ({
+      sessions: Number(this.db.prepare("UPDATE sessions SET status = 'settlement_failed', settlement_error = ? WHERE status = 'closing'").run(`Settlement ${why}; close again to retry`).changes),
+      calls: Number(this.db.prepare("UPDATE calls SET status = 'FAILED', error = ?, finished_at = ? WHERE status = 'PENDING'").run(`Call ${why}; not charged`, now).changes),
+    }));
+    const log = opts.log ?? console.error;
+    if (sessions) log(`ledger: ${sessions} session(s) left closing by a restart are settlement_failed; close again to retry`);
+    if (calls) log(`ledger: ${calls} call(s) left PENDING by a restart are FAILED (not charged)`);
   }
 
   /**

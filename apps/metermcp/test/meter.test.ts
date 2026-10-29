@@ -937,3 +937,115 @@ test('I-1: an authorization that arrives after the session was cancelled is void
   assert.ok(!logs.some((l) => /approved, authorization/.test(l)), logs.join('\n'));
   assert.ok(logs.some((l) => /voided/.test(l) && /cancelled/.test(l)), logs.join('\n'));
 });
+
+// ------------------------------------------------------------------------------------------------ Restart recovery
+
+/** A file ledger and a Meter on it, as main.ts builds them; `start` again is a restart. */
+function onDisk(pp = fakePayPal()) {
+  const dir = mkdtempSync(join(tmpdir(), 'metermcp-restart-'));
+  const file = join(dir, 'metermcp.sqlite');
+  const logs: string[] = [];
+  const start = () => {
+    const ledger = new Ledger(file, { log: (l) => logs.push(l) });
+    const meter = new Meter({ ledger, paypal: pp.client, env: 'sandbox', publicUrl: 'http://127.0.0.1:8790' });
+    return { ledger, meter };
+  };
+  return { pp, file, dir, logs, start };
+}
+
+test('restart: a session left closing after its capture reached PayPal is settlement_failed on open; close replays the capture once', async () => {
+  const d = onDisk();
+  try {
+    let { ledger, meter } = d.start();
+    const id = await openSession(meter, d.pp);
+    await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' });
+    // The process dies inside settle(): closing on disk, the capture made at PayPal, its answer never recorded.
+    assert.deepEqual(ledger.beginClose(id, new Date().toISOString()), { ok: true });
+    const auth = ledger.session(id)!.authorization_id!;
+    const made = await d.pp.client.payments.captureAuthorization(auth, { amount: { currency_code: 'USD', value: '0.05' }, finalCapture: true, invoiceId: `${id}-settle` }, { requestId: `${id}-settle` });
+    assert.equal(ledger.session(id)!.status, 'closing');
+    ledger.close();
+
+    ({ ledger, meter } = d.start());
+    const s = ledger.session(id)!;
+    assert.equal(s.status, 'settlement_failed');
+    assert.match(s.settlement_error!, /restart/);
+    assert.equal(s.capture_id, null);
+    assert.ok(d.logs.some((l) => /restart/.test(l) && /closing/.test(l)), d.logs.join('\n'));
+    // The retry replays the same capture (same PayPal-Request-Id): one capture at PayPal, recorded once.
+    const r = await meter.close(id);
+    assert.equal(r.status, 'settled');
+    assert.equal(r.captured, '0.05');
+    assert.equal(ledger.session(id)!.capture_id, made.id);
+    assert.equal(d.pp.auths.get(auth)!.captures.length, 1);
+    assert.equal((await meter.close(id)).status, 'settled');
+    ledger.close();
+  } finally {
+    rmSync(d.dir, { recursive: true, force: true });
+  }
+});
+
+test('restart: a session left closing before any capture is settlement_failed on open; close captures once', async () => {
+  const d = onDisk();
+  try {
+    let { ledger, meter } = d.start();
+    const id = await openSession(meter, d.pp);
+    await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' });
+    assert.deepEqual(ledger.beginClose(id, new Date().toISOString()), { ok: true });
+    ledger.close();
+
+    ({ ledger, meter } = d.start());
+    assert.equal(ledger.session(id)!.status, 'settlement_failed');
+    const r = await meter.close(id);
+    assert.equal(r.status, 'settled');
+    assert.equal([...d.pp.auths.values()][0]!.captures.length, 1);
+    ledger.close();
+  } finally {
+    rmSync(d.dir, { recursive: true, force: true });
+  }
+});
+
+test('restart: a paid call left PENDING is FAILED on open, never charged, and the session can close', async () => {
+  const d = onDisk();
+  try {
+    let { ledger, meter } = d.start();
+    const id = await openSession(meter, d.pp);
+    // The process dies while the tool runs: the reservation stays PENDING on disk.
+    const held = ledger.reserve(id, 'deep_report', 40, new Date().toISOString(), () => 'h-inflight');
+    assert.equal(held.ok, true);
+    assert.equal(ledger.usedCents(id), 40);
+    ledger.close();
+
+    ({ ledger, meter } = d.start());
+    const [call] = ledger.calls(id);
+    assert.equal(call!.status, 'FAILED');
+    assert.match(call!.error!, /restart/);
+    assert.ok(call!.finished_at);
+    assert.equal(ledger.usedCents(id), 0);
+    assert.equal(ledger.chargedCents(id), 0);
+    assert.ok(d.logs.some((l) => /restart/.test(l) && /PENDING/.test(l)), d.logs.join('\n'));
+    // Nothing consumed: closing voids the authorization, nothing is captured.
+    const r = await meter.close(id);
+    assert.equal(r.status, 'voided');
+    assert.equal(d.pp.count(/capture$/), 0);
+    ledger.close();
+  } finally {
+    rmSync(d.dir, { recursive: true, force: true });
+  }
+});
+
+test('restart: a ledger with nothing interrupted changes nothing and logs nothing', async () => {
+  const d = onDisk();
+  try {
+    const first = d.start();
+    await openSession(first.meter, d.pp);
+    await first.meter.call('mcp-1', 'quote_lookup', { symbol: 'A' });
+    first.ledger.close();
+    const before = snapshot(d.file);
+    d.start().ledger.close();
+    assert.deepEqual(snapshot(d.file), before);
+    assert.equal(d.logs.length, 0, d.logs.join('\n'));
+  } finally {
+    rmSync(d.dir, { recursive: true, force: true });
+  }
+});
