@@ -11,7 +11,7 @@ flujo de evidencia de una disputa retenida, dos correcciones de relectura) se su
 alojadas dio entonces PASS en ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado,
 webhook activo, ambas vinculaciones verificadas, ambos modelos de IA respondieron y ambos precalentamientos en caché;
 WARN en ambas reservas (0 disputas nuevas); y un FAIL, el conocido: la vinculación del caso estándar está usada y su
-reserva está vacía, con un relleno previsto el 25-30/11, cuando también se vinculará el caso de liquidación, solo del Owner, en el `BINDINGS_JSON` alojado (consulta [Runbook](runbook.md#rotación-de-disputas-y-reserva)).
+reserva está vacía; estado a 29/10/2026: ambas reservas están vacías, las disputas nuevas del sandbox se preparan el 31/10/2026 y el relleno para la evaluación está previsto el 28–30/11/2026, cuando también se vinculará el caso de liquidación, solo del Owner, en el `BINDINGS_JSON` alojado (consulta [Runbook](runbook.md#rotación-de-disputas-y-reserva)).
 `demo:check` no puede demostrar qué commit está desplegado. Las acciones de disputa de ese commit aún no se han
 ejercitado en el servicio alojado. Los despliegues anteriores registrados fueron `81c6242` el 21/10 (antes, el mismo día; el mismo resultado de `demo:check`), `5111b88` el 20/10 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`), `fbe9621` el 19/10 (confirmación del
 propietario; `demo:check` pasó todas las líneas excepto la misma reserva vacía) y `bdd1fd9` el 19/10, ambos servicios,

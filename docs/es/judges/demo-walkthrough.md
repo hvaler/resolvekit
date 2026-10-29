@@ -132,7 +132,7 @@ revisión, tiempo agotado). Nunca aparece en un caso que funcione sobre PayPal r
 
 1. Abre **PP-R-MMC-10190702** en Test Store: un comprador disputa un pago que un agente hizo a través de MeterMCP.
 2. El mandato, el recibo por llamada (AG Grid) y la liquidación están etiquetados *From MeterMCP · session …*. A fecha
-   de 19/10/2026, la sesión vinculada es una hecha por el cliente con guion (scripted) anterior, no por una ejecución dirigida
+   de 29/10/2026, la sesión vinculada es una hecha por el cliente con guion (scripted) anterior, no por una ejecución dirigida
    por el modelo; un registro de ejecución (*E5 Agent run record*, *From ResolveKit · run …*) aparece solo cuando la
    vinculación del caso nombra esa ejecución (Pendiente).
 3. *How this goes to PayPal as digital delivery*: `PROOF_OF_FULFILLMENT`, transportista `OTHER`, el id de sesión como

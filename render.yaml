@@ -1,5 +1,5 @@
 # ResolveKit on Render: two web services from this repo, each with a small persistent disk.
-# Blueprint reference: https://render.com/docs/blueprint-spec — see README "Deploy on Render".
+# Blueprint reference: https://render.com/docs/blueprint-spec — see docs/operations/deployment.md.
 #
 # - resolvekit: the web app and its API on one public origin (apps/server in hosted mode).
 # - resolvekit-metermcp: the metered MCP gateway (apps/metermcp in hosted mode): public /mcp for judges' MCP clients

@@ -75,8 +75,7 @@ respuesta y el merchant id del vendedor. Estado: Implementado · Probado en loca
 enviar, la disputa debe ser la vinculada, con exactamente una transacción disputada que sea la captura vinculada, y
 con los importes disputado y bruto iguales al importe y la moneda del caso; si faltan datos, falla. Un caso puede
 tener una **reserva** (una lista, la primera activa): una disputa usada (resuelta, o con evidencia del vendedor desde
-hace más de 15 minutos) hace que el caso pase a la siguiente en su próxima lectura, si la reserva no está vacía. La
-reserva del caso estándar estaba vacía el 19/10/2026 (los envíos nuevos quedan Pendientes hasta que se reponga).
+hace más de 15 minutos) hace que el caso pase a la siguiente en su próxima lectura, si la reserva no está vacía. A 29/10/2026 las reservas de ambos casos están vacías (los envíos nuevos al sandbox real quedan Pendientes hasta el relleno para la evaluación del 28–30/11/2026).
 
 ### Envío de evidencia
 
@@ -144,7 +143,7 @@ la aceptación, la oferta y el escalado solo en disputas de artículo no recibid
 escrituras.
 
 **Verificado en sandbox a través de la app (20/10/2026).** Tras las escrituras de contrato, seis variantes se enviaron
-por el flujo propio de ResolveKit: el servidor de la rama sin fusionar `feat/dispute-actions` (head `9f93ba0`) ejecutado
+por el flujo propio de ResolveKit: el servidor de la rama de acciones de disputa (head `9f93ba0`, ya fusionada en `main` y desplegada) ejecutado
 en local contra el sandbox, cada ejecución aprobada antes por el propietario, y cada una por componer → aprobar por
 hash → segunda confirmación (cuando la acción tiene términos) → un envío → relectura atribuible. Un POST a PayPal por
 ejecución, con lecturas GET antes y después (evidencia privada, 20/10/2026). El código está ahora desplegado (`c12faea`), pero no se envió nada desde el servicio alojado. Son observaciones únicas, no
@@ -288,7 +287,7 @@ envío tardó unos 1.9 s (lectura y POST multipart); PayPal lo aceptó, y la rel
 | 19/10 | Dos ejecuciones del agente dirigido por el modelo se liquidaron en el sandbox: [agente comprador](buying-agent.md) |
 | 19/10 | Un pago con una disputa abierta apareció retenido; las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso |
 | 20/10 | Escrituras de contrato W-1 a W-12 aprobadas por el propietario: [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
-| 20/10 | Seis variantes enviadas una vez cada una por el flujo propio de ResolveKit (servidor local de la rama sin fusionar) y releídas, V-1 a V-6; solo V-4 movió dinero (un reembolso de 7.00 USD): [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
+| 20/10 | Seis variantes enviadas una vez cada una por el flujo propio de ResolveKit (servidor local de la rama de acciones de disputa, ya fusionada y desplegada) y releídas, V-1 a V-6; solo V-4 movió dinero (un reembolso de 7.00 USD): [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
 | 21/10 | Un mensaje con una subida confirmada y saneada enviado por el flujo propio de ResolveKit (servidor local de `main`, `81c6242`) y releído «Recorded by PayPal» con 1 documento, V-7; sin movimiento de dinero: [contratos de las acciones de disputa](#contratos-de-las-acciones-de-disputa) |
 
 ## Desconocido y no afirmado

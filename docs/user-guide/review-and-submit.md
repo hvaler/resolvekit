@@ -86,7 +86,7 @@ read-only»; the timeline and the audit trail (who approved, when, the content h
 
 In our sandbox tests PayPal stopped offering `provide_evidence` after one submission (an observation, not a documented
 rule). In the sandbox evaluation a used case moves to its next reserve dispute about 15 minutes later, on its next
-read, **only if** one is left (as of 19/10/2026 the standard case has none).
+read, **only if** one is left (as of 29/10/2026 neither case has any).
 
 ## Other dispute actions
 

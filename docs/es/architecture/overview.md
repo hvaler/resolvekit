@@ -47,7 +47,7 @@ flowchart LR
 | Entorno | Rutas | Datos | Envía a PayPal | Estado |
 |---|---|---|---|---|
 | Explore demo | `/demo`, `/demo/cases/:id` | Casos ficticios, análisis de referencia (golden) confirmados en el repositorio, simulador en el navegador | Nunca | Implementado · Probado en local · Desplegado · Disponible para usuarios |
-| Evaluación en sandbox (UI: «Sandbox evaluation · <workspace> · PayPal sandbox») | `/cases`, `/cases/:id` | Casos vinculados a disputas reales del **sandbox** de PayPal; documentos sintéticos más subidas del comerciante | Sí, solo al sandbox (caso estándar: los envíos nuevos quedan Pendientes hasta que se reponga su reserva de disputas, 19/10/2026) | Implementado · Probado en local · Verificado en sandbox · Desplegado · Disponible para revisores invitados |
+| Evaluación en sandbox (UI: «Sandbox evaluation · <workspace> · PayPal sandbox») | `/cases`, `/cases/:id` | Casos vinculados a disputas reales del **sandbox** de PayPal; documentos sintéticos más subidas del comerciante | Sí, solo al sandbox (a 29/10/2026 ambas reservas están vacías: los envíos nuevos al sandbox real quedan Pendientes hasta el relleno para la evaluación del 28–30/11/2026) | Implementado · Probado en local · Verificado en sandbox · Desplegado · Disponible para revisores invitados |
 | Espacio de trabajo del comerciante | pantalla de espera | — | No | Pantalla de espera Implementada · Desplegada. Conectar las disputas propias de un comerciante: **Pendiente** (sin código en la app) |
 
 El entorno se decide en el servidor: `/api/auth/me` informa de la conexión del espacio de trabajo como `evaluation`,
@@ -83,8 +83,7 @@ Los paquetes compartidos (`packages/*`) son bibliotecas dentro de esos procesos,
 Render lo desplegó automáticamente (se observó un bundle web nuevo) y `demo:check` contra las URL alojadas (tras `81c6242` y de nuevo tras `c12faea`, mismo resultado) dio PASS en
 ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones
 verificadas, ambos modelos de IA respondieron y ambos precalentamientos en caché; dio WARN en ambas reservas (0 disputas
-nuevas) y FAIL en una línea conocida: la vinculación del caso estándar está usada y su reserva está vacía (relleno
-previsto el 25-30/11). Antes, `5111b88` se desplegó el 20/10/2026 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`) y `fbe9621` el 19/10/2026 (confirmación del propietario; la misma reserva
+nuevas) y FAIL en una línea conocida: la vinculación del caso estándar está usada y su reserva está vacía (estado a 29/10/2026: ambas reservas vacías, relleno para la evaluación el 28–30/11/2026). Antes, `5111b88` se desplegó el 20/10/2026 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`) y `fbe9621` el 19/10/2026 (confirmación del propietario; la misma reserva
 vacía). `demo:check` no puede demostrar qué commit está desplegado. Un disco
 persistente impide los despliegues sin tiempo de inactividad; se observaron de uno a dos minutos de 502 por despliegue
 (evidencia privada). Detalles: [despliegue](../operations/deployment.md).
@@ -173,23 +172,22 @@ Detalles: [agente comprador](../technical/buying-agent.md), [herramientas MCP](.
 
 ## Decisiones clave
 
-Las decisiones de diseño registradas viven en las especificaciones y planes de [`docs/superpowers/`](../../superpowers/specs/)
-(historial; no se reescribe). Las decisiones que dan forma a la arquitectura actual:
+Las decisiones que dan forma a la arquitectura actual, con su motivo y dónde verlas en el código:
 
 | Decisión | Por qué / contrapartida | Fuente |
 |---|---|---|
 | El navegador nunca habla con PayPal ni con un modelo; el servidor construye él mismo cada entrada del analista y cada envío | Los cuerpos de las peticiones no pueden inyectar notas, archivos ni documentos; cuesta un viaje de ida y vuelta al servidor por acción | `apps/server/src/app.ts` (entrada del analista construida en el servidor), `apps/web/src/domain/intent.ts` (`parseIntentRequest`, campos rechazados) |
-| El comerciante aprueba un intent compuesto por el servidor mediante su hash de contenido; el envío recompone a partir de una lectura fresca de PayPal y rechaza cualquier diferencia | La aprobación queda ligada al contenido exacto; una disputa, un documento o una vinculación que cambie obliga a una nueva revisión | [especificación de los tres entornos](../../superpowers/specs/2026-10-18-three-environments-design.md) («Evaluation keeps today's guarantees») |
-| Tres entornos, decididos en el servidor; la demo nunca toca la ruta de envío | Jueces y visitantes no pueden llegar a PayPal real por accidente; una tercera fuente «connected» sigue siendo posible | [especificación de los tres entornos](../../superpowers/specs/2026-10-18-three-environments-design.md), [plan](../../superpowers/plans/2026-10-18-three-environments.md) |
-| Las subidas se leen en nuestro propio servidor; el comerciante tapa lo que quiera antes de que ningún modelo ni PayPal vea el archivo; una sola versión saneada para la IA y para PayPal | Ningún servicio externo ve archivos sin tapar; la calidad del OCR queda limitada al tesseract local | [especificación de evidencia del comerciante](../../superpowers/specs/2026-10-17-merchant-evidence-design.md), [plan](../../superpowers/plans/2026-10-17-merchant-evidence-phase1.md) |
-| Los PDF se rasterizan en un proceso hijo, se tapan, se pasan por OCR desde los píxeles y se reconstruyen como PDF solo de imagen | El contenido tapado no puede sobrevivir en capas de texto, metadatos ni adjuntos; el PDF enviado no tiene texto seleccionable | [especificación de PDF](../../superpowers/specs/2026-10-18-merchant-evidence-pdf-design.md), [plan](../../superpowers/plans/2026-10-18-merchant-evidence-pdf.md) |
-| El agente comprador lo dirige el modelo (function calling, una acción por turno) y el código valida cada acción; la liquidación es del código | Decisiones reales con límites estrictos; sin respaldo con guion, así que sin modelo la ejecución se detiene | [especificación del agente](../../superpowers/specs/2026-10-18-model-driven-agent-design.md), [plan](../../superpowers/plans/2026-10-18-model-driven-agent.md) |
+| El comerciante aprueba un intent compuesto por el servidor mediante su hash de contenido; el envío recompone a partir de una lectura fresca de PayPal y rechaza cualquier diferencia | La aprobación queda ligada al contenido exacto; una disputa, un documento o una vinculación que cambie obliga a una nueva revisión | `apps/server/src/app.ts` (ruta de envío), [fronteras de confianza](trust-boundaries.md) |
+| Tres entornos, decididos en el servidor; la demo nunca toca la ruta de envío | Jueces y visitantes no pueden llegar a PayPal real por accidente; una tercera fuente «connected» sigue siendo posible | [fronteras de confianza](trust-boundaries.md), [configuración](../technical/configuration.md) |
+| Las subidas se leen en nuestro propio servidor; el comerciante tapa lo que quiera antes de que ningún modelo ni PayPal vea el archivo; una sola versión saneada para la IA y para PayPal | Ningún servicio externo ve archivos sin tapar; la calidad del OCR queda limitada al tesseract local | [procesamiento de evidencia](../technical/evidence-processing.md), [datos y almacenamiento](data-and-storage.md) |
+| Los PDF se rasterizan en un proceso hijo, se tapan, se pasan por OCR desde los píxeles y se reconstruyen como PDF solo de imagen | El contenido tapado no puede sobrevivir en capas de texto, metadatos ni adjuntos; el PDF enviado no tiene texto seleccionable | `packages/pdf`, [procesamiento de evidencia](../technical/evidence-processing.md) |
+| El agente comprador lo dirige el modelo (function calling, una acción por turno) y el código valida cada acción; la liquidación es del código | Decisiones reales con límites estrictos; sin respaldo con guion, así que sin modelo la ejecución se detiene | [agente comprador](../technical/buying-agent.md) |
 | Presupuesto de MeterMCP = `AUTHORIZE` de Orders v2 por exactamente el tope; liquidación = una captura parcial final o una anulación | El comprador aprueba una vez; las llamadas fallidas nunca se cobran; una autorización es válida durante un tiempo limitado | `apps/metermcp/src/meter.ts`, [integración con PayPal](../technical/paypal-integration.md) |
 | El inicio de sesión usa un token de Billing Agreements sin cargo de una segunda app de PayPal | Log in with PayPal respondió 400 en nuestro sandbox y un vendedor no puede aprobar su propia app; la familia de API está obsoleta | `packages/paypal/src/identity.ts`, [fronteras de confianza](trust-boundaries.md) |
 | Archivos en un disco persistente (JSON, JSONL, SQLite), una instancia por servicio | Simple e inspeccionable; sin escalado horizontal, sin despliegue sin tiempo de inactividad, sin copias de seguridad en el código | [datos y almacenamiento](data-and-storage.md) |
-| Evaluaciones: conjuntos fijos, cifras citadas solo del resumen confirmado en el repositorio | Las tasas nunca se comparan entre conjuntos distintos | [especificación H-04](../../superpowers/specs/2026-10-19-analyst-evals-h04-design.md), [evaluaciones](../quality/evaluations.md) |
+| Evaluaciones: conjuntos fijos, cifras citadas solo del resumen confirmado en el repositorio | Las tasas nunca se comparan entre conjuntos distintos | [evaluaciones](../quality/evaluations.md) |
 
-No hay carpeta `docs/architecture/decisions/`: las especificaciones anteriores son el registro de decisiones.
+No hay carpeta `docs/architecture/decisions/`: la tabla anterior es el registro de decisiones.
 
 ## Arquitectura actual y evolución futura
 

@@ -114,8 +114,8 @@ Rules:
   `/demo/cases/:id`.
 - **Reserve rotation**: when a bound dispute is used (resolved, or seller evidence older than 15 min), the next read
   moves the case to the next dispute of its reserve, if one is left (`apps/server/src/app.ts:591-630`). As of
-  19/10/2026 the standard case's reserve is empty, so it shows the recorded evidence and new sends on it are
-  **Pending**.
+  29/10/2026 the reserves of both cases are empty (refill for judging on 28–30/11/2026), so they show the recorded
+  evidence and new real-sandbox sends are **Pending**.
 
 ### 5.2 Analysis
 
@@ -208,7 +208,7 @@ the owner approved request by request, with its response and read-back (`package
 
 Seven variants are **Verified in sandbox**: on 20/10/2026 (V-1 to V-6) and 21/10/2026 (V-7, the message with a file) each was sent once through the app's own flow (compose, approve
 by hash, a second confirmation when the action has terms, one send, an attributable read-back), by the server of the
-unmerged branch running locally against the sandbox (V-1 to V-7, see
+dispute-actions branch (since merged into `main` and deployed) running locally against the sandbox (V-1 to V-7, see
 [PayPal integration](../technical/paypal-integration.md#dispute-action-contracts)). Only V-4, the full accept, moved
 money (a 7.00 USD sandbox refund). Separately, the contract writes of 20/10/2026 (W-1 to W-12) were prepared requests
 that the owner approved one by one, sent outside the app's own flow; they show what PayPal does and are what each

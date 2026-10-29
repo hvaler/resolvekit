@@ -7,16 +7,18 @@ No live PayPal environment is used.
 
 ## Reporting a vulnerability
 
-**There is no dedicated security channel yet** (no security email, no bug bounty). GitHub private vulnerability
-reporting for this repository is not confirmed as enabled (**Pending**).
+Report vulnerabilities through **GitHub Private Vulnerability Reporting** on this repository: open the **Security**
+tab and choose **Report a vulnerability**. The report stays private between you and the maintainers. There is no
+security email and no bug bounty.
 
-Until one exists:
+If the **Report a vulnerability** button is not shown, the feature is not enabled yet; in that case:
 
 1. **Do not open a public issue with details** of a vulnerability, and do not include exploit code, tokens, invite
    links or personal data in any public place.
 2. Contact the repository owner through their GitHub profile (the owner of this repository on GitHub) and ask for a
    private channel. Share the details only once one is agreed.
-3. Say what you found, how to reproduce it against the sandbox demo or a local run, and what it affects.
+
+In any report, say what you found, how to reproduce it against the sandbox demo or a local run, and what it affects.
 
 We will acknowledge what we can, as soon as we can; we make no promise of response times. Please test only against
 your own local run or the public demo within its limits: do not send evidence to disputes that are not yours, do not

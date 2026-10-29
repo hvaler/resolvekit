@@ -2,15 +2,14 @@
 
 # Known issues
 
-Open follow-ups, updated for the code at `c12faea` (deployed 21/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source: the follow-up file
-under [`docs/superpowers/plans/`](../superpowers/plans/) and, where relevant, the code location. Items marked
+Open follow-ups, updated for the code at `c12faea` (deployed 21/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source (the maintainers' follow-up lists, keyed below) and, where relevant, the code location. Items marked
 **by design** are kept on purpose but worth knowing. Product limits (what ResolveKit does not do) are in
 [Limitations](../product/limitations.md).
 
-Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2026-10-18-merchant-evidence-pdf-followups.md`
-· **AG** `2026-10-18-model-driven-agent-followups.md` · **ENV** `2026-10-18-three-environments-followups.md` ·
-**EV** `2026-10-19-analyst-evals-h04-followups.md` · **TR** the test run of 19/10 ([Testing](testing.md)) ·
-**DA** the dispute-actions design `docs/superpowers/specs/2026-10-19-dispute-actions-design.md` and the code at
+Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** follow-ups of the PDF work (18/10)
+· **AG** follow-ups of the buying agent (18/10) · **ENV** follow-ups of the three environments (18/10) ·
+**EV** follow-ups of the analyst evaluations (19/10) · **TR** the test run of 19/10 ([Testing](testing.md)) ·
+**DA** the dispute-actions design (19/10) and the code at
 `076c74f` (20/10/2026), now in `c12faea`.
 
 ## Uploads and PDFs
@@ -67,7 +66,7 @@ Sources: **P1** `2026-10-17-merchant-evidence-phase1-followups.md` · **PDF** `2
 | Issue | Effect | Source |
 |---|---|---|
 | Auto-deploy still `commit` for both services | Deploy order MeterMCP → ResolveKit is not guaranteed on a push; the follow-up recommends turning it off for `resolvekit` | AG; `render.yaml` |
-| Standard reserve empty | New sends on the standard case are **Pending** until the reserve is refilled (planned 25–30/11) | private evidence 19/10 |
+| Reserves empty (both cases, as of 29/10/2026) | New real-sandbox sends are **Pending**; new disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026; the Explore demo is the default path until then | private evidence 19/10 |
 | No backup, export or account deletion | See [Backup and recovery](../operations/backup-and-recovery.md), [Retention and deletion](../operations/retention-and-deletion.md) | no backup code in the repository |
 | Audit and money records never expire | The send log (`audit-events-sends.jsonl`) and the MeterMCP ledger grow without limit on 1 GB disks (**by design**: they are the audit and money records; the analysis cache and the usage log are bounded) | `intents.ts`, `apps/metermcp/src/ledger.ts` |
 | A corrupt upload record is swept | An upload directory whose `record.json` cannot be read is removed by the hourly sweep as a leftover (its files go too); not preserved like the other stores. Durable writes make this unlikely | `uploads/store.ts` (`readRecord`, `sweepDisk`) |

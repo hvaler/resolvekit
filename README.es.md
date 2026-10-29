@@ -33,7 +33,7 @@
   <img alt="PDF.js 6" src="https://img.shields.io/badge/PDF.js-6-2D6B68?style=flat-square&logo=mozilla&logoColor=white">
   <img alt="WebAuthn passkeys" src="https://img.shields.io/badge/WebAuthn-passkeys-2D6B68?style=flat-square&logo=webauthn&logoColor=white">
   <img alt="Vitest 5" src="https://img.shields.io/badge/Vitest-5-2D6B68?style=flat-square&logo=vitest&logoColor=white">
-  <img alt="node:test 1,479 tests" src="https://img.shields.io/badge/node%3Atest-1%2C479%20tests-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="tests · 1,479 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C479%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="Render 2 services" src="https://img.shields.io/badge/Render-2%20services-2D6B68?style=flat-square&logo=render&logoColor=white">
 </p>
 
@@ -87,6 +87,21 @@ Detalles: [visión general del producto](docs/es/product/overview.md) · [pipeli
 | Google Gemini (`gemini-3.8-flash`), Groq (`openai/gpt-oss-120b`) como respaldo | Analista: hechos con citas literales, cronología, contradicciones, borrador, verificación frase a frase. Agente comprador: una llamada a herramienta por turno mediante function calling | Desplegado; analista medido solo en conjuntos sintéticos |
 | Código determinista | Comprobación de citas literales, comprobación de números, reglas para la acción y el tipo de evidencia, comprobaciones de presupuesto y límites para el agente | Implementado · Probado en local · Desplegado |
 
+**APIs de PayPal usadas** (endpoint → para qué; todas solo en sandbox; la tabla completa con quién las llama está en
+[Integración con PayPal](docs/es/technical/paypal-integration.md#endpoints-que-se-llaman-realmente)):
+
+- `POST /v1/oauth2/token`: token de acceso de cada app de PayPal (vendedor, identidad).
+- `GET /v1/customer/disputes/{id}`: leer una disputa (lectura del caso, composición, comprobación de vinculaciones, relectura por webhook, relectura tras el envío).
+- `POST /v1/customer/disputes/{id}/provide-evidence`: enviar la evidencia (notas y archivos PDF/PNG).
+- `POST /v1/customer/disputes/{id}/send-message` · `accept-claim` · `make-offer` · `escalate`: el resto de las acciones de disputa.
+- `POST /v1/notifications/verify-webhook-signature`: verificar los webhooks `CUSTOMER.DISPUTE.*` con el método de postback de PayPal.
+- `POST` y `GET /v1/billing-agreements/agreement-tokens`: inicio de sesión con un token de acuerdo sin cargo.
+- `POST /v2/checkout/orders` (`AUTHORIZE`) · `GET …/{id}` · `POST …/{id}/authorize`: el presupuesto del agente en MeterMCP.
+- `GET /v2/payments/authorizations/{id}` · `POST …/capture` · `POST …/void`, `GET /v2/payments/captures/{id}`:
+  liquidación y conciliación de MeterMCP.
+
+El código está en `packages/paypal/src/` (`disputes.ts`, `webhooks.ts`, `identity.ts`, `orders.ts`).
+
 Solo `provide-evidence` se ha ejercitado de extremo a extremo a través de la app en el servicio alojado. Enviar un
 mensaje, aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial, escalar y
 enviar evidencia tras un escalado están construidos desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato
@@ -117,8 +132,7 @@ Nada se ha ejecutado contra PayPal live. Fuentes: [integración con PayPal](docs
 4. **Review what will be sent →**, **Continue to confirm →**, marca la aprobación y **Submit evidence to PayPal**: en la
    demo va al simulador, nunca a PayPal, y la relectura dice *Recorded by the PayPal simulator*.
 5. Para enviar a una disputa real del sandbox, usa el enlace de revisor del formulario de entrega y sigue la
-   [guía para el jurado](docs/es/judges/review-guide.md) (solo mientras el caso tenga una disputa nueva; la reserva del
-   caso estándar estaba vacía el 19/10/2026).
+   [guía para el jurado](docs/es/judges/review-guide.md). A 29/10/2026 las reservas de disputas nuevas del sandbox de ambos casos están vacías; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto es la Explore demo, y el envío al sandbox real puede no estar disponible.
 
 Paso a paso con el nombre de cada control: [recorrido por la demo](docs/es/judges/demo-walkthrough.md).
 
@@ -157,7 +171,7 @@ espera que lo dice. Fuera de la aplicación, el 18/10/2026, hicimos experimentos
 PayPal Platform (Partner Referrals y `PayPal-Auth-Assertion`). En esos pocos casos, una disputa sobre un pago que había
 procesado la plataforma se pudo leer y responder, mientras que las disputas sobre facturas propias del vendedor
 respondieron `403`. Es una observación de unos pocos casos en sandbox, no una regla de PayPal; preguntamos a PayPal el
-18/10 y no tenemos respuesta a fecha de 19/10. Detalles:
+18/10 y no hay respuesta registrada a fecha de 19/10/2026. Detalles:
 [alta de comerciantes](docs/es/technical/merchant-onboarding.md) · [limitaciones](docs/es/product/limitations.md).
 
 ## Ejecutar en local
@@ -244,8 +258,8 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 - **Despliegue**: `c12faea` desplegado el 21/10/2026 (subido; se observó un bundle web nuevo con el estado V-7 del registro). `demo:check` contra las URL alojadas, tras el despliegue de `81c6242` y de nuevo tras `c12faea` (mismo resultado): PASS en ResolveKit activo, página de inicio,
   MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones verificadas, ambos modelos de IA
   respondieron, ambos precalentamientos en caché; WARN en ambas reservas (0 disputas nuevas); un FAIL, el conocido: la
-  vinculación del caso estándar está usada y su reserva está vacía (relleno previsto el 25-30/11, cuando también se
-  vinculará el caso de liquidación, solo del Owner, en el `BINDINGS_JSON` alojado). No puede demostrar qué commit está
+  vinculación del caso estándar está usada y su reserva está vacía (estado a 29/10/2026: ambas reservas están vacías; el
+  relleno para la evaluación está previsto el 28–30/11, cuando también se vinculará el caso de liquidación, solo del Owner, en el `BINDINGS_JSON` alojado). No puede demostrar qué commit está
   desplegado. Antes: `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (mismo resultado de `demo:check`); `fbe9621`, 19/10/2026.
 - **Evaluaciones** (solo el analista, casos sintéticos): [evaluaciones](docs/es/quality/evaluations.md). Titular: en 12
   casos reservados (held-out) × 3 ejecuciones, 0 de 66 notas verdaderas rechazadas y 0 de 72 notas falsas plantadas
@@ -260,8 +274,7 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
   alojado; nunca se crea un reembolso.
 - Solo sandbox; PayPal live nunca se ha probado. Los tiempos y comportamientos del sandbox pueden
   diferir en live.
-- La reserva de disputas nuevas del sandbox del caso de evaluación estándar estaba vacía el 19/10/2026: hasta que se
-  rellene, los envíos nuevos ahí se rechazan y el caso muestra la relectura anterior.
+- A 29/10/2026 las reservas de disputas nuevas del sandbox de ambos casos están vacías; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto es la Explore demo, y el envío al sandbox real puede no estar disponible. Hasta que se rellene, los envíos nuevos ahí se rechazan y el caso muestra la relectura anterior.
 - El caso del agente vinculado muestra una sesión hecha por el cliente con guion anterior, no una ejecución dirigida
   por el modelo.
 - Analista: en los casos reservados, la mayoría de las notas verdaderas van a *needs review*; Groq no se ejecutó en el

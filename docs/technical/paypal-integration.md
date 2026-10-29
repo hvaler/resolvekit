@@ -72,8 +72,8 @@ Verified in sandbox (09/10, 17/10/2026) · Deployed.
 dispute must be the bound one, with exactly one disputed transaction that is the bound capture, and the disputed and
 gross amounts equal to the case's amount and currency; missing data fails. A case can have a **reserve** (a list,
 first active): a used dispute (resolved, or with seller evidence for more than 15 minutes) moves the case to the
-next one on its next read, if the reserve is not empty. The standard case's reserve was empty on 19/10/2026 (new
-sends Pending until it is refilled).
+next one on its next read, if the reserve is not empty. As of 29/10/2026 the reserves of both cases are empty (new
+real-sandbox sends Pending until the refill for judging on 28–30/11/2026).
 
 ### Sending evidence
 
@@ -137,7 +137,7 @@ taken as absent only after 60 s without proof; every action is composed only in 
 accept, offer and escalate, because that is all the writes covered.
 
 **Verified in sandbox through the app (20/10/2026).** After the contract writes, six variants were sent through
-ResolveKit's own flow: the server of the unmerged branch `feat/dispute-actions` (head `9f93ba0`) running locally
+ResolveKit's own flow: the server of the dispute-actions branch (head `9f93ba0`, since merged into `main` and deployed) running locally
 against the sandbox, each run approved by the owner beforehand, each going compose → approve by hash → second
 confirmation (when the action has terms) → one send → attributable read-back. One POST to PayPal per run, with GET
 reads before and after (private evidence, 20/10/2026). The code is now deployed (`c12faea`), but nothing was sent from the hosted service. Single observations, not PayPal rules.
@@ -273,7 +273,7 @@ in `WAITING_FOR_SELLER_RESPONSE` through `apps/server`, with our own `PayPal-Req
 | 19/10 | Two model-driven agent runs settled in the sandbox: [buying agent](buying-agent.md) |
 | 19/10 | A payment with an open dispute showed as held; the seller's sandbox web pages offered no refund outside the case |
 | 20/10 | Owner-approved contract writes W-1 to W-12: [dispute action contracts](#dispute-action-contracts) |
-| 20/10 | Six variants sent once each through ResolveKit's own flow (local server of the unmerged branch) and read back, V-1 to V-6; only V-4 moved money (a 7.00 USD refund): [dispute action contracts](#dispute-action-contracts) |
+| 20/10 | Six variants sent once each through ResolveKit's own flow (local server of the dispute-actions branch, since merged and deployed) and read back, V-1 to V-6; only V-4 moved money (a 7.00 USD refund): [dispute action contracts](#dispute-action-contracts) |
 | 21/10 | A message with one confirmed, sanitised upload sent through ResolveKit's own flow (local server of `main`, `81c6242`) and read back «Recorded by PayPal» with 1 document, V-7; no money moved: [dispute action contracts](#dispute-action-contracts) |
 
 ## Unknown and not claimed

@@ -54,7 +54,7 @@ There is no alerting in the code. What exists:
 
 | Area | Where to look | What to watch |
 |---|---|---|
-| Memory | Render's service metrics (512 MB per instance) | The image/PDF/OCR path is the heavy one. One image or PDF job runs at a time server-wide; the PDF child is capped at 160 MB heap and, on Linux, killed above 200 MiB RSS; the OCR worker is stopped after 60 s idle and never resident together with a PDF child. Observed earlier: ~250 MB resident after an 8 MP image reading, peak ~395 MB of 512 (P1 follow-up, 17/10/2026, `docs/superpowers/plans/2026-10-17-merchant-evidence-phase1-followups.md`). **Memory with a 5-page PDF on Render: Pending.** If memory grows, the follow-ups suggest trying `MALLOC_ARENA_MAX=2` (not tried) |
+| Memory | Render's service metrics (512 MB per instance) | The image/PDF/OCR path is the heavy one. One image or PDF job runs at a time server-wide; the PDF child is capped at 160 MB heap and, on Linux, killed above 200 MiB RSS; the OCR worker is stopped after 60 s idle and never resident together with a PDF child. Observed earlier: ~250 MB resident after an 8 MP image reading, peak ~395 MB of 512 (P1 follow-up, 17/10/2026). **Memory with a 5-page PDF on Render: Pending.** If memory grows, the follow-ups suggest trying `MALLOC_ARENA_MAX=2` (not tried) |
 | CPU | Render's service metrics (0.5 CPU) | PDF thumbnails have 3 s each, page renders 20 s, a PDF session 90 s in all; on 0.5 CPU real PDFs may hit the thumbnail deadline (follow-up, not measured) |
 | Storage | Render disk usage (1 GB each) | Uploads are capped at 300 MiB in all (`507 STORAGE_FULL` beyond). The analysis cache (unused 30 days, 100 MiB) and the analyst usage log (90 days, 10 MiB) are swept at start and hourly (`ANALYSIS_CACHE_MAX_*`, `ANALYST_USAGE_MAX_*`). The audit sends log and the MeterMCP ledger are audit and money records and **never expire**; they grow, and nothing alerts on disk use |
 | Providers | ResolveKit log lines `analyst call · <stage> · <provider>/<model> · in … out … thinking … · <ms> ms` and `analyst fallback · <why>`; `<data>/analyst-usage.jsonl` (token counts and timings only); `demo:check` model lines | Groq's free tier answers `429` when its quota is used (observed in the evaluations); the analyst then falls back, the agent picks its provider at the first answer and keeps it |
@@ -163,8 +163,9 @@ by an action still settling → kept active`, and the ops report (`GET /api/ops/
 Each dispute may be listed once in the whole file (a duplicate stops the start). It has no stored analysis, so evidence
 composed there answers `NO_ANALYSIS`; it is meant for the owner-only actions.
 
-**State on 19/10/2026 (private evidence):** the standard case's active dispute is used and its reserve is empty, so new
-sends to it are **Pending** until the reserve is refilled (planned 25–30/11). PayPal documents that the inquiry
+**State as of 29/10/2026:** the reserves of both cases are empty (on 19/10/2026 the standard case's active dispute was
+used; private evidence), so new sends to them are **Pending**. New sandbox disputes are prepared on 31/10/2026 and the
+reserve is refilled for judging on 28–30/11/2026; until then the Explore demo is the default path. PayPal documents that the inquiry
 stage lasts up to 20 days unless escalated
 (https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api); check each dispute's
 `seller_response_due_date` and prepare disputes for the dates they are needed.
@@ -199,7 +200,7 @@ For the agent case the claim is what its evidence answers: item type «Service»
 calls and I didn't receive their results» (the receipt lists each call delivered; failed ones were not charged).
 
 **Status:** Implemented · Tested locally (`apps/server/test/demo-prepare.test.ts`). Use of `--agent` / `--agent-run`
-for the hosted reserve: **Pending** (planned 25–30/11). No binding names a model-driven run yet; the agent case's
+for the hosted reserve: **Pending** (planned 31/10/2026 and for judging on 28–30/11/2026). No binding names a model-driven run yet; the agent case's
 current binding points at a session made by the earlier scripted client.
 
 Then paste the printed `BINDINGS_JSON` into the `resolvekit` service on Render (it restarts), run `demo:check`, and

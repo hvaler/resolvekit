@@ -3,7 +3,7 @@
 # Limitaciones
 
 Lo que ResolveKit no hace, todavía no hace o no se ha demostrado que haga. Comprobado frente al código en el commit
-`c12faea` (desplegado el 21/10/2026) y las listas de seguimiento de `docs/superpowers/plans/`; las acciones de disputa, frente al
+`c12faea` (desplegado el 21/10/2026) y las listas de seguimiento de los mantenedores; las acciones de disputa, frente al
 commit `076c74f` (20/10/2026). Los problemas de código para
 colaboradores están en [Problemas conocidos](../quality/known-issues.md); esta página recoge lo que necesita saber un
 usuario, un comerciante o un jurado.
@@ -33,8 +33,9 @@ usuario, un comerciante o un jurado.
 - **Una respuesta por disputa, según lo observado.** En nuestras pruebas en sandbox PayPal dejó de ofrecer
   `provide_evidence` tras un envío. Es una observación, no una regla documentada de PayPal. El caso muestra entonces
   **Evidence recorded by PayPal** y un borrador de solo lectura.
-- **La reserva del caso estándar está vacía** (19/10/2026): su disputa ya se usó, así que los nuevos envíos sobre él
-  están **Pendiente** hasta que se añadan nuevas disputas de sandbox a su reserva. Un caso solo pasa a la siguiente
+- **Las reservas están vacías** (a 29/10/2026, ambos casos): sus disputas ya se usaron, así que los nuevos envíos al
+  sandbox real están **Pendiente**. Las disputas nuevas del sandbox se preparan el 31/10/2026 y la reserva se rellena
+  para la evaluación el 28–30/11/2026; hasta entonces la ruta por defecto es la Explore demo. Un caso solo pasa a la siguiente
   disputa de su reserva si queda alguna, en su siguiente lectura, unos 15 minutos después de registrarse la evidencia.
 - **Los documentos del caso son sintéticos.** Lo que subes es real en lo que hace; el pedido, la etiqueta, el registro
   del transportista y los mensajes del comprador que lo rodean son inventados, así que una captura real puede aparecer

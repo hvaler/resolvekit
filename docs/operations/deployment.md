@@ -10,7 +10,7 @@ every environment variable see [Configuration](../technical/configuration.md); f
 evidence flow on a held dispute, two read-back fixes) was pushed and deployed on 21/10, and a new web bundle was observed (`81c6242` was pushed and deployed earlier the same day, with the same `demo:check` result). `npm run demo:check` against the hosted URLs then
 gave PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox connected, webhook on, both bindings verified, both AI
 models answered and both warm-ups cached; WARN on both reserves (0 fresh disputes); and one FAIL, the known one: the
-standard case's binding is used and its reserve is empty, with a refill planned for 25-30/11, when the owner-only settlement case will also be bound in the hosted `BINDINGS_JSON` (see
+standard case's binding is used and its reserve is empty; status as of 29/10/2026: both reserves are empty, new sandbox disputes are prepared on 31/10/2026 and the refill for judging is planned for 28–30/11/2026, when the owner-only settlement case will also be bound in the hosted `BINDINGS_JSON` (see
 [Runbook](runbook.md#dispute-rotation-and-the-reserve)). `demo:check` cannot prove which commit is live. The dispute
 actions in that commit have not yet been exercised on the hosted service. The previous recorded deployments were
 `81c6242` on 21/10 (earlier the same day; the same `demo:check` result), `5111b88` on 20/10 (the owner fast-forwarded `main` to it and pushed; the same `demo:check` result), `fbe9621` on 19/10 (the owner's confirmation; `demo:check` passed every line except the same empty reserve) and

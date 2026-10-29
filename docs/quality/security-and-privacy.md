@@ -150,6 +150,5 @@ Multi-merchant isolation is untested in practice: only one seller workspace is c
 - The sign-in relies on a deprecated PayPal API family and may stop working.
 - Dispute actions rest on one sandbox write per variant (20/10/2026); PayPal may behave differently on other disputes,
   reasons or stages, and in production. The approved message text sits on the server's disk with the intents.
-- No external security audit or penetration test is recorded. Internal reviews are recorded in the plans under
-  `docs/superpowers/`.
+- No external security audit or penetration test is recorded. Internal reviews are recorded in the maintainers' follow-up lists.
 - See [Known issues](known-issues.md) for the open items.
