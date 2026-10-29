@@ -7,7 +7,7 @@
     "./node": "./src/node.ts"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.ts\"",
+    "test": "node --test --test-timeout=60000 \"test/*.test.ts\"",
     "evals": "node --env-file-if-exists=../../.env evals/run.ts",
     "evals:heldout": "node --env-file-if-exists=../../.env evals/runs.ts",
     "evals:recompute": "node evals/recompute.ts",

@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "test": "npm run test:paypal && npm run test:hosting && npm run test:cases && npm run test:analyst && npm run test:agent && npm run test:server && npm run test:metermcp && npm run test:web",
-    "test:paypal": "node --test \"packages/paypal/test/*.test.ts\"",
+    "test:paypal": "node --test --test-timeout=60000 \"packages/paypal/test/*.test.ts\"",
     "test:hosting": "npm run test --workspace @resolvekit/hosting",
     "test:cases": "npm run test --workspace @resolvekit/cases",
     "test:analyst": "npm run test --workspace @resolvekit/analyst",
