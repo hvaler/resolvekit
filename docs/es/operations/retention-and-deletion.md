@@ -3,7 +3,7 @@
 # Retención y borrado
 
 Qué guardan ResolveKit y MeterMCP, durante cuánto tiempo y qué lo borra. Todo lo que aparece aquí sale del código en
-`c12faea` (Implementado · Probado en local salvo que se indique otra cosa). No hay función de borrado de cuentas ni de
+`f1b7236` (Implementado · Probado en local salvo que se indique otra cosa). No hay función de borrado de cuentas ni de
 exportación de datos; una solicitud para borrar los datos de alguien la gestiona el operador a mano en el disco
 (**Pendiente**: no hay procedimiento ni herramienta).
 

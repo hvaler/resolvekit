@@ -3,7 +3,7 @@
 # Fronteras de confianza, identidad y aislamiento
 
 En qué confía cada parte del sistema, cómo se identifica a las personas, qué pueden hacer y cómo se separa un espacio
-de trabajo, una persona o una ejecución de otra. Código en el commit `c12faea`. Estas medidas reducen el riesgo;
+de trabajo, una persona o una ejecución de otra. Código en el commit `f1b7236`. Estas medidas reducen el riesgo;
 ninguna es una garantía absoluta. La visión más amplia de privacidad está en
 [seguridad y privacidad](../quality/security-and-privacy.md).
 

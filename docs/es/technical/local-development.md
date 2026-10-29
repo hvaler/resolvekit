@@ -3,7 +3,7 @@
 # Desarrollo local
 
 Cómo instalar, ejecutar y probar ResolveKit en tu máquina, y qué comandos llegan a PayPal, a los proveedores de
-modelos o cuestan dinero. Código en el commit `c12faea`.
+modelos o cuestan dinero. Código en el commit `f1b7236`.
 
 ## Requisitos
 

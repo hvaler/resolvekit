@@ -2,7 +2,7 @@
 
 # Known issues
 
-Open follow-ups, updated for the code at `c12faea` (deployed 21/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source (the maintainers' follow-up lists, keyed below) and, where relevant, the code location. Items marked
+Open follow-ups, updated for the code at `f1b7236` (deployed 29/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source (the maintainers' follow-up lists, keyed below) and, where relevant, the code location. Items marked
 **by design** are kept on purpose but worth knowing. Product limits (what ResolveKit does not do) are in
 [Limitations](../product/limitations.md).
 
@@ -10,7 +10,7 @@ Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** foll
 · **AG** follow-ups of the buying agent (18/10) · **ENV** follow-ups of the three environments (18/10) ·
 **EV** follow-ups of the analyst evaluations (19/10) · **TR** the test run of 19/10 ([Testing](testing.md)) ·
 **DA** the dispute-actions design (19/10) and the code at
-`076c74f` (20/10/2026), now in `c12faea`.
+`076c74f` (20/10/2026), now in `f1b7236`.
 
 ## Uploads and PDFs
 
@@ -42,7 +42,7 @@ Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** foll
 |---|---|---|
 | Refundable amount in another currency | If PayPal's refundable amount were in a currency other than the dispute's, an amount is refused with `AMOUNT_ABOVE_REFUNDABLE` («The amount must be below / at most what PayPal would refund, <amount>») quoting the other currency, without saying that the currencies differ. Never seen in the sandbox (every dispute was USD) | DA; `apps/web/src/domain/actions.ts` (amount checks in `composeActionWith`) |
 | Contracts README out of date | `packages/paypal/contracts/README.md` still says no write was sent and every variant is «Not available»; the registry (`actionContracts.ts`) and the recorded files are the current state | DA; `packages/paypal/contracts/README.md` |
-| Message with a file: one observation | The composer attaches one confirmed upload (`send_message:file`); it was sent once through the app in the sandbox (V-7, 21/10/2026, a local run) and read back «Recorded by PayPal» with 1 document; the read-back proves the text and the document's presence, not its content; a single observation; the registry status is deployed (`c12faea`) | DA; `apps/web/src/components/ActionComposer.tsx` |
+| Message with a file: one observation | The composer attaches one confirmed upload (`send_message:file`); it was sent once through the app in the sandbox (V-7, 21/10/2026, a local run) and read back «Recorded by PayPal» with 1 document; the read-back proves the text and the document's presence, not its content; a single observation; the registry status is deployed (`f1b7236`) | DA; `apps/web/src/components/ActionComposer.tsx` |
 | The buyer's answer to an offer was never recorded | A pending offer is judged by PayPal's live `make_offer` link and, as a backstop, any later offer entry ends it; the buyer's event names are unknown | DA; `actions.ts` (`pendingSellerOffer`) |
 | Rules cover one reason, one stage and the recorded statuses | Accept, offer and escalate are composed only for not-received disputes waiting for the seller, a message also while PayPal waits for the buyer, and every action only in `INQUIRY`, because the recorded writes covered nothing else; others are refused, not guessed (**by design**) | DA; `actions.ts` (`RECORDED_STAGES`, `RECORDED_STATUSES`, `ACTION_RULES`) |
 | «Absent» after 60 s is a residual risk | A read-back proves a send absent when PayPal shows no new seller entry 60 s after `send_started` and still offers the action (`absentAfterMs`, twice the lag the sandbox showed). If PayPal ever recorded an entry later than that, a retry after «absent» could post the action twice; never observed in the sandbox | DA; `actionContracts.ts` (`absentAfterMs`), `actionReadback.ts` (`proveSend`) |
@@ -50,7 +50,7 @@ Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** foll
 | Appeal not testable in the sandbox | The sandbox refused to produce an appealable dispute (W-7), so appeal stays «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
 | `provide_supporting_info` not supported | Offered by PayPal after evidence in a claim; ResolveKit shows nothing to send | DA; `apps/web/src/domain/simulatedActions.ts` |
 | Proof of refund not sent | If PayPal asks only for it, no evidence can be sent on that dispute in this delivery; W-11 is a pending sandbox test | DA; `actionContracts.ts` |
-| The app's flow verified once per variant, not exercised on the hosted service | Each verified variant was sent once through the app on a local server (20/10/2026, V-1 to V-6; the message with a file on 21/10/2026, V-7): single observations. The Not-available variants were not run through the app; the code is deployed (`c12faea`) but nothing was sent from the hosted service (**Pending**); the settlement case is not yet bound in the hosted `BINDINGS_JSON` | DA |
+| The app's flow verified once per variant, not exercised on the hosted service | Each verified variant was sent once through the app on a local server (20/10/2026, V-1 to V-6; the message with a file on 21/10/2026, V-7): single observations. The Not-available variants were not run through the app; the code is deployed (`f1b7236`) but nothing was sent from the hosted service (**Pending**); the settlement case is not yet bound in the hosted `BINDINGS_JSON` | DA |
 
 ## Environments, sign-in and health
 

@@ -7,7 +7,7 @@ fronteras de confianza como diseño, consulta [Fronteras de confianza](../archit
 de una vulnerabilidad, consulta [SECURITY.es.md](../../../SECURITY.es.md).
 
 Las palabras de estado siguen el vocabulario del proyecto. Salvo que una fila diga otra cosa: **Implementado · Probado
-en local** (PayPal falso, modelo falso) en `c12faea`, desplegado en la demo del sandbox.
+en local** (PayPal falso, modelo falso) en `f1b7236`, desplegado en la demo del sandbox.
 
 ## Validez literal no es respaldo semántico
 

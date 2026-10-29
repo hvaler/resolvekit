@@ -61,7 +61,7 @@ operators, see the [Runbook](../operations/runbook.md).
 | You see | Fix |
 |---|---|
 | **Review what will be sent →** disabled | Read the bar above it: resolve each listed item |
-| «only "Provide evidence" can be sent from this screen for now» (seen on the earlier deployed commit `fbe9621`) | The deployed commit `c12faea` has the other actions ([Review and submit](review-and-submit.md#other-dispute-actions)); if you still see this message, reload to get the new web bundle, and choose **Provide evidence** meanwhile |
+| «only "Provide evidence" can be sent from this screen for now» (seen on the earlier deployed commit `fbe9621`) | The deployed commit `f1b7236` has the other actions ([Review and submit](review-and-submit.md#other-dispute-actions)); if you still see this message, reload to get the new web bundle, and choose **Provide evidence** meanwhile |
 | «Outcome pending confirmation» after a message, accept, offer or escalation | Press **Check again** (it only reads the dispute back); nothing else can be sent on that dispute until PayPal shows the result |
 | «Not available: <reason>» next to an action | That variant has no recorded PayPal contract, or is outside it; see [Limitations](../product/limitations.md) |
 | «Nothing can be sent yet» with reasons | Fix the reasons, **← Back to edit**, **Try again** |

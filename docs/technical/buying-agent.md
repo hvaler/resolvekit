@@ -4,7 +4,7 @@
 
 A model-driven agent that reaches a person's goal by buying MeterMCP tool calls from a budget the person approves
 in PayPal. One engine, `packages/agent`, runs behind the `/agent` page (`apps/server/src/agent/`), the CLI
-`npm run demo-agent` and `npm run demo:prepare --agent`. Code at commit `c12faea`. How to use the page:
+`npm run demo-agent` and `npm run demo:prepare --agent`. Code at commit `f1b7236`. How to use the page:
 [user guide](../user-guide/buying-agent.md).
 
 ## How a run works
@@ -146,7 +146,7 @@ hosted MeterMCP with keys: Pending (not evidenced).
 
 | What | Status |
 |---|---|
-| Engine, routes, page | Implemented · Tested locally (`packages/agent`: 52 tests; server and web suites, 21/10/2026, `c12faea`) · Deployed (`bdd1fd9` on 19/10/2026, then `fbe9621`, then `5111b88` on 20/10/2026, then `81c6242` and `c12faea` on 21/10/2026) |
+| Engine, routes, page | Implemented · Tested locally (`packages/agent`: 52 tests; server and web suites, 21/10/2026, `c12faea`) · Deployed (`bdd1fd9` on 19/10/2026, then `fbe9621`, then `5111b88` on 20/10/2026, then `81c6242` and `c12faea` on 21/10/2026, then `f1b7236` on 29/10/2026) |
 | Two `/agent` runs in the sandbox, 19/10/2026 (examples, not a general autonomy guarantee) | Verified in sandbox, Gemini as provider, budgets approved with a sandbox personal (buyer) account: one ended `cannot_do` with an injected failure, captured 0.05 USD, released 1.95; one ended `done`, captured 0.92 USD, released 1.08. Compare, Keep and the return to `/agent?run=` were observed |
 | Groq as the agent's fallback in the sandbox | Pending |
 | The committed agent case (1.37 of 5.00 USD, four calls, one failure not charged, session `mm-sess-20261008-01`) and evals EV-11/EV-12 | **Demo data.** They test the dispute **analyst**, not the agent. The 1.37 USD figure matches a sandbox session made on 09/10/2026 by a scripted MCP client, not by the model-driven agent |

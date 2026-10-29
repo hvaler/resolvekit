@@ -3,7 +3,7 @@
 # Local development
 
 How to install, run and test ResolveKit on your machine, and which commands reach PayPal, the model providers or
-cost money. Code at commit `c12faea`.
+cost money. Code at commit `f1b7236`.
 
 ## Requirements
 

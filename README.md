@@ -104,9 +104,9 @@ Only `provide-evidence` has been exercised end to end through the app on the hos
 accepting a claim (full, or partial as an offer), making a partial-refund offer, escalating and sending evidence after
 an escalation are built from commit `076c74f` (20/10/2026), each on a sandbox contract the owner approved, and
 **Verified in sandbox** through the app on 20/10/2026 (one send each, on a local server). The code is **Deployed**
-(`c12faea`, 21/10/2026), but these actions have **not** yet been exercised on the hosted service: the owner-only ones
+(`f1b7236`, 29/10/2026), but these actions have **not** yet been exercised on the hosted service: the owner-only ones
 need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on
-a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and is Verified in sandbox through the app (V-7, 21/10/2026, a local run; that registry status is Deployed in `c12faea`). Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
+a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and is Verified in sandbox through the app (V-7, 21/10/2026, a local run; that registry status is Deployed in `f1b7236`). Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
 **Not available**, each with its reason. ResolveKit never creates a refund. Per-variant status:
 [functional specification](docs/product/functional-specification.md#56-dispute-actions-other-than-evidence). Nothing
 has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).
@@ -243,11 +243,11 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
   (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` under full-suite
   load; it passed 3 of 3 run alone, twice). Details: [testing](docs/quality/testing.md) ·
   [known issues](docs/quality/known-issues.md).
-- **Deployment**: `c12faea` deployed on 21/10/2026 (pushed; a new web bundle with the V-7 registry status was observed). `demo:check` against the hosted URLs, after the deploy of `81c6242` and again after `c12faea` (same result): PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
+- **Deployment**: `f1b7236` deployed on 29/10/2026 (the pre-submission fixes; `main` fast-forwarded and pushed, Render redeployed both services, which restarted at about 12:15 Madrid time). `demo:check` against the hosted URLs after that deploy, the same result as after `c12faea` and `81c6242` on 21/10/2026: PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
   connected, webhook on, both bindings verified, both AI models answered, both warm-ups cached; WARN on both reserves
   (0 fresh disputes); one FAIL, the known one: the standard case's binding is used and its reserve is empty (status as of 29/10/2026: both reserves are empty; the
   refill for judging is planned for 28–30/11, when the owner-only settlement case will also be bound in the hosted `BINDINGS_JSON`). It cannot prove
-  which commit is live. Earlier: `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (same `demo:check` result); `fbe9621`, 19/10/2026.
+  which commit is live. Earlier: `c12faea` (a new web bundle with the V-7 registry status was observed) and `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (same `demo:check` result); `fbe9621`, 19/10/2026.
 - **Evaluations** (analyst only, synthetic cases): [evaluations](docs/quality/evaluations.md). Headline: on 12 held-out
   cases × 3 runs, 0 of 66 true notes rejected and 0 of 72 planted false notes sent, but only 17 of 66 true notes were
   judged supported (6 + 6 + 5; source: [evaluations](docs/quality/evaluations.md)); the rest went to review.

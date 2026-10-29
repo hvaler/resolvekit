@@ -9,7 +9,7 @@
 `apps/metermcp` es un servidor MCP mínimo de pago por uso. Un cliente MCP llama a herramientas de pago; el usuario
 aprueba un presupuesto una vez en PayPal; MeterMCP cobra solo las llamadas que tienen éxito y libera el resto. Un
 único vendedor (la app de sandbox de PayPal de su entorno), sin marketplace, sin pagos a terceros. Fuente:
-`apps/metermcp/src/` en el commit `c12faea`.
+`apps/metermcp/src/` en el commit `f1b7236`.
 
 Qué es real y qué es sintético: el flujo de dinero de PayPal (pedido de sandbox, autorización, captura parcial o
 anulación), el ledger (libro contable), los hashes de peticiones y respuestas y los recibos son registros reales. Las salidas

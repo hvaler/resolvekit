@@ -3,7 +3,7 @@
 # Components
 
 An npm workspace (`package.json`, Node `>=24`, TypeScript run natively by Node, no build step for the server or
-MeterMCP). Three apps and six packages. Code at commit `c12faea`.
+MeterMCP). Three apps and six packages. Code at commit `f1b7236`.
 
 ```mermaid
 flowchart TB

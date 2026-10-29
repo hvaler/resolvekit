@@ -3,7 +3,7 @@
 # Pipeline de IA (el analista de disputas)
 
 `packages/analyst`, llamado por `apps/server`. Lee los documentos de un caso y redacta una respuesta en la que cada
-frase cita evidencia literal; después comprueba cada frase. Código en el commit `c12faea`. Las cifras de evaluación
+frase cita evidencia literal; después comprueba cada frase. Código en el commit `f1b7236`. Las cifras de evaluación
 no se repiten aquí: las únicas fuentes son [evaluaciones](../quality/evaluations.md) y
 `packages/analyst/evals/results/summary.md`.
 

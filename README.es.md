@@ -106,10 +106,10 @@ Solo `provide-evidence` se ha ejercitado de extremo a extremo a través de la ap
 mensaje, aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial, escalar y
 enviar evidencia tras un escalado están construidos desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato
 de sandbox aprobado por el propietario, y **Verificados en sandbox** a través de la app el 20/10/2026 (un envío cada
-uno, en un servidor local). El código está **Desplegado** (`c12faea`, 21/10/2026), pero estas acciones **no** se han
+uno, en un servidor local). El código está **Desplegado** (`f1b7236`, 29/10/2026), pero estas acciones **no** se han
 ejercitado todavía en el servicio alojado: las solo del Owner necesitan el caso de liquidación vinculado en el
 `BINDINGS_JSON` alojado, cosa que aún no ocurre, y los revisores pueden enviar mensajes en la disputa activa de un caso
-vinculado. Un mensaje con archivo se puede elegir en el editor web (una subida confirmada, solo mientras PayPal espera al comprador) y está Verificado en sandbox a través de la app (V-7, 21/10/2026, ejecución local; ese estado del registro está Desplegado en `c12faea`). Las ofertas de sustitución, retirar una
+vinculado. Un mensaje con archivo se puede elegir en el editor web (una subida confirmada, solo mientras PayPal espera al comprador) y está Verificado en sandbox a través de la app (V-7, 21/10/2026, ejecución local; ese estado del registro está Desplegado en `f1b7236`). Las ofertas de sustitución, retirar una
 oferta, las apelaciones, la prueba de reembolso y los tipos con devolución están **No disponibles**, cada uno con su
 motivo. ResolveKit nunca crea un reembolso. Estado por variante:
 [especificación funcional](docs/es/product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
@@ -254,12 +254,12 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
   (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` bajo la carga de
   la suite completa; pasó 3 de 3 ejecutado solo, dos veces). Detalles: [tests](docs/es/quality/testing.md) ·
   [problemas conocidos](docs/es/quality/known-issues.md).
-- **Despliegue**: `c12faea` desplegado el 21/10/2026 (subido; se observó un bundle web nuevo con el estado V-7 del registro). `demo:check` contra las URL alojadas, tras el despliegue de `81c6242` y de nuevo tras `c12faea` (mismo resultado): PASS en ResolveKit activo, página de inicio,
+- **Despliegue**: `f1b7236` desplegado el 29/10/2026 (las correcciones previas a la entrega; `main` avanzado y subido, Render volvió a desplegar ambos servicios, que se reiniciaron hacia las 12:15, hora de Madrid). `demo:check` contra las URL alojadas tras ese despliegue, el mismo resultado que tras `c12faea` y `81c6242` el 21/10/2026: PASS en ResolveKit activo, página de inicio,
   MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones verificadas, ambos modelos de IA
   respondieron, ambos precalentamientos en caché; WARN en ambas reservas (0 disputas nuevas); un FAIL, el conocido: la
   vinculación del caso estándar está usada y su reserva está vacía (estado a 29/10/2026: ambas reservas están vacías; el
   relleno para la evaluación está previsto el 28–30/11, cuando también se vinculará el caso de liquidación, solo del Owner, en el `BINDINGS_JSON` alojado). No puede demostrar qué commit está
-  desplegado. Antes: `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (mismo resultado de `demo:check`); `fbe9621`, 19/10/2026.
+  desplegado. Antes: `c12faea` (se observó un bundle web nuevo con el estado V-7 del registro) y `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (mismo resultado de `demo:check`); `fbe9621`, 19/10/2026.
 - **Evaluaciones** (solo el analista, casos sintéticos): [evaluaciones](docs/es/quality/evaluations.md). Titular: en 12
   casos reservados (held-out) × 3 ejecuciones, 0 de 66 notas verdaderas rechazadas y 0 de 72 notas falsas plantadas
   enviadas, pero solo 17 de 66 notas verdaderas se juzgaron respaldadas (6 + 6 + 5; fuente: [evaluaciones](docs/es/quality/evaluations.md)); el resto fue a revisión.

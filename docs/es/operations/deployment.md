@@ -6,14 +6,13 @@ Cómo se despliegan en Render los dos servicios de ResolveKit, en qué orden y q
 Para cada variable de entorno consulta [Configuración](../technical/configuration.md); para la operación diaria, el
 [Runbook](runbook.md).
 
-**Estado (21/10/2026).** Desplegado. El commit `c12faea` (`main`; el estado del registro de `send_message:file` Verificado en sandbox tras V-7, con sus tests y documentación, sobre `81c6242`: mensaje con una subida confirmada desde la interfaz, «Check again» en el
-flujo de evidencia de una disputa retenida, dos correcciones de relectura) se subió y se desplegó el 21/10, y se observó un bundle web nuevo (`81c6242` se subió y se desplegó antes, el mismo día, con el mismo resultado de `demo:check`). `npm run demo:check` contra las URL
-alojadas dio entonces PASS en ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado,
+**Estado (29/10/2026).** Desplegado. El commit `f1b7236` (`main`; las correcciones previas a la entrega sobre `c12faea`: el listener de MeterMCP ya no cae ante un cliente que aborta, una petición que no se puede construir o un error de un handler; provide-evidence se envía una sola vez, sin reintento; el libro de MeterMCP resuelve al reiniciar las liquidaciones a medias y las llamadas en curso; el barrido de subidas aparta las carpetas ilegibles en vez de borrarlas; un tiempo límite de 60 s por test; más documentación) se avanzó y se subió el 29/10, y Render volvió a desplegar ambos servicios (los dos se reiniciaron hacia las 12:15, hora de Madrid). `npm run demo:check` contra las URL
+alojadas dio entonces el mismo resultado que tras `c12faea`: PASS en ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado,
 webhook activo, ambas vinculaciones verificadas, ambos modelos de IA respondieron y ambos precalentamientos en caché;
 WARN en ambas reservas (0 disputas nuevas); y un FAIL, el conocido: la vinculación del caso estándar está usada y su
 reserva está vacía; estado a 29/10/2026: ambas reservas están vacías, las disputas nuevas del sandbox se preparan el 31/10/2026 y el relleno para la evaluación está previsto el 28–30/11/2026, cuando también se vinculará el caso de liquidación, solo del Owner, en el `BINDINGS_JSON` alojado (consulta [Runbook](runbook.md#rotación-de-disputas-y-reserva)).
 `demo:check` no puede demostrar qué commit está desplegado. Las acciones de disputa de ese commit aún no se han
-ejercitado en el servicio alojado. Los despliegues anteriores registrados fueron `81c6242` el 21/10 (antes, el mismo día; el mismo resultado de `demo:check`), `5111b88` el 20/10 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`), `fbe9621` el 19/10 (confirmación del
+ejercitado en el servicio alojado. Los despliegues anteriores registrados fueron `c12faea` el 21/10 (el estado del registro de `send_message:file` Verificado en sandbox tras V-7, sobre `81c6242`; se observó un bundle web nuevo), `81c6242` el 21/10 (antes, el mismo día; el mismo resultado de `demo:check`), `5111b88` el 20/10 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`), `fbe9621` el 19/10 (confirmación del
 propietario; `demo:check` pasó todas las líneas excepto la misma reserva vacía) y `bdd1fd9` el 19/10, ambos servicios,
 primero MeterMCP y ResolveKit a mano.
 

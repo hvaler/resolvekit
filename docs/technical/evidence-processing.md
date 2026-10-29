@@ -4,7 +4,7 @@
 
 How ResolveKit turns a merchant's screenshot, PDF or pasted text into evidence the analyst can cite and PayPal can
 receive, without anything leaving the server before the merchant has covered what they want and confirmed. Code in
-`apps/server/src/uploads/` at commit `c12faea`. How to use it: [cases and evidence](../user-guide/cases-and-evidence.md),
+`apps/server/src/uploads/` at commit `f1b7236`. How to use it: [cases and evidence](../user-guide/cases-and-evidence.md),
 [PDF review](../user-guide/pdf-review.md).
 
 ## Principles

@@ -61,7 +61,7 @@ Para operadores, ver el [Runbook](../operations/runbook.md).
 | Ves | Solución |
 |---|---|
 | **Review what will be sent →** desactivado | Lee la barra de encima: resuelve cada punto de la lista |
-| «only "Provide evidence" can be sent from this screen for now» (visto en el commit desplegado anterior `fbe9621`) | El commit desplegado `c12faea` tiene las demás acciones ([Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa)); si sigues viendo este mensaje, recarga para obtener el bundle web nuevo y, mientras tanto, elige **Provide evidence** |
+| «only "Provide evidence" can be sent from this screen for now» (visto en el commit desplegado anterior `fbe9621`) | El commit desplegado `f1b7236` tiene las demás acciones ([Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa)); si sigues viendo este mensaje, recarga para obtener el bundle web nuevo y, mientras tanto, elige **Provide evidence** |
 | «Outcome pending confirmation» tras un mensaje, una aceptación, una oferta o un escalado | Pulsa **Check again** (solo vuelve a leer la disputa); no se puede enviar nada más en esa disputa hasta que PayPal muestre el resultado |
 | «Not available: <motivo>» junto a una acción | Esa variante no tiene un contrato de PayPal registrado, o queda fuera de él; ver [Limitaciones](../product/limitations.md) |
 | «Nothing can be sent yet» con motivos | Corrige los motivos, **← Back to edit**, **Try again** |

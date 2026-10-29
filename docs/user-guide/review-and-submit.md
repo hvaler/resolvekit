@@ -91,7 +91,7 @@ read, **only if** one is left (as of 29/10/2026 neither case has any).
 ## Other dispute actions
 
 Status: **Tested locally** (with fakes built from recorded PayPal responses) · **Verified in sandbox** through the
-app (20/10/2026, one send each on a local server; the message with a file on 21/10/2026, V-7). The code, including the registry status of the message with a file, is Deployed (`c12faea`, 21/10/2026) but these actions have not yet been exercised on the hosted service; the owner-only ones need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on a bound case's active dispute. Per-variant status and rules:
+app (20/10/2026, one send each on a local server; the message with a file on 21/10/2026, V-7). The code, including the registry status of the message with a file, is Deployed (`f1b7236`, 29/10/2026) but these actions have not yet been exercised on the hosted service; the owner-only ones need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on a bound case's active dispute. Per-variant status and rules:
 [Functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence).
 
 Choose the action in **What to do**. Only what PayPal offers on the dispute right now can be composed, and each variant

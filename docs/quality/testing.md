@@ -41,7 +41,7 @@ suite ran); `npm run typecheck` was clean; the web build was OK. 1,488 tests, al
 | `apps/web` (vitest) | `npm run test:web` | 471 | 471 | 0 |
 | Total | | 1,488 | 1,488 | 0 |
 
-The run before that: **2026-10-21 · commit `c12faea` (`main`, deployed) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed (paypal 36, server 637, metermcp 80, the other suites as above).
+The run before that: **2026-10-21 · commit `c12faea` (`main`, deployed on 21/10/2026) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed (paypal 36, server 637, metermcp 80, the other suites as above).
 
 The run before that: **2026-10-21 · commit `81c6242` (deployed earlier that day) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed (the same per-suite counts as the `c12faea` run).
 
@@ -177,6 +177,6 @@ not by the model-driven agent.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
 - Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
-  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`c12faea`) but these actions have not been exercised on the hosted service.
+  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`f1b7236`) but these actions have not been exercised on the hosted service.
 
 The full list, with sources, is in [Known issues](known-issues.md).

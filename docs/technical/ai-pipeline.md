@@ -3,7 +3,7 @@
 # AI pipeline (the dispute analyst)
 
 `packages/analyst`, called by `apps/server`. It reads a case's documents and drafts a response in which every
-sentence cites verbatim evidence, then checks each sentence. Code at commit `c12faea`. Evaluation figures are not
+sentence cites verbatim evidence, then checks each sentence. Code at commit `f1b7236`. Evaluation figures are not
 repeated here: the only sources are [evaluations](../quality/evaluations.md) and
 `packages/analyst/evals/results/summary.md`.
 

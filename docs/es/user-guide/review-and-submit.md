@@ -95,7 +95,7 @@ después, en su siguiente lectura, **solo si** queda alguna (a 29/10/2026 ningú
 ## Otras acciones de disputa
 
 Estado: **Probado en local** (con fakes construidos a partir de respuestas registradas de PayPal) · **Verificado en
-sandbox** a través de la app (20/10/2026, un envío cada una en un servidor local; el mensaje con archivo el 21/10/2026, V-7). El código, incluido el estado del registro del mensaje con archivo, está Desplegado (`c12faea`, 21/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado;
+sandbox** a través de la app (20/10/2026, un envío cada una en un servidor local; el mensaje con archivo el 21/10/2026, V-7). El código, incluido el estado del registro del mensaje con archivo, está Desplegado (`f1b7236`, 29/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado;
 las solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre, y
 los revisores pueden enviar mensajes en la disputa activa de un caso vinculado. Estado y reglas por variante:
 [Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).

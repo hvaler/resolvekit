@@ -3,7 +3,7 @@
 # Trust boundaries, identity and isolation
 
 What each part of the system trusts, how people are identified, what they may do, and how one workspace, person
-or run is kept from another. Code at commit `c12faea`. These measures reduce risk; none is an absolute guarantee.
+or run is kept from another. Code at commit `f1b7236`. These measures reduce risk; none is an absolute guarantee.
 The broader privacy view is in [security and privacy](../quality/security-and-privacy.md).
 
 ## Boundaries
