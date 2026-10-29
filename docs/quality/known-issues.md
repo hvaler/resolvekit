@@ -66,7 +66,7 @@ Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** foll
 | Issue | Effect | Source |
 |---|---|---|
 | Auto-deploy still `commit` for both services | Deploy order MeterMCP → ResolveKit is not guaranteed on a push; the follow-up recommends turning it off for `resolvekit` | AG; `render.yaml` |
-| Standard reserve empty | New sends on the standard case are **Pending** until the reserve is refilled (planned 25–30/11) | private evidence 19/10 |
+| Reserves empty (both cases, as of 29/10/2026) | New real-sandbox sends are **Pending**; new disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026; the Explore demo is the default path until then | private evidence 19/10 |
 | No backup, export or account deletion | See [Backup and recovery](../operations/backup-and-recovery.md), [Retention and deletion](../operations/retention-and-deletion.md) | no backup code in the repository |
 | Audit and money records never expire | The send log (`audit-events-sends.jsonl`) and the MeterMCP ledger grow without limit on 1 GB disks (**by design**: they are the audit and money records; the analysis cache and the usage log are bounded) | `intents.ts`, `apps/metermcp/src/ledger.ts` |
 | A corrupt upload record is swept | An upload directory whose `record.json` cannot be read is removed by the hourly sweep as a leftover (its files go too); not preserved like the other stores. Durable writes make this unlikely | `uploads/store.ts` (`readRecord`, `sweepDisk`) |

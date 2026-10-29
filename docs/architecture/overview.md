@@ -46,7 +46,7 @@ flowchart LR
 | Environment | Routes | Data | Sends to PayPal | Status |
 |---|---|---|---|---|
 | Explore demo | `/demo`, `/demo/cases/:id` | Fictional cases, committed golden analyses, in-browser simulator | Never | Implemented · Tested locally · Deployed · Available to users |
-| Sandbox evaluation (UI: «Sandbox evaluation · <workspace> · PayPal sandbox») | `/cases`, `/cases/:id` | Cases bound to real PayPal **sandbox** disputes; synthetic documents plus merchant uploads | Yes, to the sandbox only (standard case: new sends Pending until its dispute reserve is refilled, 19/10/2026) | Implemented · Tested locally · Verified in sandbox · Deployed · Available to invited reviewers |
+| Sandbox evaluation (UI: «Sandbox evaluation · <workspace> · PayPal sandbox») | `/cases`, `/cases/:id` | Cases bound to real PayPal **sandbox** disputes; synthetic documents plus merchant uploads | Yes, to the sandbox only (as of 29/10/2026 both reserves are empty: new real-sandbox sends are Pending until the refill for judging on 28–30/11/2026) | Implemented · Tested locally · Verified in sandbox · Deployed · Available to invited reviewers |
 | Merchant workspace | waiting screen | — | No | Waiting screen Implemented · Deployed. Connecting a merchant's own disputes: **Pending** (no app code) |
 
 The environment is decided on the server: `/api/auth/me` reports the workspace connection as `evaluation`,
@@ -82,7 +82,7 @@ Shared packages (`packages/*`) are libraries inside those processes, not service
 it (a new web bundle was observed), and `demo:check` against the hosted URLs (after `81c6242` and again after `c12faea`, same result) passed ResolveKit up, landing, MeterMCP up,
 PayPal sandbox connected, webhook on, both bindings verified, both AI models answered and both warm-ups cached; it
 warned on both reserves (0 fresh disputes) and failed on one known line: the standard case's binding is used and its
-reserve is empty (refill planned 25-30/11). Earlier, `5111b88` was deployed on 20/10/2026 (the owner fast-forwarded `main` to it and pushed; the same `demo:check` result) and `fbe9621` on 19/10/2026 (owner's confirmation; the
+reserve is empty (status as of 29/10/2026: both reserves empty, refill for judging 28–30/11/2026). Earlier, `5111b88` was deployed on 20/10/2026 (the owner fast-forwarded `main` to it and pushed; the same `demo:check` result) and `fbe9621` on 19/10/2026 (owner's confirmation; the
 same one empty reserve). `demo:check` cannot prove which commit is live. A persistent disk rules out
 zero-downtime deploys; one to two minutes of 502 per deploy were observed (private evidence). Details:
 [deployment](../operations/deployment.md).

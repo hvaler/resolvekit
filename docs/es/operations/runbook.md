@@ -169,8 +169,10 @@ cualquier caso. Cada disputa solo puede aparecer una vez en todo el archivo (un 
 análisis guardado, así que la evidencia compuesta ahí responde `NO_ANALYSIS`; está pensado para las acciones solo del
 Owner.
 
-**Estado el 19/10/2026 (evidencia privada):** la disputa activa del caso estándar está usada y su reserva está vacía,
-así que los nuevos envíos a ese caso están **Pendientes** hasta que se rellene la reserva (previsto del 25 al 30/11).
+**Estado a 29/10/2026:** las reservas de ambos casos están vacías (el 19/10/2026 la disputa activa del caso estándar
+estaba usada; evidencia privada), así que los nuevos envíos a ellos están **Pendientes**. Las disputas nuevas del
+sandbox se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026; hasta entonces la ruta
+por defecto es la Explore demo.
 PayPal documenta que la fase de consulta (inquiry) dura hasta 20 días salvo que se escale
 (https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api); comprueba el
 `seller_response_due_date` de cada disputa y prepara disputas para las fechas en que se necesiten.

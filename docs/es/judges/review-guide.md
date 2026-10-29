@@ -27,12 +27,11 @@ Nombres exactos de los controles, clic a clic: [recorrido por la demo](demo-walk
 | 1 | Abre el enlace de revisor del formulario de entrega y únete (**Join for this browser only** es lo más rápido) | La barra de la aplicación: *Sandbox evaluation · Test Store · PayPal sandbox*; la bandeja de entrada con los casos vinculados |
 | 2 | Abre **PP-R-TVH-10190665** | **PayPal sandbox · live** con un id de disputa en la barra de la aplicación; la cronología; pasa el ratón por una cita para iluminar sus palabras; una frase tachada |
 | 3 | Resuelve la contradicción de la dirección ("Apt 4" frente a "Apt 4B") con **Explain in response** | El botón cambia de *Resolve 1 item to continue* a **Review what will be sent →** |
-| 4 | **Review what will be sent →** → **Continue to confirm →** → marca la aprobación → **Submit evidence to PayPal** (solo mientras el caso tenga una disputa nueva; la reserva del caso estándar estaba vacía el 19/10/2026) | El contenido compuesto por el servidor con el id de intención y el hash del contenido; después **Recorded by PayPal** con una comparación campo a campo |
+| 4 | **Review what will be sent →** → **Continue to confirm →** → marca la aprobación → **Submit evidence to PayPal** (en la Explore demo es la ruta por defecto: va al simulador; al sandbox real solo mientras el caso tenga una disputa nueva, ver la nota de abajo) | El contenido compuesto por el servidor con el id de intención y el hash del contenido; después **Recorded by PayPal** con una comparación campo a campo |
 | 5 | Abre `/agent` (**Try the buying agent** en la bandeja de entrada) e inicia una ejecución con un objetivo de ejemplo | Pasos con los motivos breves del modelo, el enlace de aprobación, el recibo de MeterMCP |
 
-Si el caso estándar ya se usó (ver [más abajo](#si-una-disputa-ya-se-usó-la-reserva-está-vacía-o-se-alcanzó-un-límite)),
-haz los minutos 2–4 en el mismo caso en la **Explore demo** (`/demo/cases/PP-R-TVH-10190665`): el flujo es idéntico,
-pero se envía al simulador del navegador en lugar de a PayPal.
+A 29/10/2026 las reservas de disputas nuevas del sandbox de ambos casos están vacías; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto es la Explore demo, y el envío al sandbox real puede no estar disponible. Haz los minutos 2–4 en el mismo caso en la **Explore demo** (`/demo/cases/PP-R-TVH-10190665`): el flujo es idéntico,
+pero se envía al simulador del navegador en lugar de a PayPal. Más [más abajo](#si-una-disputa-ya-se-usó-la-reserva-está-vacía-o-se-alcanzó-un-límite).
 
 ## Qué aportan PayPal, la IA y MeterMCP
 
@@ -171,7 +170,7 @@ contiene el código. No subas datos personales que te importen. Estado: subida d
 | Ves | Por qué | Qué hacer |
 |---|---|---|
 | El botón de envío dice **Evidence recorded by PayPal** y el borrador es de solo lectura | Alguien ya envió evidencia a esta disputa del sandbox; en nuestras pruebas en sandbox la acción `provide_evidence` de PayPal desapareció tras un envío (observado, no es una regla documentada) | Lee la relectura y vuelve más tarde: unos 15 minutos después de un envío, la siguiente lectura pasa el caso a la siguiente disputa de su reserva, **si a la reserva le queda alguna**. O recorre el mismo flujo en la Explore demo |
-| El caso sigue en una disputa usada | La reserva de disputas nuevas del sandbox está vacía (la del caso estándar estaba vacía el 19/10/2026; la rellena el operador) | Usa la Explore demo para el paso de envío; todo lo demás en Test Store sigue funcionando |
+| El caso sigue en una disputa usada | La reserva de disputas nuevas del sandbox está vacía (a 29/10/2026 en ambos casos; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026) | Usa la Explore demo para el paso de envío (la ruta por defecto hasta entonces); todo lo demás en Test Store sigue funcionando |
 | *PayPal is processing this new dispute. Actions appear shortly.* | Una disputa nueva del sandbox muestra primero `UNDER_REVIEW` sin acciones para el vendedor; en nuestras pruebas se abrió al cabo de unos minutos | Espera unos minutos y vuelve a abrir el caso |
 | Un mensaje con una hora de reinicio (por ejemplo *The demo's daily agent runs are used up; they reset at …*) | Límites compartidos: al día 60 análisis en directo, 200 recomprobaciones, 20 envíos de evidencia, 40 subidas, 20 ejecuciones del agente (5 por persona), 20 presupuestos de MeterMCP; por hora 6 análisis en directo y 30 recomprobaciones; límites de peticiones por dirección | Espera a la hora indicada, o usa el análisis almacenado y la Explore demo |
 | *Seller workspace only* / *Sign in required* en **Re-run with AI** | No estás en el espacio de trabajo de Test Store | Vuelve a abrir el enlace de revisor |

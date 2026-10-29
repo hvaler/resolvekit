@@ -119,8 +119,8 @@ Reglas:
   en `/demo/cases/:id`.
 - **Rotación de reserva**: cuando se usa una disputa vinculada (resuelta, o con evidencia del vendedor de más de 15
   min), la siguiente lectura pasa el caso a la siguiente disputa de su reserva, si queda alguna
-  (`apps/server/src/app.ts:591-630`). A 19/10/2026 la reserva del caso estándar está vacía, así que muestra la
-  evidencia registrada y los nuevos envíos sobre él están **Pendiente**.
+  (`apps/server/src/app.ts:591-630`). A 29/10/2026 las reservas de ambos casos están vacías (relleno para la evaluación el 28–30/11/2026), así que muestran la
+  evidencia registrada y los nuevos envíos al sandbox real están **Pendiente**.
 
 ### 5.2 Análisis
 

@@ -163,8 +163,9 @@ by an action still settling → kept active`, and the ops report (`GET /api/ops/
 Each dispute may be listed once in the whole file (a duplicate stops the start). It has no stored analysis, so evidence
 composed there answers `NO_ANALYSIS`; it is meant for the owner-only actions.
 
-**State on 19/10/2026 (private evidence):** the standard case's active dispute is used and its reserve is empty, so new
-sends to it are **Pending** until the reserve is refilled (planned 25–30/11). PayPal documents that the inquiry
+**State as of 29/10/2026:** the reserves of both cases are empty (on 19/10/2026 the standard case's active dispute was
+used; private evidence), so new sends to them are **Pending**. New sandbox disputes are prepared on 31/10/2026 and the
+reserve is refilled for judging on 28–30/11/2026; until then the Explore demo is the default path. PayPal documents that the inquiry
 stage lasts up to 20 days unless escalated
 (https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api); check each dispute's
 `seller_response_due_date` and prepare disputes for the dates they are needed.
@@ -199,7 +200,7 @@ For the agent case the claim is what its evidence answers: item type «Service»
 calls and I didn't receive their results» (the receipt lists each call delivered; failed ones were not charged).
 
 **Status:** Implemented · Tested locally (`apps/server/test/demo-prepare.test.ts`). Use of `--agent` / `--agent-run`
-for the hosted reserve: **Pending** (planned 25–30/11). No binding names a model-driven run yet; the agent case's
+for the hosted reserve: **Pending** (planned 31/10/2026 and for judging on 28–30/11/2026). No binding names a model-driven run yet; the agent case's
 current binding points at a session made by the earlier scripted client.
 
 Then paste the printed `BINDINGS_JSON` into the `resolvekit` service on Render (it restarts), run `demo:check`, and

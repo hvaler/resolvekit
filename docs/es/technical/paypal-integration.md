@@ -75,8 +75,7 @@ respuesta y el merchant id del vendedor. Estado: Implementado · Probado en loca
 enviar, la disputa debe ser la vinculada, con exactamente una transacción disputada que sea la captura vinculada, y
 con los importes disputado y bruto iguales al importe y la moneda del caso; si faltan datos, falla. Un caso puede
 tener una **reserva** (una lista, la primera activa): una disputa usada (resuelta, o con evidencia del vendedor desde
-hace más de 15 minutos) hace que el caso pase a la siguiente en su próxima lectura, si la reserva no está vacía. La
-reserva del caso estándar estaba vacía el 19/10/2026 (los envíos nuevos quedan Pendientes hasta que se reponga).
+hace más de 15 minutos) hace que el caso pase a la siguiente en su próxima lectura, si la reserva no está vacía. A 29/10/2026 las reservas de ambos casos están vacías (los envíos nuevos al sandbox real quedan Pendientes hasta el relleno para la evaluación del 28–30/11/2026).
 
 ### Envío de evidencia
 

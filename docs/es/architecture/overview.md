@@ -47,7 +47,7 @@ flowchart LR
 | Entorno | Rutas | Datos | Envía a PayPal | Estado |
 |---|---|---|---|---|
 | Explore demo | `/demo`, `/demo/cases/:id` | Casos ficticios, análisis de referencia (golden) confirmados en el repositorio, simulador en el navegador | Nunca | Implementado · Probado en local · Desplegado · Disponible para usuarios |
-| Evaluación en sandbox (UI: «Sandbox evaluation · <workspace> · PayPal sandbox») | `/cases`, `/cases/:id` | Casos vinculados a disputas reales del **sandbox** de PayPal; documentos sintéticos más subidas del comerciante | Sí, solo al sandbox (caso estándar: los envíos nuevos quedan Pendientes hasta que se reponga su reserva de disputas, 19/10/2026) | Implementado · Probado en local · Verificado en sandbox · Desplegado · Disponible para revisores invitados |
+| Evaluación en sandbox (UI: «Sandbox evaluation · <workspace> · PayPal sandbox») | `/cases`, `/cases/:id` | Casos vinculados a disputas reales del **sandbox** de PayPal; documentos sintéticos más subidas del comerciante | Sí, solo al sandbox (a 29/10/2026 ambas reservas están vacías: los envíos nuevos al sandbox real quedan Pendientes hasta el relleno para la evaluación del 28–30/11/2026) | Implementado · Probado en local · Verificado en sandbox · Desplegado · Disponible para revisores invitados |
 | Espacio de trabajo del comerciante | pantalla de espera | — | No | Pantalla de espera Implementada · Desplegada. Conectar las disputas propias de un comerciante: **Pendiente** (sin código en la app) |
 
 El entorno se decide en el servidor: `/api/auth/me` informa de la conexión del espacio de trabajo como `evaluation`,
@@ -83,8 +83,7 @@ Los paquetes compartidos (`packages/*`) son bibliotecas dentro de esos procesos,
 Render lo desplegó automáticamente (se observó un bundle web nuevo) y `demo:check` contra las URL alojadas (tras `81c6242` y de nuevo tras `c12faea`, mismo resultado) dio PASS en
 ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones
 verificadas, ambos modelos de IA respondieron y ambos precalentamientos en caché; dio WARN en ambas reservas (0 disputas
-nuevas) y FAIL en una línea conocida: la vinculación del caso estándar está usada y su reserva está vacía (relleno
-previsto el 25-30/11). Antes, `5111b88` se desplegó el 20/10/2026 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`) y `fbe9621` el 19/10/2026 (confirmación del propietario; la misma reserva
+nuevas) y FAIL en una línea conocida: la vinculación del caso estándar está usada y su reserva está vacía (estado a 29/10/2026: ambas reservas vacías, relleno para la evaluación el 28–30/11/2026). Antes, `5111b88` se desplegó el 20/10/2026 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`) y `fbe9621` el 19/10/2026 (confirmación del propietario; la misma reserva
 vacía). `demo:check` no puede demostrar qué commit está desplegado. Un disco
 persistente impide los despliegues sin tiempo de inactividad; se observaron de uno a dos minutos de 502 por despliegue
 (evidencia privada). Detalles: [despliegue](../operations/deployment.md).

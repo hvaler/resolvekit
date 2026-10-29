@@ -66,7 +66,7 @@ en `076c74f` (20/10/2026), ahora en `c12faea`.
 | Problema | Efecto | Fuente |
 |---|---|---|
 | Auto-deploy sigue en `commit` para ambos servicios | El orden de despliegue MeterMCP → ResolveKit no está garantizado en un push; el seguimiento recomienda desactivarlo para `resolvekit` | AG; `render.yaml` |
-| Reserva estándar vacía | Los nuevos envíos en el caso estándar están **Pendientes** hasta que se rellene la reserva (previsto del 25 al 30/11) | evidencia privada 19/10 |
+| Reservas vacías (ambos casos, a 29/10/2026) | Los nuevos envíos al sandbox real están **Pendientes**; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026; hasta entonces la ruta por defecto es la Explore demo | evidencia privada 19/10 |
 | Sin copias de seguridad, exportación ni borrado de cuentas | Consulta [Copias de seguridad y recuperación](../operations/backup-and-recovery.md), [Retención y borrado](../operations/retention-and-deletion.md) | no hay código de copias de seguridad en el repositorio |
 | Los registros de auditoría y de dinero no caducan nunca | El log de envíos (`audit-events-sends.jsonl`) y el ledger de MeterMCP crecen sin límite en discos de 1 GB (**por diseño**: son los registros de auditoría y de dinero; la caché de análisis y el log de uso están acotados) | `intents.ts`, `apps/metermcp/src/ledger.ts` |
 | Un registro de subida corrupto se barre | Un directorio de subida cuyo `record.json` no se puede leer lo elimina el barrido horario como resto (sus archivos también); no se conserva como en los demás almacenes. Las escrituras duraderas lo hacen improbable | `uploads/store.ts` (`readRecord`, `sweepDisk`) |

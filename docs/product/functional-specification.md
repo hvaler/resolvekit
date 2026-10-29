@@ -114,8 +114,8 @@ Rules:
   `/demo/cases/:id`.
 - **Reserve rotation**: when a bound dispute is used (resolved, or seller evidence older than 15 min), the next read
   moves the case to the next dispute of its reserve, if one is left (`apps/server/src/app.ts:591-630`). As of
-  19/10/2026 the standard case's reserve is empty, so it shows the recorded evidence and new sends on it are
-  **Pending**.
+  29/10/2026 the reserves of both cases are empty (refill for judging on 28–30/11/2026), so they show the recorded
+  evidence and new real-sandbox sends are **Pending**.
 
 ### 5.2 Analysis
 

@@ -117,8 +117,7 @@ Nada se ha ejecutado contra PayPal live. Fuentes: [integración con PayPal](docs
 4. **Review what will be sent →**, **Continue to confirm →**, marca la aprobación y **Submit evidence to PayPal**: en la
    demo va al simulador, nunca a PayPal, y la relectura dice *Recorded by the PayPal simulator*.
 5. Para enviar a una disputa real del sandbox, usa el enlace de revisor del formulario de entrega y sigue la
-   [guía para el jurado](docs/es/judges/review-guide.md) (solo mientras el caso tenga una disputa nueva; la reserva del
-   caso estándar estaba vacía el 19/10/2026).
+   [guía para el jurado](docs/es/judges/review-guide.md). A 29/10/2026 las reservas de disputas nuevas del sandbox de ambos casos están vacías; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto es la Explore demo, y el envío al sandbox real puede no estar disponible.
 
 Paso a paso con el nombre de cada control: [recorrido por la demo](docs/es/judges/demo-walkthrough.md).
 
@@ -244,8 +243,8 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 - **Despliegue**: `c12faea` desplegado el 21/10/2026 (subido; se observó un bundle web nuevo con el estado V-7 del registro). `demo:check` contra las URL alojadas, tras el despliegue de `81c6242` y de nuevo tras `c12faea` (mismo resultado): PASS en ResolveKit activo, página de inicio,
   MeterMCP activo, sandbox de PayPal conectado, webhook activo, ambas vinculaciones verificadas, ambos modelos de IA
   respondieron, ambos precalentamientos en caché; WARN en ambas reservas (0 disputas nuevas); un FAIL, el conocido: la
-  vinculación del caso estándar está usada y su reserva está vacía (relleno previsto el 25-30/11, cuando también se
-  vinculará el caso de liquidación, solo del Owner, en el `BINDINGS_JSON` alojado). No puede demostrar qué commit está
+  vinculación del caso estándar está usada y su reserva está vacía (estado a 29/10/2026: ambas reservas están vacías; el
+  relleno para la evaluación está previsto el 28–30/11, cuando también se vinculará el caso de liquidación, solo del Owner, en el `BINDINGS_JSON` alojado). No puede demostrar qué commit está
   desplegado. Antes: `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (mismo resultado de `demo:check`); `fbe9621`, 19/10/2026.
 - **Evaluaciones** (solo el analista, casos sintéticos): [evaluaciones](docs/es/quality/evaluations.md). Titular: en 12
   casos reservados (held-out) × 3 ejecuciones, 0 de 66 notas verdaderas rechazadas y 0 de 72 notas falsas plantadas
@@ -260,8 +259,7 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
   alojado; nunca se crea un reembolso.
 - Solo sandbox; PayPal live nunca se ha probado. Los tiempos y comportamientos del sandbox pueden
   diferir en live.
-- La reserva de disputas nuevas del sandbox del caso de evaluación estándar estaba vacía el 19/10/2026: hasta que se
-  rellene, los envíos nuevos ahí se rechazan y el caso muestra la relectura anterior.
+- A 29/10/2026 las reservas de disputas nuevas del sandbox de ambos casos están vacías; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto es la Explore demo, y el envío al sandbox real puede no estar disponible. Hasta que se rellene, los envíos nuevos ahí se rechazan y el caso muestra la relectura anterior.
 - El caso del agente vinculado muestra una sesión hecha por el cliente con guion anterior, no una ejecución dirigida
   por el modelo.
 - Analista: en los casos reservados, la mayoría de las notas verdaderas van a *needs review*; Groq no se ejecutó en el

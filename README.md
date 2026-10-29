@@ -112,8 +112,7 @@ has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal
 4. **Review what will be sent →**, **Continue to confirm →**, tick the approval and **Submit evidence to PayPal**: on
    the demo it goes to the simulator, never to PayPal, and the read-back says *Recorded by the PayPal simulator*.
 5. To send to a real sandbox dispute, use the reviewer link from the submission form and follow the
-   [judge guide](docs/judges/review-guide.md) (only while the case has a fresh dispute; the standard case's reserve
-   was empty on 19/10/2026).
+   [judge guide](docs/judges/review-guide.md). As of 29/10/2026 the reserves of fresh sandbox disputes of both cases are empty; new sandbox disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path, and sending to the real sandbox may be unavailable.
 
 Step by step with every control name: [demo walkthrough](docs/judges/demo-walkthrough.md).
 
@@ -232,8 +231,8 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
   [known issues](docs/quality/known-issues.md).
 - **Deployment**: `c12faea` deployed on 21/10/2026 (pushed; a new web bundle with the V-7 registry status was observed). `demo:check` against the hosted URLs, after the deploy of `81c6242` and again after `c12faea` (same result): PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
   connected, webhook on, both bindings verified, both AI models answered, both warm-ups cached; WARN on both reserves
-  (0 fresh disputes); one FAIL, the known one: the standard case's binding is used and its reserve is empty (refill
-  planned 25-30/11, when the owner-only settlement case will also be bound in the hosted `BINDINGS_JSON`). It cannot prove
+  (0 fresh disputes); one FAIL, the known one: the standard case's binding is used and its reserve is empty (status as of 29/10/2026: both reserves are empty; the
+  refill for judging is planned for 28–30/11, when the owner-only settlement case will also be bound in the hosted `BINDINGS_JSON`). It cannot prove
   which commit is live. Earlier: `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (same `demo:check` result); `fbe9621`, 19/10/2026.
 - **Evaluations** (analyst only, synthetic cases): [evaluations](docs/quality/evaluations.md). Headline: on 12 held-out
   cases × 3 runs, 0 of 66 true notes rejected and 0 of 72 planted false notes sent, but only 17 of 66 true notes were
@@ -247,8 +246,7 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
   (code) and Verified in sandbox through the app (local run), not yet exercised on the hosted service; no refund is ever
   created.
 - Sandbox only; live PayPal never exercised. Sandbox timings and behaviours may differ in live.
-- The standard evaluation case's reserve of fresh sandbox disputes was empty on 19/10/2026: until it is refilled, new
-  sends there are refused and the case shows the earlier read-back.
+- As of 29/10/2026 the reserves of fresh sandbox disputes of both cases are empty; new sandbox disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path, and sending to the real sandbox may be unavailable. Until it is refilled, new sends there are refused and the case shows the earlier read-back.
 - The bound agent case shows a session made by the earlier scripted client, not a model-driven run.
 - Analyst: on held-out cases most true notes go to *needs review*; Groq was not run on the held-out set.
 - No backups beyond the Render disk; shared daily caps on the hosted demo.

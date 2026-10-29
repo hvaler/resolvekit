@@ -32,8 +32,9 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
 - **One response per dispute, as observed.** In our sandbox tests PayPal stopped offering `provide_evidence` after
   one submission. This is an observation, not a documented PayPal rule. The case then shows **Evidence recorded by
   PayPal** and a read-only draft.
-- **The standard case's reserve is empty** (19/10/2026): its dispute was used, so new sends on it are **Pending**
-  until new sandbox disputes are added to its reserve. A case moves to its next reserve dispute only if one is left,
+- **The reserves are empty** (as of 29/10/2026, both cases): their disputes were used, so new real-sandbox sends are
+  **Pending**. New sandbox disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026;
+  until then the Explore demo is the default path. A case moves to its next reserve dispute only if one is left,
   on its next read, about 15 minutes after evidence is recorded.
 - **Case documents are synthetic.** What you upload is real in what it does; the order, label, carrier record and
   buyer messages around it are invented, so a real screenshot can show up as a contradiction.
