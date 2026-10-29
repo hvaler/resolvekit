@@ -33,7 +33,7 @@
   <img alt="PDF.js 6" src="https://img.shields.io/badge/PDF.js-6-2D6B68?style=flat-square&logo=mozilla&logoColor=white">
   <img alt="WebAuthn passkeys" src="https://img.shields.io/badge/WebAuthn-passkeys-2D6B68?style=flat-square&logo=webauthn&logoColor=white">
   <img alt="Vitest 5" src="https://img.shields.io/badge/Vitest-5-2D6B68?style=flat-square&logo=vitest&logoColor=white">
-  <img alt="node:test 1,479 tests" src="https://img.shields.io/badge/node%3Atest-1%2C479%20tests-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="tests · 1,479 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C479%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="Render 2 services" src="https://img.shields.io/badge/Render-2%20services-2D6B68?style=flat-square&logo=render&logoColor=white">
 </p>
 
