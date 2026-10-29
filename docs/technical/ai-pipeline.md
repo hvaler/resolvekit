@@ -106,6 +106,6 @@ how well this holds is measured on synthetic sets in [evaluations](../quality/ev
 
 ## Status
 
-Implemented · Tested locally (`packages/analyst/test/`: 159 tests passed on 21/10/2026, `c12faea` (and on 21/10/2026, `81c6242`, and on 20/10/2026, `5111b88`); 152 on 19/10/2026, `fbe9621`) · Deployed. Live
+Implemented · Tested locally (`packages/analyst/test/`: 159 tests passed on 29/10/2026, `be7491d` (and on 21/10/2026, `c12faea`, and on 21/10/2026, `81c6242`, and on 20/10/2026, `5111b88`); 152 on 19/10/2026, `fbe9621`) · Deployed. Live
 analyses and re-checks ran on the deployed service in the sandbox evaluation (17/10/2026, private evidence). The
 evals README paragraph of earlier commits is superseded by [evaluations](../quality/evaluations.md).

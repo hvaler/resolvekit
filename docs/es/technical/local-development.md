@@ -125,8 +125,8 @@ Opciones de `demo:prepare` (ver `USAGE` en `apps/server/scripts/demo-prepare-lib
 
 ## Tests
 
-Última ejecución completa: 21/10/2026, commit `c12faea`, Node 24, Windows: 1,479 tests, todos superados; typecheck
-limpio, build web correcto (21/10/2026, `81c6242`: 1,479; 20/10/2026, `5111b88`: 1,453). Fuente: el registro de la ejecución guardado con el trabajo de documentación.
+Última ejecución completa: 29/10/2026, commit `be7491d` (rama `fix/pre-submission`), Node 24, Windows: 1,488 tests, todos superados (node:test 1,017 + vitest 471); typecheck
+limpio, build web correcto (21/10/2026, `c12faea`: 1,479; 21/10/2026, `81c6242`: 1,479; 20/10/2026, `5111b88`: 1,453). Fuente: el registro de la ejecución guardado con el trabajo de documentación.
 
 | Suite | Tests | Resultado |
 |---|---|---|

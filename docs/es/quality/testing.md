@@ -27,22 +27,24 @@ Requiere Node 24+ (TypeScript se ejecuta de forma nativa). `npm test` no hace ni
 
 ## Última ejecución registrada
 
-**2026-10-21 · commit `c12faea` (desplegado) · Node 24 · Windows.** `npm test` pasó (se
-ejecutaron todas las suites); `npm run typecheck` salió limpio; el build web fue correcto. 1,479 tests, todos superados.
+**2026-10-29 · commit `be7491d` (rama `fix/pre-submission`: las correcciones de código previas a la entrega más la documentación) · Node 24 · Windows.** `npm test` pasó (se
+ejecutaron todas las suites); `npm run typecheck` salió limpio; el build web fue correcto. 1,488 tests, todos superados; 0 fallos, 0 omitidos. Cada suite de node:test tiene ahora un tiempo límite de 60 s por test. El recuento de vitest es 471 (38 archivos). Frente a la ejecución anterior: paypal +1 (provide-evidence nunca se reintenta ante un 429), server +1 (el barrido de uploads aparta un registro ilegible en lugar de borrarlo), metermcp +7 (ninguna petición puede tumbar el proceso; recuperación del libro tras un reinicio).
 
 | Suite | Comando | Tests | Superados | Fallos |
 |---|---|---|---|---|
-| `packages/paypal` | `npm run test:paypal` | 36 | 36 | 0 |
+| `packages/paypal` | `npm run test:paypal` | 37 | 37 | 0 |
 | `packages/hosting` | `npm run test:hosting` | 32 | 32 | 0 |
 | `packages/cases` | `npm run test:cases` | 12 | 12 | 0 |
 | `packages/analyst` | `npm run test:analyst` | 159 | 159 | 0 |
 | `packages/agent` | `npm run test:agent` | 52 | 52 | 0 |
-| `apps/server` | `npm run test:server` | 637 | 637 | 0 |
-| `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
+| `apps/server` | `npm run test:server` | 638 | 638 | 0 |
+| `apps/metermcp` | `npm run test:metermcp` | 87 | 87 | 0 |
 | `apps/web` (vitest) | `npm run test:web` | 471 | 471 | 0 |
-| Total | | 1,479 | 1,479 | 0 |
+| Total | | 1,488 | 1,488 | 0 |
 
-La ejecución anterior: **2026-10-21 · commit `81c6242` (desplegado antes ese día) · Node 24 · Windows.** `npm test` pasó; `npm run typecheck` salió limpio; el build web fue correcto. 1,479 tests, todos superados (mismas cifras por suite que arriba).
+La ejecución anterior: **2026-10-21 · commit `c12faea` (`main`, desplegado) · Node 24 · Windows.** `npm test` pasó; `npm run typecheck` salió limpio; el build web fue correcto. 1,479 tests, todos superados (paypal 36, server 637, metermcp 80, el resto de suites como arriba).
+
+La ejecución anterior a esa: **2026-10-21 · commit `81c6242` (desplegado antes ese día) · Node 24 · Windows.** `npm test` pasó; `npm run typecheck` salió limpio; el build web fue correcto. 1,479 tests, todos superados (mismas cifras por suite que la de `c12faea`).
 
 La ejecución anterior: **2026-10-20 · commit `5111b88` (desplegado; con las acciones de disputa) · Node 24 · Windows.** `npm test` pasó; `npm run typecheck` salió limpio. 1,453 tests, todos superados (servidor 635, web 447, las demás suites como arriba).
 

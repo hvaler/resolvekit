@@ -33,7 +33,7 @@
   <img alt="PDF.js 6" src="https://img.shields.io/badge/PDF.js-6-2D6B68?style=flat-square&logo=mozilla&logoColor=white">
   <img alt="WebAuthn passkeys" src="https://img.shields.io/badge/WebAuthn-passkeys-2D6B68?style=flat-square&logo=webauthn&logoColor=white">
   <img alt="Vitest 5" src="https://img.shields.io/badge/Vitest-5-2D6B68?style=flat-square&logo=vitest&logoColor=white">
-  <img alt="tests · 1,479 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C479%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="tests · 1,488 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C488%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="Render 2 services" src="https://img.shields.io/badge/Render-2%20services-2D6B68?style=flat-square&logo=render&logoColor=white">
 </p>
 
@@ -248,8 +248,7 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 
 ## Verificación
 
-- **Tests**: 21/10/2026, commit `c12faea` (`main`), Node 24 en Windows: 1,479 tests, todos superados (node:test
-  36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Typecheck limpio; build web correcto. No se ejecutó en Linux. Ejecución anterior, 21/10/2026, commit `81c6242`: 1,479 tests, todos superados (mismas cifras por suite).
+- **Tests**: 29/10/2026, commit `be7491d` (rama `fix/pre-submission`: las correcciones de código previas a la entrega más la documentación), Node 24 en Windows: 1,488 tests, todos superados (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 fallos, 0 omitidos; cada suite de node:test tiene un tiempo límite de 60 s por test). Typecheck limpio; build web correcto. No se ejecutó en Linux. Ejecución anterior, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, todos superados (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Ejecución anterior, 21/10/2026, commit `81c6242`: 1,479 tests, todos superados (mismas cifras por suite).
   Ejecución anterior, 20/10/2026, commit `5111b88`: 1,453 tests, todos superados (vitest 447). Ejecución anterior,
   19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 superados, 1 falló de forma intermitente
   (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` bajo la carga de

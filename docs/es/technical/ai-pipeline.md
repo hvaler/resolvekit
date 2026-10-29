@@ -110,7 +110,7 @@ como respaldado; hasta qué punto se cumple se mide con conjuntos sintéticos en
 
 ## Estado
 
-Implementado · Probado en local (`packages/analyst/test/`: 159 tests superados el 21/10/2026, `c12faea` (y el 21/10/2026, `81c6242`, y el 20/10/2026, `5111b88`); 152 el 19/10/2026, `fbe9621`) ·
+Implementado · Probado en local (`packages/analyst/test/`: 159 tests superados el 29/10/2026, `be7491d` (y el 21/10/2026, `c12faea`, y el 21/10/2026, `81c6242`, y el 20/10/2026, `5111b88`); 152 el 19/10/2026, `fbe9621`) ·
 Desplegado. Se ejecutaron análisis en directo y recomprobaciones en el servicio desplegado durante la evaluación en
 sandbox (17/10/2026, evidencia privada). El párrafo del README de evaluaciones de commits anteriores queda sustituido
 por [evaluaciones](../quality/evaluations.md).

@@ -26,22 +26,24 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 
 ## Latest recorded run
 
-**2026-10-21 · commit `c12faea` (deployed) · Node 24 · Windows.** `npm test` passed (every
-suite ran); `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed.
+**2026-10-29 · commit `be7491d` (branch `fix/pre-submission`: the pre-submission code fixes plus docs) · Node 24 · Windows.** `npm test` passed (every
+suite ran); `npm run typecheck` was clean; the web build was OK. 1,488 tests, all passed; 0 failed, 0 skipped. Every node:test suite now has a 60 s per-test timeout. The vitest count is 471 (38 files). Versus the previous run: paypal +1 (provide-evidence is never retried on 429), server +1 (the uploads sweep moves an unreadable record aside instead of deleting it), metermcp +7 (no request can crash the process; ledger recovery after a restart).
 
 | Suite | Command | Tests | Pass | Fail |
 |---|---|---|---|---|
-| `packages/paypal` | `npm run test:paypal` | 36 | 36 | 0 |
+| `packages/paypal` | `npm run test:paypal` | 37 | 37 | 0 |
 | `packages/hosting` | `npm run test:hosting` | 32 | 32 | 0 |
 | `packages/cases` | `npm run test:cases` | 12 | 12 | 0 |
 | `packages/analyst` | `npm run test:analyst` | 159 | 159 | 0 |
 | `packages/agent` | `npm run test:agent` | 52 | 52 | 0 |
-| `apps/server` | `npm run test:server` | 637 | 637 | 0 |
-| `apps/metermcp` | `npm run test:metermcp` | 80 | 80 | 0 |
+| `apps/server` | `npm run test:server` | 638 | 638 | 0 |
+| `apps/metermcp` | `npm run test:metermcp` | 87 | 87 | 0 |
 | `apps/web` (vitest) | `npm run test:web` | 471 | 471 | 0 |
-| Total | | 1,479 | 1,479 | 0 |
+| Total | | 1,488 | 1,488 | 0 |
 
-The run before that: **2026-10-21 · commit `81c6242` (deployed earlier that day) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed (the same per-suite counts as above).
+The run before that: **2026-10-21 · commit `c12faea` (`main`, deployed) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed (paypal 36, server 637, metermcp 80, the other suites as above).
+
+The run before that: **2026-10-21 · commit `81c6242` (deployed earlier that day) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean; the web build was OK. 1,479 tests, all passed (the same per-suite counts as the `c12faea` run).
 
 The run before that: **2026-10-20 · commit `5111b88` (deployed; with the dispute actions) · Node 24 · Windows.** `npm test` passed; `npm run typecheck` was clean. 1,453 tests, all passed (server 635, web 447, the other suites as above).
 
