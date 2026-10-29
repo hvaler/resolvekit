@@ -130,12 +130,12 @@ export class DisputesApi {
 
   // Irreversible: PayPal accepts one submission; afterwards provide_evidence is gone. Re-read with get().
   // `requestId` becomes the PayPal-Request-Id header. Deduplication by it is not verified for disputes: read back
-  // before retrying (see safeRetry in the web app).
+  // before retrying (see safeRetry in the web app). Never retried here, not even on 429 (it may still be acted on).
   provideEvidence(disputeId: string, evidence: EvidenceInput, files: EvidenceFile[], opts: { requestId?: string } = {}): Promise<unknown> {
     const form = new FormData();
     form.append('input', new Blob([JSON.stringify({ evidences: [evidence] })], { type: 'application/json' }), 'input.json');
     for (const f of files) form.append('evidence-file', new Blob([f.data], { type: f.type }), f.name);
-    return this.client.request('POST', `/v1/customer/disputes/${encodeURIComponent(disputeId)}/provide-evidence`, form, opts);
+    return this.client.request('POST', `/v1/customer/disputes/${encodeURIComponent(disputeId)}/provide-evidence`, form, { requestId: opts.requestId, noRetry: true });
   }
 
   // Never retried here, not even on 429: PayPal documents no deduplication by PayPal-Request-Id on these routes, so

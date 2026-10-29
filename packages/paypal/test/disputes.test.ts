@@ -91,6 +91,15 @@ test('uses the caller request id as PayPal-Request-Id so a retry of the same app
   assert.equal(new Headers(calls[1].init.headers).get('paypal-request-id'), 'rk-req-abc123');
 });
 
+test('a 429 on provide-evidence is not retried: the call rejects after exactly one POST, with the caller request id', async () => {
+  const { fn, calls } = fakeFetch([{ status: 429, body: { name: 'RATE_LIMIT_REACHED' } }, { status: 200, body: {} }]);
+  const c = new PayPalClient({ clientId: 'id', clientSecret: 'secret', env: 'sandbox', fetch: fn, sleep: async () => {} });
+  await assert.rejects(c.disputes.provideEvidence('PP-R-1', { evidence_type: 'PROOF_OF_FULFILLMENT', notes: 'x' }, [], { requestId: 'rk-req-429' }), /429/);
+  const posts = calls.filter((x) => !x.url.endsWith('/v1/oauth2/token'));
+  assert.equal(posts.length, 1);
+  assert.equal(new Headers(posts[0]!.init.headers).get('paypal-request-id'), 'rk-req-429');
+});
+
 test('verifies credentials with an OAuth token only, without reading any dispute', async () => {
   const { fn, calls } = fakeFetch([]);
   await client(fn).verifyCredentials();
