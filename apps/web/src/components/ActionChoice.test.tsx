@@ -46,6 +46,11 @@ describe('actionCardVerdict', () => {
     // Owner only and not verified from this status: the composer would show nothing useful, so no preview.
     const both = actionCardVerdict(actionAvailability(waitingBuyer, 'escalate', { role: 'member', reviewer: true }));
     expect(both).toMatchObject({ sendable: false, preview: false, short: 'not verified from this status' });
+    // A reason starting with a name keeps its capital («PayPal», not «payPal»); an ordinary word is lowercased.
+    const named = (why: string) => actionCardVerdict({ action: 'make_offer', offered: true, sendable: false, why, variants: [] }).short;
+    expect(named('PayPal reports no refundable amount for this dispute')).toBe('PayPal reports no refundable amount for this dispute');
+    expect(named('ResolveKit cannot send this type')).toBe('ResolveKit cannot send this type');
+    expect(named('An offer of yours is pending with the buyer')).toBe('an offer of yours is pending with the buyer');
   });
 });
 

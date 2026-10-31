@@ -21,7 +21,9 @@ const OWNER_ONLY_PREFIX = 'Only the workspace owner';
 function shortReason(why: string): string {
   if (why === STATUS_NOT_VERIFIED) return 'not verified from this status';
   if (why.startsWith(OWNER_ONLY_PREFIX)) return 'owner only';
-  return why.charAt(0).toLowerCase() + why.slice(1);
+  // An ordinary first word is lowercased; a name with another capital in it (PayPal, ResolveKit) is kept as written.
+  const first = why.split(/[^A-Za-z]/, 1)[0] ?? '';
+  return /^[A-Z][a-z]*$/.test(first) ? why.charAt(0).toLowerCase() + why.slice(1) : why;
 }
 
 /**
