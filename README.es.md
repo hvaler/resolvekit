@@ -33,14 +33,14 @@
   <img alt="PDF.js 6" src="https://img.shields.io/badge/PDF.js-6-2D6B68?style=flat-square&logo=mozilla&logoColor=white">
   <img alt="WebAuthn passkeys" src="https://img.shields.io/badge/WebAuthn-passkeys-2D6B68?style=flat-square&logo=webauthn&logoColor=white">
   <img alt="Vitest 5" src="https://img.shields.io/badge/Vitest-5-2D6B68?style=flat-square&logo=vitest&logoColor=white">
-  <img alt="tests · 1,521 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C521%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="tests · 1,523 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C523%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="Render 2 services" src="https://img.shields.io/badge/Render-2%20services-2D6B68?style=flat-square&logo=render&logoColor=white">
 </p>
 
 **ResolveKit ayuda a un pequeño comerciante a responder a una disputa de PayPal con una respuesta en la que cada frase
 cita su evidencia, nada se envía sin la aprobación del comerciante y el resultado se relee desde PayPal.**
 
-**[Demo](https://resolvekit-i3j2.onrender.com)** · **Vídeo:** Pendiente (llegará con la entrega) ·
+**[Demo](https://resolvekit-i3j2.onrender.com)** · **[Vídeo](https://youtu.be/VJ10zqXx5Ag)** (2:47, público) ·
 **[Guía para el jurado](docs/es/judges/review-guide.md)** · **[Documentación](docs/es/README.md)**
 
 ![El expediente de ResolveKit: cronología, evidencia citada y el borrador de respuesta](docs/media/thumbnail.png)
@@ -102,12 +102,12 @@ Detalles: [visión general del producto](docs/es/product/overview.md) · [pipeli
 
 El código está en `packages/paypal/src/` (`disputes.ts`, `webhooks.ts`, `identity.ts`, `orders.ts`).
 
-En el servicio alojado se han ejercitado de extremo a extremo a través de la app `provide-evidence` y **hacer una oferta** (31/10/2026). Enviar un
+En el servicio alojado se han ejercitado de extremo a extremo a través de la app `provide-evidence` y **hacer una oferta** (31/10/2026; ese mismo día también se vieron allí una ejecución del agente en `/agent` y un webhook `CUSTOMER.DISPUTE.CREATED` con la firma verificada). Enviar un
 mensaje, aceptar una reclamación (total, o parcial como oferta), hacer una oferta de reembolso parcial, escalar y
 enviar evidencia tras un escalado están construidos desde el commit `076c74f` (20/10/2026), cada uno sobre un contrato
 de sandbox aprobado por el propietario, y **Verificados en sandbox** a través de la app el 20/10/2026 (un envío cada
-uno, en un servidor local). El código está **Desplegado** (`d654478`, 31/10/2026); el 31/10/2026, en el servicio alojado (con el código `f1b7236` en ese momento), el propietario envió dos ofertas de reembolso de 3.50 USD desde el caso de liquidación del Owner (PayPal registró cada una como SELLER PROPOSED; la disputa pasó a esperar al comprador); enviar un mensaje, aceptar una reclamación y escalar **no** se han ejercitado todavía allí (escalar solo está verificado desde `WAITING_FOR_SELLER_RESPONSE`). El caso de liquidación está vinculado en el `BINDINGS_JSON` alojado, y los revisores pueden enviar mensajes en la disputa activa de un caso
-vinculado. Un mensaje con archivo se puede elegir en el editor web (una subida confirmada, solo mientras PayPal espera al comprador) y está Verificado en sandbox a través de la app (V-7, 21/10/2026, ejecución local; ese estado del registro está Desplegado en `d654478`). Las ofertas de sustitución, retirar una
+uno, en un servidor local). El código está **Desplegado** (`667abb3`, 31/10/2026); el 31/10/2026, en el servicio alojado (con el código `f1b7236`, después `d654478` y `667abb3`), el propietario envió cuatro ofertas de reembolso de 3.50 USD (en cuatro disputas) desde el caso de liquidación del Owner (PayPal registró cada una como SELLER PROPOSED; la disputa pasó a esperar al comprador); enviar un mensaje, aceptar una reclamación y escalar **no** se han ejercitado todavía allí (escalar solo está verificado desde `WAITING_FOR_SELLER_RESPONSE`). El caso de liquidación está vinculado en el `BINDINGS_JSON` alojado, y los revisores pueden enviar mensajes en la disputa activa de un caso
+vinculado. Un mensaje con archivo se puede elegir en el editor web (una subida confirmada, solo mientras PayPal espera al comprador) y está Verificado en sandbox a través de la app (V-7, 21/10/2026, ejecución local; ese estado del registro está Desplegado en `667abb3`). Las ofertas de sustitución, retirar una
 oferta, las apelaciones, la prueba de reembolso y los tipos con devolución están **No disponibles**, cada uno con su
 motivo. ResolveKit nunca crea un reembolso. Estado por variante:
 [especificación funcional](docs/es/product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
@@ -130,7 +130,7 @@ Nada se ha ejecutado contra PayPal live. Fuentes: [integración con PayPal](docs
 4. **Review what will be sent →**, **Continue to confirm →**, marca la aprobación y **Submit evidence to PayPal**: en la
    demo va al simulador, nunca a PayPal, y la relectura dice *Recorded by the PayPal simulator*.
 5. Para enviar a una disputa real del sandbox, usa el enlace de revisor del formulario de entrega y sigue la
-   [guía para el jurado](docs/es/judges/review-guide.md). A 29/10/2026 las reservas de disputas nuevas del sandbox de ambos casos están vacías; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto es la Explore demo, y el envío al sandbox real puede no estar disponible.
+   [guía para el jurado](docs/es/judges/review-guide.md). A 31/10/2026 (noche) el caso estándar no tiene ninguna disputa nueva en reserva (su vinculación está usada), el caso de liquidación está vinculado y el del agente está vinculado con 1 en reserva; la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto para el envío de evidencia es la Explore demo, y el envío al sandbox real puede no estar disponible.
 
 Paso a paso con el nombre de cada control: [recorrido por la demo](docs/es/judges/demo-walkthrough.md).
 
@@ -157,7 +157,7 @@ outage* hace que falle la primera llamada a `deep_report`, que nunca se cobra y 
 
 Observado el 19/10/2026 (dos ejecuciones en sandbox, ejemplos, no una garantía): una ejecución terminó en *The tools
 cannot meet this goal* tras un fallo inyectado (0.05 USD capturados, 1.95 liberados); otra terminó en *Done* (0.92
-capturados, 1.08 liberados). El caso del agente de 1.37 USD de la demo son datos de demostración inventados cuyas
+capturados, 1.08 liberados). Una tercera ejecución, en el servicio alojado el 31/10/2026 (con el propietario presente, al grabar el vídeo), tuvo un tope de 0.50 USD: 0.45 capturados, 0.05 liberados, la llamada fallida inyectada no se cobró; el caso del agente está ahora vinculado a su disputa. El caso del agente de 1.37 USD de la demo son datos de demostración inventados cuyas
 cifras coinciden con una sesión de sandbox hecha por un cliente con guion (scripted) el 09/10/2026; pone a prueba al
 analista, no al agente. Guía: [agente comprador](docs/es/user-guide/buying-agent.md) · [cómo funciona](docs/es/technical/buying-agent.md).
 
@@ -246,15 +246,13 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 
 ## Verificación
 
-- **Tests**: 31/10/2026, commit `d654478` (`main`, desplegado: las correcciones posteriores al rodaje), `npm test`: 1,521 tests, todos superados (node:test 1,025 + vitest 496). Typecheck limpio. No se ejecutó en Linux. Ejecución anterior, 29/10/2026, commit `be7491d` (rama `fix/pre-submission`: las correcciones de código previas a la entrega más la documentación), Node 24 en Windows: 1,488 tests, todos superados (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 fallos, 0 omitidos; cada suite de node:test tiene un tiempo límite de 60 s por test). Ejecución anterior, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, todos superados (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Ejecución anterior, 21/10/2026, commit `81c6242`: 1,479 tests, todos superados (mismas cifras por suite).
+- **Tests**: 31/10/2026 (noche), commit `667abb3` (`main`, desplegado), `npm test`: 1,523 tests, todos superados (node:test 1,025 + vitest 498). Typecheck limpio. No se ejecutó en Linux. Ejecución anterior, 31/10/2026, commit `d654478`: 1,521 tests, todos superados (node:test 1,025 + vitest 496). Ejecución anterior, 29/10/2026, commit `be7491d` (rama `fix/pre-submission`: las correcciones de código previas a la entrega más la documentación), Node 24 en Windows: 1,488 tests, todos superados (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 fallos, 0 omitidos; cada suite de node:test tiene un tiempo límite de 60 s por test). Ejecución anterior, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, todos superados (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Ejecución anterior, 21/10/2026, commit `81c6242`: 1,479 tests, todos superados (mismas cifras por suite).
   Ejecución anterior, 20/10/2026, commit `5111b88`: 1,453 tests, todos superados (vitest 447). Ejecución anterior,
   19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 superados, 1 falló de forma intermitente
   (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` bajo la carga de
   la suite completa; pasó 3 de 3 ejecutado solo, dos veces). Detalles: [tests](docs/es/quality/testing.md) ·
   [problemas conocidos](docs/es/quality/known-issues.md).
-- **Despliegue**: `d654478` desplegado el 31/10/2026 (las correcciones posteriores al rodaje; el propietario lo aprobó, `main` avanzó de `23728e2` hasta él (rama `fix/post-shoot`, 12 commits) y se subió, Render volvió a desplegar; ResolveKit se reinició hacia las 20:00, hora de Madrid, y MeterMCP siguió activo). `demo:check` contra las URL alojadas tras ese despliegue: PASS en ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado (sandbox), webhook activo, las tres vinculaciones verificadas (el caso estándar usado, 0 en reserva; los casos de liquidación y del agente, 0 en reserva), ambos modelos de IA respondieron, precalentamiento en caché; un FAIL, el conocido: la
-  vinculación del caso estándar está usada y no queda ninguna disputa en reserva (relleno para la evaluación el 28–30/11/2026). El mismo tipo de resultado que tras `f1b7236` el 29/10/2026. No puede demostrar qué commit está
-  desplegado. Antes: `f1b7236`, 29/10/2026; `c12faea` (se observó un bundle web nuevo con el estado V-7 del registro) y `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (mismo resultado de `demo:check`); `fbe9621`, 19/10/2026.
+- **Despliegue**: `667abb3` desplegado el 31/10/2026 (el propietario lo aprobó, se subió y Render volvió a desplegar; ResolveKit se reinició hacia las 21:07, hora de Madrid). Corrige los diálogos de acción tras un envío en vivo (un análisis nuevo reiniciaba la selección bajo el resultado abierto y una solicitud de flujo invisible bloqueaba después todos los diálogos de acción hasta recargar; ahora el flujo sigue dibujado mientras exista su solicitud, y elegir una tarjeta borra cualquier solicitud anterior). `demo:check` contra las URL alojadas tras ese despliegue: todo PASS (ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado, webhook activo, las tres vinculaciones verificadas, ambos modelos de IA respondieron, precalentamiento en caché) salvo un FAIL, el conocido: la vinculación del caso estándar está usada y no queda ninguna disputa en reserva (relleno para la evaluación el 28–30/11/2026). Vinculaciones a 31/10/2026: el caso estándar usado (sin reserva), el de liquidación vinculado, el del agente vinculado con 1 en reserva. No puede demostrar qué commit está desplegado. Antes: `d654478`, 31/10/2026 (hacia las 20:00; las correcciones posteriores al rodaje; `main` avanzó de `23728e2`, rama `fix/post-shoot`, 12 commits); `f1b7236`, 29/10/2026; `c12faea` (se observó un bundle web nuevo con el estado V-7 del registro) y `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (mismo resultado de `demo:check`); `fbe9621`, 19/10/2026.
 - **Evaluaciones** (solo el analista, casos sintéticos): [evaluaciones](docs/es/quality/evaluations.md). Titular: en 12
   casos reservados (held-out) × 3 ejecuciones, 0 de 66 notas verdaderas rechazadas y 0 de 72 notas falsas plantadas
   enviadas, pero solo 17 de 66 notas verdaderas se juzgaron respaldadas (6 + 6 + 5; fuente: [evaluaciones](docs/es/quality/evaluations.md)); el resto fue a revisión.
@@ -266,9 +264,8 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 - En el servicio alojado se han ejercitado `provide-evidence` y hacer una oferta (31/10/2026); mensaje, aceptación y escalado están desplegados (código) y Verificados en sandbox a través de la app (ejecución local), aún no ejercitados en el servicio alojado; nunca se crea un reembolso.
 - Solo sandbox; PayPal live nunca se ha probado. Los tiempos y comportamientos del sandbox pueden
   diferir en live.
-- A 29/10/2026 las reservas de disputas nuevas del sandbox de ambos casos están vacías; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto es la Explore demo, y el envío al sandbox real puede no estar disponible. Hasta que se rellene, los envíos nuevos ahí se rechazan y el caso muestra la relectura anterior.
-- El caso del agente vinculado muestra una sesión hecha por el cliente con guion anterior, no una ejecución dirigida
-  por el modelo.
+- A 31/10/2026 (noche) el caso estándar no tiene ninguna disputa nueva en reserva (su vinculación está usada), el caso de liquidación está vinculado y el del agente está vinculado con 1 en reserva; la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto para el envío de evidencia es la Explore demo, y el envío al sandbox real puede no estar disponible. Hasta que se rellene, los envíos nuevos ahí se rechazan y el caso muestra la relectura anterior.
+- El caso del agente vinculado es la disputa de una ejecución dirigida por el modelo hecha en el servicio alojado el 31/10/2026 (0.45 USD capturados de un tope de 0.50 USD); no consta aquí si su vinculación nombra también la ejecución (lo que muestra su registro).
 - Analista: en los casos reservados, la mayoría de las notas verdaderas van a *needs review*; Groq no se ejecutó en el
   conjunto reservado.
 - Sin copias de seguridad más allá del disco de Render; límites diarios compartidos en la demo alojada.

@@ -169,10 +169,9 @@ cualquier caso. Cada disputa solo puede aparecer una vez en todo el archivo (un 
 análisis guardado, así que la evidencia compuesta ahí responde `NO_ANALYSIS`; está pensado para las acciones solo del
 Owner.
 
-**Estado a 29/10/2026:** las reservas de ambos casos están vacías (el 19/10/2026 la disputa activa del caso estándar
-estaba usada; evidencia privada), así que los nuevos envíos a ellos están **Pendientes**. Las disputas nuevas del
-sandbox se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026; hasta entonces la ruta
-por defecto es la Explore demo.
+**Estado a 31/10/2026 (noche):** la vinculación del caso estándar está usada y no tiene reserva (el 19/10/2026 su disputa
+activa estaba usada; evidencia privada), así que los nuevos envíos a él están **Pendientes**; el caso de liquidación está
+vinculado; el del agente está vinculado (a la disputa de la ejecución del 31/10/2026) con 1 en reserva. La reserva se rellena para la evaluación el 28–30/11/2026; hasta entonces la ruta por defecto para el envío de evidencia es la Explore demo.
 PayPal documenta que la fase de consulta (inquiry) dura hasta 20 días salvo que se escale
 (https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api); comprueba el
 `seller_response_due_date` de cada disputa y prepara disputas para las fechas en que se necesiten.
@@ -210,9 +209,7 @@ El script imprime lo que el comprador pulsa para abrir cada disputa, con la sesi
 entregada; las fallidas no se cobraron).
 
 **Estado:** Implementado · Probado en local (`apps/server/test/demo-prepare.test.ts`). Uso de `--agent` /
-`--agent-run` para la reserva alojada: **Pendiente** (previsto del 25 al 30/11). Ninguna vinculación nombra todavía una
-ejecución dirigida por el modelo; la vinculación actual del caso del agente apunta a una sesión creada por el anterior
-cliente con guion (scripted).
+`--agent-run` para la reserva alojada: **Pendiente** (previsto para la evaluación del 28–30/11/2026). A 31/10/2026 el caso del agente está vinculado a la disputa de una ejecución dirigida por el modelo hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados), comprobada contra el importe que capturó su recibo de MeterMCP; no consta aquí si esa vinculación nombra también la ejecución (lo que hace aparecer su registro). La disputa anterior (una sesión del cliente con guion) queda en reserva.
 
 Después pega el `BINDINGS_JSON` impreso en el servicio `resolvekit` de Render (se reinicia), ejecuta `demo:check` y
 confirma el recuento de la reserva en las líneas de vinculación.

@@ -2,7 +2,7 @@
 
 # Known issues
 
-Open follow-ups, updated for the code at `d654478` (deployed 31/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source (the maintainers' follow-up lists, keyed below) and, where relevant, the code location. Items marked
+Open follow-ups, updated for the code at `667abb3` (deployed 31/10/2026); first checked line by line at `fbe9621` (19/10/2026). Each item names its source (the maintainers' follow-up lists, keyed below) and, where relevant, the code location. Items marked
 **by design** are kept on purpose but worth knowing. Product limits (what ResolveKit does not do) are in
 [Limitations](../product/limitations.md).
 
@@ -10,7 +10,7 @@ Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** foll
 · **AG** follow-ups of the buying agent (18/10) · **ENV** follow-ups of the three environments (18/10) ·
 **EV** follow-ups of the analyst evaluations (19/10) · **TR** the test run of 19/10 ([Testing](testing.md)) ·
 **DA** the dispute-actions design (19/10) and the code at
-`076c74f` (20/10/2026), now in `d654478`.
+`076c74f` (20/10/2026), now in `667abb3`.
 
 ## Uploads and PDFs
 
@@ -32,8 +32,8 @@ Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** foll
 |---|---|---|
 | `budget_exists` blocks while settling | A new budget on the same MCP session is refused while the previous one is `closing`, `settlement_failed` or `capture_pending` | AG; `ledger.ts`, `meter.ts` |
 | `PERSON_CAP` resets at UTC midnight | Not at local midnight | AG (by design); `agent/person-caps.ts` |
-| Agent case bound to a scripted-client session | The hosted agent case's binding (18/10) points at a session made by the earlier scripted MCP client, not by the model-driven agent; no binding names a run yet | AG; runtime configuration |
-| Agent-case binding expires around 07/11/2026 | The agent case's current binding (its sandbox dispute, bound 18/10/2026) ages out around 07/11/2026; before judging it must be rebound with `demo:prepare --agent-run <id>`, which prints a binding that names the run. Planned, not yet done: **Pending** | Owner's status notes of 19/10/2026 (private submission notes, not in this repository) |
+| Agent case: new binding not yet fully evidenced | Until 31/10/2026 the hosted agent case pointed at a session made by the earlier scripted MCP client (binding of 18/10). Since 31/10/2026 it is bound to the dispute of a model-driven run (0.50 USD cap, 0.45 captured), checked against the amount its MeterMCP receipt captured; the earlier dispute is in reserve. Whether the binding names the run (what shows the run record) is not recorded here: **Pending** | AG; runtime configuration; owner's evidence of 31/10/2026 |
+| Agent-case binding expires around 07/11/2026 | The agent case's earlier sandbox dispute (bound 18/10/2026, now kept in reserve) ages out around 07/11/2026; the dispute bound on 31/10/2026 is not covered by that estimate; before judging it must be rebound with `demo:prepare --agent-run <id>`, which prints a binding that names the run. Planned, not yet done: **Pending** | Owner's status notes of 19/10/2026 (private submission notes, not in this repository) |
 | Closing steps not evidenced | **Stop** on a real run, the CLI `npm run demo-agent` against the hosted MeterMCP, and the removal of `METERMCP_FAIL_FIRST` from the hosted service are not recorded (the two `/agent` runs, Compare, Keep and the return were) | AG; private evidence 19/10 |
 
 ## Dispute actions
@@ -42,15 +42,15 @@ Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** foll
 |---|---|---|
 | Refundable amount in another currency | If PayPal's refundable amount were in a currency other than the dispute's, an amount is refused with `AMOUNT_ABOVE_REFUNDABLE` («The amount must be below / at most what PayPal would refund, <amount>») quoting the other currency, without saying that the currencies differ. Never seen in the sandbox (every dispute was USD) | DA; `apps/web/src/domain/actions.ts` (amount checks in `composeActionWith`) |
 | Contracts README out of date | `packages/paypal/contracts/README.md` still says no write was sent and every variant is «Not available»; the registry (`actionContracts.ts`) and the recorded files are the current state | DA; `packages/paypal/contracts/README.md` |
-| Message with a file: one observation | The composer attaches one confirmed upload (`send_message:file`); it was sent once through the app in the sandbox (V-7, 21/10/2026, a local run) and read back «Recorded by PayPal» with 1 document; the read-back proves the text and the document's presence, not its content; a single observation; the registry status is deployed (`d654478`) | DA; `apps/web/src/components/ActionComposer.tsx` |
+| Message with a file: one observation | The composer attaches one confirmed upload (`send_message:file`); it was sent once through the app in the sandbox (V-7, 21/10/2026, a local run) and read back «Recorded by PayPal» with 1 document; the read-back proves the text and the document's presence, not its content; a single observation; the registry status is deployed (`667abb3`) | DA; `apps/web/src/components/ActionComposer.tsx` |
 | The buyer's answer to an offer was never recorded | A pending offer is judged by PayPal's live `make_offer` link and, as a backstop, any later offer entry ends it; the buyer's event names are unknown | DA; `actions.ts` (`pendingSellerOffer`) |
 | Rules cover one reason, one stage and the recorded statuses | Accept, offer and escalate are composed only for not-received disputes waiting for the seller, a message also while PayPal waits for the buyer, and every action only in `INQUIRY`, because the recorded writes covered nothing else; others are refused, not guessed (**by design**) | DA; `actions.ts` (`RECORDED_STAGES`, `RECORDED_STATUSES`, `ACTION_RULES`) |
 | «Absent» after 60 s is a residual risk | A read-back proves a send absent when PayPal shows no new seller entry 60 s after `send_started` and still offers the action (`absentAfterMs`, twice the lag the sandbox showed). If PayPal ever recorded an entry later than that, a retry after «absent» could post the action twice; never observed in the sandbox | DA; `actionContracts.ts` (`absentAfterMs`), `actionReadback.ts` (`proveSend`) |
 | A hold whose intent is lost cannot be read back | If `intents.json` is lost, a held dispute is rebuilt from the send log (hashes only) and stays held: no read-back can prove it; the operator restores the file or rebinds the case (Runbook) (**by design**) | DA; `intents.ts` (`seedFromSendLog`), `actions/routes.ts` |
-| Appeal not testable in the sandbox | The sandbox refused to produce an appealable dispute (W-7), so appeal stays «Not available» | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
+| Appeal not implemented | The one set-up attempt (W-7, 20/10/2026, a normal buyer account) was refused, so appeal stays «Not available». PayPal documents that the sandbox allows appeals when the buyer sandbox account's email contains `allowappeal` (and `noappeal` for the opposite; [PayPal](https://developer.paypal.com/disputes/test-go-live), as PayPal DevRel told the hackathon Discord on 30/10/2026); ResolveKit has not tried it | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
 | `provide_supporting_info` not supported | Offered by PayPal after evidence in a claim; ResolveKit shows nothing to send | DA; `apps/web/src/domain/simulatedActions.ts` |
 | Proof of refund not sent | If PayPal asks only for it, no evidence can be sent on that dispute in this delivery; W-11 is a pending sandbox test | DA; `actionContracts.ts` |
-| The app's flow verified once per variant, exercised on the hosted service only for make an offer | Each verified variant was sent once through the app on a local server (20/10/2026, V-1 to V-6; the message with a file on 21/10/2026, V-7): single observations. The Not-available variants were not run through the app; the code is deployed (`d654478`) and on the hosted service only make an offer was sent (31/10/2026, two offers of 3.50 USD; code `f1b7236` at that time), while message, accept and escalate were not (**Pending**) | DA |
+| The app's flow verified once per variant, exercised on the hosted service only for make an offer | Each verified variant was sent once through the app on a local server (20/10/2026, V-1 to V-6; the message with a file on 21/10/2026, V-7): single observations. The Not-available variants were not run through the app; the code is deployed (`667abb3`) and on the hosted service only make an offer was sent (31/10/2026, four offers of 3.50 USD (on four disputes); code `f1b7236`, then `d654478` and `667abb3`), while message, accept and escalate were not (**Pending**) | DA |
 
 ## Environments, sign-in and health
 
@@ -66,7 +66,7 @@ Sources: **P1** follow-ups of the merchant-evidence work (17/10) · **PDF** foll
 | Issue | Effect | Source |
 |---|---|---|
 | Auto-deploy still `commit` for both services | Deploy order MeterMCP → ResolveKit is not guaranteed on a push; the follow-up recommends turning it off for `resolvekit` | AG; `render.yaml` |
-| Reserves empty (both cases, as of 29/10/2026) | New real-sandbox sends are **Pending**; new disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026; the Explore demo is the default path until then | private evidence 19/10 |
+| Standard case without reserve (as of 31/10/2026, night) | New real-sandbox evidence sends on it are **Pending**; the settlement case is bound and the agent case is bound with 1 in reserve; the reserve is refilled for judging on 28–30/11/2026; the Explore demo is the default path until then | private evidence 19/10 |
 | No backup, export or account deletion | See [Backup and recovery](../operations/backup-and-recovery.md), [Retention and deletion](../operations/retention-and-deletion.md) | no backup code in the repository |
 | Audit and money records never expire | The send log (`audit-events-sends.jsonl`) and the MeterMCP ledger grow without limit on 1 GB disks (**by design**: they are the audit and money records; the analysis cache and the usage log are bounded) | `intents.ts`, `apps/metermcp/src/ledger.ts` |
 | A corrupt upload record is swept | An upload directory whose `record.json` cannot be read is removed by the hourly sweep as a leftover (its files go too); not preserved like the other stores. Durable writes make this unlikely | `uploads/store.ts` (`readRecord`, `sweepDisk`) |

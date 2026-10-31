@@ -33,14 +33,14 @@
   <img alt="PDF.js 6" src="https://img.shields.io/badge/PDF.js-6-2D6B68?style=flat-square&logo=mozilla&logoColor=white">
   <img alt="WebAuthn passkeys" src="https://img.shields.io/badge/WebAuthn-passkeys-2D6B68?style=flat-square&logo=webauthn&logoColor=white">
   <img alt="Vitest 5" src="https://img.shields.io/badge/Vitest-5-2D6B68?style=flat-square&logo=vitest&logoColor=white">
-  <img alt="tests · 1,521 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C521%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="tests · 1,523 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C523%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="Render 2 services" src="https://img.shields.io/badge/Render-2%20services-2D6B68?style=flat-square&logo=render&logoColor=white">
 </p>
 
 **ResolveKit helps a small merchant answer a PayPal dispute with a response in which every sentence cites its
 evidence, nothing is sent without the merchant's approval, and the result is read back from PayPal.**
 
-**[Demo](https://resolvekit-i3j2.onrender.com)** · **Video:** Pending (coming with the submission) ·
+**[Demo](https://resolvekit-i3j2.onrender.com)** · **[Video](https://youtu.be/VJ10zqXx5Ag)** (2:47, public) ·
 **[Judge guide](docs/judges/review-guide.md)** · **[Documentation](docs/README.md)**
 
 ![The ResolveKit case file: timeline, cited evidence and the response draft](docs/media/thumbnail.png)
@@ -100,11 +100,11 @@ Details: [product overview](docs/product/overview.md) · [AI pipeline](docs/tech
 
 The code is in `packages/paypal/src/` (`disputes.ts`, `webhooks.ts`, `identity.ts`, `orders.ts`).
 
-On the hosted service, `provide-evidence` and **make an offer** have been exercised end to end through the app (31/10/2026). Sending a message,
+On the hosted service, `provide-evidence` and **make an offer** have been exercised end to end through the app (31/10/2026; the same day an agent run on `/agent` and a signature-verified `CUSTOMER.DISPUTE.CREATED` webhook were also seen there). Sending a message,
 accepting a claim (full, or partial as an offer), making a partial-refund offer, escalating and sending evidence after
 an escalation are built from commit `076c74f` (20/10/2026), each on a sandbox contract the owner approved, and
 **Verified in sandbox** through the app on 20/10/2026 (one send each, on a local server). The code is **Deployed**
-(`d654478`, 31/10/2026); on 31/10/2026, on the hosted service (code `f1b7236` at that time), the owner sent two refund offers of 3.50 USD from the owner settlement case (PayPal recorded each as SELLER PROPOSED; the dispute moved to waiting for the buyer); sending a message, accepting a claim and escalating have **not** yet been exercised there (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`). The settlement case is bound in the hosted `BINDINGS_JSON`, and reviewers can send messages on a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and is Verified in sandbox through the app (V-7, 21/10/2026, a local run; that registry status is Deployed in `d654478`). Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
+(`667abb3`, 31/10/2026); on 31/10/2026, on the hosted service (code `f1b7236`, then `d654478` and `667abb3`), the owner sent four refund offers of 3.50 USD (on four disputes) from the owner settlement case (PayPal recorded each as SELLER PROPOSED; the dispute moved to waiting for the buyer); sending a message, accepting a claim and escalating have **not** yet been exercised there (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`). The settlement case is bound in the hosted `BINDINGS_JSON`, and reviewers can send messages on a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and is Verified in sandbox through the app (V-7, 21/10/2026, a local run; that registry status is Deployed in `667abb3`). Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
 **Not available**, each with its reason. ResolveKit never creates a refund. Per-variant status:
 [functional specification](docs/product/functional-specification.md#56-dispute-actions-other-than-evidence). Nothing
 has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).
@@ -125,7 +125,7 @@ has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal
 4. **Review what will be sent →**, **Continue to confirm →**, tick the approval and **Submit evidence to PayPal**: on
    the demo it goes to the simulator, never to PayPal, and the read-back says *Recorded by the PayPal simulator*.
 5. To send to a real sandbox dispute, use the reviewer link from the submission form and follow the
-   [judge guide](docs/judges/review-guide.md). As of 29/10/2026 the reserves of fresh sandbox disputes of both cases are empty; new sandbox disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path, and sending to the real sandbox may be unavailable.
+   [judge guide](docs/judges/review-guide.md). As of 31/10/2026 (night) the standard case has no fresh dispute left in reserve (its binding is used), the settlement case is bound and the agent case is bound with 1 in reserve; the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path for the evidence send, and sending to the real sandbox may be unavailable.
 
 Step by step with every control name: [demo walkthrough](docs/judges/demo-walkthrough.md).
 
@@ -149,7 +149,7 @@ page shows each step, the **receipt** as MeterMCP states it (captured and releas
 the budget. *Simulate an outage* makes the first `deep_report` call fail, never charged and marked injected.
 
 Observed on 19/10/2026 (two sandbox runs, examples, not a guarantee): one run ended *The tools cannot meet this goal*
-after an injected failure (0.05 USD captured, 1.95 released); one ended *Done* (0.92 captured, 1.08 released).
+after an injected failure (0.05 USD captured, 1.95 released); one ended *Done* (0.92 captured, 1.08 released). A third run, on the hosted service on 31/10/2026 (owner present, while recording the video), had a 0.50 USD cap: 0.45 captured, 0.05 released, the injected failed call not charged; the agent case is now bound to its dispute.
 The 1.37 USD agent case in the demo is invented demo data whose figures match a sandbox session made by a scripted
 client on 09/10/2026; it tests the analyst, not the agent. Guide: [buying agent](docs/user-guide/buying-agent.md) · [how it works](docs/technical/buying-agent.md).
 
@@ -235,15 +235,13 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 
 ## Verification
 
-- **Tests**: 31/10/2026, commit `d654478` (`main`, deployed: the post-shoot fixes), `npm test`: 1,521 tests, all passed (node:test 1,025 + vitest 496). Typecheck clean. Not run on Linux. Earlier run, 29/10/2026, commit `be7491d` (branch `fix/pre-submission`: the pre-submission code fixes plus docs), Node 24 on Windows: 1,488 tests, all passed (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 failed, 0 skipped; every node:test suite has a 60 s per-test timeout). Earlier run, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, all passed (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Earlier run, 21/10/2026, commit `81c6242`: 1,479 tests, all passed (same per-suite counts). Earlier run, 20/10/2026,
+- **Tests**: 31/10/2026 (night), commit `667abb3` (`main`, deployed), `npm test`: 1,523 tests, all passed (node:test 1,025 + vitest 498). Typecheck clean. Not run on Linux. Earlier run, 31/10/2026, commit `d654478`: 1,521 tests, all passed (node:test 1,025 + vitest 496). Earlier run, 29/10/2026, commit `be7491d` (branch `fix/pre-submission`: the pre-submission code fixes plus docs), Node 24 on Windows: 1,488 tests, all passed (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 failed, 0 skipped; every node:test suite has a 60 s per-test timeout). Earlier run, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, all passed (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Earlier run, 21/10/2026, commit `81c6242`: 1,479 tests, all passed (same per-suite counts). Earlier run, 20/10/2026,
   commit `5111b88`: 1,453 tests, all passed (vitest 447). Earlier run, 19/10/2026 12:35 UTC, commit
   `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 passed, 1 failed intermittently
   (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` under full-suite
   load; it passed 3 of 3 run alone, twice). Details: [testing](docs/quality/testing.md) ·
   [known issues](docs/quality/known-issues.md).
-- **Deployment**: `d654478` deployed on 31/10/2026 (the post-shoot fixes; the owner approved, `main` was fast-forwarded from `23728e2` to it (branch `fix/post-shoot`, 12 commits) and pushed, Render redeployed; ResolveKit restarted at about 20:00 Madrid time and MeterMCP stayed up). `demo:check` against the hosted URLs after that deploy: PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
-  connected (sandbox), webhook on, all three bindings verified (the standard case used, 0 in reserve; the settlement and agent cases, 0 in reserve), both AI models answered, warm-up cached; one FAIL, the known one: the standard case's binding is used and no dispute is left in reserve (refill for judging 28–30/11/2026). The same kind of result as after `f1b7236` on 29/10/2026. It cannot prove
-  which commit is live. Earlier: `f1b7236`, 29/10/2026; `c12faea` (a new web bundle with the V-7 registry status was observed) and `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (same `demo:check` result); `fbe9621`, 19/10/2026.
+- **Deployment**: `667abb3` deployed on 31/10/2026 (the owner approved, pushed and Render redeployed; ResolveKit restarted at about 21:07 Madrid time). It fixes the action dialogs after a live send (a new analysis reset the selection under the open result and an invisible flow request then blocked every action dialog until a reload; now the flow stays drawn while its request exists, and choosing a card clears any earlier request). `demo:check` against the hosted URLs after that deploy: all PASS (ResolveKit up, landing, MeterMCP up, PayPal sandbox connected, webhook on, all three bindings verified, both AI models answered, warm-up cached) except one FAIL, the known one: the standard case's binding is used and no dispute is left in reserve (refill for judging 28–30/11/2026). Bindings as of 31/10/2026: the standard case used (no reserve), the settlement case bound, the agent case bound with 1 in reserve. It cannot prove which commit is live. Earlier: `d654478`, 31/10/2026 (about 20:00; the post-shoot fixes; `main` fast-forwarded from `23728e2`, branch `fix/post-shoot`, 12 commits); `f1b7236`, 29/10/2026; `c12faea` (a new web bundle with the V-7 registry status was observed) and `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (same `demo:check` result); `fbe9621`, 19/10/2026.
 - **Evaluations** (analyst only, synthetic cases): [evaluations](docs/quality/evaluations.md). Headline: on 12 held-out
   cases × 3 runs, 0 of 66 true notes rejected and 0 of 72 planted false notes sent, but only 17 of 66 true notes were
   judged supported (6 + 6 + 5; source: [evaluations](docs/quality/evaluations.md)); the rest went to review.
@@ -255,8 +253,8 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 - On the hosted service, `provide-evidence` and make an offer (31/10/2026) have been exercised; messages, accept and escalate are deployed (code) and Verified in sandbox through the app (local run), not yet exercised on the hosted service; no refund is ever
   created.
 - Sandbox only; live PayPal never exercised. Sandbox timings and behaviours may differ in live.
-- As of 29/10/2026 the reserves of fresh sandbox disputes of both cases are empty; new sandbox disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path, and sending to the real sandbox may be unavailable. Until it is refilled, new sends there are refused and the case shows the earlier read-back.
-- The bound agent case shows a session made by the earlier scripted client, not a model-driven run.
+- As of 31/10/2026 (night) the standard case has no fresh dispute left in reserve (its binding is used), the settlement case is bound and the agent case is bound with 1 in reserve; the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path for the evidence send, and sending to the real sandbox may be unavailable. Until it is refilled, new sends there are refused and the case shows the earlier read-back.
+- The bound agent case is the dispute of a model-driven run made on the hosted service on 31/10/2026 (0.45 USD captured of a 0.50 USD cap); whether its binding also names the run (what shows the run record) is not recorded here.
 - Analyst: on held-out cases most true notes go to *needs review*; Groq was not run on the held-out set.
 - No backups beyond the Render disk; shared daily caps on the hosted demo.
 

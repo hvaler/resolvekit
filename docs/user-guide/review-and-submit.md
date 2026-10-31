@@ -94,7 +94,7 @@ read, **only if** one is left (as of 29/10/2026 neither case has any).
 ## Other dispute actions
 
 Status: **Tested locally** (with fakes built from recorded PayPal responses) · **Verified in sandbox** through the
-app (20/10/2026, one send each on a local server; the message with a file on 21/10/2026, V-7). The code, including the registry status of the message with a file, is Deployed (`d654478`, 31/10/2026); on the hosted service only make an offer has been exercised (31/10/2026; two refund offers of 3.50 USD from the owner settlement case); send message, accept claim and escalate have not yet been; the owner-only ones run on the settlement case, which is bound in the hosted `BINDINGS_JSON`, and reviewers can send messages on a bound case's active dispute. Per-variant status and rules:
+app (20/10/2026, one send each on a local server; the message with a file on 21/10/2026, V-7). The code, including the registry status of the message with a file, is Deployed (`667abb3`, 31/10/2026); on the hosted service only make an offer has been exercised (31/10/2026; four refund offers of 3.50 USD (on four disputes) from the owner settlement case); send message, accept claim and escalate have not yet been; the owner-only ones run on the settlement case, which is bound in the hosted `BINDINGS_JSON`, and reviewers can send messages on a bound case's active dispute. Per-variant status and rules:
 [Functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence).
 
 Choose the action in **What to do**: its composer opens in a dialog with **Cancel**, a close button (×) and Esc. Closing

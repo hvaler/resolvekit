@@ -2,8 +2,7 @@
 
 # Review guide for judges
 
-**Demo:** [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com) · **Video:** Pending (coming with the
-submission) · **Code:** [github.com/hvaler/resolvekit](https://github.com/hvaler/resolvekit) · **Evidence:**
+**Demo:** [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com) · **Video:** [youtu.be/VJ10zqXx5Ag](https://youtu.be/VJ10zqXx5Ag) (2:47, public) · **Code:** [github.com/hvaler/resolvekit](https://github.com/hvaler/resolvekit) · **Evidence:**
 [verification matrix](verification-matrix.md) · [evaluations](../quality/evaluations.md) ·
 [PayPal integration and sandbox findings](../technical/paypal-integration.md)
 
@@ -28,7 +27,7 @@ Exact control names, click by click: [demo walkthrough](demo-walkthrough.md).
 | 4 | **Review what will be sent →** → **Continue to confirm →** → tick the approval → **Submit evidence to PayPal** (on the Explore demo this is the default path: it goes to the simulator; to the real sandbox only while the case has a fresh dispute, see the note below) | The server-composed content with intent id and content hash; then **Recorded by PayPal** with a field-by-field comparison |
 | 5 | Open `/agent` (**Try the buying agent** in the inbox) and start a run with an example goal | Steps with the model's short reasons, the approval link, the receipt from MeterMCP |
 
-As of 29/10/2026 the reserves of fresh sandbox disputes of both cases are empty; new sandbox disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path, and sending to the real sandbox may be unavailable. Do minutes 2–4 on the same case in the **Explore demo** (`/demo/cases/PP-R-TVH-10190665`): identical flow, sent to the
+As of 31/10/2026 (night) the standard case has no fresh dispute left in reserve (its binding is used), the settlement case is bound and the agent case is bound with 1 in reserve; the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path for the evidence send, and sending to the real sandbox may be unavailable. Do minutes 2–4 on the same case in the **Explore demo** (`/demo/cases/PP-R-TVH-10190665`): identical flow, sent to the
 in-browser simulator instead of PayPal. More in [below](#if-a-dispute-was-used-the-reserve-is-empty-or-a-cap-is-reached).
 
 ## What PayPal, AI and MeterMCP contribute
@@ -36,7 +35,7 @@ in-browser simulator instead of PayPal. More in [below](#if-a-dispute-was-used-t
 | Part | Contribution | Status |
 |---|---|---|
 | PayPal Customer Disputes API v1 | Reads the bound dispute (status, stage, reason, requested evidence, allowed actions, due date); sends `provide-evidence` with notes and files; reads the dispute back | Verified in sandbox (two reviewers sent evidence, «Recorded by PayPal · 6 of 6 fields», 17/10/2026) · Deployed |
-| PayPal webhooks | `CUSTOMER.DISPUTE.*` events verified with PayPal's documented postback method; the event is only a hint and the dispute is re-read | Verified in sandbox (17/10/2026) · Deployed |
+| PayPal webhooks | `CUSTOMER.DISPUTE.*` events verified with PayPal's documented postback method; the event is only a hint and the dispute is re-read | Verified in sandbox (17/10/2026); on the hosted service a `CUSTOMER.DISPUTE.CREATED` event was received and signature-verified on 31/10/2026 and shown in the inbox notice · Deployed |
 | PayPal Orders v2 / Payments v2 | MeterMCP's budget: an `AUTHORIZE` order for exactly the cap; on close, a final partial capture of the successful calls (the remainder was no longer held in our sandbox runs) or a void | Verified in sandbox (09/10 and 19/10/2026) · Deployed |
 | **Continue with PayPal** | Identifies a merchant's PayPal account with a no-charge Billing Agreements v1 agreement token (deprecated API family). It is not Log in with PayPal and gives no access to disputes | Verified in sandbox (10/10/2026) · Deployed |
 | AI analyst (Gemini `gemini-3.8-flash`, Groq `openai/gpt-oss-120b` fallback) | Extracts facts with verbatim quotes, builds the timeline, finds contradictions, drafts; a separate call verifies each sentence against its own quotes | Deployed; evaluated on synthetic sets only ([evaluations](../quality/evaluations.md)) |
@@ -44,13 +43,13 @@ in-browser simulator instead of PayPal. More in [below](#if-a-dispute-was-used-t
 | Buying agent (same models, function calling) | Picks one MeterMCP tool per turn; code validates tool, arguments, price and limits before each call | Verified in sandbox (two runs, 19/10/2026, examples) · Deployed |
 | MeterMCP | A metered MCP gateway: paid tools (`quote_lookup` 0.05, `deep_report` 0.40, `bulk_export` 0.92 USD), failed calls never charged, receipts with request hashes | Verified in sandbox · Deployed |
 
-On the hosted service, `provide-evidence` and make an offer (31/10/2026) have been exercised end to end through the app. The other dispute actions are in the deployed code (`d654478`, 31/10/2026); send message, accept claim and escalate have not yet been exercised on the hosted service; one status per
+On the hosted service, `provide-evidence` and make an offer (31/10/2026) have been exercised end to end through the app. The other dispute actions are in the deployed code (`667abb3`, 31/10/2026); send message, accept claim and escalate have not yet been exercised on the hosted service; one status per
 variant ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)):
 
 | Dispute action | Status |
 |---|---|
-| Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Verified in sandbox** through the app (20/10/2026: the branch's server run locally, one send each, read back). The code is Deployed (`d654478`, 31/10/2026); on the hosted service, make an offer was exercised on 31/10/2026 (two refund offers of 3.50 USD, recorded by PayPal as SELLER PROPOSED; code `f1b7236` at that time); send message, accept claim and escalate have **not** yet been (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`) |
-| A message with an attachment | Verified in sandbox through the app (V-7, 21/10/2026, a local run: one confirmed upload, recorded by PayPal with 1 document); also Tested locally on the server and in the web composer. The code with this status is Deployed (`d654478`, 31/10/2026) |
+| Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Verified in sandbox** through the app (20/10/2026: the branch's server run locally, one send each, read back). The code is Deployed (`667abb3`, 31/10/2026); on the hosted service, make an offer was exercised on 31/10/2026 (four refund offers of 3.50 USD (on four disputes), recorded by PayPal as SELLER PROPOSED; code `f1b7236`, then `d654478` and `667abb3`); send message, accept claim and escalate have **not** yet been (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`) |
+| A message with an attachment | Verified in sandbox through the app (V-7, 21/10/2026, a local run: one confirmed upload, recorded by PayPal with 1 document); also Tested locally on the server and in the web composer. The code with this status is Deployed (`667abb3`, 31/10/2026) |
 | Replacement offer · offer withdrawal · appeal · proof of refund · return types | **Not available**, each with its reason in the product |
 
 Each available variant rests on one write the owner approved in the sandbox on 20/10/2026 and its read-back
@@ -74,7 +73,7 @@ and escalate are the Owner's, with a second confirmation, and others see a previ
 | An injected failure | **Simulated on purpose** | Only when *Simulate an outage* is ticked; labelled *injected*, never charged |
 | Every case in the Explore demo | **Simulated** | In-browser simulator, stored ("golden") analyses; nothing reaches PayPal |
 | The 1.37 USD agent case as it opens in the demo | **Synthetic demo data** | Invented demo data whose figures match a sandbox session made by a scripted client on 09/10/2026; tests the analyst, not the agent |
-| The bound agent case **PP-R-MMC-10190702** | **Real (sandbox)**, scripted client | Its receipt is from a session made by the earlier scripted client, not a model-driven run (as of 29/10/2026) |
+| The bound agent case **PP-R-MMC-10190702** | **Real (sandbox)**, model-driven run | Since 31/10/2026 bound to the dispute of a run made on the hosted `/agent` (0.50 USD cap, 0.45 captured), its amount checked against its MeterMCP receipt; before that, a session made by the earlier scripted client (the dispute is now in reserve) |
 
 ## Access and recommended environment
 
@@ -153,7 +152,7 @@ pasted-text sends to PayPal Pending. Details: [PDF review](../user-guide/pdf-rev
 | You see | Why | What to do |
 |---|---|---|
 | The send button reads **Evidence recorded by PayPal** and the draft is read-only | Someone already sent evidence to this sandbox dispute; in our sandbox tests PayPal's `provide_evidence` action disappeared after one submission (observed, not a documented rule) | Read the read-back, then come back later: about 15 minutes after a send, the next read moves the case to its next reserve dispute, **if the reserve has one**. Or walk the same flow in the Explore demo |
-| The case stays on a used dispute | The reserve of fresh sandbox disputes is empty (as of 29/10/2026 for both cases; new disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026) | Use the Explore demo for the send step (the default path until then); everything else in Test Store still works |
+| The case stays on a used dispute | The reserve of fresh sandbox disputes is empty (as of 31/10/2026, night, the standard case; the settlement case is bound and the agent case has 1 in reserve; the reserve is refilled for judging on 28–30/11/2026) | Use the Explore demo for the send step (the default path until then); everything else in Test Store still works |
 | *PayPal is processing this new dispute. Actions appear shortly.* | A new sandbox dispute first shows `UNDER_REVIEW` with no seller actions; it opened after a few minutes in our tests | Wait a few minutes and open the case again |
 | A message with a reset time (for example *The demo's daily agent runs are used up; they reset at …*) | Shared caps: per day 60 live analyses, 200 re-checks, 20 evidence sends, 40 uploads, 20 agent runs (5 per person), 20 MeterMCP budgets, 20 messages, 20 settling actions; per hour 6 live analyses and 30 re-checks; per-address request limits | Wait for the stated time, or use the stored analysis and the Explore demo |
 | *Seller workspace only* / *Sign in required* on **Re-run with AI** | You are not in the Test Store workspace | Open the reviewer link again |
@@ -162,7 +161,7 @@ pasted-text sends to PayPal Pending. Details: [PDF review](../user-guide/pdf-rev
 ## Links
 
 - Demo: [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com) (Explore demo at `/demo`)
-- Video: Pending (coming with the submission)
+- Video: [https://youtu.be/VJ10zqXx5Ag](https://youtu.be/VJ10zqXx5Ag) (2:47, public; recorded on the hosted service against the real sandbox on 31/10/2026)
 - Code: [github.com/hvaler/resolvekit](https://github.com/hvaler/resolvekit) · [README](../../README.md)
 - Evidence: [verification matrix](verification-matrix.md) · [evaluations](../quality/evaluations.md) ·
   [testing](../quality/testing.md) · [limitations](../product/limitations.md)

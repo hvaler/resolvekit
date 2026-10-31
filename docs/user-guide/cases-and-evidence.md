@@ -65,7 +65,7 @@ its composer will give: «✓ allowed» when ResolveKit can send it now; otherwi
 stays selectable as a preview («PayPal offers it · owner only · preview»); on a real PayPal dispute, someone signed
 out or in another workspace sees «not available to you here · preview». The footer adds how many ResolveKit can send
 now. Besides
-**Provide evidence**, the deployed commit (`d654478`, 31/10/2026) opens their own flow when you choose «Send message»,
+**Provide evidence**, the deployed commit (`667abb3`, 31/10/2026) opens their own flow when you choose «Send message»,
 «Accept claim», «Make an offer» or «Escalate» (Verified in sandbox through the app on 20/10/2026; on the hosted service only make an offer exercised, 31/10/2026): see [Review and submit](review-and-submit.md#other-dispute-actions).
 «PayPal is asking for:» shows the evidence PayPal requested.
 

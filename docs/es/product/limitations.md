@@ -3,7 +3,7 @@
 # Limitaciones
 
 Lo que ResolveKit no hace, todavía no hace o no se ha demostrado que haga. Comprobado frente al código en el commit
-`d654478` (desplegado el 31/10/2026) y las listas de seguimiento de los mantenedores; las acciones de disputa, frente al
+`667abb3` (desplegado el 31/10/2026) y las listas de seguimiento de los mantenedores; las acciones de disputa, frente al
 commit `076c74f` (20/10/2026). Los problemas de código para
 colaboradores están en [Problemas conocidos](../quality/known-issues.md); esta página recoge lo que necesita saber un
 usuario, un comerciante o un jurado.
@@ -13,11 +13,11 @@ usuario, un comerciante o un jurado.
 | Función | Situación hoy | Estado |
 |---|---|---|
 | Conectar las disputas de PayPal propias de un comerciante | Un comerciante que inicia sesión con **Continue with PayPal** recibe la pantalla de espera. La app no tiene código de Partner Referrals, `merchant-integrations` ni `PayPal-Auth-Assertion`. Se hicieron experimentos en sandbox fuera de la app (ver [Alta de comerciantes](../technical/merchant-onboarding.md)); no son una función | **Pendiente** (no implementado, no desplegado, no disponible) |
-| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el 20/10/2026 cada uno se envió una vez por el flujo propio de la app en el sandbox y se releyó (el servidor de la rama ejecutado en local). El código está desplegado (`d654478`, 31/10/2026), en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026: dos ofertas de reembolso de 3.50 USD, registradas por PayPal como SELLER PROPOSED; código `f1b7236` en ese momento); enviar mensaje, aceptar la reclamación y escalar aún no (escalar solo está verificado desde `WAITING_FOR_SELLER_RESPONSE`). Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Verificado en sandbox · Desplegado (código); hacer una oferta ejercitado en el servicio alojado (31/10/2026), el resto aún no |
-| Un mensaje con adjunto | La ruta del servidor y el editor web están probados (una subida confirmada del caso); un mensaje con archivo se envió a PayPal a través de la app en el sandbox (V-7, 21/10/2026, ejecución local) | Verificado en sandbox a través de la app (V-7); Desplegado (`d654478`, 31/10/2026), aún no ejercitado en el servicio alojado |
+| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el 20/10/2026 cada uno se envió una vez por el flujo propio de la app en el sandbox y se releyó (el servidor de la rama ejecutado en local). El código está desplegado (`667abb3`, 31/10/2026), en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026: cuatro ofertas de reembolso de 3.50 USD (en cuatro disputas), registradas por PayPal como SELLER PROPOSED; código `f1b7236`, después `d654478` y `667abb3`); enviar mensaje, aceptar la reclamación y escalar aún no (escalar solo está verificado desde `WAITING_FOR_SELLER_RESPONSE`). Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Verificado en sandbox · Desplegado (código); hacer una oferta ejercitado en el servicio alojado (31/10/2026), el resto aún no |
+| Un mensaje con adjunto | La ruta del servidor y el editor web están probados (una subida confirmada del caso); un mensaje con archivo se envió a PayPal a través de la app en el sandbox (V-7, 21/10/2026, ejecución local) | Verificado en sandbox a través de la app (V-7); Desplegado (`667abb3`, 31/10/2026), aún no ejercitado en el servicio alojado |
 | Oferta de sustitución | No disponible: «Not verified with PayPal: never offered on a sandbox dispute» | No disponible |
 | Retirar una oferta | No disponible: «PayPal documents no route to withdraw an offer» | No disponible |
-| Apelación | No disponible: «Not verified with PayPal: the sandbox could not produce an appealable dispute» | No disponible |
+| Apelación | No disponible (no implementada). El único intento de preparar una disputa apelable (W-7, 20/10/2026, una cuenta de comprador normal) fue rechazado; el producto sigue mostrando el motivo «Not verified with PayPal: the sandbox could not produce an appealable dispute». PayPal documenta que el sandbox permite apelaciones cuando el email de la cuenta de comprador del sandbox contiene `allowappeal` (y `noappeal` para lo contrario; [PayPal](https://developer.paypal.com/disputes/test-go-live), según PayPal DevRel dijo en el Discord de la hackathon el 30/10/2026); ResolveKit no lo ha probado | No disponible |
 | Prueba de reembolso (evidencia) | No disponible: «Not verified with PayPal: pending sandbox test (W-11)». Si PayPal solo pide esa, en esta entrega no se puede enviar evidencia en esa disputa | No disponible |
 | Tipos con devolución (reembolso con devolución, etiqueta de envío de devolución) | No disponible: «Not in this delivery (owner decision)» | No disponible |
 | `provide_supporting_info` | PayPal lo ofreció tras evidencia en una reclamación; ResolveKit no lo soporta | No disponible |
@@ -33,9 +33,9 @@ usuario, un comerciante o un jurado.
 - **Una respuesta por disputa, según lo observado.** En nuestras pruebas en sandbox PayPal dejó de ofrecer
   `provide_evidence` tras un envío. Es una observación, no una regla documentada de PayPal. El caso muestra entonces
   **Evidence recorded by PayPal** y un borrador de solo lectura.
-- **Las reservas están vacías** (a 29/10/2026, ambos casos): sus disputas ya se usaron, así que los nuevos envíos al
-  sandbox real están **Pendiente**. Las disputas nuevas del sandbox se preparan el 31/10/2026 y la reserva se rellena
-  para la evaluación el 28–30/11/2026; hasta entonces la ruta por defecto es la Explore demo. Un caso solo pasa a la siguiente
+- **El caso estándar no tiene reserva** (a 31/10/2026, noche): su vinculación está usada, así que los nuevos envíos de
+  evidencia al sandbox real ahí están **Pendiente**. El caso de liquidación está vinculado y el del agente está vinculado con 1 en reserva. La reserva se rellena para la evaluación el 28–30/11/2026;
+  hasta entonces la ruta por defecto para el envío de evidencia es la Explore demo. Un caso solo pasa a la siguiente
   disputa de su reserva si queda alguna, en su siguiente lectura, unos 15 minutos después de registrarse la evidencia.
 - **Los documentos del caso son sintéticos.** Lo que subes es real en lo que hace; el pedido, la etiqueta, el registro
   del transportista y los mensajes del comprador que lo rodean son inventados, así que una captura real puede aparecer
@@ -45,9 +45,9 @@ usuario, un comerciante o un jurado.
   análisis en directo y 30 recomprobaciones. Por dirección: 300 peticiones a la API y 60 lecturas de PayPal cada 5
   minutos; 20 subidas, tapados y lecturas de páginas de PDF cada 10 minutos. Un rechazo dice cuándo se restablece.
 - **Los redespliegues** provocan 1–2 minutos de errores (un servicio con disco no tiene despliegue sin interrupción).
-- **Qué commit está desplegado** no se puede demostrar desde fuera: `d654478` se trata como desplegado por la
+- **Qué commit está desplegado** no se puede demostrar desde fuera: `667abb3` se trata como desplegado por la
   decisión del propietario de subirlo y un `demo:check` del 31/10/2026 correcto salvo la reserva vacía conocida del caso
-  estándar (`f1b7236` el 29/10/2026, `c12faea` y `81c6242` el 21/10/2026, `5111b88` el 20/10/2026 y `fbe9621` el 19/10/2026 se trataron como desplegados del mismo modo).
+  estándar (`d654478` antes el mismo día, `f1b7236` el 29/10/2026, `c12faea` y `81c6242` el 21/10/2026, `5111b88` el 20/10/2026 y `fbe9621` el 19/10/2026 se trataron como desplegados del mismo modo).
 
 ## Acciones de disputa
 
@@ -97,14 +97,13 @@ Carencias conocidas:
 
 ## Agente comprador
 
-- Dos ejecuciones observadas en sandbox (19/10/2026) son ejemplos, no una garantía de cómo se comporta el modelo. El
+- Dos ejecuciones observadas en sandbox (19/10/2026) y una tercera en el servicio alojado (31/10/2026, tope de 0.50 USD, 0.45 capturados) son ejemplos, no una garantía de cómo se comporta el modelo. El
   modelo puede elegir mal dentro de los límites; el código solo comprueba cada acción.
 - Aún no demostrado en el sandbox: **Stop** en una ejecución en curso, el respaldo de Groq, la recuperación tras un
   reinicio durante una ejecución, una captura que PayPal notifica como `PENDING` y el `demo-agent` de línea de comandos
   contra el MeterMCP alojado: **Pendiente**.
 - El registro de ejecución del caso de agente (evidencia «From ResolveKit · run …») solo aparece cuando la vinculación
-  del caso nombra la ejecución; ninguna vinculación lo hace todavía, y la vinculación del caso de agente apunta a una
-  sesión hecha por el cliente con guion (scripted) anterior: **Pendiente**.
+  del caso nombra la ejecución; a 31/10/2026 el caso del agente está vinculado a la disputa de una ejecución dirigida por el modelo hecha en el `/agent` alojado (comprobada contra el importe que capturó su recibo; la disputa anterior del cliente con guion queda en reserva), pero no consta aquí si esa vinculación nombra la ejecución: **Pendiente**.
 - Las ejecuciones del agente por persona se restablecen a medianoche UTC, no 24 horas después de la primera ejecución.
 - Las salidas de las herramientas son sintéticas; los presupuestos son de 0.50–5.00 USD en el sandbox.
 

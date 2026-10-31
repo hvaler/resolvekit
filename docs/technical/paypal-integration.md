@@ -3,7 +3,7 @@
 # PayPal integration
 
 Which PayPal APIs ResolveKit calls, with which credential, what it relies on, and what was only observed in the
-sandbox. Code at commit `d654478` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
+sandbox. Code at commit `667abb3` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
 on 19/10/2026 (developer.paypal.com).
 
 Three kinds of statement are kept apart on this page:
@@ -74,7 +74,7 @@ gross amounts equal to the case's amount and currency (the agent case bound with
 captured on that capture, so any real agent run can be bound; the demo case's fixed amount when the receipt cannot be read); missing
 data fails. A case can have a **reserve** (a list,
 first active): a used dispute (resolved, or with seller evidence for more than 15 minutes) moves the case to the
-next one on its next read, if the reserve is not empty. As of 29/10/2026 the reserves of both cases are empty (new
+next one on its next read, if the reserve is not empty. As of 31/10/2026 (night) the standard case has no reserve (the settlement case is bound; the agent case is bound with 1 in reserve) (new
 real-sandbox sends Pending until the refill for judging on 28–30/11/2026).
 
 ### Sending evidence
@@ -126,7 +126,7 @@ through the app come after this table). Single observations, not PayPal rules an
 | W-4 | `make_offer:REFUND`, 2.00 of 7.00 USD | PP-R-OZY-10193601 | `offer.history` gained a seller `PROPOSED` entry with the type and amount about 3.5 s after; the note echoed as a seller message; no money moved, nothing closed. PayPal then waited for the buyer, stopped offering `make_offer` and offered accept `REFUND` only |
 | W-5 | `escalate` | PP-R-NDZ-10193597 | An `evidences[]` entry `SUBMITTED_BY_SELLER`, `action_info.action: ESCALATE`, with the note, about 3.9 s after. Stage `CHARGEBACK` about 2 min 46 s later; `UNDER_REVIEW` with flickering links in between |
 | W-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | Evidence accepted again in the claim stage; each `evidences[]` entry carries its `dispute_life_cycle_stage` |
-| W-7 | the sandbox's adjudicate helper (set-up for an appeal) | same, `UNDER_REVIEW` | Refused: `400`, `ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`; no appealable state could be produced |
+| W-7 | the sandbox's adjudicate helper (set-up for an appeal) | same, `UNDER_REVIEW` | Refused: `400`, `ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`; no appealable state was produced with that (normal) buyer account. PayPal documents that the sandbox allows appeals when the buyer sandbox account's email contains `allowappeal` (and `noappeal` for the opposite; [PayPal](https://developer.paypal.com/disputes/test-go-live), as PayPal DevRel told the hackathon Discord on 30/10/2026); ResolveKit has not tried it |
 | W-8 | `appeal` | — | Not sent (W-7 was refused) |
 | W-9 | `accept_claim:PARTIAL_REFUND`, 2.00 of 7.00 USD | PP-R-KMJ-10193602 | `200`, recorded as an offer: an `offer.history` seller `PROPOSED` entry, type `REFUND`, 2.00 USD; no `evidences[]` entry; nothing closed, no money moved; the note echoed as a seller message |
 | W-10 | `accept_claim:REFUND` | PP-R-PAU-10193600 | An attributable entry (`ACCEPT_CLAIM`, `response_option: REFUND`, the note) about 5 s after; a 7.00 USD refund at once; `RESOLVED` in the buyer's favour (`SELLER_ISSUED_REFUND`) by +2 min, after `UNDER_REVIEW` |
@@ -142,7 +142,7 @@ accept, offer and escalate, because that is all the writes covered.
 ResolveKit's own flow: the server of the dispute-actions branch (head `9f93ba0`, since merged into `main` and deployed) running locally
 against the sandbox, each run approved by the owner beforehand, each going compose → approve by hash → second
 confirmation (when the action has terms) → one send → attributable read-back. One POST to PayPal per run, with GET
-reads before and after (private evidence, 20/10/2026). The code is now deployed (`d654478`); on the hosted service only make an offer has been sent (31/10/2026, two refund offers of 3.50 USD from the owner settlement case; PayPal recorded each as SELLER PROPOSED). Single observations, not PayPal rules.
+reads before and after (private evidence, 20/10/2026). The code is now deployed (`667abb3`); on the hosted service only make an offer has been sent (31/10/2026, four refund offers of 3.50 USD (on four disputes) from the owner settlement case; PayPal recorded each as SELLER PROPOSED). Single observations, not PayPal rules.
 
 | Run | Variant | Sandbox dispute | Observed through the app |
 |---|---|---|---|
@@ -154,7 +154,7 @@ reads before and after (private evidence, 20/10/2026). The code is now deployed 
 | V-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | After one live analysis of the bound case, an edited sentence re-checked and a contradiction resolved by the owner: one `provide-evidence`, recorded as a `PROVIDE_EVIDENCE` entry in stage `CHARGEBACK` with 2 documents, next to the inquiry-stage `ESCALATE` entry |
 | V-7 | `send_message:file` | PP-R-GCV-10193596 (`WAITING_FOR_BUYER_RESPONSE`) | 21/10/2026 05:30Z, local server of `main` (`81c6242`): one confirmed, sanitised upload (a synthetic PNG, sent as `E7-upload.png`), its hash matching the approved one; one multipart send (202); «Recorded by PayPal» at about 1 s and again at +30 s; the new seller message has the exact text and 1 document; no money moved |
 
-Not verified through the app: every «Not available» variant. The registry status of `send_message:file` (Verified in sandbox) is deployed (`d654478`, 31/10/2026).
+Not verified through the app: every «Not available» variant. The registry status of `send_message:file` (Verified in sandbox) is deployed (`667abb3`, 31/10/2026).
 
 **W-11, the pending proof-of-refund test.** A disputed payment showed as held in the sandbox on 19/10/2026, and the
 seller's sandbox web pages offered no refund outside the case. The planned sequence is therefore: a new sandbox
@@ -285,7 +285,7 @@ in `WAITING_FOR_SELLER_RESPONSE` through `apps/server`, with our own `PayPal-Req
   (PayPal: «Not all APIs support this header»,
   [idempotency](https://developer.paypal.com/api/rest/reference/idempotency/)).
 - What the buyer's answer to an offer looks like in the dispute (never recorded); the dispute actions on other reasons
-  and stages; an appeal (the sandbox could not produce an appealable dispute); a replacement offer (never offered).
+  and stages; an appeal (not implemented; W-7 with a normal buyer was refused, and the `allowappeal` buyer that PayPal documents for testing it was not tried); a replacement offer (never offered).
 - Any notes length limit on PayPal's side; the 2 000-character cap is ResolveKit's.
 - The maximum number of files per call.
 - Live-environment behaviour of everything on this page.

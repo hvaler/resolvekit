@@ -134,7 +134,7 @@ Examples only; the same goal can lead to different choices.
 | A | 2.00 USD | yes | **The tools cannot meet this goal** | «Captured 0.05 USD · 1.95 released» |
 | B | 2.00 USD | no | **Done** | «Captured 0.92 USD · 1.08 released» |
 
-Both used Gemini. **Compare**, **Keep** and returning to `/agent?run=` after approval were checked the same day.
+Both used Gemini. **Compare**, **Keep** and returning to `/agent?run=` after approval were checked the same day. A third run, on the hosted service on 31/10/2026 (owner present, while recording the video), had a 0.50 USD cap: 0.45 captured, 0.05 released, the injected failed call not charged; the agent case is now bound to its dispute.
 
 These runs are not the agent-purchase case's «1.37 of 5.00 USD» example: that one is demo data (and matches a
 sandbox session made on 09/10/2026 by a scripted client). Starting a run never opens a dispute.

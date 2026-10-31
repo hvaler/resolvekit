@@ -7,8 +7,7 @@ Cada paso con los nombres que muestra la aplicación. Los nombres de los control
 del repositorio; el id de la disputa del sandbox de PayPal vinculada a un caso se muestra en la barra de la aplicación
 y cambia a medida que rota la reserva. Versión corta: [guía de revisión](review-guide.md).
 
-Demo: [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com). Vídeo: Pendiente (llegará con la
-entrega).
+Demo: [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com). Vídeo: [https://youtu.be/VJ10zqXx5Ag](https://youtu.be/VJ10zqXx5Ag) (2:47, público; grabado en el servicio alojado contra el sandbox real el 31/10/2026).
 
 | Itinerario | Necesita | Tiempo |
 |---|---|---|
@@ -39,7 +38,7 @@ entrega).
 6. En el borrador, cada frase está **Supported**, **Needs review** o *Removed: no supporting evidence* (tachada, nunca
    se envía). **Edit** una frase para ver cómo se vuelve a comprobar (*Re-checking support…*).
 7. Bajo **What to do** se listan las acciones que PayPal permite para esta disputa. El commit desplegado
-   (`d654478`) incluye las demás acciones de disputa; en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026; enviar mensaje, aceptar y escalar, todavía no): elegir
+   (`667abb3`) incluye las demás acciones de disputa; en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026; enviar mensaje, aceptar y escalar, todavía no): elegir
    **Send message**, **Accept claim**, **Make an offer** o **Escalate** abre su propio editor, reproducido en el
    simulador solo con las transiciones de PayPal registradas; las acciones solo del Owner necesitan el caso de liquidación, que está vinculado en el `BINDINGS_JSON` alojado, y los revisores pueden enviar mensajes
    en la disputa activa de un caso vinculado; las variantes no disponibles dicen por qué
@@ -131,9 +130,8 @@ revisión, tiempo agotado). Nunca aparece en un caso que funcione sobre PayPal r
 
 1. Abre **PP-R-MMC-10190702** en Test Store: un comprador disputa un pago que un agente hizo a través de MeterMCP.
 2. El mandato, el recibo por llamada (AG Grid) y la liquidación están etiquetados *From MeterMCP · session …*. A fecha
-   de 29/10/2026, la sesión vinculada es una hecha por el cliente con guion (scripted) anterior, no por una ejecución dirigida
-   por el modelo; un registro de ejecución (*E5 Agent run record*, *From ResolveKit · run …*) aparece solo cuando la
-   vinculación del caso nombra esa ejecución (Pendiente).
+   de 31/10/2026, la disputa vinculada es la de una ejecución dirigida por el modelo hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados), y el importe del caso es el que capturó su recibo; un registro de ejecución (*E5 Agent run record*, *From ResolveKit · run …*) aparece solo cuando la
+   vinculación del caso nombra esa ejecución (no consta aquí si lo hace: Pendiente).
 3. *How this goes to PayPal as digital delivery*: `PROOF_OF_FULFILLMENT`, transportista `OTHER`, el id de sesión como
    referencia, el PDF del recibo adjunto. Enviarlo sigue el itinerario B (envío del caso del agente a PayPal:
    Pendiente, sin evidencia registrada).

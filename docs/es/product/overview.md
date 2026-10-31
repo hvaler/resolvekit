@@ -15,7 +15,7 @@ llamada como evidencia.
 
 ResolveKit prepara la respuesta; PayPal decide la disputa. No está afiliado a PayPal.
 
-Los datos de esta página proceden del código en el commit `d654478` (desplegado el 31/10/2026) salvo que una fecha diga otra cosa.
+Los datos de esta página proceden del código en el commit `667abb3` (desplegado el 31/10/2026) salvo que una fecha diga otra cosa.
 Las palabras de estado siguen un único vocabulario: Diseñado · Implementado · Probado en local · Verificado en sandbox ·
 Desplegado · Disponible para usuarios · Pendiente.
 
@@ -65,9 +65,9 @@ PayPal; ResolveKit nunca se ha ejecutado contra el entorno live (producción) de
 | Agente comprador (`/agent`) | Un modelo elige las herramientas de pago de MeterMCP, una acción cada vez, dentro de un presupuesto aprobado en el sandbox de PayPal; pasos, recibo, liquidación, uso del modelo | Implementado · Probado en local · Desplegado · Verificado en sandbox (dos ejecuciones el 19/10/2026, solo ejemplos; una ejecución alojada el 31/10/2026: tope de 0.50 USD, 0.45 capturados, 0.05 liberados, una llamada fallida inyectada sin cobrar) |
 | MeterMCP | Un servidor MCP de pago por uso: presupuestos como autorizaciones de PayPal Orders v2, solo se capturan las llamadas con éxito, recibos por llamada | Implementado · Probado en local · Verificado en sandbox · Desplegado |
 
-Dos acciones de disputa de PayPal se han ejercitado de extremo a extremo en el servicio alojado: **Provide evidence** y **Make an offer** (31/10/2026).
+Dos acciones de disputa de PayPal se han ejercitado de extremo a extremo en el servicio alojado: **Provide evidence** y **Make an offer** (31/10/2026; ese mismo día también se vieron allí una ejecución del agente y un webhook de disputa con la firma verificada).
 El expediente muestra las acciones que PayPal permite (por ejemplo «Send message», «Accept claim»). El código para
-enviar un mensaje, aceptar una reclamación, hacer una oferta y escalar está desplegado (`d654478`, 31/10/2026) y
+enviar un mensaje, aceptar una reclamación, hacer una oferta y escalar está desplegado (`667abb3`, 31/10/2026) y
 Verificado en sandbox en una ejecución local; en el servicio alojado solo se ha ejercitado hacer una oferta, así que enviar un mensaje, aceptar una reclamación y escalar aún no.
 ResolveKit no crea ningún reembolso.
 

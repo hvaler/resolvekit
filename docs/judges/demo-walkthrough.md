@@ -6,8 +6,7 @@ Every step with the names the app shows. Control names are in **bold**, on-scree
 `PP-R-TVH-10190665` are fictional case names from the repository; the PayPal sandbox dispute id bound to a case is shown
 in the app bar and changes as the reserve rotates. Short version: [review guide](review-guide.md).
 
-Demo: [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com). Video: Pending (coming with the
-submission).
+Demo: [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com). Video: [https://youtu.be/VJ10zqXx5Ag](https://youtu.be/VJ10zqXx5Ag) (2:47, public; recorded on the hosted service against the real sandbox on 31/10/2026).
 
 | Track | Needs | Time |
 |---|---|---|
@@ -34,7 +33,7 @@ submission).
    Press **Explain in response** (adds a neutral sentence citing both) or **Mark resolved…** (records a note).
 6. In the draft, each sentence is **Supported**, **Needs review** or *Removed: no supporting evidence* (struck, never
    sent). **Edit** a sentence to see it checked again (*Re-checking support…*).
-7. Under **What to do**, the actions PayPal allows for this dispute are listed. The deployed commit (`d654478`)
+7. Under **What to do**, the actions PayPal allows for this dispute are listed. The deployed commit (`667abb3`)
    includes the other dispute actions; on the hosted service only make an offer has been exercised (31/10/2026; send message, accept claim and escalate not yet): choosing **Send
    message**, **Accept claim**, **Make an offer** or **Escalate** opens its own composer, played on the simulator with
    the recorded PayPal transitions only; owner-only actions need the settlement case, which is bound in the hosted `BINDINGS_JSON`, and reviewers can send messages on a bound case's active dispute; variants
@@ -120,8 +119,8 @@ timeout). It never appears on a case running on real PayPal.
 
 1. Open **PP-R-MMC-10190702** in Test Store: a buyer disputes a payment an agent made through MeterMCP.
 2. The mandate, the per-call receipt (AG Grid) and the settlement are labelled *From MeterMCP · session …*. As of
-   29/10/2026 the bound session is one made by the earlier scripted client, not by a model-driven run; a run record
-   (*E5 Agent run record*, *From ResolveKit · run …*) appears only when the case's binding names that run (Pending).
+   31/10/2026 the bound dispute is that of a model-driven run made on the hosted `/agent` (0.50 USD cap, 0.45 captured), and the case's amount is the one its receipt captured; a run record
+   (*E5 Agent run record*, *From ResolveKit · run …*) appears only when the case's binding names that run (not recorded here whether it does: Pending).
 3. *How this goes to PayPal as digital delivery*: `PROOF_OF_FULFILLMENT`, carrier `OTHER`, the session id as reference,
    the receipt PDF attached. Sending it follows track B (agent-case send to PayPal: Pending, no recorded evidence).
 4. In the Explore demo the same case id opens the synthetic example (four calls, one failure not charged, 1.37 of

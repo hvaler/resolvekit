@@ -3,7 +3,7 @@
 # Integración con PayPal
 
 Qué API de PayPal llama ResolveKit, con qué credencial, en qué se apoya y qué solo se ha observado en el sandbox.
-Código en el commit `d654478` (las acciones de disputa se añadieron en `076c74f`, 20/10/2026); documentación de PayPal
+Código en el commit `667abb3` (las acciones de disputa se añadieron en `076c74f`, 20/10/2026); documentación de PayPal
 consultada el 19/10/2026 (developer.paypal.com).
 
 En esta página se separan tres tipos de afirmación:
@@ -77,7 +77,7 @@ con los importes disputado y bruto iguales al importe y la moneda del caso (el c
 recibo de MeterMCP capturó en esa captura, así que cualquier ejecución real del agente se puede vincular; el importe fijo del caso
 de demo si el recibo no se puede leer); si faltan datos, falla. Un caso puede
 tener una **reserva** (una lista, la primera activa): una disputa usada (resuelta, o con evidencia del vendedor desde
-hace más de 15 minutos) hace que el caso pase a la siguiente en su próxima lectura, si la reserva no está vacía. A 29/10/2026 las reservas de ambos casos están vacías (los envíos nuevos al sandbox real quedan Pendientes hasta el relleno para la evaluación del 28–30/11/2026).
+hace más de 15 minutos) hace que el caso pase a la siguiente en su próxima lectura, si la reserva no está vacía. A 31/10/2026 (noche) el caso estándar no tiene reserva (el de liquidación está vinculado; el del agente está vinculado con 1 en reserva) (los envíos nuevos al sandbox real quedan Pendientes hasta el relleno para la evaluación del 28–30/11/2026).
 
 ### Envío de evidencia
 
@@ -131,7 +131,7 @@ producción.
 | W-4 | `make_offer:REFUND`, 2.00 de 7.00 USD | PP-R-OZY-10193601 | `offer.history` ganó una entrada `PROPOSED` del vendedor con el tipo y el importe unos 3.5 s después; la nota se repitió como mensaje del vendedor; no se movió dinero ni se cerró nada. Después PayPal esperó al comprador, dejó de ofrecer `make_offer` y solo ofreció aceptar con `REFUND` |
 | W-5 | `escalate` | PP-R-NDZ-10193597 | Una entrada en `evidences[]` `SUBMITTED_BY_SELLER`, `action_info.action: ESCALATE`, con la nota, unos 3.9 s después. Fase `CHARGEBACK` unos 2 min 46 s más tarde; `UNDER_REVIEW` con enlaces intermitentes entre medias |
 | W-6 | `evidence:after_escalation` | la misma, en `CHARGEBACK` | Evidencia aceptada de nuevo en la fase de reclamación; cada entrada de `evidences[]` lleva su `dispute_life_cycle_stage` |
-| W-7 | el ayudante de adjudicación del sandbox (preparación de una apelación) | la misma, `UNDER_REVIEW` | Rechazado: `400`, `ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`; no se pudo producir un estado apelable |
+| W-7 | el ayudante de adjudicación del sandbox (preparación de una apelación) | la misma, `UNDER_REVIEW` | Rechazado: `400`, `ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`; no se produjo un estado apelable con esa cuenta de comprador (normal). PayPal documenta que el sandbox permite apelaciones cuando el email de la cuenta de comprador del sandbox contiene `allowappeal` (y `noappeal` para lo contrario; [PayPal](https://developer.paypal.com/disputes/test-go-live), según PayPal DevRel dijo en el Discord de la hackathon el 30/10/2026); ResolveKit no lo ha probado |
 | W-8 | `appeal` | — | No enviada (W-7 fue rechazada) |
 | W-9 | `accept_claim:PARTIAL_REFUND`, 2.00 de 7.00 USD | PP-R-KMJ-10193602 | `200`, registrada como oferta: una entrada `PROPOSED` del vendedor en `offer.history`, tipo `REFUND`, 2.00 USD; ninguna entrada en `evidences[]`; nada se cerró, no se movió dinero; la nota se repitió como mensaje del vendedor |
 | W-10 | `accept_claim:REFUND` | PP-R-PAU-10193600 | Una entrada atribuible (`ACCEPT_CLAIM`, `response_option: REFUND`, la nota) unos 5 s después; un reembolso de 7.00 USD en el acto; `RESOLVED` a favor del comprador (`SELLER_ISSUED_REFUND`) hacia los +2 min, tras `UNDER_REVIEW` |
@@ -148,7 +148,7 @@ escrituras.
 por el flujo propio de ResolveKit: el servidor de la rama de acciones de disputa (head `9f93ba0`, ya fusionada en `main` y desplegada) ejecutado
 en local contra el sandbox, cada ejecución aprobada antes por el propietario, y cada una por componer → aprobar por
 hash → segunda confirmación (cuando la acción tiene términos) → un envío → relectura atribuible. Un POST a PayPal por
-ejecución, con lecturas GET antes y después (evidencia privada, 20/10/2026). El código está ahora desplegado (`d654478`); en el servicio alojado solo se envió hacer una oferta (31/10/2026, dos ofertas de reembolso de 3.50 USD desde el caso de liquidación del Owner; PayPal registró cada una como SELLER PROPOSED). Son observaciones únicas, no
+ejecución, con lecturas GET antes y después (evidencia privada, 20/10/2026). El código está ahora desplegado (`667abb3`); en el servicio alojado solo se envió hacer una oferta (31/10/2026, cuatro ofertas de reembolso de 3.50 USD (en cuatro disputas) desde el caso de liquidación del Owner; PayPal registró cada una como SELLER PROPOSED). Son observaciones únicas, no
 reglas de PayPal.
 
 | Ejecución | Variante | Disputa de sandbox | Observado a través de la app |
@@ -161,7 +161,7 @@ reglas de PayPal.
 | V-6 | `evidence:after_escalation` | la misma, en `CHARGEBACK` | Tras un análisis en directo del caso vinculado, una frase editada recomprobada y una contradicción resuelta por el propietario: un único `provide-evidence`, registrado como entrada `PROVIDE_EVIDENCE` en la fase `CHARGEBACK` con 2 documentos, junto a la entrada `ESCALATE` de la fase de consulta |
 | V-7 | `send_message:file` | PP-R-GCV-10193596 (`WAITING_FOR_BUYER_RESPONSE`) | 21/10/2026 05:30Z, servidor local de `main` (`81c6242`): una subida confirmada y saneada (un PNG sintético, enviado como `E7-upload.png`), con el hash igual al aprobado; un envío multipart (202); «Recorded by PayPal» a ~1 s y de nuevo a +30 s; el nuevo mensaje del vendedor tiene el texto exacto y 1 documento; sin movimiento de dinero |
 
-No verificado a través de la app: todas las variantes «Not available». El estado del registro de `send_message:file` (Verificado en sandbox) está desplegado (`d654478`, 31/10/2026).
+No verificado a través de la app: todas las variantes «Not available». El estado del registro de `send_message:file` (Verificado en sandbox) está desplegado (`667abb3`, 31/10/2026).
 
 **W-11, la prueba pendiente de la prueba de reembolso.** El 19/10/2026 un pago en disputa apareció retenido en el
 sandbox, y las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso. La secuencia prevista es,
@@ -299,7 +299,7 @@ envío tardó unos 1.9 s (lectura y POST multipart); PayPal lo aceptó, y la rel
   (PayPal: «Not all APIs support this header»,
   [idempotencia](https://developer.paypal.com/api/rest/reference/idempotency/)).
 - Cómo se ve en la disputa la respuesta del comprador a una oferta (nunca registrada); las acciones de disputa en otros
-  motivos y fases; una apelación (el sandbox no pudo producir una disputa apelable); una oferta de sustitución (nunca
+  motivos y fases; una apelación (no implementada; W-7 con un comprador normal fue rechazada, y el comprador `allowappeal` que PayPal documenta para probarla no se probó); una oferta de sustitución (nunca
   ofrecida).
 - Cualquier límite de longitud de las notas en el lado de PayPal; el tope de 2 000 caracteres es de ResolveKit.
 - El número máximo de archivos por llamada.

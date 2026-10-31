@@ -142,7 +142,7 @@ Solo ejemplos; el mismo objetivo puede llevar a elecciones distintas.
 | A | 2.00 USD | sí | **The tools cannot meet this goal** | «Captured 0.05 USD · 1.95 released» |
 | B | 2.00 USD | no | **Done** | «Captured 0.92 USD · 1.08 released» |
 
-Ambas usaron Gemini. **Compare**, **Keep** y la vuelta a `/agent?run=` tras la aprobación se comprobaron el mismo día.
+Ambas usaron Gemini. **Compare**, **Keep** y la vuelta a `/agent?run=` tras la aprobación se comprobaron el mismo día. Una tercera ejecución, en el servicio alojado el 31/10/2026 (con el propietario presente, al grabar el vídeo), tuvo un tope de 0.50 USD: 0.45 capturados, 0.05 liberados, la llamada fallida inyectada no se cobró; el caso del agente está ahora vinculado a su disputa.
 
 Estas ejecuciones no son el ejemplo «1.37 of 5.00 USD» del caso de compra de agente: ese son datos de demo (y coincide
 con una sesión de sandbox hecha el 09/10/2026 por un cliente con guion (scripted)). Iniciar una ejecución nunca abre una disputa.

@@ -5,7 +5,7 @@
 Un agente dirigido por el modelo que alcanza el objetivo de una persona comprando llamadas a herramientas de MeterMCP
 con un presupuesto que esa persona aprueba en PayPal. Un único motor, `packages/agent`, funciona detrás de la página
 `/agent` (`apps/server/src/agent/`), de la CLI `npm run demo-agent` y de `npm run demo:prepare --agent`. Código en el
-commit `d654478`. Cómo usar la página: [guía de usuario](../user-guide/buying-agent.md).
+commit `667abb3`. Cómo usar la página: [guía de usuario](../user-guide/buying-agent.md).
 
 ## Cómo funciona una ejecución
 
@@ -131,9 +131,9 @@ terminada (registro y recibo mediante la ruta de operaciones; nunca vuelve a eje
 cumple los requisitos para la reserva del caso del agente (al menos una llamada cobrada, una captura completada…),
 indica al comprador cómo abrir una disputa sobre su captura e imprime una vinculación que nombra la ejecución y su sesión.
 Solo cuando la vinculación nombra la ejecución, y la sesión de la ejecución coincide, el caso muestra **E5 Agent run
-record** («Agent's own account of its steps · not proof of delivery»). En el sandbox aún no hay ninguna vinculación que
-nombre una ejecución: la vinculación del caso del agente (18/10/2026) apunta a una sesión creada antes por un cliente MCP
-con guion (scripted), no por el agente dirigido por el modelo (Pendiente).
+record** («Agent's own account of its steps · not proof of delivery»). A 31/10/2026
+el caso del agente está vinculado a la disputa de una ejecución dirigida por el modelo hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados, 0.05 liberados); la vinculación nombra su captura, así que el importe del caso es el que capturó su recibo de MeterMCP. No consta aquí si nombra también la ejecución (lo que hace aparecer E5) (Pendiente). La vinculación del 18/10/2026 apuntaba a una sesión creada por un cliente MCP
+con guion (scripted); su disputa queda en reserva.
 
 ## CLI
 
@@ -152,7 +152,7 @@ evidencia).
 
 | Qué | Estado |
 |---|---|
-| Motor, rutas, página | Implementado · Probado en local (`packages/agent`: 52 tests; suites del servidor y de la web, 21/10/2026, `c12faea`) · Desplegado (`bdd1fd9` el 19/10/2026, después `fbe9621`, después `5111b88` el 20/10/2026, después `81c6242` y `c12faea` el 21/10/2026, después `f1b7236` el 29/10/2026, después `d654478` el 31/10/2026) |
+| Motor, rutas, página | Implementado · Probado en local (`packages/agent`: 52 tests; suites del servidor y de la web, 21/10/2026, `c12faea`) · Desplegado (`bdd1fd9` el 19/10/2026, después `fbe9621`, después `5111b88` el 20/10/2026, después `81c6242` y `c12faea` el 21/10/2026, después `f1b7236` el 29/10/2026, después `d654478` y `667abb3` el 31/10/2026) |
 | Dos ejecuciones de `/agent` en el sandbox, 19/10/2026 (ejemplos, no una garantía general de autonomía) | Verificado en sandbox, con Gemini como proveedor y presupuestos aprobados con una cuenta personal (compradora) de sandbox: una terminó en `cannot_do` con un fallo inyectado, capturó 0.05 USD y liberó 1.95; otra terminó en `done`, capturó 0.92 USD y liberó 1.08. Se observaron Compare, Keep y la vuelta a `/agent?run=` |
 | Groq como respaldo del agente en el sandbox | Pendiente |
 | El caso del agente confirmado en el repositorio (1.37 de 5.00 USD, cuatro llamadas, un fallo no cobrado, sesión `mm-sess-20261008-01`) y las evaluaciones EV-11/EV-12 | **Datos de demo.** Prueban el **analista** de disputas, no el agente. La cifra de 1.37 USD coincide con una sesión de sandbox creada el 09/10/2026 por un cliente MCP con guion, no por el agente dirigido por el modelo |

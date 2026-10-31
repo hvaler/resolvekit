@@ -2,8 +2,7 @@
 
 # Guía de revisión para el jurado
 
-**Demo:** [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com) · **Vídeo:** Pendiente (llegará con la
-entrega) · **Código:** [github.com/hvaler/resolvekit](https://github.com/hvaler/resolvekit) · **Evidencia:**
+**Demo:** [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com) · **Vídeo:** [youtu.be/VJ10zqXx5Ag](https://youtu.be/VJ10zqXx5Ag) (2:47, público) · **Código:** [github.com/hvaler/resolvekit](https://github.com/hvaler/resolvekit) · **Evidencia:**
 [matriz de verificación](verification-matrix.md) · [evaluaciones](../quality/evaluations.md) ·
 [integración con PayPal y hallazgos en sandbox](../technical/paypal-integration.md)
 
@@ -30,7 +29,7 @@ Nombres exactos de los controles, clic a clic: [recorrido por la demo](demo-walk
 | 4 | **Review what will be sent →** → **Continue to confirm →** → marca la aprobación → **Submit evidence to PayPal** (en la Explore demo es la ruta por defecto: va al simulador; al sandbox real solo mientras el caso tenga una disputa nueva, ver la nota de abajo) | El contenido compuesto por el servidor con el id de intención y el hash del contenido; después **Recorded by PayPal** con una comparación campo a campo |
 | 5 | Abre `/agent` (**Try the buying agent** en la bandeja de entrada) e inicia una ejecución con un objetivo de ejemplo | Pasos con los motivos breves del modelo, el enlace de aprobación, el recibo de MeterMCP |
 
-A 29/10/2026 las reservas de disputas nuevas del sandbox de ambos casos están vacías; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto es la Explore demo, y el envío al sandbox real puede no estar disponible. Haz los minutos 2–4 en el mismo caso en la **Explore demo** (`/demo/cases/PP-R-TVH-10190665`): el flujo es idéntico,
+A 31/10/2026 (noche) el caso estándar no tiene ninguna disputa nueva en reserva (su vinculación está usada), el caso de liquidación está vinculado y el del agente está vinculado con 1 en reserva; la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto para el envío de evidencia es la Explore demo, y el envío al sandbox real puede no estar disponible. Haz los minutos 2–4 en el mismo caso en la **Explore demo** (`/demo/cases/PP-R-TVH-10190665`): el flujo es idéntico,
 pero se envía al simulador del navegador en lugar de a PayPal. Más [más abajo](#si-una-disputa-ya-se-usó-la-reserva-está-vacía-o-se-alcanzó-un-límite).
 
 ## Qué aportan PayPal, la IA y MeterMCP
@@ -38,7 +37,7 @@ pero se envía al simulador del navegador en lugar de a PayPal. Más [más abajo
 | Parte | Aportación | Estado |
 |---|---|---|
 | PayPal Customer Disputes API v1 | Lee la disputa vinculada (estado, fase, motivo, evidencia solicitada, acciones permitidas, fecha límite); envía `provide-evidence` con notas y archivos; relee la disputa | Verificado en sandbox (dos revisores enviaron evidencia, «Recorded by PayPal · 6 of 6 fields», 17/10/2026) · Desplegado |
-| Webhooks de PayPal | Eventos `CUSTOMER.DISPUTE.*` verificados con el método de postback documentado por PayPal; el evento es solo un aviso y la disputa se relee | Verificado en sandbox (17/10/2026) · Desplegado |
+| Webhooks de PayPal | Eventos `CUSTOMER.DISPUTE.*` verificados con el método de postback documentado por PayPal; el evento es solo un aviso y la disputa se relee | Verificado en sandbox (17/10/2026); en el servicio alojado se recibió y se verificó la firma de un evento `CUSTOMER.DISPUTE.CREATED` el 31/10/2026 y se mostró en el aviso de la bandeja · Desplegado |
 | PayPal Orders v2 / Payments v2 | El presupuesto de MeterMCP: un pedido `AUTHORIZE` por exactamente el tope; al cerrar, una captura parcial final de las llamadas que salieron bien (en nuestras ejecuciones en sandbox el resto dejó de estar retenido) o una anulación (void) | Verificado en sandbox (09/10 y 19/10/2026) · Desplegado |
 | **Continue with PayPal** | Identifica la cuenta de PayPal de un comerciante con un agreement token de Billing Agreements v1 sin cargo (familia de API obsoleta). No es Log in with PayPal y no da acceso a las disputas | Verificado en sandbox (10/10/2026) · Desplegado |
 | Analista de IA (Gemini `gemini-3.8-flash`, Groq `openai/gpt-oss-120b` como respaldo) | Extrae hechos con citas literales, construye la cronología, encuentra contradicciones, redacta; una llamada aparte verifica cada frase frente a sus propias citas | Desplegado; evaluado solo en conjuntos sintéticos ([evaluaciones](../quality/evaluations.md)) |
@@ -46,13 +45,13 @@ pero se envía al simulador del navegador en lugar de a PayPal. Más [más abajo
 | Agente comprador (mismos modelos, function calling) | Elige una herramienta de MeterMCP por turno; el código valida la herramienta, los argumentos, el precio y los límites antes de cada llamada | Verificado en sandbox (dos ejecuciones, 19/10/2026, ejemplos) · Desplegado |
 | MeterMCP | Una pasarela MCP de pago por uso: herramientas de pago (`quote_lookup` 0.05, `deep_report` 0.40, `bulk_export` 0.92 USD), las llamadas fallidas nunca se cobran, recibos con hashes de las peticiones | Verificado en sandbox · Desplegado |
 
-En el servicio alojado se han ejercitado de extremo a extremo a través de la app `provide-evidence` y hacer una oferta (31/10/2026). Las demás acciones de disputa están en el código desplegado (`d654478`, 31/10/2026); enviar mensaje, aceptar la reclamación y escalar aún no se han ejercitado en el servicio alojado; un estado por variante
+En el servicio alojado se han ejercitado de extremo a extremo a través de la app `provide-evidence` y hacer una oferta (31/10/2026). Las demás acciones de disputa están en el código desplegado (`667abb3`, 31/10/2026); enviar mensaje, aceptar la reclamación y escalar aún no se han ejercitado en el servicio alojado; un estado por variante
 ([especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)):
 
 | Acción de disputa | Estado |
 |---|---|
-| Enviar mensaje; aceptar la reclamación (reembolso total, o parcial, que PayPal registra como oferta); hacer una oferta de reembolso parcial; escalar; evidencia tras un escalado | **Verificado en sandbox** a través de la app (20/10/2026: el servidor de la rama ejecutado en local, un envío cada una, releído). El código está Desplegado (`d654478`, 31/10/2026); en el servicio alojado, hacer una oferta se ejercitó el 31/10/2026 (dos ofertas de reembolso de 3.50 USD, registradas por PayPal como SELLER PROPOSED; código `f1b7236` en ese momento); enviar mensaje, aceptar la reclamación y escalar **no** se han ejercitado todavía (escalar solo está verificado desde `WAITING_FOR_SELLER_RESPONSE`) |
-| Un mensaje con adjunto | Verificado en sandbox a través de la app (V-7, 21/10/2026, ejecución local: una subida confirmada, registrada por PayPal con 1 documento); también Probado en local en el servidor y en el editor web. El código con este estado está Desplegado (`d654478`, 31/10/2026) |
+| Enviar mensaje; aceptar la reclamación (reembolso total, o parcial, que PayPal registra como oferta); hacer una oferta de reembolso parcial; escalar; evidencia tras un escalado | **Verificado en sandbox** a través de la app (20/10/2026: el servidor de la rama ejecutado en local, un envío cada una, releído). El código está Desplegado (`667abb3`, 31/10/2026); en el servicio alojado, hacer una oferta se ejercitó el 31/10/2026 (cuatro ofertas de reembolso de 3.50 USD (en cuatro disputas), registradas por PayPal como SELLER PROPOSED; código `f1b7236`, después `d654478` y `667abb3`); enviar mensaje, aceptar la reclamación y escalar **no** se han ejercitado todavía (escalar solo está verificado desde `WAITING_FOR_SELLER_RESPONSE`) |
+| Un mensaje con adjunto | Verificado en sandbox a través de la app (V-7, 21/10/2026, ejecución local: una subida confirmada, registrada por PayPal con 1 documento); también Probado en local en el servidor y en el editor web. El código con este estado está Desplegado (`667abb3`, 31/10/2026) |
 | Oferta de sustitución · retirar una oferta · apelación · prueba de reembolso · tipos con devolución | **No disponible**, cada una con su motivo en el producto |
 
 Cada variante disponible se apoya en una escritura que el propietario aprobó en el sandbox el 20/10/2026 y en su
@@ -78,7 +77,7 @@ del Owner, con una segunda confirmación, y los demás ven una vista previa. Las
 | Un fallo inyectado | **Simulado a propósito** | Solo cuando se marca *Simulate an outage*; etiquetado como *injected*, nunca se cobra |
 | Todos los casos de la Explore demo | **Simulado** | Simulador en el navegador, análisis almacenados ("golden"); nada llega a PayPal |
 | El caso del agente de 1.37 USD tal como se abre en la demo | **Datos de demostración sintéticos** | Datos de demostración inventados cuyas cifras coinciden con una sesión de sandbox hecha por un cliente con guion (scripted) el 09/10/2026; pone a prueba al analista, no al agente |
-| El caso del agente vinculado **PP-R-MMC-10190702** | **Real (sandbox)**, cliente con guion | Su recibo procede de una sesión hecha por el cliente con guion anterior, no de una ejecución dirigida por el modelo (a fecha de 29/10/2026) |
+| El caso del agente vinculado **PP-R-MMC-10190702** | **Real (sandbox)**, ejecución dirigida por el modelo | Desde el 31/10/2026 vinculado a la disputa de una ejecución hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados), con su importe comprobado contra su recibo de MeterMCP; antes, una sesión hecha por el cliente con guion anterior (esa disputa queda ahora en reserva) |
 
 ## Acceso y entorno recomendado
 
@@ -167,7 +166,7 @@ contiene el código. No subas datos personales que te importen. Estado: subida d
 | Ves | Por qué | Qué hacer |
 |---|---|---|
 | El botón de envío dice **Evidence recorded by PayPal** y el borrador es de solo lectura | Alguien ya envió evidencia a esta disputa del sandbox; en nuestras pruebas en sandbox la acción `provide_evidence` de PayPal desapareció tras un envío (observado, no es una regla documentada) | Lee la relectura y vuelve más tarde: unos 15 minutos después de un envío, la siguiente lectura pasa el caso a la siguiente disputa de su reserva, **si a la reserva le queda alguna**. O recorre el mismo flujo en la Explore demo |
-| El caso sigue en una disputa usada | La reserva de disputas nuevas del sandbox está vacía (a 29/10/2026 en ambos casos; las disputas nuevas se preparan el 31/10/2026 y la reserva se rellena para la evaluación el 28–30/11/2026) | Usa la Explore demo para el paso de envío (la ruta por defecto hasta entonces); todo lo demás en Test Store sigue funcionando |
+| El caso sigue en una disputa usada | La reserva de disputas nuevas del sandbox está vacía (a 31/10/2026, noche, el caso estándar; el de liquidación está vinculado y el del agente tiene 1 en reserva; la reserva se rellena para la evaluación el 28–30/11/2026) | Usa la Explore demo para el paso de envío (la ruta por defecto hasta entonces); todo lo demás en Test Store sigue funcionando |
 | *PayPal is processing this new dispute. Actions appear shortly.* | Una disputa nueva del sandbox muestra primero `UNDER_REVIEW` sin acciones para el vendedor; en nuestras pruebas se abrió al cabo de unos minutos | Espera unos minutos y vuelve a abrir el caso |
 | Un mensaje con una hora de reinicio (por ejemplo *The demo's daily agent runs are used up; they reset at …*) | Límites compartidos: al día 60 análisis en directo, 200 recomprobaciones, 20 envíos de evidencia, 40 subidas, 20 ejecuciones del agente (5 por persona), 20 presupuestos de MeterMCP, 20 mensajes, 20 acciones de liquidación; por hora 6 análisis en directo y 30 recomprobaciones; límites de peticiones por dirección | Espera a la hora indicada, o usa el análisis almacenado y la Explore demo |
 | *Seller workspace only* / *Sign in required* en **Re-run with AI** | No estás en el espacio de trabajo de Test Store | Vuelve a abrir el enlace de revisor |
@@ -176,7 +175,7 @@ contiene el código. No subas datos personales que te importen. Estado: subida d
 ## Enlaces
 
 - Demo: [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com) (Explore demo en `/demo`)
-- Vídeo: Pendiente (llegará con la entrega)
+- Vídeo: [https://youtu.be/VJ10zqXx5Ag](https://youtu.be/VJ10zqXx5Ag) (2:47, público; grabado en el servicio alojado contra el sandbox real el 31/10/2026)
 - Código: [github.com/hvaler/resolvekit](https://github.com/hvaler/resolvekit) · [README](../../../README.es.md)
 - Evidencia: [matriz de verificación](verification-matrix.md) · [evaluaciones](../quality/evaluations.md) ·
   [tests](../quality/testing.md) · [limitaciones](../product/limitations.md)
