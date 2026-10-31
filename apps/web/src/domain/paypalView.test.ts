@@ -15,7 +15,7 @@ import {
   withPayPal,
   type PayPalSource,
 } from './paypalView';
-import type { DisputeSnapshot } from './types';
+import type { DisputeSnapshot, MeteredSession } from './types';
 
 const NOW = new Date('2026-10-09T08:00:00Z');
 const sandbox = { kind: 'paypal', env: 'sandbox' } as const;
@@ -139,6 +139,29 @@ describe('case header', () => {
     expect(header(live({ ...waiting(), amount: { value: '7.0', currency: 'USD' } })).mismatch).toBeNull();
     expect(bindingMismatch({ value: '7.00', currency: 'EUR' }, { value: '7.00', currency: 'USD' })).toBe('Bound PayPal dispute is 7.00 EUR; this demo case’s order is 7.00 USD');
     expect(bindingMismatch(null, { value: '7.00', currency: 'USD' })).toBeNull();
+  });
+
+  it('the agent case: compared with what its MeterMCP receipt captured on the dispute’s capture, not the fixed demo amount', () => {
+    const session = {
+      sessionId: 'mm-sess-1',
+      currency: 'USD',
+      receiptSha256: 'e'.repeat(64),
+      mandate: { cap: '5.00', orderId: 'O', authorizationId: 'A', authorizationStatus: 'CAPTURED', approvedAt: null, authorizedAt: null },
+      calls: [],
+      totals: { calls: 2, ok: 2, failed: 0, charged: '0.45', cap: '5.00' },
+      settlement: { status: 'captured', captureId: '5G2723524F947274J', captureStatus: 'COMPLETED', captured: '0.45', released: '4.55', remainderReleased: true, settledAt: null },
+    } as unknown as MeteredSession;
+    const run = (value: string): DisputeSnapshot => ({
+      ...waiting(),
+      amount: { value, currency: 'USD' },
+      transaction: { ...waiting().transaction!, id: '5G2723524F947274J', amount: { value, currency: 'USD' } },
+      agentReceipt: { kind: 'metermcp', session },
+    });
+    const agent = (snap: DisputeSnapshot) => caseHeaderView({ summary: { ...standardCase.summary, amount: '1.37' }, source: live(snap), simulatedStatus: standardCase.summary.status, statusDetail: 'S', now: NOW });
+    expect(agent(run('0.45')).mismatch).toBeNull();
+    expect(agent(run('0.50')).mismatch).toBe(
+      'Bound PayPal dispute PP-R-VIJ-10190671 is 0.50 USD; its MeterMCP receipt captured 0.45 USD. Sending is refused until they agree.',
+    );
   });
 
   it('renders PayPal’s values, the mismatch warning and no demo PayPal values for a bound case', () => {

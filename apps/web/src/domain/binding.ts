@@ -25,11 +25,11 @@ export function moneyText(m: Money): string {
  * The warning to show when the bound PayPal dispute's amount differs from the demo case's order amount, or null
  * when they agree (or PayPal reports no amount, which is reported elsewhere as missing data).
  */
-export function bindingMismatch(paypal: Money | null | undefined, caseOrder: Money, disputeId?: string): string | null {
+export function bindingMismatch(paypal: Money | null | undefined, caseOrder: Money, disputeId?: string, expectedIs = 'this demo case’s order is'): string | null {
   if (!paypal) return null;
   const a = cents(paypal.value);
   const b = cents(caseOrder.value);
   if (a != null && a === b && paypal.currency === caseOrder.currency) return null;
   const who = disputeId ? `Bound PayPal dispute ${disputeId}` : 'Bound PayPal dispute';
-  return `${who} is ${moneyText(paypal)}; this demo case’s order is ${moneyText(caseOrder)}`;
+  return `${who} is ${moneyText(paypal)}; ${expectedIs} ${moneyText(caseOrder)}`;
 }

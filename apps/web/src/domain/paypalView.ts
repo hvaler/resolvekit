@@ -204,7 +204,13 @@ export function caseHeaderView({ summary, source, simulatedStatus, statusDetail,
       const tx = s.transaction;
       const txWhen = utcDateTime(tx?.createdAt);
       const opened = utcDateTime(s.createdAt);
-      const warning = bindingMismatch(s.amount, { value: summary.amount, currency: summary.currency }, disputeId || undefined);
+      // The agent case is bound to what its MeterMCP receipt captured on the dispute's capture (as the server checks).
+      const st = s.agentReceipt?.kind === 'metermcp' ? s.agentReceipt.session : null;
+      const captured = st && st.settlement.status === 'captured' && st.settlement.captured && st.settlement.captureId === tx?.id ? { value: st.settlement.captured, currency: st.currency } : null;
+      const warning = captured
+        ? bindingMismatch(s.amount, captured, disputeId || undefined, 'its MeterMCP receipt captured')
+        : bindingMismatch(s.amount, { value: summary.amount, currency: summary.currency }, disputeId || undefined);
+      const mismatch = !warning ? null : captured ? `${warning}. Sending is refused until they agree.` : `${warning}. The order, documents and draft below are the demo case’s, not this dispute’s.`;
       return {
         amount: s.amount ? moneyText(s.amount).split(' ')[0]! : '—',
         currency: s.amount?.currency ?? '',
@@ -225,7 +231,7 @@ export function caseHeaderView({ summary, source, simulatedStatus, statusDetail,
           : 'PayPal reports no transaction',
         disputeLine: `PayPal ${disputeId}${opened ? ` · opened ${opened}` : ''}`,
         notice: source.failed ? { tone: 'bad', text: `Couldn’t reach PayPal · showing saved data, read ${s.readAt}` } : null,
-        mismatch: warning ? `${warning}. The order, documents and draft below are the demo case’s, not this dispute’s.` : null,
+        mismatch,
       };
     }
   }
