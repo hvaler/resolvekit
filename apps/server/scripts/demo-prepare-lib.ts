@@ -430,7 +430,7 @@ export interface AgentEntry {
   capture: string;
   run?: string;
   session: string;
-  /** What the buyer disputes, e.g. "0.45 USD". */
+  /** What the buyer disputes, e.g. "0.45 USD": what the receipt captured (the agent case's binding is checked against it). */
   amount: string;
   note: string | null;
 }
@@ -440,7 +440,7 @@ export interface Refusal {
 }
 
 function entryOf(run: RunRecord, receipt: Receipt): AgentEntry {
-  return { capture: receipt.settlement.capture_id!, run: run.id, session: receipt.session.id, amount: `${receipt.totals?.charged ?? '?'} ${receipt.session.currency ?? 'USD'}`, note: agentReserveNote(run) };
+  return { capture: receipt.settlement.capture_id!, run: run.id, session: receipt.session.id, amount: `${receipt.settlement.captured ?? receipt.totals?.charged ?? '?'} ${receipt.session.currency ?? 'USD'}`, note: agentReserveNote(run) };
 }
 
 /** An accepted run's capture joins `used` at once, so nothing later in the same command can take it again. */

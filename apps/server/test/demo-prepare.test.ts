@@ -342,6 +342,13 @@ test('--agent-run never runs the engine, never opens a budget: it only reads the
   assert.deepEqual(r.refused, []);
 });
 
+test('the entry’s amount is what the receipt captured: the payment the agent case’s binding is checked against', async () => {
+  const r0 = receiptOf({ settlement: { captured: '0.45' } });
+  const src = source({ [RUN]: { run: runOf(), receipt: { ...r0, totals: { ...r0.totals, charged: '0.05' } } } });
+  const r = await agentEntries(ok(['--agent-run', RUN, '--seller', SELLER]), { runEngine: async () => null, read: src.read, used: new Set(), say: () => {} });
+  assert.equal(r.entries[0]!.amount, '0.45 USD');
+});
+
 test('the ops reader asks only GET /api/ops/agent-run/<id> with the ops token: no MCP, no open_budget', async () => {
   const seen: string[] = [];
   const fetch = (async (url: string | URL, init: RequestInit = {}) => {

@@ -14,6 +14,7 @@
  */
 import type { Dispute, PayPalClient } from '@resolvekit/paypal';
 import { moneyText } from '../../web/src/domain/binding.ts';
+import type { MeteredSession } from '../../web/src/domain/types.ts';
 
 export interface Binding {
   dispute: string;
@@ -34,6 +35,17 @@ export interface ExpectedPayment {
   currency: string;
   /** The demo case's own capture record: what a string binding (no capture) is compared with. */
   transactionId: string;
+}
+
+/**
+ * The agent case's expected payment: what its MeterMCP receipt captured, on the dispute's own capture (any real agent
+ * run can be bound, not only one of the demo case's fixed amount). Null when the receipt shows no capture, or a capture
+ * other than the dispute's: the caller then keeps the demo case's fixed amount, which fails closed for a real run.
+ */
+export function receiptPayment(s: MeteredSession, disputeCapture: string | null | undefined): ExpectedPayment | null {
+  const st = s.settlement;
+  if (st.status !== 'captured' || !st.captured || !st.captureId || !disputeCapture || st.captureId !== disputeCapture) return null;
+  return { value: st.captured, currency: s.currency, transactionId: st.captureId };
 }
 
 export type BindingState = 'verified' | 'invalid' | 'unavailable';
@@ -88,6 +100,11 @@ export async function checkBindings(opts: {
   bindings: Readonly<Record<string, Binding>>;
   /** What each demo case expects, by case id. */
   cases: Readonly<Record<string, ExpectedPayment>>;
+  /**
+   * What a case expects of this dispute instead (the agent case: its MeterMCP receipt's capture); null or a throw:
+   * the case's own expectation.
+   */
+  expectedOf?: (caseId: string, d: Dispute) => Promise<ExpectedPayment | null>;
   log: (line: string) => void;
 }): Promise<void> {
   const { paypal, bindings, cases, log } = opts;
@@ -99,8 +116,10 @@ export async function checkBindings(opts: {
       try {
         const d = await paypal.disputes.get(b.dispute);
         if (!expected) return log(`${label}: no demo case with this id (PayPal ${d.status ?? '?'})`);
-        const c = verifyBinding(expected, b, d);
-        if (c.status === 'verified') log(`${label}: verified (${moneyText(expected)}) · ${d.status ?? '?'}`);
+        const own = opts.expectedOf ? await opts.expectedOf(caseId, d).catch(() => null) : null;
+        const want = own ?? expected;
+        const c = verifyBinding(want, b, d);
+        if (c.status === 'verified') log(`${label}: verified (${moneyText(want)}) · ${d.status ?? '?'}`);
         else log(`${label}: INVALID · ${c.reasons.join('; ')} · sending is blocked for this case`);
       } catch (e) {
         log(`${label}: could not read the dispute (${e instanceof Error ? e.message : String(e)}) · sending is blocked until it can be read`);

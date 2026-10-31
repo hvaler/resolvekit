@@ -104,7 +104,7 @@ the upload route.
 |---|---|---|
 | Evaluation cases vs other workspaces | Every case route (`/api/disputes/:case…`, `/api/cases/:id/analysis…`, `/api/cases/:id/uploads…`) answers only the **seller's workspace**, the one whose PayPal payer id is the seller of the bound disputes; anyone else gets `404 UNKNOWN_CASE` before any work. `/api/health` hides the bindings from them | Implemented · Tested locally · Deployed |
 | Seller check at send time | On the fresh read before composing and before sending, the workspace's merchant id must be the dispute's `seller.merchant_id` (403 `NOT_THE_SELLER`) | Implemented · Tested locally · Verified in sandbox |
-| Binding check | The dispute must be the bound one, about exactly the bound capture, for the case's amount and currency (409 `BINDING_INVALID` / `BINDING_UNAVAILABLE`) | Implemented · Tested locally |
+| Binding check | The dispute must be the bound one, about exactly the bound capture, for the case's amount and currency (the agent case: its MeterMCP receipt's captured amount) (409 `BINDING_INVALID` / `BINDING_UNAVAILABLE`) | Implemented · Tested locally |
 | Intents | Belong to the person who composed them; for anyone else, a teammate included, they do not exist (404) | Implemented · Tested locally |
 | Uploads before confirmation | Files and text visible only to people who can edit them; others see `restricted: true` metadata; files 404 | Implemented · Tested locally |
 | Agent runs | The author sees their runs; another person's run answers 404 whatever exists; the Owner sees others only with `?scope=workspace`; a run of another workspace is never visible | Implemented · Tested locally |

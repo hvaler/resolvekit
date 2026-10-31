@@ -6,7 +6,9 @@
 import { readFileSync } from 'node:fs';
 import type { CloseResult } from '../../metermcp/src/meter.ts';
 import type { Receipt } from '../../metermcp/src/receipt.ts';
+import type { Dispute } from '@resolvekit/paypal';
 import type { MeteredSession } from '../../web/src/domain/types.ts';
+import { receiptPayment, type ExpectedPayment } from './bindings.ts';
 
 export type { CloseResult, Receipt };
 
@@ -137,3 +139,14 @@ export function toMeteredSession(r: Receipt): MeteredSession {
 
 /** The receipt PDF's file name, as the web app names the attachment. */
 export const receiptFileName = (sessionId: string) => `session-receipt-${sessionId}.pdf`;
+
+/**
+ * The payment a dispute's capture stands for by its MeterMCP receipt (the agent case's expected payment, as the
+ * send-time check uses it); null when MeterMCP has no session for the capture or the receipt shows no capture of it.
+ * Throws what MeterMCP throws.
+ */
+export async function receiptPaymentOf(meter: Pick<MeterMcpSource, 'findByCapture' | 'receipt'>, d: Dispute): Promise<ExpectedPayment | null> {
+  const capture = d.disputed_transactions?.[0]?.seller_transaction_id;
+  const sessionId = capture ? await meter.findByCapture(capture) : null;
+  return sessionId ? receiptPayment(toMeteredSession(await meter.receipt(sessionId)), capture) : null;
+}

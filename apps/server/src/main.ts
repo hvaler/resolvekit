@@ -36,7 +36,7 @@ import { PersonRunCaps } from './agent/person-caps.ts';
 import { SellerMemory } from './sellers.ts';
 import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
-import { MeterMcpClient } from './metermcp.ts';
+import { MeterMcpClient, receiptPaymentOf } from './metermcp.ts';
 import { ReserveMemory, keepHeldActive } from './reserve.ts';
 import { USAGE_MAX_AGE_MS, USAGE_MAX_BYTES, UsageLog } from './usage-log.ts';
 import { RecheckVerdicts } from './verdicts.ts';
@@ -318,7 +318,8 @@ server.listen(port, host, () => {
   for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}${reserve[caseId]?.length ? ` · ${reserve[caseId]!.length} in reserve` : ''}`);
   // Read and verify each bound dispute once in the background (logged); sending verifies again on its own fresh read.
   const cases = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency, transactionId: c.summary.transactionId }]));
-  void checkBindings({ paypal, bindings, cases, log });
+  // The agent case: against the payment its MeterMCP receipt captured (as the send-time check does).
+  void checkBindings({ paypal, bindings, cases, expectedOf: (caseId, d) => (CASE_FILES[caseId]?.kind === 'agent' ? receiptPaymentOf(meterMcp, d) : Promise.resolve(null)), log });
   // Hosted: analyse each bound case once in the background, so the seller's workspace finds an analysis ready.
   if (hostedApp) void hostedApp.warmUp();
 });

@@ -70,7 +70,9 @@ Verified in sandbox (09/10, 17/10/2026) · Deployed.
 
 **Bindings.** A case is bound to `{dispute, capture}`. On every fresh read before composing and before sending, the
 dispute must be the bound one, with exactly one disputed transaction that is the bound capture, and the disputed and
-gross amounts equal to the case's amount and currency; missing data fails. A case can have a **reserve** (a list,
+gross amounts equal to the case's amount and currency (the agent case: what its MeterMCP receipt captured on that
+capture, so any real agent run can be bound; the demo case's fixed amount when the receipt cannot be read); missing
+data fails. A case can have a **reserve** (a list,
 first active): a used dispute (resolved, or with seller evidence for more than 15 minutes) moves the case to the
 next one on its next read, if the reserve is not empty. As of 29/10/2026 the reserves of both cases are empty (new
 real-sandbox sends Pending until the refill for judging on 28–30/11/2026).

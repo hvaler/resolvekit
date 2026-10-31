@@ -5,8 +5,9 @@ import { writePdf } from '@resolvekit/pdf';
 import { MemoryAnalysisStore, type AnalysisInput } from '@resolvekit/analyst/node';
 import { agentCase, caseInput } from '@resolvekit/cases';
 import { AnalystService, InputPins } from '../src/analysis.ts';
-import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
-import { MeterMcpClient, MeterMcpError, toMeteredSession, type MeterMcpSource, type Receipt } from '../src/metermcp.ts';
+import { createApi, createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
+import { checkBindings, receiptPayment } from '../src/bindings.ts';
+import { MeterMcpClient, MeterMcpError, receiptPaymentOf, toMeteredSession, type MeterMcpSource, type Receipt } from '../src/metermcp.ts';
 import { fakePayPal, waitingDispute } from './fixtures.ts';
 import { analystFor } from './kit.ts';
 import { toSnapshot } from '../src/mapping.ts';
@@ -342,4 +343,80 @@ test('H3: an agent session whose capture is still PENDING is not used as proof o
   assert.equal(b.error, 'RECEIPT_NOT_FINAL');
   assert.match(b.detail, /PENDING/);
   assert.equal(pp.apiCalls().filter((c) => c.method === 'POST').length, 0);
+});
+
+// ------------------------------------------------------------------------------------------------------------------
+// The agent case's binding is checked against the bound run's receipt (what MeterMCP captured), not the fixed 1.37.
+
+const RUN_CAPTURE = '5G2723524F947274J';
+/** A real agent run's receipt: 0.45 USD captured on RUN_CAPTURE. */
+function runReceipt(): Receipt {
+  const r = receipt();
+  return {
+    ...r,
+    calls: [r.calls[0]!, { ...r.calls[2]!, n: 2 }],
+    totals: { calls: 2, ok: 2, failed: 0, pending: 0, charged: '0.45', cap: '5.00' },
+    settlement: { ...r.settlement, capture_id: RUN_CAPTURE, captured: '0.45', released: '4.55' },
+  };
+}
+/** The dispute of that run: 0.45 USD on RUN_CAPTURE. */
+function runDispute(value = '0.45') {
+  const d = waitingDispute();
+  return { ...d, dispute_amount: { currency_code: 'USD', value }, disputed_transactions: [{ ...d.disputed_transactions![0]!, seller_transaction_id: RUN_CAPTURE, gross_amount: { currency_code: 'USD', value } }] };
+}
+function runMeter(o: { down?: boolean } = {}): MeterMcpSource {
+  return {
+    findByCapture: async (c) => {
+      if (o.down) throw new MeterMcpError('MeterMCP unreachable');
+      return c === RUN_CAPTURE ? SID : null;
+    },
+    receipt: async () => runReceipt(),
+    receiptPdf: async () => RECEIPT_PDF,
+  };
+}
+async function bindingAfterRead(dispute: unknown, meter: MeterMcpSource) {
+  const pp = fakePayPal(Array.from({ length: 4 }, () => ({ status: 200, body: dispute })));
+  const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
+  const api = createApi({ paypal, env: 'sandbox', bindings: { [CASE]: { dispute: REAL, capture: RUN_CAPTURE } }, meterMcp: meter });
+  return (await api.opsReport()).bindings[CASE]!;
+}
+
+test('receiptPayment: what the receipt captured on the dispute’s capture; nothing when not captured or another capture', () => {
+  const s = toMeteredSession(runReceipt());
+  assert.deepEqual(receiptPayment(s, RUN_CAPTURE), { value: '0.45', currency: 'USD', transactionId: RUN_CAPTURE });
+  assert.equal(receiptPayment(s, 'OTHERCAPTURE'), null);
+  assert.equal(receiptPayment({ ...s, settlement: { ...s.settlement, status: 'capture_pending', captured: null } }, RUN_CAPTURE), null);
+});
+
+test('agent case: a real run of 0.45 USD binds (the expected payment is its receipt’s capture, not the fixed 1.37)', async () => {
+  const b = await bindingAfterRead(runDispute(), runMeter());
+  assert.equal(b.status, 'verified', b.reasons.join('; '));
+});
+
+test('agent case: a dispute amount other than the receipt’s capture is refused, with both amounts', async () => {
+  const b = await bindingAfterRead(runDispute('0.50'), runMeter());
+  assert.equal(b.status, 'invalid');
+  assert.ok(b.reasons.some((r) => r.includes('0.50 USD') && r.includes('0.45 USD')), b.reasons.join('; '));
+});
+
+test('agent case: MeterMCP unreadable fails closed as before (the fixed case amount), and says why', async () => {
+  const b = await bindingAfterRead(runDispute(), runMeter({ down: true }));
+  assert.equal(b.status, 'invalid');
+  assert.ok(b.reasons.some((r) => r.includes('1.37 USD')), b.reasons.join('; '));
+  assert.ok(b.reasons.some((r) => r.includes('MeterMCP unreachable')), b.reasons.join('; '));
+});
+
+test('startup check: the agent case is verified against its receipt too', async () => {
+  const pp = fakePayPal([{ status: 200, body: runDispute() }]);
+  const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
+  const lines: string[] = [];
+  const meter = runMeter();
+  await checkBindings({
+    paypal,
+    bindings: { [CASE]: { dispute: REAL, capture: RUN_CAPTURE } },
+    cases: { [CASE]: { value: '1.37', currency: 'USD', transactionId: 'X' } },
+    expectedOf: (_caseId, d) => receiptPaymentOf(meter, d),
+    log: (l) => lines.push(l),
+  });
+  assert.ok(lines.some((l) => l.includes('verified (0.45 USD)')), lines.join(' | '));
 });

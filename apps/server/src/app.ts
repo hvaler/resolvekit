@@ -20,7 +20,7 @@ import { linesToConfirmOf, type Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
 import { evidenceAfterEscalationRefusal, hasSellerEvidence, sellerEvidence, sellerEvidenceBlocks } from '../../web/src/domain/recorded.ts';
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
-import { toBinding, verifyBinding, type Binding, type BindingState } from './bindings.ts';
+import { receiptPayment, toBinding, verifyBinding, type Binding, type BindingState, type ExpectedPayment } from './bindings.ts';
 import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
 import { failureText, isTimeout, json, paypalIssue, readJson, tooMany } from './http.ts';
 import { IntentStore, publicIntent, requestAttachments, type DisputeHold, type StoredIntent } from './intents.ts';
@@ -488,19 +488,38 @@ export function createApi(opts: ApiOptions): Api {
     return gate ? () => gate.reserve(req, action) : undefined;
   };
 
-  /** The dispute as just read, as the web app's snapshot (with the agent case's MeterMCP session). */
-  const snapshotOf = async (caseId: string, d: Dispute): Promise<DisputeSnapshot> => {
-    let snap = toSnapshot(d, caseId, opts.env, now());
-    if (isAgentCase(caseId)) {
-      let receipt: AgentReceiptSource;
-      try {
-        receipt = await agentReceipt(caseId, d);
-      } catch (e) {
-        receipt = { kind: 'none', reason: e instanceof MeterMcpError ? e.message : 'MeterMCP could not be read' };
-      }
-      snap = { ...snap, agentReceipt: receipt };
+  /** {@link agentReceipt}, with MeterMCP's failure as the reason there is none. */
+  const agentReceiptOrWhy = async (caseId: string, d: Dispute): Promise<AgentReceiptSource> => {
+    try {
+      return await agentReceipt(caseId, d);
+    } catch (e) {
+      return { kind: 'none', reason: e instanceof MeterMcpError ? e.message : 'MeterMCP could not be read' };
     }
-    return snap;
+  };
+
+  /**
+   * The dispute as just read, as the web app's snapshot (with the agent case's MeterMCP session; `known`: the one
+   * already read for this same dispute read).
+   */
+  const snapshotOf = async (caseId: string, d: Dispute, known: AgentReceiptSource | null = null): Promise<DisputeSnapshot> => {
+    const snap = toSnapshot(d, caseId, opts.env, now());
+    return isAgentCase(caseId) ? { ...snap, agentReceipt: known ?? (await agentReceiptOrWhy(caseId, d)) } : snap;
+  };
+
+  /**
+   * What the bound dispute must be: the demo case's payment; for the agent case, the payment its MeterMCP receipt
+   * captured on the dispute's capture (any real agent run, not only the demo case's fixed amount). When that receipt
+   * cannot be read or used, the demo case's fixed amount, which fails closed for a real run, with why (`note`).
+   */
+  const expectedPayment = async (caseId: string, d: Dispute): Promise<{ expected: ExpectedPayment; receipt: AgentReceiptSource | null; note: string | null }> => {
+    const demo = CASE_FILES[caseId]!;
+    const fixed: ExpectedPayment = { value: demo.summary.amount, currency: demo.summary.currency, transactionId: demo.summary.transactionId };
+    if (!isAgentCase(caseId)) return { expected: fixed, receipt: null, note: null };
+    const receipt = await agentReceiptOrWhy(caseId, d);
+    const own = receipt.kind === 'metermcp' ? receiptPayment(receipt.session, d.disputed_transactions?.[0]?.seller_transaction_id) : null;
+    if (own) return { expected: own, receipt, note: null };
+    const why = receipt.kind === 'none' ? receipt.reason : 'the receipt shows no completed capture of this dispute’s payment';
+    return { expected: fixed, receipt, note: `the agent case is checked against its MeterMCP receipt, which could not be used (${why}), so against the demo case’s amount` };
   };
 
   /**
@@ -625,13 +644,15 @@ export function createApi(opts: ApiOptions): Api {
       return json(409, { error: 'BINDING_UNAVAILABLE', detail: `Sending is blocked: ${why}`, reasons: [why] });
     }
     noteSeller(caseId, dispute);
-    const check = verifyBinding({ value: demo.summary.amount, currency: demo.summary.currency, transactionId: demo.summary.transactionId }, binding, dispute);
+    const want = await expectedPayment(caseId, dispute);
+    const verified = verifyBinding(want.expected, binding, dispute);
+    const check = verified.status !== 'verified' && want.note ? { ...verified, reasons: [...verified.reasons, want.note] } : verified;
     mark(check.status, check.reasons);
     if (check.status !== 'verified') {
       log(`binding ${caseId} → ${disputeId}: INVALID at send time · ${check.reasons.join('; ')}`);
       return json(409, { error: 'BINDING_INVALID', detail: 'Sending is blocked: the bound PayPal dispute is not this case’s payment', reasons: check.reasons });
     }
-    const snap = await snapshotOf(caseId, dispute);
+    const snap = await snapshotOf(caseId, dispute, want.receipt);
     reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
     const source: PayPalSource = { kind: 'live', snap, failed: null };
     const recs = await confirmedUploads(caseId, disputeId, req);
