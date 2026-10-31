@@ -44,3 +44,15 @@ export function afterFlowClosed(recorded: boolean): { closeComposer: boolean } {
  * while an action other than evidence is selected.
  */
 export const composerShown = (open: boolean, otherAction: OtherAction | null): boolean => open && otherAction !== null;
+
+/**
+ * Which of the two action modals is on screen: the review/send flow of `request`, or the composer of the selection.
+ * The flow is drawn for as long as its request exists, whatever is selected: the selection can change under it (a new
+ * analysis resets the draft after a send changes the dispute), and a request that is not drawn could never be closed.
+ */
+export function actionPanels(s: { composerOpen: boolean; otherAction: OtherAction | null; request: { action: string } | null }): { flow: boolean; composer: boolean } {
+  return {
+    flow: !!s.request,
+    composer: !s.request && composerShown(s.composerOpen, s.otherAction),
+  };
+}

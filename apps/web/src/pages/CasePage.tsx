@@ -30,7 +30,7 @@ import { PdfSelect } from '../components/PdfSelect';
 import { MessageThread } from '../components/MessageThread';
 import { MiniButton } from '../components/ui';
 import { actionCardVerdict } from '../domain/actionCards';
-import { EMPTY_ACTION_DRAFT, afterFlowClosed, composerShown, hasUnsentDraft, withoutDraft, type ActionDraft, type ActionDrafts, type OtherAction } from '../domain/actionDrafts';
+import { EMPTY_ACTION_DRAFT, actionPanels, afterFlowClosed, hasUnsentDraft, withoutDraft, type ActionDraft, type ActionDrafts, type OtherAction } from '../domain/actionDrafts';
 import { actionAvailability, type ActionRequest, type Viewer } from '../domain/actions';
 import { onSimulator, onSimulatorFile } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
@@ -196,6 +196,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const others = allowed.filter((a): a is OtherAction => a !== 'provide_evidence');
   const actionVerdicts = Object.fromEntries(others.map((a) => [a, actionCardVerdict(availabilityOf(a), actionLocked)]));
   const draftedActions = others.filter((a) => hasUnsentDraft(a, actionDrafts, message));
+  const panels = actionPanels({ composerOpen, otherAction, request: actionRequest });
   // Closing the action dialog (×, Cancel, Esc) returns to the case with the default action; drafts are kept.
   const closeComposer = useCallback(() => {
     setComposerOpen(false);
@@ -203,6 +204,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   }, [d.setAction]);
   const chooseAction = useCallback(
     (code: ActionCode) => {
+      // A card is chosen with no flow open: no earlier request may survive to block the dialog.
+      setActionRequest(null);
       d.setAction(code);
       setComposerOpen(code !== 'provide_evidence');
     },
@@ -421,7 +424,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           />
         </main>
       </div>
-      {composerShown(composerOpen, otherAction) && otherAction && availability && c.kind !== 'agent' && !actionRequest && (
+      {panels.composer && otherAction && availability && c.kind !== 'agent' && (
         <ActionComposerDialog caseId={id} title={ACTION_LABEL[otherAction]} draftKept={hasUnsentDraft(otherAction, actionDrafts, message)} onClose={closeComposer}>
           <ActionComposer
             action={otherAction}
@@ -443,7 +446,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           />
         </ActionComposerDialog>
       )}
-      {actionRequest && actionRequest.action === otherAction && (
+      {panels.flow && actionRequest && (
         <ActionFlow
           caseId={id}
           request={actionRequest}
@@ -452,7 +455,10 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             if (afterFlowClosed(flowRecorded.current).closeComposer) closeComposer();
             flowRecorded.current = false;
           }}
-          onEdit={() => setActionRequest(null)}
+          onEdit={() => {
+            // Back to the composer of the request's action, even if the selection was reset under the flow.
+            chooseAction(actionRequest.action);
+          }}
           uploads={confirmedUps}
           onRecorded={() => {
             flowRecorded.current = true;
