@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CONTRACTS, statusLabel } from '../domain/actionContracts';
 import { EMPTY_ACTION_DRAFT, dialogKeyCloses, type ActionDraft } from '../domain/actionDrafts';
 import { ACTION_TEXT_LIMIT, ESCALATE_CONSEQUENCE, acceptConsequenceText, offerConsequenceText, type ActionAvailability, type ActionRequest, type IntentAction, type Money } from '../domain/actions';
@@ -28,11 +28,25 @@ function useActionDraft(draft: ActionDraft | undefined, onDraft: ((d: ActionDraf
   return draft && onDraft ? [draft, onDraft] : own;
 }
 
+/** The fields the action dialog focuses first, in document order (enabled ones only). */
+export const FIRST_FIELD = 'textarea:not([disabled]), input:not([disabled]):not([type="hidden"])';
+
+/** On opening: the first enabled field, else the dialog itself (so Tab and screen readers start inside it). */
+export function initialFocus(root: { querySelector: (sel: string) => { focus: () => void } | null; focus: () => void }): void {
+  const field = root.querySelector(FIRST_FIELD);
+  if (field) field.focus();
+  else root.focus();
+}
+
 /**
  * The modal an action other than evidence is composed in (the evidence flow's pattern): a Close (×), Cancel and Esc
  * before anything is sent. Closing keeps an unsent draft, and says so; nothing is sent from here (the review is next).
  */
 export function ActionComposerDialog({ caseId, title, draftKept, onClose, children }: { caseId: string; title: string; draftKept: boolean; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (ref.current) initialFocus(ref.current);
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (dialogKeyCloses(e.key)) onClose();
@@ -43,10 +57,12 @@ export function ActionComposerDialog({ caseId, title, draftKept, onClose, childr
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--scrim)] px-6 pt-[34px] max-md:px-0 max-md:pt-0">
       <div
+        ref={ref}
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby="compose-title"
-        className="flex max-h-[calc(100dvh-68px)] w-[min(640px,100%)] flex-col overflow-hidden rounded-3xl bg-surface shadow-modal max-md:h-[100dvh] max-md:max-h-none max-md:rounded-none"
+        className="flex max-h-[calc(100dvh-68px)] w-[min(640px,100%)] flex-col overflow-hidden rounded-3xl outline-none bg-surface shadow-modal max-md:h-[100dvh] max-md:max-h-none max-md:rounded-none"
       >
         <div className="flex flex-none items-center gap-3 border-b border-line px-[26px] py-4 max-md:px-4">
           <div className="flex flex-col gap-0.5">

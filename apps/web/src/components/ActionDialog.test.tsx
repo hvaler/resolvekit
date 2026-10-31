@@ -9,7 +9,7 @@ import type { CaseDraft } from '../app/useCaseDraft';
 import { EMPTY_ACTION_DRAFT, afterFlowClosed, dialogKeyCloses, hasUnsentDraft, withoutDraft, type ActionDrafts } from '../domain/actionDrafts';
 import { actionAvailability } from '../domain/actions';
 import type { CaseFile, DisputeSnapshot } from '../domain/types';
-import { ActionComposer, ActionComposerDialog } from './ActionComposer';
+import { ActionComposer, ActionComposerDialog, FIRST_FIELD, initialFocus } from './ActionComposer';
 import { ActionChoice } from './ResponseComposer';
 
 const noop = () => {};
@@ -102,5 +102,25 @@ describe('closing after the flow', () => {
   it('recorded: back to the default action, the sent draft cleared; otherwise back to the composer, draft intact', () => {
     expect(afterFlowClosed(true)).toEqual({ closeComposer: true });
     expect(afterFlowClosed(false)).toEqual({ closeComposer: false });
+  });
+});
+
+describe('initial focus', () => {
+  it('the dialog can take focus (tabindex -1)', () => {
+    const html = renderToString(
+      <ActionComposerDialog caseId="CASE-1" title="Escalate" draftKept={false} onClose={noop}>
+        <p>composer</p>
+      </ActionComposerDialog>,
+    );
+    expect(html).toMatch(/role="dialog"[^>]*tabindex="-1"/);
+  });
+
+  it('focuses the first enabled field, else the dialog itself', () => {
+    const focused: string[] = [];
+    const el = (name: string) => ({ focus: () => void focused.push(name) });
+    initialFocus({ querySelector: () => el('note'), focus: () => void focused.push('dialog') });
+    initialFocus({ querySelector: () => null, focus: () => void focused.push('dialog') });
+    expect(focused).toEqual(['note', 'dialog']);
+    expect(FIRST_FIELD).toContain('textarea:not([disabled])');
   });
 });
