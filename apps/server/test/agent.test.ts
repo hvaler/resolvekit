@@ -374,10 +374,10 @@ function runMeter(o: { down?: boolean } = {}): MeterMcpSource {
     receiptPdf: async () => RECEIPT_PDF,
   };
 }
-async function bindingAfterRead(dispute: unknown, meter: MeterMcpSource) {
+async function bindingAfterRead(dispute: unknown, meter: MeterMcpSource, binding: string | { dispute: string; capture: string } = { dispute: REAL, capture: RUN_CAPTURE }) {
   const pp = fakePayPal(Array.from({ length: 4 }, () => ({ status: 200, body: dispute })));
   const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
-  const api = createApi({ paypal, env: 'sandbox', bindings: { [CASE]: { dispute: REAL, capture: RUN_CAPTURE } }, meterMcp: meter });
+  const api = createApi({ paypal, env: 'sandbox', bindings: { [CASE]: binding }, meterMcp: meter });
   return (await api.opsReport()).bindings[CASE]!;
 }
 
@@ -419,4 +419,27 @@ test('startup check: the agent case is verified against its receipt too', async 
     log: (l) => lines.push(l),
   });
   assert.ok(lines.some((l) => l.includes('verified (0.45 USD)')), lines.join(' | '));
+});
+
+test('agent case: a binding without a capture (old string form) is checked against the fixed demo payment, as before', async () => {
+  const b = await bindingAfterRead(runDispute(), runMeter(), REAL);
+  assert.equal(b.status, 'invalid');
+  assert.ok(b.reasons.some((r) => r.includes('1.37 USD')), b.reasons.join('; '));
+  assert.ok(b.reasons.some((r) => r.includes('names no capture')), b.reasons.join('; '));
+});
+
+test('startup check: a binding without a capture never asks for the receipt', async () => {
+  const pp = fakePayPal([{ status: 200, body: runDispute() }]);
+  const paypal = new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch: pp.fetch });
+  const lines: string[] = [];
+  let asked = 0;
+  await checkBindings({
+    paypal,
+    bindings: { [CASE]: { dispute: REAL, capture: null } },
+    cases: { [CASE]: { value: '1.37', currency: 'USD', transactionId: 'X' } },
+    expectedOf: async () => (asked++, { value: '0.45', currency: 'USD', transactionId: RUN_CAPTURE }),
+    log: (l) => lines.push(l),
+  });
+  assert.equal(asked, 0);
+  assert.ok(lines.some((l) => l.includes('INVALID') && l.includes('1.37 USD')), lines.join(' | '));
 });

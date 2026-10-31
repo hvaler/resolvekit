@@ -116,7 +116,8 @@ export async function checkBindings(opts: {
       try {
         const d = await paypal.disputes.get(b.dispute);
         if (!expected) return log(`${label}: no demo case with this id (PayPal ${d.status ?? '?'})`);
-        const own = opts.expectedOf ? await opts.expectedOf(caseId, d).catch(() => null) : null;
+        // Only a binding that names its capture is checked against what the case reports for it (the agent's receipt).
+        const own = opts.expectedOf && b.capture ? await opts.expectedOf(caseId, d).catch(() => null) : null;
         const want = own ?? expected;
         const c = verifyBinding(want, b, d);
         if (c.status === 'verified') log(`${label}: verified (${moneyText(want)}) · ${d.status ?? '?'}`);

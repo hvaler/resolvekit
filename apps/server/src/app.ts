@@ -508,7 +508,8 @@ export function createApi(opts: ApiOptions): Api {
 
   /**
    * What the bound dispute must be: the demo case's payment; for the agent case, the payment its MeterMCP receipt
-   * captured on the dispute's capture (any real agent run, not only the demo case's fixed amount). When that receipt
+   * captured on the dispute's capture (any real agent run, not only the demo case's fixed amount), when the binding
+   * names a capture (a string binding keeps the fixed payment, as before). When that receipt
    * cannot be read or used, the demo case's fixed amount, which fails closed for a real run, with why (`note`).
    */
   const expectedPayment = async (caseId: string, d: Dispute): Promise<{ expected: ExpectedPayment; receipt: AgentReceiptSource | null; note: string | null }> => {
@@ -516,6 +517,8 @@ export function createApi(opts: ApiOptions): Api {
     const fixed: ExpectedPayment = { value: demo.summary.amount, currency: demo.summary.currency, transactionId: demo.summary.transactionId };
     if (!isAgentCase(caseId)) return { expected: fixed, receipt: null, note: null };
     const receipt = await agentReceiptOrWhy(caseId, d);
+    // Only a binding that names its capture is checked against the receipt; the old string form keeps the fixed payment.
+    if (!bindingOf(caseId)?.capture) return { expected: fixed, receipt, note: null };
     const own = receipt.kind === 'metermcp' ? receiptPayment(receipt.session, d.disputed_transactions?.[0]?.seller_transaction_id) : null;
     if (own) return { expected: own, receipt, note: null };
     const why = receipt.kind === 'none' ? receipt.reason : 'the receipt shows no completed capture of this dispute’s payment';
