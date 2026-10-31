@@ -57,7 +57,7 @@ export function WaitingPage() {
           <span className="text-[12px] text-ink-2">{demo.workspace.name}</span>
           {demo.person.email && <span className="font-mono text-[11.5px] text-ink-3">{demo.person.email}</span>}
           <div className="flex flex-wrap items-center gap-3 pt-1">
-            <SignOutActions />
+            <SignOutActions anotherHelp />
           </div>
         </section>
       )}

@@ -97,7 +97,7 @@ Joining again with a link that still has uses creates a new member entry; it doe
 |---|---|
 | **Sign out** | Ends the session in this browser |
 | **Sign out of all devices** | Ends every session of yours at once |
-| **Use another PayPal account** | Signs out and opens a fresh PayPal sign-in |
+| **Use another PayPal account** | Signs out and opens a fresh PayPal sign-in. PayPal keeps its own session, which ResolveKit cannot clear, so the same account may come back: sign out of PayPal first (the waiting screen links to it) or use a private window |
 
 A session lasts 12 hours. A reviewer's access ends at its **Access until** date («Reviewer access until <date>»).
 

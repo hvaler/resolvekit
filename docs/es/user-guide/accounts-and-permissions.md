@@ -99,7 +99,7 @@ sus usos, su caducidad y **Revoke**. Las personas y enlaces revocados siguen en 
 |---|---|
 | **Sign out** | Termina la sesión en este navegador |
 | **Sign out of all devices** | Termina a la vez todas tus sesiones |
-| **Use another PayPal account** | Cierra la sesión y abre un inicio de sesión de PayPal nuevo |
+| **Use another PayPal account** | Cierra la sesión y abre un inicio de sesión de PayPal nuevo. PayPal mantiene su propia sesión, que ResolveKit no puede borrar, así que puede volver la misma cuenta: cierra antes la sesión en PayPal (la pantalla de espera enlaza a ello) o usa una ventana privada |
 
 Una sesión dura 12 horas. El acceso de un revisor termina en su fecha **Access until** («Reviewer access until
 <date>»).

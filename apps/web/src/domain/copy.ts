@@ -24,6 +24,18 @@ export function waitingCopy(env: { kind: 'merchant'; owner: boolean }): { status
   };
 }
 
+/**
+ * The help next to «Use another PayPal account»: PayPal keeps its own session (ResolveKit cannot clear PayPal's
+ * cookie), so signing in again can bring the same account back. The link is the PayPal site of the environment this
+ * server uses (`/api/health`'s paypal); none when that is not known.
+ */
+export function anotherAccountHelp(env: 'sandbox' | 'live' | 'unconfigured' | null | undefined): { text: string; url: string | null } {
+  return {
+    text: 'PayPal keeps you signed in, so the same account may come back. Sign out of PayPal first, or use a private window.',
+    url: env === 'sandbox' ? 'https://www.sandbox.paypal.com/' : env === 'live' ? 'https://www.paypal.com/' : null,
+  };
+}
+
 /** The warning before submitting, only for an evaluation case that goes to the PayPal sandbox. */
 export function sandboxNotice(kind: Environment['kind'], payPalEnv: string | null): string | null {
   return kind === 'evaluation' && payPalEnv === 'sandbox' ? SANDBOX_WARNING : null;
