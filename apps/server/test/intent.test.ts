@@ -453,7 +453,7 @@ test('Task 12: PROOF_OF_REFUND evidence and an appeal are refused at compose and
   const intents = new IntentStore();
   const { app, pp } = await setup({ intents });
   const REFUND = 'Not available: Not verified with PayPal: pending sandbox test (W-11)';
-  const APPEAL = 'Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute';
+  const APPEAL = 'Not available: Not implemented yet: appeal was not verified with PayPal';
   // Compose: PROOF_OF_REFUND evidence (also with refund ids) and an appeal body.
   for (const [body, detail] of [
     [request({ evidenceType: 'PROOF_OF_REFUND' }), REFUND],

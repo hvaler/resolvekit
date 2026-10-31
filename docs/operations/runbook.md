@@ -200,7 +200,7 @@ For the agent case the claim is what its evidence answers: item type «Service»
 calls and I didn't receive their results» (the receipt lists each call delivered; failed ones were not charged).
 
 **Status:** Implemented · Tested locally (`apps/server/test/demo-prepare.test.ts`). Use of `--agent` / `--agent-run`
-for the hosted reserve: **Pending** (planned for judging on 28–30/11/2026). As of 31/10/2026 the agent case is bound to the dispute of a model-driven run made on the hosted `/agent` (0.50 USD cap, 0.45 captured), checked against the amount its MeterMCP receipt captured; whether that binding also names the run (what makes the run record appear) is not recorded here. The earlier dispute (a session of the scripted client) is kept in reserve.
+for the hosted reserve: **Pending** (planned for judging on 28–30/11/2026). As of 31/10/2026 the agent case is bound to the dispute of a model-driven run made on the hosted `/agent` (0.50 USD cap, 0.45 captured), checked against the amount its MeterMCP receipt captured; the binding names the capture, the run and its MeterMCP session; on 31/10/2026 the hosted case showed E4 (the session receipt PDF, «3 calls · 2 charged · 0.45 USD of 0.50») and E5 (Agent run record: the run's goal and four steps), as seen in the owner's recording. The earlier dispute (a session of the scripted client) is kept in reserve.
 
 Then paste the printed `BINDINGS_JSON` into the `resolvekit` service on Render (it restarts), run `demo:check`, and
 confirm the reserve count on the binding lines.

@@ -294,8 +294,8 @@ export interface ComposeInput {
  */
 export function composeSubmission(x: ComposeInput): Composed | ComposeProblem {
   const { c, req } = x;
-  // A variant the registry has not recorded is never composed ([A2]): an appeal (the sandbox could not produce an
-  // appealable dispute) and PROOF_OF_REFUND evidence (pending sandbox test W-11), in this delivery.
+  // A variant the registry has not recorded is never composed ([A2]): an appeal (not implemented; not verified with PayPal)
+  // and PROOF_OF_REFUND evidence (pending sandbox test W-11), in this delivery.
   // An appeal has no flow of its own yet, so it is refused even once its contract is recorded (never composed as evidence).
   const notAvailable = req.action === 'appeal' ? (unavailableReason('appeal') ?? 'not implemented yet') : evidenceTypeUnavailable(req.evidenceType);
   if (notAvailable) return { status: 409, error: 'VARIANT_NOT_AVAILABLE', detail: `Not available: ${notAvailable}` };

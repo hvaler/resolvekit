@@ -209,7 +209,7 @@ El script imprime lo que el comprador pulsa para abrir cada disputa, con la sesi
 entregada; las fallidas no se cobraron).
 
 **Estado:** Implementado · Probado en local (`apps/server/test/demo-prepare.test.ts`). Uso de `--agent` /
-`--agent-run` para la reserva alojada: **Pendiente** (previsto para la evaluación del 28–30/11/2026). A 31/10/2026 el caso del agente está vinculado a la disputa de una ejecución dirigida por el modelo hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados), comprobada contra el importe que capturó su recibo de MeterMCP; no consta aquí si esa vinculación nombra también la ejecución (lo que hace aparecer su registro). La disputa anterior (una sesión del cliente con guion) queda en reserva.
+`--agent-run` para la reserva alojada: **Pendiente** (previsto para la evaluación del 28–30/11/2026). A 31/10/2026 el caso del agente está vinculado a la disputa de una ejecución dirigida por el modelo hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados), comprobada contra el importe que capturó su recibo de MeterMCP; la vinculación nombra la captura, la ejecución y su sesión de MeterMCP; el 31/10/2026 el caso alojado mostró E4 (el PDF del recibo de la sesión, «3 calls · 2 charged · 0.45 USD of 0.50») y E5 (Agent run record: el objetivo de la ejecución y cuatro pasos), como se vio en la grabación del propietario. La disputa anterior (una sesión del cliente con guion) queda en reserva.
 
 Después pega el `BINDINGS_JSON` impreso en el servicio `resolvekit` de Render (se reinicia), ejecuta `demo:check` y
 confirma el recuento de la reserva en las líneas de vinculación.

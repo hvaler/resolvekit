@@ -873,7 +873,7 @@ test('appeal (Task 12): a non-sendable preview — members get OWNER_ONLY, the o
     assert.deepEqual([r.status, r.body.error], [403, 'OWNER_ONLY'], JSON.stringify(r.body));
   }
   const o = await actionReq(app, intentPath, APPEAL, people.ownerCookie);
-  assert.deepEqual([o.status, o.body.error, o.body.detail], [409, 'VARIANT_NOT_AVAILABLE', 'Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute']);
+  assert.deepEqual([o.status, o.body.error, o.body.detail], [409, 'VARIANT_NOT_AVAILABLE', 'Not available: Not implemented yet: appeal was not verified with PayPal']);
   assert.equal(pp.calls.filter((c) => c.endsWith('/appeal')).length, 0);
 });
 

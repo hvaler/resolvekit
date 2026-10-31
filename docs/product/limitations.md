@@ -16,7 +16,7 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
 | A message with an attachment | The server path and the web composer are tested (one confirmed upload of the case); one message with a file was sent to PayPal through the app in the sandbox (V-7, 21/10/2026, a local run) | Verified in sandbox through the app (V-7); Deployed (`667abb3`, 31/10/2026), not yet exercised on the hosted service |
 | Replacement offer | Not available: Not verified with PayPal: never offered on a sandbox dispute | Not available |
 | Withdrawing an offer | Not available: PayPal documents no route to withdraw an offer | Not available |
-| Appeal | Not available (not implemented). The one attempt to set up an appealable dispute (W-7, 20/10/2026, a normal buyer account) was refused; the product still shows the reason «Not verified with PayPal: the sandbox could not produce an appealable dispute». PayPal documents that the sandbox allows appeals when the buyer sandbox account's email contains `allowappeal` (and `noappeal` for the opposite; [PayPal](https://developer.paypal.com/disputes/test-go-live), as PayPal DevRel told the hackathon Discord on 30/10/2026); ResolveKit has not tried it | Not available |
+| Appeal | Not available (not implemented). The one attempt to set up an appealable dispute (W-7, 20/10/2026, a normal buyer account) was refused; the product still shows the reason «Not implemented yet: appeal was not verified with PayPal». PayPal documents that the sandbox allows appeals when the buyer sandbox account's email contains `allowappeal` (and `noappeal` for the opposite; [PayPal](https://developer.paypal.com/disputes/test-go-live), as PayPal DevRel told the hackathon Discord on 30/10/2026); ResolveKit has not tried it | Not available |
 | Proof of refund (evidence) | Not available: Not verified with PayPal: pending sandbox test (W-11). If PayPal asks only for it, no evidence can be sent on that dispute in this delivery | Not available |
 | Return types (refund with return, return shipping label) | Not available: Not in this delivery (owner decision) | Not available |
 | `provide_supporting_info` | PayPal offered it after evidence in a claim; ResolveKit does not support it | Not available |
@@ -96,7 +96,7 @@ Known gaps:
 - Not yet shown in the sandbox: **Stop** on a running run, the Groq fallback, recovery after a restart during a run,
   a capture that PayPal reports `PENDING`, and the command-line `demo-agent` against the hosted MeterMCP: **Pending**.
 - The agent case's run record (evidence «From ResolveKit · run …») appears only when the case's binding names the run;
-  as of 31/10/2026 the agent case is bound to the dispute of a model-driven run made on the hosted `/agent` (checked against the amount its receipt captured; the earlier scripted-client dispute is in reserve), but whether that binding names the run is not recorded here: **Pending**.
+  as of 31/10/2026 the agent case is bound to the dispute of a model-driven run made on the hosted `/agent` (checked against the amount its receipt captured; the earlier scripted-client dispute is in reserve), and the binding names the run and its session, so the hosted case showed E4 and E5 on 31/10/2026 (seen in the owner's recording).
 - Per-person agent runs reset at UTC midnight, not 24 hours after the first run.
 - Tool outputs are synthetic; budgets are 0.50–5.00 USD in the sandbox.
 

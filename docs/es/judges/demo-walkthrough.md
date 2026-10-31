@@ -131,7 +131,7 @@ revisión, tiempo agotado). Nunca aparece en un caso que funcione sobre PayPal r
 1. Abre **PP-R-MMC-10190702** en Test Store: un comprador disputa un pago que un agente hizo a través de MeterMCP.
 2. El mandato, el recibo por llamada (AG Grid) y la liquidación están etiquetados *From MeterMCP · session …*. A fecha
    de 31/10/2026, la disputa vinculada es la de una ejecución dirigida por el modelo hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados), y el importe del caso es el que capturó su recibo; un registro de ejecución (*E5 Agent run record*, *From ResolveKit · run …*) aparece solo cuando la
-   vinculación del caso nombra esa ejecución (no consta aquí si lo hace: Pendiente).
+   vinculación del caso nombra esa ejecución; la del 31/10/2026 la nombra, y el caso alojado mostró ese día E4 (PDF del recibo de la sesión) y E5 (el objetivo de la ejecución y cuatro pasos).
 3. *How this goes to PayPal as digital delivery*: `PROOF_OF_FULFILLMENT`, transportista `OTHER`, el id de sesión como
    referencia, el PDF del recibo adjunto. Enviarlo sigue el itinerario B (envío del caso del agente a PayPal:
    Pendiente, sin evidencia registrada).

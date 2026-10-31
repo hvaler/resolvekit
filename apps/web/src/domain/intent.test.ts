@@ -79,7 +79,7 @@ describe('composeSubmission (shared by the server and the web app)', () => {
     expect(composeSubmission(base({ c: ready, allowedActions: ['provide_evidence', 'appeal'], req: req({ action: 'appeal' }) }))).toEqual({
       status: 409,
       error: 'VARIANT_NOT_AVAILABLE',
-      detail: 'Not available: Not verified with PayPal: the sandbox could not produce an appealable dispute',
+      detail: 'Not available: Not implemented yet: appeal was not verified with PayPal',
     });
   });
 

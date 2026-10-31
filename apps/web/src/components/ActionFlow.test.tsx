@@ -501,7 +501,7 @@ describe('make_offer: owner only, an amount and a note, OFFERS_SETTLEMENT, an of
 });
 
 describe('appeal and PROOF_OF_REFUND: a non-sendable preview (Task 12, owner decision 20/10/2026)', () => {
-  const APPEAL_REASON = 'Not verified with PayPal: the sandbox could not produce an appealable dispute';
+  const APPEAL_REASON = 'Not implemented yet: appeal was not verified with PayPal';
   const REFUND_REASON = 'Not verified with PayPal: pending sandbox test (W-11)';
 
   it('PayPal offers the appeal link: the owner and anyone else see «Not available: <reason>» and no review or send button', () => {

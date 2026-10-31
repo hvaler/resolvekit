@@ -132,7 +132,7 @@ cumple los requisitos para la reserva del caso del agente (al menos una llamada 
 indica al comprador cómo abrir una disputa sobre su captura e imprime una vinculación que nombra la ejecución y su sesión.
 Solo cuando la vinculación nombra la ejecución, y la sesión de la ejecución coincide, el caso muestra **E5 Agent run
 record** («Agent's own account of its steps · not proof of delivery»). A 31/10/2026
-el caso del agente está vinculado a la disputa de una ejecución dirigida por el modelo hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados, 0.05 liberados); la vinculación nombra su captura, así que el importe del caso es el que capturó su recibo de MeterMCP. No consta aquí si nombra también la ejecución (lo que hace aparecer E5) (Pendiente). La vinculación del 18/10/2026 apuntaba a una sesión creada por un cliente MCP
+el caso del agente está vinculado a la disputa de una ejecución dirigida por el modelo hecha en el `/agent` alojado (tope de 0.50 USD, 0.45 capturados, 0.05 liberados); la vinculación nombra su captura, así que el importe del caso es el que capturó su recibo de MeterMCP. También nombra la ejecución y su sesión de MeterMCP, así que el caso mostró E4 (el PDF del recibo de la sesión, «3 calls · 2 charged · 0.45 USD of 0.50») y E5 (el objetivo de la ejecución y cuatro pasos) el 31/10/2026, como se vio en la grabación del propietario. La vinculación del 18/10/2026 apuntaba a una sesión creada por un cliente MCP
 con guion (scripted); su disputa queda en reserva.
 
 ## CLI

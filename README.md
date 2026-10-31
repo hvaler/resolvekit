@@ -254,7 +254,7 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
   created.
 - Sandbox only; live PayPal never exercised. Sandbox timings and behaviours may differ in live.
 - As of 31/10/2026 (night) the standard case has no fresh dispute left in reserve (its binding is used), the settlement case is bound and the agent case is bound with 1 in reserve; the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path for the evidence send, and sending to the real sandbox may be unavailable. Until it is refilled, new sends there are refused and the case shows the earlier read-back.
-- The bound agent case is the dispute of a model-driven run made on the hosted service on 31/10/2026 (0.45 USD captured of a 0.50 USD cap); whether its binding also names the run (what shows the run record) is not recorded here.
+- The bound agent case is the dispute of a model-driven run made on the hosted service on 31/10/2026 (0.45 USD captured of a 0.50 USD cap); its binding names the run and its MeterMCP session, and the hosted case showed the session receipt (E4) and the run record (E5) that day.
 - Analyst: on held-out cases most true notes go to *needs review*; Groq was not run on the held-out set.
 - No backups beyond the Render disk; shared daily caps on the hosted demo.
 

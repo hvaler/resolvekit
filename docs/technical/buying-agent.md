@@ -127,7 +127,7 @@ and receipt through the ops route; never runs or pays again), checks it qualifie
 least one charged call, a completed capture…), tells the buyer how to open a dispute on its capture, and prints a
 binding that names the run and its session. Only when the binding names the run, and the run's session matches, does
 the case show **E5 Agent run record** («Agent's own account of its steps · not proof of delivery»). As of 31/10/2026
-the agent case is bound to the dispute of a model-driven run made on the hosted `/agent` (0.50 USD cap, 0.45 captured, 0.05 released); the binding names its capture, so the case's amount is the one its MeterMCP receipt captured. Whether it also names the run (what makes E5 appear) is not recorded here (Pending). The binding of 18/10/2026 pointed at a session made by a scripted MCP
+the agent case is bound to the dispute of a model-driven run made on the hosted `/agent` (0.50 USD cap, 0.45 captured, 0.05 released); the binding names its capture, so the case's amount is the one its MeterMCP receipt captured. It also names the run and its MeterMCP session, so the case showed E4 (the session receipt PDF, «3 calls · 2 charged · 0.45 USD of 0.50») and E5 (the run's goal and four steps) on 31/10/2026, as seen in the owner's recording. The binding of 18/10/2026 pointed at a session made by a scripted MCP
 client; its dispute is kept in reserve.
 
 ## CLI

@@ -219,8 +219,9 @@ export const CONTRACTS: Readonly<Record<VariantId, VariantContract>> = Object.fr
   'make_offer:withdraw': base('make_offer:withdraw', `${REF}disputes-make-offer`, null, null, null, ev('make-offer'), 'PayPal documents no route to withdraw an offer'),
   // 20/10/2026 (owner-approved W-7): the sandbox's adjudicate helper was refused on the escalated dispute B while it was
   // UNDER_REVIEW (400 ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE; packages/paypal/contracts/appeal-setup-adjudicate.json),
-  // so no appealable state could be produced and no appeal was ever sent.
-  appeal: base('appeal', `${REF}disputes-appeal`, 'multipart', route('appeal'), null, ev('appeal'), 'Not verified with PayPal: the sandbox could not produce an appealable dispute'),
+  // so no appealable state was produced with that normal buyer and no appeal was ever sent. PayPal documents an `allowappeal`
+  // sandbox buyer for testing appeals (https://developer.paypal.com/disputes/test-go-live); not tried.
+  appeal: base('appeal', `${REF}disputes-appeal`, 'multipart', route('appeal'), null, ev('appeal'), 'Not implemented yet: appeal was not verified with PayPal'),
   // Owner decision 20/10/2026: not sent in this delivery. W-11 stays a pending sandbox test (sequence in the evidence
   // file): a payment refunded in part before its dispute opens (a disputed payment is held and cannot be refunded
   // outside the case, observed 19/10), then PROOF_OF_REFUND with the refund id, approved, then read back.

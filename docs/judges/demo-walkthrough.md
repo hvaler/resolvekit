@@ -120,7 +120,7 @@ timeout). It never appears on a case running on real PayPal.
 1. Open **PP-R-MMC-10190702** in Test Store: a buyer disputes a payment an agent made through MeterMCP.
 2. The mandate, the per-call receipt (AG Grid) and the settlement are labelled *From MeterMCP · session …*. As of
    31/10/2026 the bound dispute is that of a model-driven run made on the hosted `/agent` (0.50 USD cap, 0.45 captured), and the case's amount is the one its receipt captured; a run record
-   (*E5 Agent run record*, *From ResolveKit · run …*) appears only when the case's binding names that run (not recorded here whether it does: Pending).
+   (*E5 Agent run record*, *From ResolveKit · run …*) appears only when the case's binding names that run; the 31/10/2026 binding does, and the hosted case showed E4 (session receipt PDF) and E5 (the run's goal and four steps) that day.
 3. *How this goes to PayPal as digital delivery*: `PROOF_OF_FULFILLMENT`, carrier `OTHER`, the session id as reference,
    the receipt PDF attached. Sending it follows track B (agent-case send to PayPal: Pending, no recorded evidence).
 4. In the Explore demo the same case id opens the synthetic example (four calls, one failure not charged, 1.37 of

@@ -265,7 +265,7 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 - Solo sandbox; PayPal live nunca se ha probado. Los tiempos y comportamientos del sandbox pueden
   diferir en live.
 - A 31/10/2026 (noche) el caso estándar no tiene ninguna disputa nueva en reserva (su vinculación está usada), el caso de liquidación está vinculado y el del agente está vinculado con 1 en reserva; la reserva se rellena para la evaluación el 28–30/11/2026. Hasta entonces la ruta por defecto para el envío de evidencia es la Explore demo, y el envío al sandbox real puede no estar disponible. Hasta que se rellene, los envíos nuevos ahí se rechazan y el caso muestra la relectura anterior.
-- El caso del agente vinculado es la disputa de una ejecución dirigida por el modelo hecha en el servicio alojado el 31/10/2026 (0.45 USD capturados de un tope de 0.50 USD); no consta aquí si su vinculación nombra también la ejecución (lo que muestra su registro).
+- El caso del agente vinculado es la disputa de una ejecución dirigida por el modelo hecha en el servicio alojado el 31/10/2026 (0.45 USD capturados de un tope de 0.50 USD); su vinculación nombra la ejecución y su sesión de MeterMCP, y el caso alojado mostró ese día el recibo de la sesión (E4) y el registro de la ejecución (E5).
 - Analista: en los casos reservados, la mayoría de las notas verdaderas van a *needs review*; Groq no se ejecutó en el
   conjunto reservado.
 - Sin copias de seguridad más allá del disco de Render; límites diarios compartidos en la demo alojada.
