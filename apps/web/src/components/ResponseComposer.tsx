@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useHighlight } from '../app/highlight';
 import { useSecondsSince } from '../app/services';
 import type { CaseDraft } from '../app/useCaseDraft';
+import type { ActionCardVerdict } from '../domain/actionCards';
 import { NOTES_LIMIT, blockerSentence, draftSummary, notesCountLabel } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
 import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
@@ -49,20 +50,28 @@ function Attachments({ c }: { c: CaseFile }) {
   );
 }
 
-function ActionChoice({
+/**
+ * The actions PayPal offers now, each with the verdict the composer will give (`verdicts`, from actionAvailability): a
+ * sendable one is «✓ allowed»; one PayPal offers that ResolveKit cannot send now is shown muted and disabled, with why.
+ */
+export function ActionChoice({
   c,
   d,
   allowed,
   checkedAt,
   sent,
+  verdicts = {},
 }: {
   c: CaseFile;
   d: CaseDraft;
   allowed: readonly ActionCode[];
   checkedAt: number | null;
   sent: boolean;
+  /** Each action's verdict as the composer gives it; absent: allowed (evidence keeps its own checks). */
+  verdicts?: Partial<Record<ActionCode, ActionCardVerdict>>;
 }) {
   const secs = useSecondsSince(checkedAt);
+  const sendable = allowed.filter((code) => verdicts[code]?.sendable !== false).length;
   return (
     <section aria-label="Action" className="flex flex-col gap-2">
       <h3 className="m-0 text-[12.5px] font-semibold">What to do</h3>
@@ -75,29 +84,38 @@ function ActionChoice({
         {allowed.map((code) => {
           const sel = d.action === code;
           const det = c.actionDetails[code];
+          const v = verdicts[code];
+          const off = v?.sendable === false;
           return (
             <button
               key={code}
               type="button"
               role="radio"
               aria-checked={sel}
+              disabled={off}
+              title={off ? `Not available: ${v.why}` : undefined}
               onClick={() => d.setAction(code)}
-              className="flex flex-col gap-0.5 rounded-[7px] px-2.5 py-2 text-left"
+              className="flex flex-col gap-0.5 rounded-[7px] px-2.5 py-2 text-left disabled:cursor-not-allowed"
               style={{
                 border: `1px solid ${sel ? 'var(--acc)' : 'var(--line2)'}`,
                 background: sel ? 'var(--acc-soft)' : 'var(--surface)',
+                opacity: off ? 0.7 : undefined,
               }}
             >
-              <span className="text-body font-medium">{det?.label ?? ACTION_LABEL[code]}</span>
+              <span className={cx('text-body font-medium', off && 'text-ink-2')}>{det?.label ?? ACTION_LABEL[code]}</span>
               <span className="text-[11.5px] text-ink-3">{det?.sub ?? ''}</span>
-              <span className="font-mono text-[10px] leading-[1.4] text-ok">✓ allowed · {code}</span>
+              {off ? (
+                <span className="font-mono text-[10px] leading-[1.4] text-ink-3">{`PayPal offers it · ${v.short} · ${code}`}</span>
+              ) : (
+                <span className="font-mono text-[10px] leading-[1.4] text-ok">{`✓ allowed · ${code}`}</span>
+              )}
             </button>
           );
         })}
       </div>
       <span className="text-[11.5px] text-ink-3">
         {allowed.length
-          ? `PayPal allows these ${allowed.length} actions for this dispute right now (read ${secs ?? '?'}s ago). The options change as the dispute moves on.`
+          ? `PayPal allows these ${allowed.length} actions for this dispute right now (read ${secs ?? '?'}s ago).${sendable < allowed.length ? ` ResolveKit can send ${sendable} of them now; each card says why.` : ''} The options change as the dispute moves on.`
           : 'PayPal allows no actions for this dispute right now.'}
       </span>
     </section>
@@ -150,6 +168,8 @@ export interface ResponseComposerProps {
   allowedActions: readonly ActionCode[];
   checkedAt: number | null;
   submitted: boolean;
+  /** Each action's verdict as its composer gives it (the cards say the same). */
+  actionVerdicts?: Partial<Record<ActionCode, ActionCardVerdict>>;
   /** The dispute is on real PayPal (not the simulator): only then does the copy say "recorded by PayPal". */
   realPayPal?: boolean;
   /** The latest read of the dispute: once the seller's evidence is in, what PayPal stored is shown back. */
@@ -163,7 +183,7 @@ export interface ResponseComposerProps {
 }
 
 /** Right zone: the draft with its sentence states, evidence type, attachments, action, and the way forward. */
-export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, realPayPal = false, snapshot, onReview, actionPanel }: ResponseComposerProps) {
+export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checkedAt, submitted, realPayPal = false, snapshot, onReview, actionPanel }: ResponseComposerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const busy = d.blockers.some((b) => b.kind === 'analysis' || b.kind === 'checking');
   const actionable = d.actionable;
@@ -306,7 +326,7 @@ export function ResponseComposer({ c, d, allowedActions, checkedAt, submitted, r
         ) : (
           <>
             {!submitted && !other && <Attachments c={c} />}
-            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} />
+            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} {...(actionVerdicts ? { verdicts: actionVerdicts } : {})} />
             {other && actionPanel}
             {!submitted && !other && (
               <section aria-label="Notes length" className="flex flex-col gap-1.5">

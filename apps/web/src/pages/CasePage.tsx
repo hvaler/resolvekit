@@ -29,6 +29,7 @@ import { STUCK_COPY, thumbsReady } from '../domain/pdfReview';
 import { PdfSelect } from '../components/PdfSelect';
 import { MessageThread } from '../components/MessageThread';
 import { MiniButton } from '../components/ui';
+import { actionCardVerdict } from '../domain/actionCards';
 import { actionAvailability, type ActionRequest, type Viewer } from '../domain/actions';
 import { onSimulator, onSimulatorFile } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
@@ -175,9 +176,14 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const readNow: DisputeSnapshot = snap ? { ...snap, allowedActions: [...allowed] } : { id, status, stage: demo.summary.stage, allowedActions: [...allowed], evidences: [], readAt: '' };
   const otherAction = d.action === 'provide_evidence' ? null : d.action;
   // On the simulator, also what the simulator would refuse (no recorded transition from this state) is not composable.
-  const offered = otherAction ? actionAvailability(readNow, otherAction, viewer) : null;
   // A message with a file only from the state W-3 was recorded from; elsewhere it is «Not available» with the reason.
-  const availability = offered && source.kind === 'simulated' ? onSimulatorFile(onSimulator(offered, readNow), readNow) : offered;
+  const availabilityOf = (a: Exclude<ActionCode, 'provide_evidence'>) => {
+    const offered = actionAvailability(readNow, a, viewer);
+    return source.kind === 'simulated' ? onSimulatorFile(onSimulator(offered, readNow), readNow) : offered;
+  };
+  const availability = otherAction ? availabilityOf(otherAction) : null;
+  // The cards say what the composer will say: the same availability, per action PayPal offers.
+  const actionVerdicts = Object.fromEntries(allowed.filter((a) => a !== 'provide_evidence').map((a) => [a, actionCardVerdict(availabilityOf(a))]));
   // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
   const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
 
@@ -382,6 +388,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             c={c}
             d={d}
             allowedActions={allowed}
+            actionVerdicts={actionVerdicts}
             realPayPal={snap?.origin?.kind === 'paypal'}
             checkedAt={snap?.checkedAt ?? null}
             submitted={submitted}

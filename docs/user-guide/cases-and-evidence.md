@@ -59,7 +59,10 @@ you choose:
 
 ## What to do (PayPal's actions)
 
-The **What to do** box lists the actions PayPal allows for this dispute now, read seconds ago, each «✓ allowed». Besides
+The **What to do** box lists the actions PayPal allows for this dispute now, read seconds ago. Each card gives the verdict
+its composer will give: «✓ allowed» when ResolveKit can send it now; otherwise it is muted and disabled with the reason
+(e.g. «PayPal offers it · not verified from this status», «PayPal offers it · owner only»), and the footer adds how many
+ResolveKit can send now. Besides
 **Provide evidence**, the deployed commit (`f1b7236`, 29/10/2026) opens their own flow when you choose «Send message»,
 «Accept claim», «Make an offer» or «Escalate» (Verified in sandbox through the app on 20/10/2026; not yet exercised on
 the hosted service): see [Review and submit](review-and-submit.md#other-dispute-actions).

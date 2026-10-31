@@ -111,8 +111,8 @@ variante muestra su estado («Verified in sandbox», «Tested locally», o «Not
 | Make offer · refund offer | Owner | Importe (menor que el de la disputa) y **Note to PayPal** | «The buyer is offered <amount>; no money moves unless the buyer accepts.» |
 | Escalate | Owner | **Note to PayPal** | «The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.» (la consulta pasa a reclamación que decide PayPal) |
 
-Los miembros y los revisores ven las acciones solo del Owner como vista previa con su consecuencia; no pueden
-componerlas ni enviarlas.
+Los miembros y los revisores ven desactivadas las tarjetas de las acciones solo del Owner («PayPal offers it · owner
+only»); no pueden componerlas ni enviarlas.
 
 Pasos: **Review the message →** (o **Review the accept →**, **Review the offer →**, **Review the escalation →**) pide
 al servidor que componga exactamente lo que se enviará; la revisión lo cita. **Approve and send** registra tu
