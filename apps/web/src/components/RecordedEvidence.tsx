@@ -11,7 +11,19 @@ const typeLabel = (t: string) => (t in EVIDENCE_TYPE_LABEL ? EVIDENCE_TYPE_LABEL
  * What PayPal holds for this dispute, read back: the outcome once it is closed, and the seller's evidence exactly as
  * PayPal (or the simulator) stored it. Shown instead of the editable draft controls once the evidence is in.
  */
-export function RecordedEvidence({ snapshot, realPayPal }: { snapshot: DisputeSnapshot; realPayPal: boolean }) {
+export function RecordedEvidence({
+  snapshot,
+  realPayPal,
+  draftMatches = null,
+}: {
+  snapshot: DisputeSnapshot;
+  realPayPal: boolean;
+  /**
+   * The draft below is what was sent (its notes are the stored ones); false: a later analysis or another draft; null:
+   * not known yet (the analysis is loading or replaying).
+   */
+  draftMatches?: boolean | null;
+}) {
   const entries = sellerEvidence(snapshot);
   const e = entries[entries.length - 1];
   const by = realPayPal ? 'PayPal' : 'the simulator';
@@ -71,9 +83,17 @@ export function RecordedEvidence({ snapshot, realPayPal }: { snapshot: DisputeSn
               <span className="whitespace-pre-wrap rounded-md bg-surface-2 px-2 py-1.5 text-[12.5px] leading-[1.5] text-ink-2">{e.notes}</span>
             </dd>
           </dl>
-          <span className="text-[11.5px] text-ink-3">
-            Read back from {by}. The draft below is the analysis it was built from: only its supported sentences went as the notes; sentences that needed review or were removed were not sent.
-          </span>
+          {draftMatches === false ? (
+            <span role="note" className="rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-[12px] text-warn">
+              {`Read back from ${by}. The draft below is not what was sent: it comes from a later analysis or another draft. What was sent is the notes above, exactly as ${by} stored them.`}
+            </span>
+          ) : (
+            <span className="text-[11.5px] text-ink-3">
+              {draftMatches
+                ? `Read back from ${by}. The draft below is what was sent: only its supported sentences went as the notes; sentences that needed review or were removed were not sent.`
+                : `Read back from ${by}. Only the approved draft’s supported sentences went as the notes; sentences that needed review or were removed were not sent.`}
+            </span>
+          )}
         </>
       ) : (
         <p className="m-0 text-[12.5px] text-ink-3">{by === 'PayPal' ? 'PayPal' : 'The simulator'} shows no seller evidence on this dispute.</p>

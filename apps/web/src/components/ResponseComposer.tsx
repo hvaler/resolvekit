@@ -8,6 +8,7 @@ import { ACTION_LABEL } from '../domain/status';
 import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
 import { evidenceDomId } from './EvidenceCard';
 import { EvidenceTypeSelector } from './EvidenceTypeSelector';
+import { draftIsWhatWasSent, sentDraftHeader } from '../domain/recorded';
 import { RecordedEvidence } from './RecordedEvidence';
 import { SentenceRow } from './SentenceRow';
 import { PrimaryAction, cx } from './ui';
@@ -233,6 +234,9 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
   }
 
   const isAgent = c.kind === 'agent';
+  // Once evidence is in: whether the draft on screen is what was sent (a later analysis is never passed off as it).
+  // Judged only on the finished analysis (a replay's early steps are not the draft).
+  const draftMatches = submitted && snapshot && d.analysisComplete ? draftIsWhatWasSent(snapshot, d.notes) : null;
   const alsoAllowed = allowedActions.filter((a) => a !== 'provide_evidence');
 
   return (
@@ -243,7 +247,7 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
       <div className="flex flex-none flex-col gap-[3px] border-b border-line px-[22px] pb-3 pt-3.5 max-md:px-4">
         <div className="flex items-center gap-2 max-md:flex-wrap">
           <h2 className="m-0 text-[15px] font-semibold">Response draft</h2>
-          <span className="text-[12px] text-ink-3">{submitted ? 'Sent · read-only' : 'Drafted by the analyst · you approve'}</span>
+          <span className="text-[12px] text-ink-3">{submitted ? sentDraftHeader(draftMatches) : 'Drafted by the analyst · you approve'}</span>
           <span className="flex-1" />
           <button
             type="button"
@@ -260,7 +264,7 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
       </div>
 
       <div className="flex flex-1 flex-col gap-[22px] overflow-auto pb-[22px] pl-[18px] pr-[22px] pt-2.5 max-md:overflow-visible max-md:px-3">
-        {submitted && snapshot && <RecordedEvidence snapshot={snapshot} realPayPal={realPayPal} />}
+        {submitted && snapshot && <RecordedEvidence snapshot={snapshot} realPayPal={realPayPal} draftMatches={draftMatches} />}
         <ol aria-label="Draft sentences" className="m-0 flex list-none flex-col gap-1 p-0">
           {d.views.map((v) => {
             const base = c.sentences.find((s) => s.id === v.id);

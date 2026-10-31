@@ -83,6 +83,9 @@ PayPal.»
 After recording, «Actions PayPal allows now» explains what changed, for example «Removed by PayPal: evidence already
 submitted» or «Not offered while PayPal reviews». The case becomes **Evidence recorded by PayPal**, «Sent ·
 read-only»; the timeline and the audit trail (who approved, when, the content hash, PayPal's answer) show the send.
+The notes are shown as PayPal stored them. If the draft on screen no longer matches them (a later analysis, or another
+draft), the header reads «Sent · read-only · the draft below is not what was sent» and the read-back says what was sent
+is the stored notes.
 
 In our sandbox tests PayPal stopped offering `provide_evidence` after one submission (an observation, not a documented
 rule). In the sandbox evaluation a used case moves to its next reserve dispute about 15 minutes later, on its next

@@ -126,6 +126,9 @@ describe('routes render without errors', () => {
     const html = render('/cases/PP-R-QZE-10181290');
     expect(html).toContain('Recorded by the simulator');
     expect(html).toContain('Sent · read-only');
+    // Before the analysis has finished replaying, neither «what was sent» nor «not what was sent» is claimed.
+    expect(html).not.toContain('not what was sent');
+    expect(html).toContain('Only the approved draft’s supported sentences went as the notes');
     expect(html).toContain('Evidence recorded by the simulator');
     expect(html).toContain('booking-B-4471.pdf');
     expect(html).not.toContain('PayPal is asking for:');

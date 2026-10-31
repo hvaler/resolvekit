@@ -117,3 +117,21 @@ export function startsFurtherOn(c: Pick<CaseFile, 'simulatedPayPal'>): boolean {
   const s = c.simulatedPayPal;
   return !!s && (s.evidences.length > 0 || !!s.outcome);
 }
+
+/** The same notes, whitespace aside (PayPal echoes the notes as sent; the draft joins its supported sentences). */
+const squash = (t: string) => t.replace(/\s+/g, ' ').trim();
+
+/**
+ * Whether the draft on screen is what was sent: its notes are the notes PayPal (or the simulator) stored for the seller's
+ * latest evidence. Not when the draft comes from a later analysis or another draft: the read-only panel then says so,
+ * and what was sent is the stored notes. Null when nothing was recorded.
+ */
+export function draftIsWhatWasSent(snap: DisputeSnapshot, draftNotes: string): boolean | null {
+  const e = sellerEvidence(snap).at(-1);
+  return e ? squash(e.notes) === squash(draftNotes) : null;
+}
+
+/** The read-only panel's header once evidence is in: it says when the draft below is not what was sent. */
+export function sentDraftHeader(draftMatches: boolean | null): string {
+  return draftMatches === false ? 'Sent · read-only · the draft below is not what was sent' : 'Sent · read-only';
+}

@@ -86,7 +86,9 @@ PayPal.»
 Tras el registro, «Actions PayPal allows now» explica qué cambió, por ejemplo «Removed by PayPal: evidence already
 submitted» o «Not offered while PayPal reviews». El caso pasa a **Evidence recorded by PayPal**, «Sent · read-only»;
 la cronología y el registro de auditoría (quién aprobó, cuándo, el hash del contenido, la respuesta de PayPal) muestran
-el envío.
+el envío. Las notas se muestran tal como las guardó PayPal. Si el borrador en pantalla ya no coincide con ellas (un
+análisis posterior u otro borrador), la cabecera dice «Sent · read-only · the draft below is not what was sent» y la
+lectura indica que lo enviado son las notas guardadas.
 
 En nuestras pruebas en sandbox PayPal dejó de ofrecer `provide_evidence` tras un envío (una observación, no una regla
 documentada). En la evaluación en sandbox, un caso usado pasa a la siguiente disputa de su reserva unos 15 minutos
