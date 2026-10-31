@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CONTRACTS, statusLabel } from '../domain/actionContracts';
+import { EMPTY_ACTION_DRAFT, dialogKeyCloses, type ActionDraft } from '../domain/actionDrafts';
 import { ACTION_TEXT_LIMIT, ESCALATE_CONSEQUENCE, acceptConsequenceText, offerConsequenceText, type ActionAvailability, type ActionRequest, type IntentAction, type Money } from '../domain/actions';
 import { minorUnits, parseAmount } from '../domain/amounts';
 import { formatCount } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
 import { confirmedUploads, type UploadRecordView } from '../domain/uploads';
-import { PrimaryAction, cx } from './ui';
+import { Button, PrimaryAction, cx } from './ui';
 
 const VARIANT_LABEL: Partial<Record<string, string>> = {
   send_message: 'Message',
@@ -19,6 +20,56 @@ const VARIANT_LABEL: Partial<Record<string, string>> = {
 
 /** Why a message cannot carry a file here: the uploads live on the ResolveKit server. */
 const FILE_NEEDS_SERVER = 'attaching a file needs the ResolveKit server';
+
+type DraftState = [ActionDraft, (d: ActionDraft) => void];
+/** The draft the case page keeps (so closing the dialog never loses it), or this composer's own when none is given. */
+function useActionDraft(draft: ActionDraft | undefined, onDraft: ((d: ActionDraft) => void) | undefined): DraftState {
+  const own = useState<ActionDraft>(EMPTY_ACTION_DRAFT);
+  return draft && onDraft ? [draft, onDraft] : own;
+}
+
+/**
+ * The modal an action other than evidence is composed in (the evidence flow's pattern): a Close (×), Cancel and Esc
+ * before anything is sent. Closing keeps an unsent draft, and says so; nothing is sent from here (the review is next).
+ */
+export function ActionComposerDialog({ caseId, title, draftKept, onClose, children }: { caseId: string; title: string; draftKept: boolean; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (dialogKeyCloses(e.key)) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--scrim)] px-6 pt-[34px] max-md:px-0 max-md:pt-0">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="compose-title"
+        className="flex max-h-[calc(100dvh-68px)] w-[min(640px,100%)] flex-col overflow-hidden rounded-3xl bg-surface shadow-modal max-md:h-[100dvh] max-md:max-h-none max-md:rounded-none"
+      >
+        <div className="flex flex-none items-center gap-3 border-b border-line px-[26px] py-4 max-md:px-4">
+          <div className="flex flex-col gap-0.5">
+            <h2 id="compose-title" className="m-0 text-[18px] font-semibold">
+              {title}
+            </h2>
+            <span className="font-mono text-caption leading-[1.3] text-ink-3">{`${caseId} · nothing is sent before you review it`}</span>
+          </div>
+          <span className="flex-1" />
+          <button type="button" aria-label="Close" onClick={onClose} className="h-7 w-7 rounded-lg border border-line-2 bg-surface text-ink-2">
+            ×
+          </button>
+        </div>
+        <div className="flex flex-col gap-3 overflow-auto px-[26px] py-5 max-md:px-4">{children}</div>
+        <div className="flex flex-none flex-wrap items-center gap-2 border-t border-line px-[26px] py-3.5 max-md:px-4">
+          {draftKept && <span className="text-[12px] text-ink-3">Closing keeps your unsent draft; nothing is sent.</span>}
+          <span className="flex-1" />
+          <Button onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * The message request as the server composes it: the text, and the chosen upload while it is still a confirmed upload
@@ -52,6 +103,8 @@ export function ActionComposer({
   uploads,
   attachment = null,
   onAttachment,
+  draft,
+  onDraft,
 }: {
   action: Exclude<IntentAction, 'provide_evidence'>;
   text: string;
@@ -71,6 +124,9 @@ export function ActionComposer({
   /** The upload chosen for the message (its id), or null. */
   attachment?: string | null;
   onAttachment?: (uploadId: string | null) => void;
+  /** The accept's, escalation's or offer's draft as the case page keeps it (with onDraft); absent: the composer's own. */
+  draft?: ActionDraft;
+  onDraft?: (d: ActionDraft) => void;
 }) {
   const isMessage = action === 'send_message';
   const len = text.trim().length;
@@ -152,9 +208,9 @@ export function ActionComposer({
           </PrimaryAction>
         </>
       )}
-      {action === 'accept_claim' && <AcceptComposer availability={availability} locked={locked} disputeAmount={disputeAmount} onRequest={onRequest} />}
-      {action === 'escalate' && <EscalateComposer availability={availability} locked={locked} onRequest={onRequest} />}
-      {action === 'make_offer' && <OfferComposer availability={availability} locked={locked} disputeAmount={disputeAmount} refundable={refundable} onRequest={onRequest} />}
+      {action === 'accept_claim' && <AcceptComposer availability={availability} locked={locked} disputeAmount={disputeAmount} onRequest={onRequest} draft={draft} onDraft={onDraft} />}
+      {action === 'escalate' && <EscalateComposer availability={availability} locked={locked} onRequest={onRequest} draft={draft} onDraft={onDraft} />}
+      {action === 'make_offer' && <OfferComposer availability={availability} locked={locked} disputeAmount={disputeAmount} refundable={refundable} onRequest={onRequest} draft={draft} onDraft={onDraft} />}
     </section>
   );
 }
@@ -172,17 +228,23 @@ function AcceptComposer({
   locked,
   disputeAmount,
   onRequest,
+  draft: kept,
+  onDraft,
 }: {
   availability: ActionAvailability;
   locked: string | null;
   disputeAmount: Money | null;
   onRequest: ((req: ActionRequest) => void) | undefined;
+  draft: ActionDraft | undefined;
+  onDraft: ((d: ActionDraft) => void) | undefined;
 }) {
   // Variants PayPal allows now and the registry has recorded; for a viewer who may not send, the same choice as a preview.
   const types = ACCEPT_TYPES.filter((t) => availability.variants.some((v) => v.type === t && v.available));
-  const [picked, setPicked] = useState<string | null>(null);
-  const [value, setValue] = useState('');
-  const [note, setNote] = useState('');
+  const [draft, setDraft] = useActionDraft(kept, onDraft);
+  const { picked, value, note } = draft;
+  const setPicked = (t: string) => setDraft({ ...draft, picked: t });
+  const setValue = (v: string) => setDraft({ ...draft, value: v });
+  const setNote = (n: string) => setDraft({ ...draft, note: n });
   const type = picked && types.includes(picked) ? picked : (types[0] ?? null);
   if (!type) return null;
   const owner = availability.sendable;
@@ -255,8 +317,22 @@ function AcceptComposer({
  * An escalation: the note to PayPal (required, at most 2,000 characters) and what happens then, shown to everyone while
  * the recorded variant is available; the review button only to whoever may send it (the owner).
  */
-function EscalateComposer({ availability, locked, onRequest }: { availability: ActionAvailability; locked: string | null; onRequest: ((req: ActionRequest) => void) | undefined }) {
-  const [note, setNote] = useState('');
+function EscalateComposer({
+  availability,
+  locked,
+  onRequest,
+  draft: kept,
+  onDraft,
+}: {
+  availability: ActionAvailability;
+  locked: string | null;
+  onRequest: ((req: ActionRequest) => void) | undefined;
+  draft: ActionDraft | undefined;
+  onDraft: ((d: ActionDraft) => void) | undefined;
+}) {
+  const [draft, setDraft] = useActionDraft(kept, onDraft);
+  const note = draft.note;
+  const setNote = (n: string) => setDraft({ ...draft, note: n });
   if (!availability.variants.some((v) => v.variant === 'escalate' && v.available)) return null;
   const owner = availability.sendable;
   const len = note.trim().length;
@@ -303,15 +379,21 @@ function OfferComposer({
   disputeAmount,
   refundable,
   onRequest,
+  draft: kept,
+  onDraft,
 }: {
   availability: ActionAvailability;
   locked: string | null;
   disputeAmount: Money | null;
   refundable: Money | null;
   onRequest: ((req: ActionRequest) => void) | undefined;
+  draft: ActionDraft | undefined;
+  onDraft: ((d: ActionDraft) => void) | undefined;
 }) {
-  const [value, setValue] = useState('');
-  const [note, setNote] = useState('');
+  const [draft, setDraft] = useActionDraft(kept, onDraft);
+  const { value, note } = draft;
+  const setValue = (v: string) => setDraft({ ...draft, value: v });
+  const setNote = (n: string) => setDraft({ ...draft, note: n });
   if (!availability.variants.some((v) => v.variant === 'make_offer:REFUND' && v.available)) return null;
   const owner = availability.sendable;
   const currency = disputeAmount?.currency ?? null;

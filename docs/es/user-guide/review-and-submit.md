@@ -100,8 +100,11 @@ las solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_J
 los revisores pueden enviar mensajes en la disputa activa de un caso vinculado. Estado y reglas por variante:
 [Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
 
-Elige la acción en **What to do**. Solo se puede componer lo que PayPal ofrece ahora mismo en la disputa, y cada
-variante muestra su estado («Verified in sandbox», «Tested locally», o «Not available: <motivo>»).
+Elige la acción en **What to do**: su compositor se abre en un diálogo con **Cancel**, un botón de cierre (×) y Esc.
+Cerrarlo antes de enviar conserva lo escrito («Closing keeps your unsent draft; nothing is sent.», y la tarjeta dice
+«Unsent draft kept»); cuando PayPal registra el envío, cerrar el resultado vuelve al caso con **Provide evidence**
+seleccionada. Solo se puede componer lo que PayPal ofrece ahora mismo en la disputa, y cada variante muestra su estado
+(«Verified in sandbox», «Tested locally», o «Not available: <motivo>»).
 
 | Acción | Quién | Qué escribes | Qué hace PayPal |
 |---|---|---|---|

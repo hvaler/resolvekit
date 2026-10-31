@@ -12,7 +12,7 @@ import { useUploads } from '../app/useUploads';
 import { AddEvidencePanel, PendingUploads } from '../components/AddEvidence';
 import { AnalysisBar, analysisLabel } from '../components/AnalysisBar';
 import { AppBar } from '../components/AppBar';
-import { ActionComposer, messageRequest } from '../components/ActionComposer';
+import { ActionComposer, ActionComposerDialog, messageRequest } from '../components/ActionComposer';
 import { ActionFlow } from '../components/ActionFlow';
 import { HeldSendNotice, useHeldSend } from '../components/HeldSend';
 import { ApproveFlow } from '../components/ApproveFlow';
@@ -30,10 +30,12 @@ import { PdfSelect } from '../components/PdfSelect';
 import { MessageThread } from '../components/MessageThread';
 import { MiniButton } from '../components/ui';
 import { actionCardVerdict } from '../domain/actionCards';
+import { EMPTY_ACTION_DRAFT, afterFlowClosed, hasUnsentDraft, withoutDraft, type ActionDraft, type ActionDrafts, type OtherAction } from '../domain/actionDrafts';
 import { actionAvailability, type ActionRequest, type Viewer } from '../domain/actions';
 import { onSimulator, onSimulatorFile } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
+import { ACTION_LABEL } from '../domain/status';
 import { evidenceAfterEscalationRefusal, payPalEvents, sellerEvidenceBlocks, startsFurtherOn } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
@@ -170,6 +172,10 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const [messageFile, setMessageFile] = useState<string | null>(null);
   /** The action being reviewed and sent (its flow is open), exactly as the server will compose it. */
   const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
+  /** The accept's, escalation's and offer's drafts, kept while their dialog is closed (never lost silently). */
+  const [actionDrafts, setActionDrafts] = useState<ActionDrafts>({});
+  /** PayPal (or the simulator) recorded the open flow's action: closing it closes the composer too. */
+  const flowRecorded = useRef(false);
   // A send still holding the dispute (e.g. before a reload): found again from the server, read again when a flow closes.
   const held = useHeldSend(id, source.kind === 'live', actionRequest);
   const viewer: Viewer = demoLock?.person ? { role: demoLock.person.role, reviewer: demoLock.person.reviewer } : { role: 'owner', reviewer: false };
@@ -183,7 +189,11 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   };
   const availability = otherAction ? availabilityOf(otherAction) : null;
   // The cards say what the composer will say: the same availability, per action PayPal offers.
-  const actionVerdicts = Object.fromEntries(allowed.filter((a) => a !== 'provide_evidence').map((a) => [a, actionCardVerdict(availabilityOf(a))]));
+  const others = allowed.filter((a): a is OtherAction => a !== 'provide_evidence');
+  const actionVerdicts = Object.fromEntries(others.map((a) => [a, actionCardVerdict(availabilityOf(a))]));
+  const draftedActions = others.filter((a) => hasUnsentDraft(a, actionDrafts, message));
+  // Closing the action dialog (×, Cancel, Esc) returns to the case with the default action; drafts are kept.
+  const closeComposer = useCallback(() => d.setAction('provide_evidence'), [d.setAction]);
   // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
   const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
 
@@ -394,43 +404,51 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             submitted={submitted}
             {...(snap ? { snapshot: snap } : {})}
             onReview={() => navigate(approvePath(area, id))}
-            actionPanel={
-              otherAction && availability ? (
-                <ActionComposer
-                  action={otherAction}
-                  text={message}
-                  onText={setMessage}
-                  availability={availability}
-                  locked={actionLocked}
-                  // The file only while its variant is offered here (the composer hides the choice otherwise).
-                  onReview={() => setActionRequest(messageRequest(message, availability.variants.some((v) => v.variant === 'send_message:file' && v.available) ? messageFile : null, up.uploads))}
-                  uploads={uploadsClient ? up.uploads : null}
-                  attachment={messageFile}
-                  onAttachment={setMessageFile}
-                  onRequest={setActionRequest}
-                  disputeAmount={readNow.amount ?? null}
-                  refundable={readNow.allowedRefund ?? null}
-                />
-              ) : undefined
-            }
+            draftedActions={draftedActions}
           />
         </main>
       </div>
+      {otherAction && availability && c.kind !== 'agent' && !actionRequest && (
+        <ActionComposerDialog caseId={id} title={ACTION_LABEL[otherAction]} draftKept={hasUnsentDraft(otherAction, actionDrafts, message)} onClose={closeComposer}>
+          <ActionComposer
+            action={otherAction}
+            text={message}
+            onText={setMessage}
+            availability={availability}
+            locked={actionLocked}
+            // The file only while its variant is offered here (the composer hides the choice otherwise).
+            onReview={() => setActionRequest(messageRequest(message, availability.variants.some((v) => v.variant === 'send_message:file' && v.available) ? messageFile : null, up.uploads))}
+            uploads={uploadsClient ? up.uploads : null}
+            attachment={messageFile}
+            onAttachment={setMessageFile}
+            onRequest={setActionRequest}
+            disputeAmount={readNow.amount ?? null}
+            refundable={readNow.allowedRefund ?? null}
+            {...(otherAction !== 'send_message'
+              ? { draft: actionDrafts[otherAction] ?? EMPTY_ACTION_DRAFT, onDraft: (dr: ActionDraft) => setActionDrafts((all) => ({ ...all, [otherAction]: dr })) }
+              : {})}
+          />
+        </ActionComposerDialog>
+      )}
       {actionRequest && actionRequest.action === otherAction && (
         <ActionFlow
           caseId={id}
           request={actionRequest}
-          onClose={() => setActionRequest(null)}
+          onClose={() => {
+            setActionRequest(null);
+            if (afterFlowClosed(flowRecorded.current).closeComposer) closeComposer();
+            flowRecorded.current = false;
+          }}
           onEdit={() => setActionRequest(null)}
           uploads={confirmedUps}
-          {...(actionRequest.action === 'send_message'
-            ? {
-                onRecorded: () => {
-                  setMessage('');
-                  setMessageFile(null);
-                },
-              }
-            : {})}
+          onRecorded={() => {
+            flowRecorded.current = true;
+            // What was sent is no longer a draft.
+            if (actionRequest.action === 'send_message') {
+              setMessage('');
+              setMessageFile(null);
+            } else setActionDrafts((all) => withoutDraft(all, actionRequest.action as OtherAction));
+          }}
         />
       )}
       {showFlow && submission && (

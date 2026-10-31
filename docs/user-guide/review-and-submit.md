@@ -94,8 +94,11 @@ Status: **Tested locally** (with fakes built from recorded PayPal responses) · 
 app (20/10/2026, one send each on a local server; the message with a file on 21/10/2026, V-7). The code, including the registry status of the message with a file, is Deployed (`f1b7236`, 29/10/2026) but these actions have not yet been exercised on the hosted service; the owner-only ones need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on a bound case's active dispute. Per-variant status and rules:
 [Functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence).
 
-Choose the action in **What to do**. Only what PayPal offers on the dispute right now can be composed, and each variant
-shows its status («Verified in sandbox», «Tested locally», or «Not available: <reason>»).
+Choose the action in **What to do**: its composer opens in a dialog with **Cancel**, a close button (×) and Esc. Closing
+it before sending keeps what you typed («Closing keeps your unsent draft; nothing is sent.», and the card says «Unsent
+draft kept»); after PayPal records the send, closing the result returns to the case with **Provide evidence** selected.
+Only what PayPal offers on the dispute right now can be composed, and each variant shows its status («Verified in
+sandbox», «Tested locally», or «Not available: <reason>»).
 
 | Action | Who | What you write | What PayPal does |
 |---|---|---|---|

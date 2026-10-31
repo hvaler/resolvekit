@@ -61,6 +61,7 @@ export function ActionChoice({
   checkedAt,
   sent,
   verdicts = {},
+  drafted = [],
 }: {
   c: CaseFile;
   d: CaseDraft;
@@ -69,6 +70,8 @@ export function ActionChoice({
   sent: boolean;
   /** Each action's verdict as the composer gives it; absent: allowed (evidence keeps its own checks). */
   verdicts?: Partial<Record<ActionCode, ActionCardVerdict>>;
+  /** Actions whose unsent draft is kept while their dialog is closed. */
+  drafted?: readonly ActionCode[];
 }) {
   const secs = useSecondsSince(checkedAt);
   const sendable = allowed.filter((code) => verdicts[code]?.sendable !== false).length;
@@ -109,6 +112,7 @@ export function ActionChoice({
               ) : (
                 <span className="font-mono text-[10px] leading-[1.4] text-ok">{`✓ allowed · ${code}`}</span>
               )}
+              {drafted.includes(code) && <span className="text-[11px] text-warn">Unsent draft kept</span>}
             </button>
           );
         })}
@@ -175,21 +179,16 @@ export interface ResponseComposerProps {
   /** The latest read of the dispute: once the seller's evidence is in, what PayPal stored is shown back. */
   snapshot?: DisputeSnapshot;
   onReview: () => void;
-  /**
-   * The composer of the selected action when it is not evidence (ActionComposer): it replaces the evidence's type,
-   * attachments, notes and review button, so another action never opens the evidence review.
-   */
-  actionPanel?: ReactNode;
+  /** Actions with an unsent draft kept while their dialog is closed (their cards say so). */
+  draftedActions?: readonly ActionCode[];
 }
 
 /** Right zone: the draft with its sentence states, evidence type, attachments, action, and the way forward. */
-export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checkedAt, submitted, realPayPal = false, snapshot, onReview, actionPanel }: ResponseComposerProps) {
+export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checkedAt, submitted, realPayPal = false, snapshot, onReview, draftedActions }: ResponseComposerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const busy = d.blockers.some((b) => b.kind === 'analysis' || b.kind === 'checking');
   const actionable = d.actionable;
   const notesLen = d.notes.length;
-  // Another action than evidence is selected: its own composer and flow, not the evidence's.
-  const other = d.action !== 'provide_evidence' && c.kind !== 'agent' && !!actionPanel;
 
   let blockText: string;
   let blockColor = 'var(--ink2)';
@@ -289,7 +288,7 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
           })}
         </ol>
 
-        {!submitted && !other && (
+        {!submitted && (
           <EvidenceTypeSelector
             options={d.options}
             selected={d.evidenceType}
@@ -325,10 +324,9 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
           </>
         ) : (
           <>
-            {!submitted && !other && <Attachments c={c} />}
-            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} {...(actionVerdicts ? { verdicts: actionVerdicts } : {})} />
-            {other && actionPanel}
-            {!submitted && !other && (
+            {!submitted && <Attachments c={c} />}
+            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} {...(actionVerdicts ? { verdicts: actionVerdicts } : {})} {...(draftedActions ? { drafted: draftedActions } : {})} />
+            {!submitted && (
               <section aria-label="Notes length" className="flex flex-col gap-1.5">
                 <div className="flex justify-between text-[12.5px]">
                   <span className="font-semibold">Notes sent to PayPal</span>
@@ -357,16 +355,14 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
         )}
       </div>
 
-      {!other && (
-        <div className="flex flex-none flex-col gap-2 border-t border-line bg-surface px-[22px] pb-3.5 pt-3 max-md:sticky max-md:bottom-0 max-md:px-4">
-          <span className="text-[12px]" style={{ color: blockColor }} aria-live="polite">
-            {blockText}
-          </span>
-          <PrimaryAction enabled={d.ready && !submitted && d.action === 'provide_evidence'} onClick={onReview}>
-            {btnLabel}
-          </PrimaryAction>
-        </div>
-      )}
+      <div className="flex flex-none flex-col gap-2 border-t border-line bg-surface px-[22px] pb-3.5 pt-3 max-md:sticky max-md:bottom-0 max-md:px-4">
+        <span className="text-[12px]" style={{ color: blockColor }} aria-live="polite">
+          {blockText}
+        </span>
+        <PrimaryAction enabled={d.ready && !submitted && d.action === 'provide_evidence'} onClick={onReview}>
+          {btnLabel}
+        </PrimaryAction>
+      </div>
     </aside>
   );
 }
