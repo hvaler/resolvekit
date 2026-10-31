@@ -63,6 +63,7 @@ export function ActionChoice({
   sent,
   verdicts = {},
   drafted = [],
+  onChoose,
 }: {
   c: CaseFile;
   d: CaseDraft;
@@ -73,6 +74,8 @@ export function ActionChoice({
   verdicts?: Partial<Record<ActionCode, ActionCardVerdict>>;
   /** Actions whose unsent draft is kept while their dialog is closed. */
   drafted?: readonly ActionCode[];
+  /** A card was chosen (the case page opens that action's dialog); absent: the selection only. */
+  onChoose?: (code: ActionCode) => void;
 }) {
   const secs = useSecondsSince(checkedAt);
   const sendable = allowed.filter((code) => verdicts[code]?.sendable !== false).length;
@@ -100,7 +103,7 @@ export function ActionChoice({
               aria-checked={sel}
               disabled={off && !preview}
               title={off ? (preview ? `Preview only: ${v.why}` : `Not available: ${v.why}`) : undefined}
-              onClick={() => d.setAction(code)}
+              onClick={() => (onChoose ? onChoose(code) : d.setAction(code))}
               className="flex flex-col gap-0.5 rounded-[7px] px-2.5 py-2 text-left disabled:cursor-not-allowed"
               style={{
                 border: `1px solid ${sel ? 'var(--acc)' : 'var(--line2)'}`,
@@ -184,10 +187,12 @@ export interface ResponseComposerProps {
   onReview: () => void;
   /** Actions with an unsent draft kept while their dialog is closed (their cards say so). */
   draftedActions?: readonly ActionCode[];
+  /** A card was chosen (opens that action's dialog). */
+  onChooseAction?: (code: ActionCode) => void;
 }
 
 /** Right zone: the draft with its sentence states, evidence type, attachments, action, and the way forward. */
-export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checkedAt, submitted, realPayPal = false, snapshot, onReview, draftedActions }: ResponseComposerProps) {
+export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checkedAt, submitted, realPayPal = false, snapshot, onReview, draftedActions, onChooseAction }: ResponseComposerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const busy = d.blockers.some((b) => b.kind === 'analysis' || b.kind === 'checking');
   const actionable = d.actionable;
@@ -331,7 +336,7 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
         ) : (
           <>
             {!submitted && <Attachments c={c} />}
-            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} {...(actionVerdicts ? { verdicts: actionVerdicts } : {})} {...(draftedActions ? { drafted: draftedActions } : {})} />
+            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} {...(actionVerdicts ? { verdicts: actionVerdicts } : {})} {...(draftedActions ? { drafted: draftedActions } : {})} {...(onChooseAction ? { onChoose: onChooseAction } : {})} />
             {!submitted && (
               <section aria-label="Notes length" className="flex flex-col gap-1.5">
                 <div className="flex justify-between text-[12.5px]">

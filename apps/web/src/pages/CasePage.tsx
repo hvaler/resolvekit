@@ -30,7 +30,7 @@ import { PdfSelect } from '../components/PdfSelect';
 import { MessageThread } from '../components/MessageThread';
 import { MiniButton } from '../components/ui';
 import { actionCardVerdict } from '../domain/actionCards';
-import { EMPTY_ACTION_DRAFT, afterFlowClosed, hasUnsentDraft, withoutDraft, type ActionDraft, type ActionDrafts, type OtherAction } from '../domain/actionDrafts';
+import { EMPTY_ACTION_DRAFT, afterFlowClosed, composerShown, hasUnsentDraft, withoutDraft, type ActionDraft, type ActionDrafts, type OtherAction } from '../domain/actionDrafts';
 import { actionAvailability, type ActionRequest, type Viewer } from '../domain/actions';
 import { onSimulator, onSimulatorFile } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
@@ -174,6 +174,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
   /** The accept's, escalation's and offer's drafts, kept while their dialog is closed (never lost silently). */
   const [actionDrafts, setActionDrafts] = useState<ActionDrafts>({});
+  /** The action dialog was opened by a card click in this page (in memory only: a reload never opens it). */
+  const [composerOpen, setComposerOpen] = useState(false);
   /** PayPal (or the simulator) recorded the open flow's action: closing it closes the composer too. */
   const flowRecorded = useRef(false);
   // A send still holding the dispute (e.g. before a reload): found again from the server, read again when a flow closes.
@@ -193,7 +195,17 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const actionVerdicts = Object.fromEntries(others.map((a) => [a, actionCardVerdict(availabilityOf(a))]));
   const draftedActions = others.filter((a) => hasUnsentDraft(a, actionDrafts, message));
   // Closing the action dialog (×, Cancel, Esc) returns to the case with the default action; drafts are kept.
-  const closeComposer = useCallback(() => d.setAction('provide_evidence'), [d.setAction]);
+  const closeComposer = useCallback(() => {
+    setComposerOpen(false);
+    d.setAction('provide_evidence');
+  }, [d.setAction]);
+  const chooseAction = useCallback(
+    (code: ActionCode) => {
+      d.setAction(code);
+      setComposerOpen(code !== 'provide_evidence');
+    },
+    [d.setAction],
+  );
   // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
   const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
 
@@ -405,10 +417,11 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             {...(snap ? { snapshot: snap } : {})}
             onReview={() => navigate(approvePath(area, id))}
             draftedActions={draftedActions}
+            onChooseAction={chooseAction}
           />
         </main>
       </div>
-      {otherAction && availability && c.kind !== 'agent' && !actionRequest && (
+      {composerShown(composerOpen, otherAction) && otherAction && availability && c.kind !== 'agent' && !actionRequest && (
         <ActionComposerDialog caseId={id} title={ACTION_LABEL[otherAction]} draftKept={hasUnsentDraft(otherAction, actionDrafts, message)} onClose={closeComposer}>
           <ActionComposer
             action={otherAction}

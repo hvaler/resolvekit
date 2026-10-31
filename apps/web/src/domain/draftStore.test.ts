@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { composerShown } from './actionDrafts';
 import { draftKey, loadDraft, saveDraft, type SavedDraft } from './draftStore';
 
 /** An in-memory Storage, optionally failing. */
@@ -72,5 +73,24 @@ describe('the draft survives a reload', () => {
     saveDraft(s, key, draft);
     saveDraft(s, key, { edits: {}, rechecks: {}, resolutions: {}, action: 'provide_evidence', evidenceType: 'PROOF_OF_FULFILLMENT' });
     expect(s.m.has(key)).toBe(false);
+  });
+});
+
+describe('a reload never reopens an action other than evidence', () => {
+  it('a saved non-evidence action is restored as provide_evidence (its dialog opens only from a card click)', () => {
+    const s = new Map<string, string>();
+    const store = { getItem: (k: string) => s.get(k) ?? null, setItem: (k: string, v: string) => void s.set(k, v), removeItem: (k: string) => void s.delete(k) };
+    const key = draftKey({ scope: 'local', caseId: 'C', analysis: 'a' });
+    saveDraft(store, key, { edits: {}, rechecks: {}, resolutions: {}, confirmedCorrections: ['S1@E7.l2'], action: 'escalate', evidenceType: 'PROOF_OF_FULFILLMENT' });
+    expect(loadDraft(store, key)?.action).toBe('provide_evidence');
+    // An older save that holds another action is read the same way.
+    s.set(key, JSON.stringify({ ...JSON.parse(s.get(key)!), action: 'make_offer' }));
+    expect(loadDraft(store, key)?.action).toBe('provide_evidence');
+  });
+
+  it('the dialog is shown only while opened from a card in this page', () => {
+    expect(composerShown(false, 'escalate')).toBe(false);
+    expect(composerShown(true, 'escalate')).toBe(true);
+    expect(composerShown(true, null)).toBe(false);
   });
 });

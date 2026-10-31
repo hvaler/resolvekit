@@ -38,3 +38,9 @@ export const dialogKeyCloses = (key: string): boolean => key === 'Escape';
 export function afterFlowClosed(recorded: boolean): { closeComposer: boolean } {
   return { closeComposer: recorded };
 }
+
+/**
+ * Whether the action dialog is on screen: only while opened from a card in this page (in memory, never restored), and
+ * while an action other than evidence is selected.
+ */
+export const composerShown = (open: boolean, otherAction: OtherAction | null): boolean => open && otherAction !== null;

@@ -49,7 +49,8 @@ export function loadDraft(storage: DraftStorage | null | undefined, key: string)
       rechecks,
       resolutions: d.resolutions as Record<string, ContradictionResolution>,
       ...(Array.isArray(d.confirmedCorrections) ? { confirmedCorrections: d.confirmedCorrections.filter((p): p is string => typeof p === 'string') } : {}),
-      action: d.action as ActionCode,
+      // Only evidence comes back: another action's dialog opens from a card click in this page, never on a reload.
+      action: 'provide_evidence' satisfies ActionCode,
       evidenceType: typeof d.evidenceType === 'string' ? (d.evidenceType as EvidenceType) : null,
     };
   } catch {
@@ -62,7 +63,7 @@ export function saveDraft(storage: DraftStorage | null | undefined, key: string,
   try {
     const empty = !Object.keys(d.edits).length && !Object.keys(d.resolutions).length && !d.confirmedCorrections?.length;
     if (empty) storage.removeItem(key);
-    else storage.setItem(key, JSON.stringify({ v: 1, ...d }));
+    else storage.setItem(key, JSON.stringify({ v: 1, ...d, action: 'provide_evidence' }));
   } catch {
     // Storage full or blocked: the draft lives in this page only.
   }
