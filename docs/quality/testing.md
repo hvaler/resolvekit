@@ -26,8 +26,10 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 
 ## Latest recorded run
 
-**2026-10-29 · commit `be7491d` (branch `fix/pre-submission`: the pre-submission code fixes plus docs) · Node 24 · Windows.** `npm test` passed (every
-suite ran); `npm run typecheck` was clean; the web build was OK. 1,488 tests, all passed; 0 failed, 0 skipped. Every node:test suite now has a 60 s per-test timeout. The vitest count is 471 (38 files). Versus the previous run: paypal +1 (provide-evidence is never retried on 429), server +1 (the uploads sweep moves an unreadable record aside instead of deleting it), metermcp +7 (no request can crash the process; ledger recovery after a restart).
+**2026-10-31 · commit `d654478` (`main`, deployed: the post-shoot fixes).** `npm test` passed; `npm run typecheck` was clean. 1,521 tests, all passed: node:test 1,025 and vitest 496. This run recorded the two totals only; the per-suite counts below are those of the previous run.
+
+The run before that: **2026-10-29 · commit `be7491d` (branch `fix/pre-submission`: the pre-submission code fixes plus docs) · Node 24 · Windows.** `npm test` passed (every
+suite ran); `npm run typecheck` was clean; the web build was OK. 1,488 tests, all passed; 0 failed, 0 skipped. Every node:test suite now has a 60 s per-test timeout. The vitest count is 471 (38 files). Versus the run before it: paypal +1 (provide-evidence is never retried on 429), server +1 (the uploads sweep moves an unreadable record aside instead of deleting it), metermcp +7 (no request can crash the process; ledger recovery after a restart).
 
 | Suite | Command | Tests | Pass | Fail |
 |---|---|---|---|---|
@@ -177,6 +179,6 @@ not by the model-driven agent.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
 - Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
-  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`f1b7236`) but these actions have not been exercised on the hosted service.
+  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`d654478`) but on the hosted service only make an offer has been exercised (31/10/2026).
 
 The full list, with sources, is in [Known issues](known-issues.md).

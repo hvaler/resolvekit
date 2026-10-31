@@ -3,7 +3,7 @@
 # PayPal integration
 
 Which PayPal APIs ResolveKit calls, with which credential, what it relies on, and what was only observed in the
-sandbox. Code at commit `f1b7236` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
+sandbox. Code at commit `d654478` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
 on 19/10/2026 (developer.paypal.com).
 
 Three kinds of statement are kept apart on this page:
@@ -35,7 +35,7 @@ refreshes it 60 s before expiry. Requests time out after 30 s (the servers' sett
 | `GET /v1/customer/disputes/{id}` | server: case read, compose, send, bindings check, webhook re-read; `demo:prepare` | seller app |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | `demo:prepare` only | seller app |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | server, `POST /api/disputes/:case/evidence` | seller app |
-| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` with a file), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | server, `POST /api/disputes/:case/send` (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026; Deployed as code, not yet exercised on the hosted service) | seller app |
+| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` with a file), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | server, `POST /api/disputes/:case/send` (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026; Deployed as code; on the hosted service only make an offer has been exercised, 31/10/2026) | seller app |
 | `GET /v2/payments/refunds/{id}` | `npm run contract:read -- --refund <id>` only (read-only contract reads) | seller app |
 | `POST /v1/notifications/verify-webhook-signature` | server webhook handler | seller app (the webhook is registered on it) |
 | `POST /v1/billing-agreements/agreement-tokens`, `GET /v1/billing-agreements/agreement-tokens/{id}` | server sign-in | identity app |
@@ -142,7 +142,7 @@ accept, offer and escalate, because that is all the writes covered.
 ResolveKit's own flow: the server of the dispute-actions branch (head `9f93ba0`, since merged into `main` and deployed) running locally
 against the sandbox, each run approved by the owner beforehand, each going compose → approve by hash → second
 confirmation (when the action has terms) → one send → attributable read-back. One POST to PayPal per run, with GET
-reads before and after (private evidence, 20/10/2026). The code is now deployed (`f1b7236`), but nothing was sent from the hosted service. Single observations, not PayPal rules.
+reads before and after (private evidence, 20/10/2026). The code is now deployed (`d654478`); on the hosted service only make an offer has been sent (31/10/2026, two refund offers of 3.50 USD from the owner settlement case; PayPal recorded each as SELLER PROPOSED). Single observations, not PayPal rules.
 
 | Run | Variant | Sandbox dispute | Observed through the app |
 |---|---|---|---|
@@ -154,7 +154,7 @@ reads before and after (private evidence, 20/10/2026). The code is now deployed 
 | V-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | After one live analysis of the bound case, an edited sentence re-checked and a contradiction resolved by the owner: one `provide-evidence`, recorded as a `PROVIDE_EVIDENCE` entry in stage `CHARGEBACK` with 2 documents, next to the inquiry-stage `ESCALATE` entry |
 | V-7 | `send_message:file` | PP-R-GCV-10193596 (`WAITING_FOR_BUYER_RESPONSE`) | 21/10/2026 05:30Z, local server of `main` (`81c6242`): one confirmed, sanitised upload (a synthetic PNG, sent as `E7-upload.png`), its hash matching the approved one; one multipart send (202); «Recorded by PayPal» at about 1 s and again at +30 s; the new seller message has the exact text and 1 document; no money moved |
 
-Not verified through the app: every «Not available» variant. The registry status of `send_message:file` (Verified in sandbox) is deployed (`f1b7236`, 29/10/2026).
+Not verified through the app: every «Not available» variant. The registry status of `send_message:file` (Verified in sandbox) is deployed (`d654478`, 31/10/2026).
 
 **W-11, the pending proof-of-refund test.** A disputed payment showed as held in the sandbox on 19/10/2026, and the
 seller's sandbox web pages offered no refund outside the case. The planned sequence is therefore: a new sandbox

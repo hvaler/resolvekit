@@ -15,7 +15,7 @@ llamada como evidencia.
 
 ResolveKit prepara la respuesta; PayPal decide la disputa. No está afiliado a PayPal.
 
-Los datos de esta página proceden del código en el commit `f1b7236` (desplegado el 29/10/2026) salvo que una fecha diga otra cosa.
+Los datos de esta página proceden del código en el commit `d654478` (desplegado el 31/10/2026) salvo que una fecha diga otra cosa.
 Las palabras de estado siguen un único vocabulario: Diseñado · Implementado · Probado en local · Verificado en sandbox ·
 Desplegado · Disponible para usuarios · Pendiente.
 
@@ -62,13 +62,13 @@ PayPal; ResolveKit nunca se ha ejecutado contra el entorno live (producción) de
 | Revisar y enviar | El servidor compone exactamente lo que recibirá PayPal; la persona aprueba ese contenido; el servidor vuelve a comprobarlo con una lectura nueva de PayPal y envía `provide-evidence` | Implementado · Probado en local · Verificado en sandbox · Desplegado |
 | Relectura | **Recorded by PayPal** solo para nueva evidencia del vendedor que coincide; lo que PayPal guardó junto a lo que se envió | Implementado · Probado en local · Verificado en sandbox |
 | Cuentas | **Continue with PayPal** para el Owner; enlaces de invitación (miembro o revisor) con passkey o «this browser only»; revocar; cerrar sesión en todos los dispositivos | Implementado · Probado en local · Desplegado. Creación de passkey en el servicio de sandbox desplegado: **Pendiente** (sin evidencia) |
-| Agente comprador (`/agent`) | Un modelo elige las herramientas de pago de MeterMCP, una acción cada vez, dentro de un presupuesto aprobado en el sandbox de PayPal; pasos, recibo, liquidación, uso del modelo | Implementado · Probado en local · Desplegado · Verificado en sandbox (dos ejecuciones el 19/10/2026, solo ejemplos) |
+| Agente comprador (`/agent`) | Un modelo elige las herramientas de pago de MeterMCP, una acción cada vez, dentro de un presupuesto aprobado en el sandbox de PayPal; pasos, recibo, liquidación, uso del modelo | Implementado · Probado en local · Desplegado · Verificado en sandbox (dos ejecuciones el 19/10/2026, solo ejemplos; una ejecución alojada el 31/10/2026: tope de 0.50 USD, 0.45 capturados, 0.05 liberados, una llamada fallida inyectada sin cobrar) |
 | MeterMCP | Un servidor MCP de pago por uso: presupuestos como autorizaciones de PayPal Orders v2, solo se capturan las llamadas con éxito, recibos por llamada | Implementado · Probado en local · Verificado en sandbox · Desplegado |
 
-Solo una acción de disputa de PayPal se ha ejercitado de extremo a extremo en el servicio alojado: **Provide evidence**.
+Dos acciones de disputa de PayPal se han ejercitado de extremo a extremo en el servicio alojado: **Provide evidence** y **Make an offer** (31/10/2026).
 El expediente muestra las acciones que PayPal permite (por ejemplo «Send message», «Accept claim»). El código para
-enviar un mensaje, aceptar una reclamación, hacer una oferta y escalar está desplegado (`f1b7236`, 29/10/2026) y
-Verificado en sandbox en una ejecución local, pero esas acciones aún no se han ejercitado en el servicio alojado.
+enviar un mensaje, aceptar una reclamación, hacer una oferta y escalar está desplegado (`d654478`, 31/10/2026) y
+Verificado en sandbox en una ejecución local; en el servicio alojado solo se ha ejercitado hacer una oferta, así que enviar un mensaje, aceptar una reclamación y escalar aún no.
 ResolveKit no crea ningún reembolso.
 
 ## Qué es real y qué es sintético

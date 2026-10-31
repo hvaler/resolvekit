@@ -27,8 +27,10 @@ Requiere Node 24+ (TypeScript se ejecuta de forma nativa). `npm test` no hace ni
 
 ## Última ejecución registrada
 
-**2026-10-29 · commit `be7491d` (rama `fix/pre-submission`: las correcciones de código previas a la entrega más la documentación) · Node 24 · Windows.** `npm test` pasó (se
-ejecutaron todas las suites); `npm run typecheck` salió limpio; el build web fue correcto. 1,488 tests, todos superados; 0 fallos, 0 omitidos. Cada suite de node:test tiene ahora un tiempo límite de 60 s por test. El recuento de vitest es 471 (38 archivos). Frente a la ejecución anterior: paypal +1 (provide-evidence nunca se reintenta ante un 429), server +1 (el barrido de uploads aparta un registro ilegible en lugar de borrarlo), metermcp +7 (ninguna petición puede tumbar el proceso; recuperación del libro tras un reinicio).
+**2026-10-31 · commit `d654478` (`main`, desplegado: las correcciones posteriores al rodaje).** `npm test` pasó; `npm run typecheck` salió limpio. 1,521 tests, todos superados: node:test 1,025 y vitest 496. Esta ejecución registró solo los dos totales; las cifras por suite de abajo son las de la ejecución anterior.
+
+La ejecución anterior a esa: **2026-10-29 · commit `be7491d` (rama `fix/pre-submission`: las correcciones de código previas a la entrega más la documentación) · Node 24 · Windows.** `npm test` pasó (se
+ejecutaron todas las suites); `npm run typecheck` salió limpio; el build web fue correcto. 1,488 tests, todos superados; 0 fallos, 0 omitidos. Cada suite de node:test tiene ahora un tiempo límite de 60 s por test. El recuento de vitest es 471 (38 archivos). Frente a la ejecución previa a esa: paypal +1 (provide-evidence nunca se reintenta ante un 429), server +1 (el barrido de uploads aparta un registro ilegible en lugar de borrarlo), metermcp +7 (ninguna petición puede tumbar el proceso; recuperación del libro tras un reinicio).
 
 | Suite | Comando | Tests | Superados | Fallos |
 |---|---|---|---|---|
@@ -186,6 +188,6 @@ anterior cliente con guion (scripted), no el agente dirigido por el modelo.
 - Comportamiento contra PayPal live: ninguno.
 - Acciones de disputa: probadas con fakes y una escritura de contrato registrada por variante; el flujo de la app contra
   el sandbox se ejecutó una vez por variante verificada (20/10/2026 y, para el mensaje con archivo, 21/10/2026; un servidor local);
-  el código está desplegado (`f1b7236`), pero estas acciones no se han ejercitado en el servicio alojado.
+  el código está desplegado (`d654478`), pero en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026).
 
 La lista completa, con fuentes, está en [Problemas conocidos](known-issues.md).

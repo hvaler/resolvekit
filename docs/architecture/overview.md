@@ -7,7 +7,7 @@ which every sentence cites its evidence, unsupported sentences are rejected, and
 content before anything is sent to PayPal. A second, smaller system, **MeterMCP**, is a metered MCP gateway that a
 **buying agent** pays through PayPal; its receipts become evidence in one of the cases.
 
-This page describes the architecture as it is in the code at commit `f1b7236` (deployed 29/10/2026). Status words follow the
+This page describes the architecture as it is in the code at commit `d654478` (deployed 31/10/2026). Status words follow the
 project vocabulary: Designed · Implemented · Tested locally · Verified in sandbox · Deployed · Available to users ·
 Pending.
 
@@ -78,11 +78,9 @@ Shared packages (`packages/*`) are libraries inside those processes, not service
 | PayPal environment | `PAYPAL_ENV=sandbox`; hosted mode refuses to start otherwise unless `live` plus `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, which the blueprint never sets |
 | Auto-deploy | `commit` on both services (the agent follow-up recommends turning it off for `resolvekit`: Pending, operational) |
 
-`f1b7236` is treated as Deployed: on 29/10/2026 the owner fast-forwarded `main` to it and pushed, Render redeployed
-both services (both restarted at about 12:15 Madrid time), and `demo:check` against the hosted URLs (the same result as after `c12faea` and `81c6242` on 21/10/2026) passed ResolveKit up, landing, MeterMCP up,
-PayPal sandbox connected, webhook on, both bindings verified, both AI models answered and both warm-ups cached; it
-warned on both reserves (0 fresh disputes) and failed on one known line: the standard case's binding is used and its
-reserve is empty (status as of 29/10/2026: both reserves empty, refill for judging 28–30/11/2026). Earlier, `c12faea` and `81c6242` were deployed on 21/10/2026, `5111b88` on 20/10/2026 (the owner fast-forwarded `main` to it and pushed; the same `demo:check` result) and `fbe9621` on 19/10/2026 (owner's confirmation; the
+`d654478` is treated as Deployed: on 31/10/2026 the owner approved, `main` was fast-forwarded from `23728e2` to it and pushed, Render redeployed (ResolveKit restarted at about 20:00 Madrid time, MeterMCP stayed up), and `demo:check` against the hosted URLs (the same kind of result as after `f1b7236`) passed ResolveKit up, landing, MeterMCP up,
+PayPal sandbox connected, webhook on, all three bindings verified (the standard case used, 0 in reserve; the settlement and agent cases, 0 in reserve), both AI models answered and the warm-up cached; it
+failed on one known line: the standard case's binding is used and no dispute is left in reserve (refill for judging 28–30/11/2026). Earlier, `f1b7236` was deployed on 29/10/2026, `c12faea` and `81c6242` were deployed on 21/10/2026, `5111b88` on 20/10/2026 (the owner fast-forwarded `main` to it and pushed; the same `demo:check` result) and `fbe9621` on 19/10/2026 (owner's confirmation; the
 same one empty reserve). `demo:check` cannot prove which commit is live. A persistent disk rules out
 zero-downtime deploys; one to two minutes of 502 per deploy were observed (private evidence). Details:
 [deployment](../operations/deployment.md).
@@ -134,12 +132,11 @@ sequenceDiagram
   W->>W: «Recorded by PayPal» only for new matching SUBMITTED_BY_SELLER evidence
 ```
 
-Only `provide-evidence` has been exercised end to end on the hosted service. Since commit `5111b88` (deployed
-20/10/2026; now `f1b7236`, 29/10/2026) the server also sends messages, accepts, offers and escalations through the same chain (compose, approve by hash, a
+On the hosted service, `provide-evidence` and make an offer (31/10/2026) have been exercised end to end. Since commit `5111b88` (deployed
+20/10/2026; now `d654478`, 31/10/2026) the server also sends messages, accepts, offers and escalations through the same chain (compose, approve by hash, a
 second confirmation for the Owner's actions, a fresh read, `send_started` on disk, one POST, an attributable
 read-back), only for the variants whose contract is recorded; status: Deployed (code), Verified in sandbox through the app (20/10/2026, local
-server), not yet exercised on the hosted service
-([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)). There is
+server), exercised on the hosted service only for make an offer, 31/10/2026 ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)). There is
 no refund-creating code. Details: [PayPal integration](../technical/paypal-integration.md),
 [HTTP API](../technical/http-api.md).
 
@@ -190,10 +187,10 @@ There is no `docs/architecture/decisions/` folder: the table above is the decisi
 
 ## Current architecture and future evolution
 
-| Area | Today (code at `f1b7236`) | Not built (future, not promised) |
+| Area | Today (code at `d654478`) | Not built (future, not promised) |
 |---|---|---|
 | Merchants | One evaluation workspace: the seller of the bound sandbox disputes | Connecting any merchant's own disputes through PayPal Platform (Partner Referrals, `PayPal-Auth-Assertion`): external sandbox tests only, no app code |
-| Dispute actions | `provide-evidence`; send message, make offer, accept claim, escalate (Deployed; Verified in sandbox on a local run; not yet exercised on the hosted service) | refund |
+| Dispute actions | `provide-evidence`; send message, make offer, accept claim, escalate (Deployed; Verified in sandbox on a local run; on the hosted service only make an offer has been exercised, 31/10/2026) | refund |
 | PayPal environment | Sandbox | Live (never run; hosted mode refuses it without an explicit opt-in) |
 | Scale | One instance per service, files on a disk | Database, several instances, backups |
 | Agent tools | Three synthetic MeterMCP tools | Real data sources |

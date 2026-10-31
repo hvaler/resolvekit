@@ -13,7 +13,7 @@ that spends such a budget, so that a disputed agent purchase arrives with a per-
 
 ResolveKit prepares the response; PayPal decides the dispute. It is not affiliated with PayPal.
 
-Facts on this page come from the code at commit `f1b7236` (deployed 29/10/2026) unless a date says otherwise. Status words
+Facts on this page come from the code at commit `d654478` (deployed 31/10/2026) unless a date says otherwise. Status words
 follow one vocabulary: Designed · Implemented · Tested locally · Verified in sandbox · Deployed · Available to users ·
 Pending.
 
@@ -59,13 +59,12 @@ never run against the live (production) PayPal environment.
 | Review and submit | The server composes exactly what PayPal will receive; the person approves that content; the server re-checks on a fresh PayPal read and sends `provide-evidence` | Implemented · Tested locally · Verified in sandbox · Deployed |
 | Read-back | **Recorded by PayPal** only for new matching seller evidence; what PayPal stored next to what was sent | Implemented · Tested locally · Verified in sandbox |
 | Accounts | **Continue with PayPal** for the Owner; invite links (member or reviewer) with a passkey or «this browser only»; revoke; sign out of all devices | Implemented · Tested locally · Deployed. Passkey creation on the deployed sandbox service: **Pending** (no evidence) |
-| Buying agent (`/agent`) | A model chooses MeterMCP's paid tools, one action at a time, within a budget approved in PayPal sandbox; steps, receipt, settlement, model usage | Implemented · Tested locally · Deployed · Verified in sandbox (two runs on 19/10/2026, examples only) |
+| Buying agent (`/agent`) | A model chooses MeterMCP's paid tools, one action at a time, within a budget approved in PayPal sandbox; steps, receipt, settlement, model usage | Implemented · Tested locally · Deployed · Verified in sandbox (two runs on 19/10/2026, examples only; one hosted run on 31/10/2026: 0.50 USD cap, 0.45 captured, 0.05 released, an injected failed call not charged) |
 | MeterMCP | A metered MCP server: budgets as PayPal Orders v2 authorizations, only successful calls captured, per-call receipts | Implemented · Tested locally · Verified in sandbox · Deployed |
 
-Only one PayPal dispute action has been exercised end to end on the hosted service: **Provide evidence**. The case file
+Two PayPal dispute actions have been exercised end to end on the hosted service: **Provide evidence** and **Make an offer** (31/10/2026). The case file
 lists the actions PayPal allows (for example «Send message», «Accept claim»). The code for sending a message, accepting
-a claim, making an offer and escalating is deployed (`f1b7236`, 29/10/2026) and Verified in sandbox on a local run, but
-those actions have not yet been exercised on the hosted service. ResolveKit creates no refund.
+a claim, making an offer and escalating is deployed (`d654478`, 31/10/2026) and Verified in sandbox on a local run; on the hosted service only making an offer has been exercised, so sending a message, accepting a claim and escalating have not yet been. ResolveKit creates no refund.
 
 ## What is real and what is synthetic
 

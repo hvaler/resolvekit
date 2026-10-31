@@ -2,11 +2,11 @@
 
 # Functional specification
 
-What ResolveKit does, for whom, under which rules, as built at commit `f1b7236` (deployed 29/10/2026). The code is the
+What ResolveKit does, for whom, under which rules, as built at commit `d654478` (deployed 31/10/2026). The code is the
 source of truth; where behaviour was only observed in the PayPal sandbox, this page says so. Status words: Designed ·
 Implemented · Tested locally · Verified in sandbox · Deployed · Available to users · Pending.
 
-Section 5.6 (dispute actions) was checked against commit `076c74f` (20/10/2026); that code is in `f1b7236`, deployed on 29/10/2026.
+Section 5.6 (dispute actions) was checked against commit `076c74f` (20/10/2026); that code is in `d654478`, deployed on 31/10/2026.
 
 Related: [Overview](overview.md) · [Limitations](limitations.md) · [HTTP API](../technical/http-api.md) ·
 [Trust boundaries](../architecture/trust-boundaries.md).
@@ -89,7 +89,7 @@ Notes:
 | UC-12 | Stop a running agent run | Author | Implemented · Tested locally; in sandbox **Pending** |
 | UC-13 | Connect a merchant's own PayPal disputes | Merchant | **Pending** (not in the app) |
 | UC-14 | Send a message to the buyer | Seller workspace | Tested locally · Verified in sandbox through the app (20/10/2026) · Deployed; not yet exercised on the hosted service |
-| UC-15 | Accept a claim (full or partial), make an offer, escalate | Owner | Tested locally · Verified in sandbox through the app (20/10/2026) · Deployed; not yet exercised on the hosted service |
+| UC-15 | Accept a claim (full or partial), make an offer, escalate | Owner | Tested locally · Verified in sandbox through the app (20/10/2026) · Deployed; make an offer exercised on the hosted service (31/10/2026); accept and escalate not yet |
 
 ## 5. States and business rules
 
@@ -185,7 +185,7 @@ Details: [Buying agent](../user-guide/buying-agent.md).
 
 ### 5.6 Dispute actions other than evidence
 
-Checked against commit `076c74f` (20/10/2026), the code now in the deployed `f1b7236`; statuses updated after the runs through the app in the sandbox on
+Checked against commit `076c74f` (20/10/2026), the code now in the deployed `d654478`; statuses updated after the runs through the app in the sandbox on
 20/10/2026 (V-1 to V-7). Each action variant has one status, taken from the contract registry
 (`apps/web/src/domain/actionContracts.ts`, `CONTRACTS`); the product shows the same label next to each variant. A
 variant is available only when its contract is recorded: PayPal's documentation, read-only sandbox reads, and one write
@@ -194,7 +194,7 @@ the owner approved request by request, with its response and read-back (`package
 | Variant | What it is | Status | Contract write (sandbox, 20/10/2026) | Through the app (sandbox, 20/10/2026) |
 |---|---|---|---|---|
 | `send_message` | A text message to the buyer (1–2,000 characters) | Verified in sandbox | Recorded (W-1, W-2) | Recorded (V-1) |
-| `send_message:file` | A message with one confirmed upload attached | Verified in sandbox (V-7, 21/10/2026; also Tested locally: the server path and the web composer with one confirmed upload of the case, shown in the review and the confirmation; only from `WAITING_FOR_BUYER_RESPONSE`, as W-3, live and on the simulator; the code with this status is Deployed, `f1b7236`) | Recorded (W-3) | Recorded (V-7): «Recorded by PayPal»; one seller message with the exact text and 1 document; no money moved |
+| `send_message:file` | A message with one confirmed upload attached | Verified in sandbox (V-7, 21/10/2026; also Tested locally: the server path and the web composer with one confirmed upload of the case, shown in the review and the confirmation; only from `WAITING_FOR_BUYER_RESPONSE`, as W-3, live and on the simulator; the code with this status is Deployed, `d654478`) | Recorded (W-3) | Recorded (V-7): «Recorded by PayPal»; one seller message with the exact text and 1 document; no money moved |
 | `accept_claim:REFUND` | Accept the claim with a full refund | Verified in sandbox | Recorded (W-10) | Recorded (V-4): resolved in the buyer's favour, 7.00 USD refunded |
 | `accept_claim:PARTIAL_REFUND` | Accept the claim with a partial refund, which PayPal records as an offer to the buyer | Verified in sandbox | Recorded (W-9) | Recorded as a pending offer (V-3); no money moved |
 | `escalate` | Escalate an inquiry to a claim | Verified in sandbox | Recorded (W-5) | Recorded (V-5); a claim about 10 min later |
@@ -212,10 +212,7 @@ dispute-actions branch (since merged into `main` and deployed) running locally a
 [PayPal integration](../technical/paypal-integration.md#dispute-action-contracts)). Only V-4, the full accept, moved
 money (a 7.00 USD sandbox refund). Separately, the contract writes of 20/10/2026 (W-1 to W-12) were prepared requests
 that the owner approved one by one, sent outside the app's own flow; they show what PayPal does and are what each
-contract rests on. The code of all of them is **Deployed** (`f1b7236`, 29/10/2026), but these actions have **not** yet been exercised on
-the hosted service: the six runs above were made on a local server, so each variant keeps «Verified in sandbox» and
-nothing more. The owner-only actions need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not
-yet; reviewers can send messages on a bound case's active dispute.
+contract rests on. The code of all of them is **Deployed** (`d654478`, 31/10/2026). The six runs above were made on a local server, so each variant keeps «Verified in sandbox» and nothing more. On 31/10/2026, on the hosted service (code `f1b7236` at that time), the owner sent two refund offers of 3.50 USD from the owner settlement case (PayPal recorded each as SELLER PROPOSED; the dispute moved to waiting for the buyer); sending a message, accepting a claim and escalating have **not** yet been exercised there (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`). The settlement case is bound in the hosted `BINDINGS_JSON`; reviewers can send messages on a bound case's active dispute.
 
 **Who may do what.** Accept claim, make offer, escalate and appeal are **owner-only**: only the workspace's Owner (not a
 reviewer) composes, approves, confirms and sends them. Members and reviewers may send **messages only** (and evidence,
@@ -359,7 +356,7 @@ More: [Troubleshooting](../user-guide/troubleshooting.md).
 | AI analysis | committed golden analyses, no model call | stored + live (caps) | — | live with a model key |
 | **+ Add evidence** | disabled with its reason | yes | — | yes, with the server |
 | Submit | simulator only | `provide-evidence` to the sandbox | — | sandbox for bound cases |
-| Dispute actions ([5.6](#56-dispute-actions-other-than-evidence)) | simulator, recorded transitions only | in the deployed code; not yet exercised on the hosted service (the owner-only actions also need the settlement case bound in `BINDINGS_JSON`: **Pending**) | — | the server's action routes (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026) |
+| Dispute actions ([5.6](#56-dispute-actions-other-than-evidence)) | simulator, recorded transitions only | in the deployed code; on the hosted service only make an offer has been exercised (31/10/2026; send message, accept and escalate: **Pending**) | — | the server's action routes (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026) |
 | Buying agent | not in the demo area | `/agent` (seller workspace) | start refused | `/agent` as operator |
 | Daily caps | — | yes | — | none |
 
@@ -370,4 +367,4 @@ More: [Troubleshooting](../user-guide/troubleshooting.md).
   [5.6](#56-dispute-actions-other-than-evidence) (replacement offer, offer withdrawal, appeal, proof of refund, the
   return types); creating refunds; the live (production) PayPal environment; account or workspace deletion by the
   user. Message, accept, offer, escalate and evidence after an escalation are Verified in sandbox through the app
-  (20/10/2026), Deployed as code and not yet exercised on the hosted service; a message with an attachment is Verified in sandbox through the app (V-7, 21/10/2026; the code with this status is Deployed, `f1b7236`). See [Limitations](limitations.md).
+  (20/10/2026), Deployed as code; on the hosted service only make an offer has been exercised (31/10/2026); a message with an attachment is Verified in sandbox through the app (V-7, 21/10/2026; the code with this status is Deployed, `d654478`). See [Limitations](limitations.md).

@@ -68,9 +68,8 @@ Cada tarjeta da el mismo veredicto que dará su compositor: «✓ allowed» si R
 atenuada con el motivo y desactivada (p. ej. «PayPal offers it · not verified from this status»), salvo una acción solo
 del Owner para miembros y revisores, que sigue seleccionable como vista previa («PayPal offers it · owner only ·
 preview»); en una disputa real de PayPal, quien no ha iniciado sesión o es de otro espacio ve «not available to you here
-· preview». El pie añade cuántas puede enviar ResolveKit ahora. Además de **Provide evidence**, el commit desplegado (`f1b7236`, 29/10/2026) abre su propio flujo al elegir
-«Send message», «Accept claim», «Make an offer» o «Escalate» (Verificado en sandbox a través de la app el 20/10/2026;
-aún no ejercitado en el servicio alojado): ver
+· preview». El pie añade cuántas puede enviar ResolveKit ahora. Además de **Provide evidence**, el commit desplegado (`d654478`, 31/10/2026) abre su propio flujo al elegir
+«Send message», «Accept claim», «Make an offer» o «Escalate» (Verificado en sandbox a través de la app el 20/10/2026; en el servicio alojado solo se ha ejercitado hacer una oferta, 31/10/2026): ver
 [Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa). «PayPal is asking for:» muestra la evidencia que ha pedido PayPal.
 
 ## Añadir tu propia evidencia

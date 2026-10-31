@@ -9,7 +9,7 @@ lo que registró PayPal.
 
 Estado de la evidencia: Implementado · Probado en local · Verificado en sandbox (envíos de dos revisores registrados
 por PayPal, 17/10/2026; una subida de imagen, 18/10/2026) · Desplegado. Las demás acciones de disputa (mensaje,
-aceptación, oferta, escalado) están **Verificadas en sandbox** a través de la app (20/10/2026); el código está desplegado, pero estas acciones aún no se han ejercitado en el servicio alojado: ver [Otras acciones de disputa](#otras-acciones-de-disputa)
+aceptación, oferta, escalado) están **Verificadas en sandbox** a través de la app (20/10/2026); el código está desplegado; en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026): ver [Otras acciones de disputa](#otras-acciones-de-disputa)
 y [Limitaciones](../product/limitations.md).
 
 Hay tres cosas distintas y la app las mantiene separadas: **el envío fue aceptado** (PayPal respondió al envío), **la
@@ -97,9 +97,7 @@ después, en su siguiente lectura, **solo si** queda alguna (a 29/10/2026 ningú
 ## Otras acciones de disputa
 
 Estado: **Probado en local** (con fakes construidos a partir de respuestas registradas de PayPal) · **Verificado en
-sandbox** a través de la app (20/10/2026, un envío cada una en un servidor local; el mensaje con archivo el 21/10/2026, V-7). El código, incluido el estado del registro del mensaje con archivo, está Desplegado (`f1b7236`, 29/10/2026), pero estas acciones aún no se han ejercitado en el servicio alojado;
-las solo del Owner necesitan el caso de liquidación vinculado en el `BINDINGS_JSON` alojado, cosa que aún no ocurre, y
-los revisores pueden enviar mensajes en la disputa activa de un caso vinculado. Estado y reglas por variante:
+sandbox** a través de la app (20/10/2026, un envío cada una en un servidor local; el mensaje con archivo el 21/10/2026, V-7). El código, incluido el estado del registro del mensaje con archivo, está Desplegado (`d654478`, 31/10/2026); en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026; dos ofertas de reembolso de 3.50 USD desde el caso de liquidación del Owner); enviar mensaje, aceptar la reclamación y escalar aún no; las solo del Owner se ejecutan sobre el caso de liquidación, que está vinculado en el `BINDINGS_JSON` alojado, y los revisores pueden enviar mensajes en la disputa activa de un caso vinculado. Estado y reglas por variante:
 [Especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia).
 
 Elige la acción en **What to do**: su compositor se abre en un diálogo con **Cancel**, un botón de cierre (×) y Esc.

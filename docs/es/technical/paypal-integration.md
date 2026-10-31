@@ -3,7 +3,7 @@
 # Integración con PayPal
 
 Qué API de PayPal llama ResolveKit, con qué credencial, en qué se apoya y qué solo se ha observado en el sandbox.
-Código en el commit `f1b7236` (las acciones de disputa se añadieron en `076c74f`, 20/10/2026); documentación de PayPal
+Código en el commit `d654478` (las acciones de disputa se añadieron en `076c74f`, 20/10/2026); documentación de PayPal
 consultada el 19/10/2026 (developer.paypal.com).
 
 En esta página se separan tres tipos de afirmación:
@@ -36,7 +36,7 @@ y lo renueva 60 s antes de que caduque. Las peticiones expiran a los 30 s (ajust
 | `GET /v1/customer/disputes/{id}` | servidor: lectura del caso, composición, envío, comprobación de vinculaciones, relectura tras webhook; `demo:prepare` | app del vendedor |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | solo `demo:prepare` | app del vendedor |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | servidor, `POST /api/disputes/:case/evidence` | app del vendedor |
-| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` con un archivo), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | servidor, `POST /api/disputes/:case/send` (Probado en local con fakes; Verificado en sandbox a través de la app en un servidor local, 20/10/2026; Desplegado como código, aún no ejercitado en el servicio alojado) | app del vendedor |
+| `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` con un archivo), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | servidor, `POST /api/disputes/:case/send` (Probado en local con fakes; Verificado en sandbox a través de la app en un servidor local, 20/10/2026; Desplegado como código; en el servicio alojado solo se ha ejercitado hacer una oferta, 31/10/2026) | app del vendedor |
 | `GET /v2/payments/refunds/{id}` | solo `npm run contract:read -- --refund <id>` (lecturas de contrato de solo lectura) | app del vendedor |
 | `POST /v1/notifications/verify-webhook-signature` | manejador del webhook en el servidor | app del vendedor (el webhook está registrado en ella) |
 | `POST /v1/billing-agreements/agreement-tokens`, `GET /v1/billing-agreements/agreement-tokens/{id}` | inicio de sesión en el servidor | app de identidad |
@@ -148,7 +148,7 @@ escrituras.
 por el flujo propio de ResolveKit: el servidor de la rama de acciones de disputa (head `9f93ba0`, ya fusionada en `main` y desplegada) ejecutado
 en local contra el sandbox, cada ejecución aprobada antes por el propietario, y cada una por componer → aprobar por
 hash → segunda confirmación (cuando la acción tiene términos) → un envío → relectura atribuible. Un POST a PayPal por
-ejecución, con lecturas GET antes y después (evidencia privada, 20/10/2026). El código está ahora desplegado (`f1b7236`), pero no se envió nada desde el servicio alojado. Son observaciones únicas, no
+ejecución, con lecturas GET antes y después (evidencia privada, 20/10/2026). El código está ahora desplegado (`d654478`); en el servicio alojado solo se envió hacer una oferta (31/10/2026, dos ofertas de reembolso de 3.50 USD desde el caso de liquidación del Owner; PayPal registró cada una como SELLER PROPOSED). Son observaciones únicas, no
 reglas de PayPal.
 
 | Ejecución | Variante | Disputa de sandbox | Observado a través de la app |
@@ -161,7 +161,7 @@ reglas de PayPal.
 | V-6 | `evidence:after_escalation` | la misma, en `CHARGEBACK` | Tras un análisis en directo del caso vinculado, una frase editada recomprobada y una contradicción resuelta por el propietario: un único `provide-evidence`, registrado como entrada `PROVIDE_EVIDENCE` en la fase `CHARGEBACK` con 2 documentos, junto a la entrada `ESCALATE` de la fase de consulta |
 | V-7 | `send_message:file` | PP-R-GCV-10193596 (`WAITING_FOR_BUYER_RESPONSE`) | 21/10/2026 05:30Z, servidor local de `main` (`81c6242`): una subida confirmada y saneada (un PNG sintético, enviado como `E7-upload.png`), con el hash igual al aprobado; un envío multipart (202); «Recorded by PayPal» a ~1 s y de nuevo a +30 s; el nuevo mensaje del vendedor tiene el texto exacto y 1 documento; sin movimiento de dinero |
 
-No verificado a través de la app: todas las variantes «Not available». El estado del registro de `send_message:file` (Verificado en sandbox) está desplegado (`f1b7236`, 29/10/2026).
+No verificado a través de la app: todas las variantes «Not available». El estado del registro de `send_message:file` (Verificado en sandbox) está desplegado (`d654478`, 31/10/2026).
 
 **W-11, la prueba pendiente de la prueba de reembolso.** El 19/10/2026 un pago en disputa apareció retenido en el
 sandbox, y las páginas web de sandbox del vendedor no ofrecían reembolsarlo fuera del caso. La secuencia prevista es,

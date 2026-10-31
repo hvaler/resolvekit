@@ -44,22 +44,20 @@ in-browser simulator instead of PayPal. More in [below](#if-a-dispute-was-used-t
 | Buying agent (same models, function calling) | Picks one MeterMCP tool per turn; code validates tool, arguments, price and limits before each call | Verified in sandbox (two runs, 19/10/2026, examples) · Deployed |
 | MeterMCP | A metered MCP gateway: paid tools (`quote_lookup` 0.05, `deep_report` 0.40, `bulk_export` 0.92 USD), failed calls never charged, receipts with request hashes | Verified in sandbox · Deployed |
 
-Only `provide-evidence` has been exercised end to end through the app on the hosted service. The other dispute actions
-are in the deployed code (`f1b7236`, 29/10/2026) but have not yet been exercised on the hosted service; one status per
+On the hosted service, `provide-evidence` and make an offer (31/10/2026) have been exercised end to end through the app. The other dispute actions are in the deployed code (`d654478`, 31/10/2026); send message, accept claim and escalate have not yet been exercised on the hosted service; one status per
 variant ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)):
 
 | Dispute action | Status |
 |---|---|
-| Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Verified in sandbox** through the app (20/10/2026: the branch's server run locally, one send each, read back). The code is Deployed (`f1b7236`, 29/10/2026); these actions have **not** yet been exercised on the hosted service |
-| A message with an attachment | Verified in sandbox through the app (V-7, 21/10/2026, a local run: one confirmed upload, recorded by PayPal with 1 document); also Tested locally on the server and in the web composer. The code with this status is Deployed (`f1b7236`, 29/10/2026) |
+| Send message; accept claim (full refund, or partial refund, which PayPal records as an offer); make a partial-refund offer; escalate; evidence after an escalation | **Verified in sandbox** through the app (20/10/2026: the branch's server run locally, one send each, read back). The code is Deployed (`d654478`, 31/10/2026); on the hosted service, make an offer was exercised on 31/10/2026 (two refund offers of 3.50 USD, recorded by PayPal as SELLER PROPOSED; code `f1b7236` at that time); send message, accept claim and escalate have **not** yet been (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`) |
+| A message with an attachment | Verified in sandbox through the app (V-7, 21/10/2026, a local run: one confirmed upload, recorded by PayPal with 1 document); also Tested locally on the server and in the web composer. The code with this status is Deployed (`d654478`, 31/10/2026) |
 | Replacement offer · offer withdrawal · appeal · proof of refund · return types | **Not available**, each with its reason in the product |
 
 Each available variant rests on one write the owner approved in the sandbox on 20/10/2026 and its read-back
 ([dispute action contracts](../technical/paypal-integration.md#dispute-action-contracts)); those writes were made
 outside the app's flow, so they show PayPal's behaviour. The app's own flow was then run once per verified variant
 (V-1 to V-7, same page); only the full accept (V-4) moved money, a 7.00 USD sandbox refund. Reviewers may send messages only (on a bound case's active dispute); accept, offer
-and escalate are the Owner's, with a second confirmation, and others see a preview. The owner-only actions need the
-settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet. ResolveKit never creates a refund.
+and escalate are the Owner's, with a second confirmation, and others see a preview. The owner-only actions run on the settlement case, which is bound in the hosted `BINDINGS_JSON`. ResolveKit never creates a refund.
 
 ## What is real, synthetic, simulated or stored
 

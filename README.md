@@ -33,7 +33,7 @@
   <img alt="PDF.js 6" src="https://img.shields.io/badge/PDF.js-6-2D6B68?style=flat-square&logo=mozilla&logoColor=white">
   <img alt="WebAuthn passkeys" src="https://img.shields.io/badge/WebAuthn-passkeys-2D6B68?style=flat-square&logo=webauthn&logoColor=white">
   <img alt="Vitest 5" src="https://img.shields.io/badge/Vitest-5-2D6B68?style=flat-square&logo=vitest&logoColor=white">
-  <img alt="tests · 1,488 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C488%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="tests · 1,521 (node:test + Vitest)" src="https://img.shields.io/badge/tests-1%2C521%20(node%3Atest%20%2B%20Vitest)-2D6B68?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="Render 2 services" src="https://img.shields.io/badge/Render-2%20services-2D6B68?style=flat-square&logo=render&logoColor=white">
 </p>
 
@@ -100,13 +100,11 @@ Details: [product overview](docs/product/overview.md) · [AI pipeline](docs/tech
 
 The code is in `packages/paypal/src/` (`disputes.ts`, `webhooks.ts`, `identity.ts`, `orders.ts`).
 
-Only `provide-evidence` has been exercised end to end through the app on the hosted service. Sending a message,
+On the hosted service, `provide-evidence` and **make an offer** have been exercised end to end through the app (31/10/2026). Sending a message,
 accepting a claim (full, or partial as an offer), making a partial-refund offer, escalating and sending evidence after
 an escalation are built from commit `076c74f` (20/10/2026), each on a sandbox contract the owner approved, and
 **Verified in sandbox** through the app on 20/10/2026 (one send each, on a local server). The code is **Deployed**
-(`f1b7236`, 29/10/2026), but these actions have **not** yet been exercised on the hosted service: the owner-only ones
-need the settlement case bound in the hosted `BINDINGS_JSON`, which it is not yet, and reviewers can send messages on
-a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and is Verified in sandbox through the app (V-7, 21/10/2026, a local run; that registry status is Deployed in `f1b7236`). Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
+(`d654478`, 31/10/2026); on 31/10/2026, on the hosted service (code `f1b7236` at that time), the owner sent two refund offers of 3.50 USD from the owner settlement case (PayPal recorded each as SELLER PROPOSED; the dispute moved to waiting for the buyer); sending a message, accepting a claim and escalating have **not** yet been exercised there (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`). The settlement case is bound in the hosted `BINDINGS_JSON`, and reviewers can send messages on a bound case's active dispute. A message with a file is selectable in the web composer (one confirmed upload, only while PayPal waits for the buyer) and is Verified in sandbox through the app (V-7, 21/10/2026, a local run; that registry status is Deployed in `d654478`). Replacement offers, offer withdrawal, appeals, proof of refund and the return types are
 **Not available**, each with its reason. ResolveKit never creates a refund. Per-variant status:
 [functional specification](docs/product/functional-specification.md#56-dispute-actions-other-than-evidence). Nothing
 has run against live PayPal. Sources: [PayPal integration](docs/technical/paypal-integration.md).
@@ -237,17 +235,15 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 
 ## Verification
 
-- **Tests**: 29/10/2026, commit `be7491d` (branch `fix/pre-submission`: the pre-submission code fixes plus docs), Node 24 on Windows: 1,488 tests, all passed (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 failed, 0 skipped; every node:test suite has a 60 s per-test timeout). Typecheck clean; web build OK. Not run on Linux. Earlier run, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, all passed (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Earlier run, 21/10/2026, commit `81c6242`: 1,479 tests, all passed (same per-suite counts). Earlier run, 20/10/2026,
+- **Tests**: 31/10/2026, commit `d654478` (`main`, deployed: the post-shoot fixes), `npm test`: 1,521 tests, all passed (node:test 1,025 + vitest 496). Typecheck clean. Not run on Linux. Earlier run, 29/10/2026, commit `be7491d` (branch `fix/pre-submission`: the pre-submission code fixes plus docs), Node 24 on Windows: 1,488 tests, all passed (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 failed, 0 skipped; every node:test suite has a 60 s per-test timeout). Earlier run, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, all passed (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Earlier run, 21/10/2026, commit `81c6242`: 1,479 tests, all passed (same per-suite counts). Earlier run, 20/10/2026,
   commit `5111b88`: 1,453 tests, all passed (vitest 447). Earlier run, 19/10/2026 12:35 UTC, commit
   `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 passed, 1 failed intermittently
   (`apps/server/test/uploads-pdf-recovery.test.ts`, «size: five dense A4 pages…», `429 RATE_LIMITED` under full-suite
   load; it passed 3 of 3 run alone, twice). Details: [testing](docs/quality/testing.md) ·
   [known issues](docs/quality/known-issues.md).
-- **Deployment**: `f1b7236` deployed on 29/10/2026 (the pre-submission fixes; `main` fast-forwarded and pushed, Render redeployed both services, which restarted at about 12:15 Madrid time). `demo:check` against the hosted URLs after that deploy, the same result as after `c12faea` and `81c6242` on 21/10/2026: PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
-  connected, webhook on, both bindings verified, both AI models answered, both warm-ups cached; WARN on both reserves
-  (0 fresh disputes); one FAIL, the known one: the standard case's binding is used and its reserve is empty (status as of 29/10/2026: both reserves are empty; the
-  refill for judging is planned for 28–30/11, when the owner-only settlement case will also be bound in the hosted `BINDINGS_JSON`). It cannot prove
-  which commit is live. Earlier: `c12faea` (a new web bundle with the V-7 registry status was observed) and `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (same `demo:check` result); `fbe9621`, 19/10/2026.
+- **Deployment**: `d654478` deployed on 31/10/2026 (the post-shoot fixes; the owner approved, `main` was fast-forwarded from `23728e2` to it (branch `fix/post-shoot`, 12 commits) and pushed, Render redeployed; ResolveKit restarted at about 20:00 Madrid time and MeterMCP stayed up). `demo:check` against the hosted URLs after that deploy: PASS on ResolveKit up, landing, MeterMCP up, PayPal sandbox
+  connected (sandbox), webhook on, all three bindings verified (the standard case used, 0 in reserve; the settlement and agent cases, 0 in reserve), both AI models answered, warm-up cached; one FAIL, the known one: the standard case's binding is used and no dispute is left in reserve (refill for judging 28–30/11/2026). The same kind of result as after `f1b7236` on 29/10/2026. It cannot prove
+  which commit is live. Earlier: `f1b7236`, 29/10/2026; `c12faea` (a new web bundle with the V-7 registry status was observed) and `81c6242`, 21/10/2026; `5111b88`, 20/10/2026 (same `demo:check` result); `fbe9621`, 19/10/2026.
 - **Evaluations** (analyst only, synthetic cases): [evaluations](docs/quality/evaluations.md). Headline: on 12 held-out
   cases × 3 runs, 0 of 66 true notes rejected and 0 of 72 planted false notes sent, but only 17 of 66 true notes were
   judged supported (6 + 6 + 5; source: [evaluations](docs/quality/evaluations.md)); the rest went to review.
@@ -256,8 +252,7 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 ## Current limitations
 
 - Merchant connection to their own disputes: Pending (see above).
-- Only `provide-evidence` has been exercised on the hosted service; messages, accept, offer and escalate are deployed
-  (code) and Verified in sandbox through the app (local run), not yet exercised on the hosted service; no refund is ever
+- On the hosted service, `provide-evidence` and make an offer (31/10/2026) have been exercised; messages, accept and escalate are deployed (code) and Verified in sandbox through the app (local run), not yet exercised on the hosted service; no refund is ever
   created.
 - Sandbox only; live PayPal never exercised. Sandbox timings and behaviours may differ in live.
 - As of 29/10/2026 the reserves of fresh sandbox disputes of both cases are empty; new sandbox disputes are prepared on 31/10/2026 and the reserve is refilled for judging on 28–30/11/2026. Until then the Explore demo is the default path, and sending to the real sandbox may be unavailable. Until it is refilled, new sends there are refused and the case shows the earlier read-back.
