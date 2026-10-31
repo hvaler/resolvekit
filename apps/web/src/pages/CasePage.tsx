@@ -182,6 +182,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const held = useHeldSend(id, source.kind === 'live', actionRequest);
   const viewer: Viewer = demoLock?.person ? { role: demoLock.person.role, reviewer: demoLock.person.reviewer } : { role: 'owner', reviewer: false };
   const readNow: DisputeSnapshot = snap ? { ...snap, allowedActions: [...allowed] } : { id, status, stage: demo.summary.stage, allowedActions: [...allowed], evidences: [], readAt: '' };
+  // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
+  const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
   const otherAction = d.action === 'provide_evidence' ? null : d.action;
   // On the simulator, also what the simulator would refuse (no recorded transition from this state) is not composable.
   // A message with a file only from the state W-3 was recorded from; elsewhere it is «Not available» with the reason.
@@ -192,7 +194,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const availability = otherAction ? availabilityOf(otherAction) : null;
   // The cards say what the composer will say: the same availability, per action PayPal offers.
   const others = allowed.filter((a): a is OtherAction => a !== 'provide_evidence');
-  const actionVerdicts = Object.fromEntries(others.map((a) => [a, actionCardVerdict(availabilityOf(a))]));
+  const actionVerdicts = Object.fromEntries(others.map((a) => [a, actionCardVerdict(availabilityOf(a), actionLocked)]));
   const draftedActions = others.filter((a) => hasUnsentDraft(a, actionDrafts, message));
   // Closing the action dialog (×, Cancel, Esc) returns to the case with the default action; drafts are kept.
   const closeComposer = useCallback(() => {
@@ -206,8 +208,6 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
     },
     [d.setAction],
   );
-  // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
-  const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
 
   const submission = useMemo(
     () => (d.evidenceType ? buildSubmission(c, d.views, d.evidenceType) : null),

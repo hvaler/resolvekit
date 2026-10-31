@@ -27,11 +27,14 @@ function shortReason(why: string): string {
 }
 
 /**
- * The card's verdict from the same availability the composer receives. Absent (evidence, which keeps its own checks):
- * allowed, as before.
+ * The card's verdict from the same availability and lock the composer receives. Absent (evidence, which keeps its own
+ * checks): allowed, as before.
  */
-export function actionCardVerdict(a: ActionAvailability | null | undefined): ActionCardVerdict {
-  if (!a || a.sendable) return { sendable: true, preview: false, short: null, why: null };
+export function actionCardVerdict(a: ActionAvailability | null | undefined, locked: string | null = null): ActionCardVerdict {
+  if (!a) return { sendable: true, preview: false, short: null, why: null };
+  // Sendable, but not by this viewer here (signed out, another workspace): the composer is a preview that says why.
+  if (a.sendable && locked) return { sendable: false, preview: true, short: 'not available to you here', why: locked };
+  if (a.sendable) return { sendable: true, preview: false, short: null, why: null };
   const why = a.why ?? 'not available';
   if (why.startsWith(OWNER_ONLY_PREFIX)) {
     // The preview needs a variant the composer would show; otherwise the card says why there is none.

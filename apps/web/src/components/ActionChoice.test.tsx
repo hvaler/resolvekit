@@ -54,6 +54,17 @@ describe('actionCardVerdict', () => {
   });
 });
 
+describe('a locked viewer (signed out, another workspace) on real PayPal', () => {
+  it('a sendable action is a preview, not «✓ allowed»: the composer says why it cannot be sent here', () => {
+    const a = actionAvailability({ ...waitingBuyer, status: 'WAITING_FOR_SELLER_RESPONSE' }, 'send_message', owner);
+    expect(actionCardVerdict(a, 'Sign in to send this.')).toEqual({ sendable: false, preview: true, short: 'not available to you here', why: 'Sign in to send this.' });
+    expect(actionCardVerdict(a, null).sendable).toBe(true);
+    // Already not sendable: the action's own reason stands.
+    const esc = actionAvailability(waitingBuyer, 'escalate', owner);
+    expect(actionCardVerdict(esc, 'Sign in to send this.').short).toBe('not verified from this status');
+  });
+});
+
 describe('the cards match the composer', () => {
   it('WAITING_FOR_BUYER_RESPONSE: escalate is offered by PayPal but not verified from this status (muted, disabled, no ✓)', () => {
     const html = renderToString(<ActionChoice c={c} d={d} allowed={ALLOWED} checkedAt={null} sent={false} verdicts={verdictsFor(waitingBuyer)} />);
