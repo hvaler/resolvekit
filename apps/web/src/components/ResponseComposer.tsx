@@ -90,14 +90,16 @@ export function ActionChoice({
           const det = c.actionDetails[code];
           const v = verdicts[code];
           const off = v?.sendable === false;
+          // Not sendable here, but its composer shows a read-only preview: muted, still selectable.
+          const preview = off && v.preview;
           return (
             <button
               key={code}
               type="button"
               role="radio"
               aria-checked={sel}
-              disabled={off}
-              title={off ? `Not available: ${v.why}` : undefined}
+              disabled={off && !preview}
+              title={off ? (preview ? `Preview only: ${v.why}` : `Not available: ${v.why}`) : undefined}
               onClick={() => d.setAction(code)}
               className="flex flex-col gap-0.5 rounded-[7px] px-2.5 py-2 text-left disabled:cursor-not-allowed"
               style={{
@@ -109,7 +111,7 @@ export function ActionChoice({
               <span className={cx('text-body font-medium', off && 'text-ink-2')}>{det?.label ?? ACTION_LABEL[code]}</span>
               <span className="text-[11.5px] text-ink-3">{det?.sub ?? ''}</span>
               {off ? (
-                <span className="font-mono text-[10px] leading-[1.4] text-ink-3">{`PayPal offers it · ${v.short} · ${code}`}</span>
+                <span className="font-mono text-[10px] leading-[1.4] text-ink-3">{`PayPal offers it · ${v.short}${preview ? ' · preview' : ''} · ${code}`}</span>
               ) : (
                 <span className="font-mono text-[10px] leading-[1.4] text-ok">{`✓ allowed · ${code}`}</span>
               )}

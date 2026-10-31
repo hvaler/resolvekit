@@ -4,6 +4,11 @@ import { STATUS_NOT_VERIFIED, type ActionAvailability } from './actions';
 export interface ActionCardVerdict {
   /** ResolveKit can compose and send it now (the composer will not say «Not available»). */
   sendable: boolean;
+  /**
+   * Not sendable by this viewer, but the composer shows a read-only preview with its consequence (an owner-only action
+   * for a member or reviewer): the card stays selectable. False when the composer would show nothing useful.
+   */
+  preview: boolean;
   /** The reason, short enough for a card; null when sendable. */
   short: string | null;
   /** The composer's full reason; null when sendable. */
@@ -24,7 +29,13 @@ function shortReason(why: string): string {
  * allowed, as before.
  */
 export function actionCardVerdict(a: ActionAvailability | null | undefined): ActionCardVerdict {
-  if (!a || a.sendable) return { sendable: true, short: null, why: null };
+  if (!a || a.sendable) return { sendable: true, preview: false, short: null, why: null };
   const why = a.why ?? 'not available';
-  return { sendable: false, short: shortReason(why), why };
+  if (why.startsWith(OWNER_ONLY_PREFIX)) {
+    // The preview needs a variant the composer would show; otherwise the card says why there is none.
+    if (a.variants.some((v) => v.variant && v.available)) return { sendable: false, preview: true, short: 'owner only', why };
+    const inner = a.variants.find((v) => v.variant && v.why)?.why ?? a.variants[0]?.why ?? why;
+    return { sendable: false, preview: false, short: shortReason(inner), why: inner };
+  }
+  return { sendable: false, preview: false, short: shortReason(why), why };
 }

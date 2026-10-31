@@ -34,13 +34,18 @@ const card = (html: string, code: string) => cards(html).find((b) => b.includes(
 
 describe('actionCardVerdict', () => {
   it('sendable: allowed; not verified from this status or owner only: the short reason, with the full one', () => {
-    expect(actionCardVerdict(undefined)).toEqual({ sendable: true, short: null, why: null });
+    expect(actionCardVerdict(undefined)).toEqual({ sendable: true, preview: false, short: null, why: null });
     expect(actionCardVerdict({ action: 'escalate', offered: true, sendable: true, why: null, variants: [] }).sendable).toBe(true);
     const status = actionCardVerdict({ action: 'escalate', offered: true, sendable: false, why: STATUS_NOT_VERIFIED, variants: [] });
-    expect(status).toEqual({ sendable: false, short: 'not verified from this status', why: STATUS_NOT_VERIFIED });
+    expect(status).toEqual({ sendable: false, preview: false, short: 'not verified from this status', why: STATUS_NOT_VERIFIED });
     const own = actionCardVerdict(actionAvailability({ ...waitingBuyer, status: 'WAITING_FOR_SELLER_RESPONSE' }, 'escalate', { role: 'member', reviewer: false }));
     expect(own.short).toBe('owner only');
+    // The composer shows a member the read-only preview with its consequence: the card opens it.
+    expect(own.preview).toBe(true);
     expect(OWNER_ACTIONS).toContain('escalate');
+    // Owner only and not verified from this status: the composer would show nothing useful, so no preview.
+    const both = actionCardVerdict(actionAvailability(waitingBuyer, 'escalate', { role: 'member', reviewer: true }));
+    expect(both).toMatchObject({ sendable: false, preview: false, short: 'not verified from this status' });
   });
 });
 
@@ -64,8 +69,13 @@ describe('the cards match the composer', () => {
   it('a member: owner-only actions say so', () => {
     const snap = { ...waitingBuyer, status: 'WAITING_FOR_SELLER_RESPONSE' as const };
     const html = renderToString(<ActionChoice c={c} d={d} allowed={ALLOWED} checkedAt={null} sent={false} verdicts={verdictsFor(snap, { role: 'member', reviewer: false })} />);
-    expect(card(html, 'accept_claim')).toContain('PayPal offers it · owner only');
-    expect(card(html, 'escalate')).toContain('PayPal offers it · owner only');
+    for (const code of ['accept_claim', 'escalate']) {
+      // Muted, labelled a preview, and still selectable (judges join as reviewers and read the consequence there).
+      expect(card(html, code)).toContain(`PayPal offers it · owner only · preview · ${code}`);
+      expect(card(html, code)).not.toMatch(/disabled=""/);
+      expect(card(html, code)).not.toContain('✓ allowed');
+    }
+    expect(html).toContain('ResolveKit can send 2 of them now');
   });
 
   it('everything sendable: every card «✓ allowed» and the footer as before', () => {

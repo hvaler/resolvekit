@@ -111,8 +111,8 @@ sandbox», «Tested locally», or «Not available: <reason>»).
 | Make offer · refund offer | Owner | Amount (below the dispute amount) and **Note to PayPal** | «The buyer is offered <amount>; no money moves unless the buyer accepts.» |
 | Escalate | Owner | **Note to PayPal** | «The inquiry becomes a claim decided by PayPal. Inquiry actions end; what you can do next is what PayPal offers on the claim.» |
 
-Members and reviewers see the owner-only actions' cards disabled («PayPal offers it · owner only»); they cannot compose or
-send them.
+Members and reviewers see the owner-only actions as a preview with their consequence («PayPal offers it · owner only ·
+preview»); they cannot send them.
 
 Steps: **Review the message →** (or **Review the accept →**, **Review the offer →**, **Review the escalation →**) asks
 the server to compose exactly what will be sent; the review quotes it. **Approve and send** records your approval of

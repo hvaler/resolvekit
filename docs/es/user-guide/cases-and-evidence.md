@@ -65,8 +65,9 @@ cronología muestra una tarjeta **Contradiction** con ambos valores lado a lado,
 
 El cuadro **What to do** muestra las acciones que PayPal permite ahora para esta disputa, leídas hace unos segundos.
 Cada tarjeta da el mismo veredicto que dará su compositor: «✓ allowed» si ResolveKit puede enviarla ahora; si no, aparece
-atenuada y desactivada con el motivo (p. ej. «PayPal offers it · not verified from this status», «PayPal offers it · owner
-only»), y el pie añade cuántas puede enviar ResolveKit ahora. Además de **Provide evidence**, el commit desplegado (`f1b7236`, 29/10/2026) abre su propio flujo al elegir
+atenuada con el motivo y desactivada (p. ej. «PayPal offers it · not verified from this status»), salvo una acción solo
+del Owner para miembros y revisores, que sigue seleccionable como vista previa («PayPal offers it · owner only ·
+preview»). El pie añade cuántas puede enviar ResolveKit ahora. Además de **Provide evidence**, el commit desplegado (`f1b7236`, 29/10/2026) abre su propio flujo al elegir
 «Send message», «Accept claim», «Make an offer» o «Escalate» (Verificado en sandbox a través de la app el 20/10/2026;
 aún no ejercitado en el servicio alojado): ver
 [Revisar y enviar](review-and-submit.md#otras-acciones-de-disputa). «PayPal is asking for:» muestra la evidencia que ha pedido PayPal.
