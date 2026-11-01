@@ -13,7 +13,10 @@ Pick the path that matches you. Labels in **bold** are the exact names on screen
 
 ## Explore demo
 
-1. Open the ResolveKit address and choose **Try the demo** (or go to `/demo`). No sign-in.
+1. Open the ResolveKit address and choose **Try the demo** (or go to `/demo`). No sign-in. The landing page is there
+   for everyone: signed in, its button reads **Open your cases →** instead of **Sign in**. A click (or Enter) on any
+   screenshot enlarges it; ×, Esc or a click outside the image closes it. Inside the app, the ResolveKit logo leads
+   to the cases, not back to the landing page.
 2. The app bar says «Explore demo · fictional cases, nothing is sent». Every case runs on a PayPal simulator in your
    browser; no model is called and nothing reaches PayPal.
 3. The **Disputes** inbox lists every fictional case. Use it like this:

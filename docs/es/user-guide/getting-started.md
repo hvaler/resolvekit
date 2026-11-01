@@ -13,7 +13,10 @@ Elige el camino que te corresponde. Las etiquetas en **negrita** son los nombres
 
 ## Explore demo
 
-1. Abre la dirección de ResolveKit y elige **Try the demo** (o ve a `/demo`). Sin iniciar sesión.
+1. Abre la dirección de ResolveKit y elige **Try the demo** (o ve a `/demo`). Sin iniciar sesión. La página de inicio
+   la ve todo el mundo: con la sesión iniciada, su botón dice **Open your cases →** en lugar de **Sign in**. Un clic (o
+   Enter) en cualquier captura la amplía; ×, Esc o un clic fuera de la imagen la cierran. Dentro de la app, el logotipo
+   de ResolveKit lleva a los casos, no de vuelta a la página de inicio.
 2. La barra de la app dice «Explore demo · fictional cases, nothing is sent». Cada caso funciona sobre un simulador de
    PayPal en tu navegador; no se llama a ningún modelo y nada llega a PayPal.
 3. La bandeja **Disputes** muestra todos los casos ficticios. Úsala así:
