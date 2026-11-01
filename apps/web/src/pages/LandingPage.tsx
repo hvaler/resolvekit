@@ -241,8 +241,8 @@ export function LandingPage() {
                 , and only the successful calls are captured.
               </p>
               <p className="m-0">
-                If the buyer disputes the charge, the per-call receipt becomes the case file: mandate 5.00 USD, each call with its request hash, the failed
-                call not charged, 1.37 captured and the rest released. It goes to PayPal as digital delivery with the receipt PDF.
+                If the buyer disputes the charge, the per-call receipt becomes the case file: the buyer-approved budget (0.50 USD in the screenshot), each call with its request hash, the failed
+                call not charged, only what was used captured (0.45) and the rest released. It goes to PayPal as digital delivery with the receipt PDF.
               </p>
             </div>
             <Shot src="/landing/06-agent-metermcp-receipt.png" alt="An agent purchase case (0.45 USD of a 0.50 USD budget): the per-call MeterMCP receipt in AG Grid with the failed call not charged, and the settlement (captured, the remainder released)." />
