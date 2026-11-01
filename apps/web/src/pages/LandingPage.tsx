@@ -1,16 +1,90 @@
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { useServices } from '../app/services';
 import { Logo, ThemeControls } from '../components/AppBar';
 import { cx } from '../components/ui';
+import { enlargeLabel, lightbox, lightboxKey, lockScroll } from '../domain/lightbox';
 
 const REPO = 'https://github.com/hvaler/resolvekit';
 
-/** A screenshot of the real app, framed. Light-theme captures from docs/media (synthetic case data). */
-function Shot({ src, alt, className }: { src: string; alt: string; className?: string }) {
+/**
+ * A screenshot enlarged over the page: dark backdrop, the full-resolution image at up to 95vw × 90vh, its alt text as
+ * the caption that labels the dialog. Closes with ×, Esc or a click on the backdrop; focus stays on the close button
+ * while open and the page behind does not scroll.
+ */
+export function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  const captionId = useId();
+  const close = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    close.current?.focus();
+    const restore = lockScroll(document.body);
+    const onKey = (e: KeyboardEvent) => {
+      const k = lightboxKey(e.key);
+      if (k === 'close') onClose();
+      else if (k === 'trap') {
+        e.preventDefault();
+        close.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      restore();
+    };
+  }, [onClose]);
   return (
-    <figure className={cx('m-0 overflow-hidden rounded-xl border border-line bg-surface shadow-float', className)}>
-      <img src={src} alt={alt} loading="lazy" className="block h-auto w-full" />
-    </figure>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={captionId}
+      onClick={(e) => {
+        if (!lightbox(true, { type: 'backdrop', onBackdrop: e.target === e.currentTarget })) onClose();
+      }}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-4"
+    >
+      <button
+        ref={close}
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-lg border border-white/30 bg-black/40 text-[20px] leading-none text-white"
+      >
+        ×
+      </button>
+      <img src={src} alt="" className="block h-auto max-h-[90vh] w-auto max-w-[95vw] rounded-lg object-contain shadow-modal" />
+      <figcaption id={captionId} className="max-w-[min(95vw,960px)] text-center text-[13px] leading-normal text-white/90">
+        {alt}
+      </figcaption>
+    </div>
+  );
+}
+
+/**
+ * A screenshot of the real app (light-theme captures of 31/10/2026), framed. A click, or Enter / Space (it is a
+ * button), enlarges it; focus returns here when the enlarged view closes.
+ */
+function Shot({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const thumb = useRef<HTMLButtonElement>(null);
+  const onClose = useCallback(() => {
+    setOpen((o) => lightbox(o, { type: 'close' }));
+    thumb.current?.focus();
+  }, []);
+  return (
+    <>
+      <figure className={cx('m-0 overflow-hidden rounded-xl border border-line bg-surface shadow-float', className)}>
+        <button
+          ref={thumb}
+          type="button"
+          aria-label={enlargeLabel(alt)}
+          onClick={() => setOpen((o) => lightbox(o, { type: 'open' }))}
+          className="block w-full cursor-zoom-in border-0 bg-transparent p-0"
+        >
+          <img src={src} alt={alt} loading="lazy" className="block h-auto w-full" />
+        </button>
+      </figure>
+      {open && <Lightbox src={src} alt={alt} onClose={onClose} />}
+    </>
   );
 }
 
@@ -31,19 +105,19 @@ const PROMISES = [
     title: 'Every claim cited',
     body: 'The AI analyst drafts the response from your own records. A verifier checks each sentence against the exact words it cites; a sentence without a source is struck through and never sent.',
     src: '/landing/02-case-file.png',
-    alt: 'A case file: hovering a citation lights up the exact words in the source document; an unsupported sentence is struck through.',
+    alt: 'Hovering the E3 · UPS tracking citation lights up the exact words it cites in the source document; a sentence without proof is struck through.',
   },
   {
     title: 'Nothing sent without you',
     body: 'You review exactly what PayPal will receive, every claim beside its proof, and approve that exact content. The server sends it only if nothing changed since you approved.',
     src: '/landing/04-approve-ledger.png',
-    alt: 'The approval screen: each claim next to its proof, the evidence type PayPal asks for, and the irreversible confirmation.',
+    alt: '«Review what will be sent»: each claim beside its proof, the removed sentences marked not sent, and exactly what goes to PayPal (Proof of fulfillment, UPS, the tracking number and the files).',
   },
   {
     title: 'What PayPal recorded, not what we hope',
     body: 'After sending, ResolveKit reads the dispute back from PayPal and says “Recorded by PayPal” only when PayPal lists new seller evidence that matches what was sent.',
     src: '/landing/05-recorded-by-paypal.png',
-    alt: 'A sandbox dispute read back after sending: the evidence PayPal recorded, next to what was sent.',
+    alt: '«Recorded by PayPal»: the dispute read back from the PayPal sandbox, what was sent next to what PayPal recorded (6 of 6 fields match), and the actions PayPal allows now.',
   },
 ];
 
@@ -55,10 +129,13 @@ const STEPS = [
 ];
 
 export function LandingPage() {
+  // Signed in (hosted), the call to action is the person's own cases; signed out, sign in or try the demo.
+  const { demo } = useServices();
+  const signedIn = !!demo?.signedIn;
   return (
     <div className="flex min-h-[100dvh] flex-col bg-bg text-ink">
       <header className="sticky top-0 z-40 flex h-12 flex-none items-center gap-5 border-b border-line bg-surface px-6 max-md:gap-3 max-md:px-4">
-        <Logo />
+        <Logo to="/" />
         <nav aria-label="Sections" className="flex items-center gap-4 text-[12.5px] text-ink-2 max-md:hidden">
           <a href="#how" className="text-ink-2 no-underline hover:text-ink">
             How it works
@@ -75,12 +152,20 @@ export function LandingPage() {
         <span className="max-md:hidden">
           <ThemeControls />
         </span>
-        <Link to="/signin" className="whitespace-nowrap text-[12.5px] font-medium text-ink no-underline hover:text-acc">
-          Sign in
-        </Link>
-        <Link to="/demo" data-testid="try-demo" className="flex h-8 items-center whitespace-nowrap rounded-lg bg-acc px-3 text-[12.5px] font-semibold text-acc-ink no-underline">
-          Try the demo
-        </Link>
+        {signedIn ? (
+          <Link to="/cases" data-testid="open-cases" className="flex h-8 items-center whitespace-nowrap rounded-lg bg-acc px-3 text-[12.5px] font-semibold text-acc-ink no-underline">
+            Open your cases →
+          </Link>
+        ) : (
+          <>
+            <Link to="/signin" className="whitespace-nowrap text-[12.5px] font-medium text-ink no-underline hover:text-acc">
+              Sign in
+            </Link>
+            <Link to="/demo" data-testid="try-demo" className="flex h-8 items-center whitespace-nowrap rounded-lg bg-acc px-3 text-[12.5px] font-semibold text-acc-ink no-underline">
+              Try the demo
+            </Link>
+          </>
+        )}
       </header>
 
       <main className="flex flex-col">
@@ -93,16 +178,29 @@ export function LandingPage() {
               after you approve exactly what goes out.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <Link to="/demo" className="flex h-11 items-center rounded-xl bg-acc px-5 text-[14px] font-semibold text-acc-ink no-underline">
-                Try the demo
-              </Link>
-              <Link to="/signin" className="flex h-11 items-center rounded-xl border border-line-2 bg-surface px-5 text-[14px] font-medium text-ink no-underline">
-                Sign in
-              </Link>
+              {signedIn ? (
+                <>
+                  <Link to="/cases" className="flex h-11 items-center rounded-xl bg-acc px-5 text-[14px] font-semibold text-acc-ink no-underline">
+                    Open your cases →
+                  </Link>
+                  <Link to="/demo" className="flex h-11 items-center rounded-xl border border-line-2 bg-surface px-5 text-[14px] font-medium text-ink no-underline">
+                    Try the demo
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link to="/demo" className="flex h-11 items-center rounded-xl bg-acc px-5 text-[14px] font-semibold text-acc-ink no-underline">
+                    Try the demo
+                  </Link>
+                  <Link to="/signin" className="flex h-11 items-center rounded-xl border border-line-2 bg-surface px-5 text-[14px] font-medium text-ink no-underline">
+                    Sign in
+                  </Link>
+                </>
+              )}
             </div>
             <span className="text-[12.5px] text-ink-3">Free to try. No sign-up to explore; merchants sign in with PayPal.</span>
           </div>
-          <Shot src="/landing/thumbnail.png" alt="The ResolveKit case file: timeline, cited evidence and the response draft." />
+          <Shot src="/landing/thumbnail.png" alt="The case file of a real PayPal sandbox dispute (7.00 USD, item not received): the timeline, the evidence with the Apt 4 / Apt 4B address contradiction, and the response draft with one sentence removed and the supported sentences cited." />
         </section>
 
         {/* Promises */}
@@ -147,7 +245,7 @@ export function LandingPage() {
                 call not charged, 1.37 captured and the rest released. It goes to PayPal as digital delivery with the receipt PDF.
               </p>
             </div>
-            <Shot src="/landing/06-agent-metermcp-receipt.png" alt="An agent purchase case: the MeterMCP mandate, the per-call receipt with a failed call not charged, and the settlement." />
+            <Shot src="/landing/06-agent-metermcp-receipt.png" alt="An agent purchase case (0.45 USD of a 0.50 USD budget): the per-call MeterMCP receipt in AG Grid with the failed call not charged, and the settlement (captured, the remainder released)." />
           </div>
         </Section>
 
