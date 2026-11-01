@@ -3,7 +3,7 @@
 # Limitaciones
 
 Lo que ResolveKit no hace, todavía no hace o no se ha demostrado que haga. Comprobado frente al código en el commit
-`667abb3` (desplegado el 31/10/2026) y las listas de seguimiento de los mantenedores; las acciones de disputa, frente al
+`334eeb3` (desplegado el 1/11/2026) y las listas de seguimiento de los mantenedores; las acciones de disputa, frente al
 commit `076c74f` (20/10/2026). Los problemas de código para
 colaboradores están en [Problemas conocidos](../quality/known-issues.md); esta página recoge lo que necesita saber un
 usuario, un comerciante o un jurado.
@@ -13,8 +13,8 @@ usuario, un comerciante o un jurado.
 | Función | Situación hoy | Estado |
 |---|---|---|
 | Conectar las disputas de PayPal propias de un comerciante | Un comerciante que inicia sesión con **Continue with PayPal** recibe la pantalla de espera. La app no tiene código de Partner Referrals, `merchant-integrations` ni `PayPal-Auth-Assertion`. Se hicieron experimentos en sandbox fuera de la app (ver [Alta de comerciantes](../technical/merchant-onboarding.md)); no son una función | **Pendiente** (no implementado, no desplegado, no disponible) |
-| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el 20/10/2026 cada uno se envió una vez por el flujo propio de la app en el sandbox y se releyó (el servidor de la rama ejecutado en local). El código está desplegado (`667abb3`, 31/10/2026), en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026: cuatro ofertas de reembolso de 3.50 USD (en cuatro disputas), registradas por PayPal como SELLER PROPOSED; código `f1b7236`, después `d654478` y `667abb3`); enviar mensaje, aceptar la reclamación y escalar aún no (escalar solo está verificado desde `WAITING_FOR_SELLER_RESPONSE`). Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Verificado en sandbox · Desplegado (código); hacer una oferta ejercitado en el servicio alojado (31/10/2026), el resto aún no |
-| Un mensaje con adjunto | La ruta del servidor y el editor web están probados (una subida confirmada del caso); un mensaje con archivo se envió a PayPal a través de la app en el sandbox (V-7, 21/10/2026, ejecución local) | Verificado en sandbox a través de la app (V-7); Desplegado (`667abb3`, 31/10/2026), aún no ejercitado en el servicio alojado |
+| Enviar mensaje, aceptar la reclamación (total o parcial), hacer una oferta de reembolso parcial, escalar, evidencia tras un escalado | Construidos sobre contratos registrados y ejecutados con fakes; el 20/10/2026 cada uno se envió una vez por el flujo propio de la app en el sandbox y se releyó (el servidor de la rama ejecutado en local). El código está desplegado (`334eeb3`, 1/11/2026), en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026: cuatro ofertas de reembolso de 3.50 USD (en cuatro disputas), registradas por PayPal como SELLER PROPOSED; código `f1b7236`, después `d654478` y `667abb3`); enviar mensaje, aceptar la reclamación y escalar aún no (escalar solo está verificado desde `WAITING_FOR_SELLER_RESPONSE`). Estado por variante: [Especificación funcional](functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia) | Verificado en sandbox · Desplegado (código); hacer una oferta ejercitado en el servicio alojado (31/10/2026), el resto aún no |
+| Un mensaje con adjunto | La ruta del servidor y el editor web están probados (una subida confirmada del caso); un mensaje con archivo se envió a PayPal a través de la app en el sandbox (V-7, 21/10/2026, ejecución local) | Verificado en sandbox a través de la app (V-7); Desplegado (`334eeb3`, 1/11/2026), aún no ejercitado en el servicio alojado |
 | Oferta de sustitución | No disponible: «Not verified with PayPal: never offered on a sandbox dispute» | No disponible |
 | Retirar una oferta | No disponible: «PayPal documents no route to withdraw an offer» | No disponible |
 | Apelación | No disponible (no implementada). El único intento de preparar una disputa apelable (W-7, 20/10/2026, una cuenta de comprador normal) fue rechazado; el producto sigue mostrando el motivo «Not implemented yet: appeal was not verified with PayPal». PayPal documenta que el sandbox permite apelaciones cuando el email de la cuenta de comprador del sandbox contiene `allowappeal` (y `noappeal` para lo contrario; [PayPal](https://developer.paypal.com/disputes/test-go-live), según PayPal DevRel dijo en el Discord de la hackathon el 30/10/2026); ResolveKit no lo ha probado | No disponible |
@@ -45,7 +45,7 @@ usuario, un comerciante o un jurado.
   análisis en directo y 30 recomprobaciones. Por dirección: 300 peticiones a la API y 60 lecturas de PayPal cada 5
   minutos; 20 subidas, tapados y lecturas de páginas de PDF cada 10 minutos. Un rechazo dice cuándo se restablece.
 - **Los redespliegues** provocan 1–2 minutos de errores (un servicio con disco no tiene despliegue sin interrupción).
-- **Qué commit está desplegado** no se puede demostrar desde fuera: `667abb3` se trata como desplegado por la
+- **Qué commit está desplegado** no se puede demostrar desde fuera: `334eeb3` se trata como desplegado por la
   decisión del propietario de subirlo y un `demo:check` del 31/10/2026 correcto salvo la reserva vacía conocida del caso
   estándar (`d654478` antes el mismo día, `f1b7236` el 29/10/2026, `c12faea` y `81c6242` el 21/10/2026, `5111b88` el 20/10/2026 y `fbe9621` el 19/10/2026 se trataron como desplegados del mismo modo).
 

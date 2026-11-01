@@ -27,7 +27,9 @@ Requiere Node 24+ (TypeScript se ejecuta de forma nativa). `npm test` no hace ni
 
 ## Última ejecución registrada
 
-**2026-10-31 (noche) · commit `667abb3` (`main`, desplegado).** `npm test` pasó; `npm run typecheck` salió limpio. 1,523 tests, todos superados: node:test 1,025 y vitest 498. Esta ejecución registró solo los dos totales; las cifras por suite de abajo son las de la ejecución del 29/10/2026.
+**2026-11-01 · commit `334eeb3` (`main`, desplegado).** `npm test` pasó; `npm run typecheck` salió limpio. 1,541 tests, todos superados: node:test 1,025 y vitest 516. Esta ejecución registró solo los dos totales; las cifras por suite de abajo son las de la ejecución del 29/10/2026.
+
+La ejecución anterior: **2026-10-31 (noche) · commit `667abb3` (`main`).** `npm test` pasó; `npm run typecheck` salió limpio. 1,523 tests, todos superados: node:test 1,025 y vitest 498. Esta ejecución registró solo los dos totales; las cifras por suite de abajo son las de la ejecución del 29/10/2026.
 
 La ejecución anterior a esa: **2026-10-31 · commit `d654478` (`main`, desplegado: las correcciones posteriores al rodaje).** 1,521 tests, todos superados: node:test 1,025 y vitest 496 (solo totales).
 
@@ -192,6 +194,6 @@ anterior cliente con guion (scripted), no el agente dirigido por el modelo.
 - Comportamiento contra PayPal live: ninguno.
 - Acciones de disputa: probadas con fakes y una escritura de contrato registrada por variante; el flujo de la app contra
   el sandbox se ejecutó una vez por variante verificada (20/10/2026 y, para el mensaje con archivo, 21/10/2026; un servidor local);
-  el código está desplegado (`667abb3`), pero en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026).
+  el código está desplegado (`334eeb3`), pero en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026).
 
 La lista completa, con fuentes, está en [Problemas conocidos](known-issues.md).

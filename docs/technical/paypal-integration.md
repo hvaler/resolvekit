@@ -3,7 +3,7 @@
 # PayPal integration
 
 Which PayPal APIs ResolveKit calls, with which credential, what it relies on, and what was only observed in the
-sandbox. Code at commit `667abb3` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
+sandbox. Code at commit `334eeb3` (the dispute actions were added in `076c74f`, 20/10/2026); PayPal documentation checked
 on 19/10/2026 (developer.paypal.com).
 
 Three kinds of statement are kept apart on this page:
@@ -142,7 +142,7 @@ accept, offer and escalate, because that is all the writes covered.
 ResolveKit's own flow: the server of the dispute-actions branch (head `9f93ba0`, since merged into `main` and deployed) running locally
 against the sandbox, each run approved by the owner beforehand, each going compose → approve by hash → second
 confirmation (when the action has terms) → one send → attributable read-back. One POST to PayPal per run, with GET
-reads before and after (private evidence, 20/10/2026). The code is now deployed (`667abb3`); on the hosted service only make an offer has been sent (31/10/2026, four refund offers of 3.50 USD (on four disputes) from the owner settlement case; PayPal recorded each as SELLER PROPOSED). Single observations, not PayPal rules.
+reads before and after (private evidence, 20/10/2026). The code is now deployed (`334eeb3`); on the hosted service only make an offer has been sent (31/10/2026, four refund offers of 3.50 USD (on four disputes) from the owner settlement case; PayPal recorded each as SELLER PROPOSED). Single observations, not PayPal rules.
 
 | Run | Variant | Sandbox dispute | Observed through the app |
 |---|---|---|---|
@@ -154,7 +154,7 @@ reads before and after (private evidence, 20/10/2026). The code is now deployed 
 | V-6 | `evidence:after_escalation` | same, in `CHARGEBACK` | After one live analysis of the bound case, an edited sentence re-checked and a contradiction resolved by the owner: one `provide-evidence`, recorded as a `PROVIDE_EVIDENCE` entry in stage `CHARGEBACK` with 2 documents, next to the inquiry-stage `ESCALATE` entry |
 | V-7 | `send_message:file` | PP-R-GCV-10193596 (`WAITING_FOR_BUYER_RESPONSE`) | 21/10/2026 05:30Z, local server of `main` (`81c6242`): one confirmed, sanitised upload (a synthetic PNG, sent as `E7-upload.png`), its hash matching the approved one; one multipart send (202); «Recorded by PayPal» at about 1 s and again at +30 s; the new seller message has the exact text and 1 document; no money moved |
 
-Not verified through the app: every «Not available» variant. The registry status of `send_message:file` (Verified in sandbox) is deployed (`667abb3`, 31/10/2026).
+Not verified through the app: every «Not available» variant. The registry status of `send_message:file` (Verified in sandbox) is deployed (`334eeb3`, 1/11/2026).
 
 **W-11, the pending proof-of-refund test.** A disputed payment showed as held in the sandbox on 19/10/2026, and the
 seller's sandbox web pages offered no refund outside the case. The planned sequence is therefore: a new sandbox

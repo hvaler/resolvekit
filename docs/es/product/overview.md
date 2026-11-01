@@ -15,7 +15,7 @@ llamada como evidencia.
 
 ResolveKit prepara la respuesta; PayPal decide la disputa. No está afiliado a PayPal.
 
-Los datos de esta página proceden del código en el commit `667abb3` (desplegado el 31/10/2026) salvo que una fecha diga otra cosa.
+Los datos de esta página proceden del código en el commit `334eeb3` (desplegado el 31/10/2026) salvo que una fecha diga otra cosa.
 Las palabras de estado siguen un único vocabulario: Diseñado · Implementado · Probado en local · Verificado en sandbox ·
 Desplegado · Disponible para usuarios · Pendiente.
 
@@ -67,7 +67,7 @@ PayPal; ResolveKit nunca se ha ejecutado contra el entorno live (producción) de
 
 Dos acciones de disputa de PayPal se han ejercitado de extremo a extremo en el servicio alojado: **Provide evidence** y **Make an offer** (31/10/2026; ese mismo día también se vieron allí una ejecución del agente y un webhook de disputa con la firma verificada).
 El expediente muestra las acciones que PayPal permite (por ejemplo «Send message», «Accept claim»). El código para
-enviar un mensaje, aceptar una reclamación, hacer una oferta y escalar está desplegado (`667abb3`, 31/10/2026) y
+enviar un mensaje, aceptar una reclamación, hacer una oferta y escalar está desplegado (`334eeb3`, 1/11/2026) y
 Verificado en sandbox en una ejecución local; en el servicio alojado solo se ha ejercitado hacer una oferta, así que enviar un mensaje, aceptar una reclamación y escalar aún no.
 ResolveKit no crea ningún reembolso.
 

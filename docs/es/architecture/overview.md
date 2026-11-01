@@ -8,7 +8,7 @@ aprueba el contenido exacto antes de que se envíe nada a PayPal. Un segundo sis
 pasarela MCP de pago por uso que un **agente comprador** paga a través de PayPal; sus recibos se convierten en
 evidencia de uno de los casos.
 
-Esta página describe la arquitectura tal como está en el código en el commit `667abb3` (desplegado el 31/10/2026). Los términos de
+Esta página describe la arquitectura tal como está en el código en el commit `334eeb3` (desplegado el 31/10/2026). Los términos de
 estado siguen el vocabulario del proyecto: Diseñado · Implementado · Probado en local · Verificado en sandbox ·
 Desplegado · Disponible para usuarios · Pendiente.
 
@@ -79,7 +79,9 @@ Los paquetes compartidos (`packages/*`) son bibliotecas dentro de esos procesos,
 | Entorno de PayPal | `PAYPAL_ENV=sandbox`; el modo alojado se niega a arrancar con otro valor salvo `live` más `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, que el blueprint nunca establece |
 | Despliegue automático | `commit` en ambos servicios (el seguimiento del agente recomienda desactivarlo para `resolvekit`: Pendiente, operativo) |
 
-`667abb3` se considera Desplegado: el 31/10/2026 el propietario lo aprobó, lo subió y Render volvió a desplegar (ResolveKit se reinició hacia las 21:07, hora de Madrid), y `demo:check` contra las URL alojadas dio PASS en todas las líneas (ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado, webhook activo, las tres vinculaciones verificadas, ambos modelos de IA respondieron, precalentamiento en caché) salvo un FAIL conocido: la vinculación del caso estándar está usada y no queda ninguna disputa en reserva (relleno para la evaluación el 28–30/11/2026); vinculaciones a 31/10/2026: el caso estándar usado (sin reserva), el de liquidación vinculado, el del agente vinculado con 1 en reserva. Antes, el mismo día, se desplegó `d654478` (hacia las 20:00; `main` avanzó de `23728e2`, 12 commits). Antes, `f1b7236` se desplegó el 29/10/2026, `c12faea` y `81c6242` se desplegaron el 21/10/2026, `5111b88` el 20/10/2026 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`) y `fbe9621` el 19/10/2026 (confirmación del propietario; la misma reserva
+`334eeb3` se considera Desplegado: el 1/11/2026 el propietario lo aprobó y lo subió; ResolveKit se reinició hacia las 11:54, hora de Madrid. Desde `667abb3`: `0d417f9` (31/10/2026, noche: documentación tras el rodaje y el texto del motivo de la apelación «Not implemented yet: appeal was not verified with PayPal») y `334eeb3` (1/11/2026: la página de inicio se muestra en `/` a todo el mundo en el servicio alojado, con sesión o sin ella, con «Open your cases →» cuando hay sesión; sus capturas son capturas reales del 31/10/2026 y se abren a tamaño completo en un visor; el logotipo de la app lleva a los casos; los retornos del inicio de sesión abren los casos). `demo:check` después: todo PASS salvo el FAIL conocido (la vinculación del caso estándar está usada y no queda ninguna disputa en reserva; reposición para la evaluación 28–30/11/2026). Vinculaciones a 1/11/2026, sin cambios: el caso estándar usado (sin reserva), el caso de liquidación vinculado, el caso del agente vinculado con 1 en reserva.
+
+Antes, `667abb3` se consideraba Desplegado: el 31/10/2026 el propietario lo aprobó, lo subió y Render volvió a desplegar (ResolveKit se reinició hacia las 21:07, hora de Madrid), y `demo:check` contra las URL alojadas dio PASS en todas las líneas (ResolveKit activo, página de inicio, MeterMCP activo, sandbox de PayPal conectado, webhook activo, las tres vinculaciones verificadas, ambos modelos de IA respondieron, precalentamiento en caché) salvo un FAIL conocido: la vinculación del caso estándar está usada y no queda ninguna disputa en reserva (relleno para la evaluación el 28–30/11/2026); vinculaciones a 31/10/2026: el caso estándar usado (sin reserva), el de liquidación vinculado, el del agente vinculado con 1 en reserva. Antes, el mismo día, se desplegó `d654478` (hacia las 20:00; `main` avanzó de `23728e2`, 12 commits). Antes, `f1b7236` se desplegó el 29/10/2026, `c12faea` y `81c6242` se desplegaron el 21/10/2026, `5111b88` el 20/10/2026 (el propietario avanzó `main` hasta él y lo subió; el mismo resultado de `demo:check`) y `fbe9621` el 19/10/2026 (confirmación del propietario; la misma reserva
 vacía). `demo:check` no puede demostrar qué commit está desplegado. Un disco
 persistente impide los despliegues sin tiempo de inactividad; se observaron de uno a dos minutos de 502 por despliegue
 (evidencia privada). Detalles: [despliegue](../operations/deployment.md).
@@ -132,7 +134,7 @@ sequenceDiagram
 ```
 
 En el servicio alojado se han ejercitado de extremo a extremo `provide-evidence` y hacer una oferta (31/10/2026). Desde el commit `5111b88`
-(desplegado el 20/10/2026; ahora `667abb3`, 31/10/2026) el servidor también envía mensajes, aceptaciones, ofertas y escalados por la misma cadena (componer,
+(desplegado el 20/10/2026; ahora `334eeb3`, 1/11/2026) el servidor también envía mensajes, aceptaciones, ofertas y escalados por la misma cadena (componer,
 aprobar por hash, una segunda confirmación para las acciones del Owner, una lectura fresca, `send_started` en disco, un
 único POST, una relectura atribuible), solo para las variantes cuyo contrato está registrado; estado: Desplegado (código), Verificado en sandbox a través de la app (20/10/2026,
 servidor local), ejercitado en el servicio alojado solo para hacer una oferta, 31/10/2026 ([especificación funcional](../product/functional-specification.md#56-acciones-de-disputa-distintas-de-la-evidencia)).
@@ -186,7 +188,7 @@ No hay carpeta `docs/architecture/decisions/`: la tabla anterior es el registro 
 
 ## Arquitectura actual y evolución futura
 
-| Área | Hoy (código en `667abb3`) | No construido (futuro, no prometido) |
+| Área | Hoy (código en `334eeb3`) | No construido (futuro, no prometido) |
 |---|---|---|
 | Comerciantes | Un espacio de trabajo de evaluación: el vendedor de las disputas de sandbox vinculadas | Conectar las disputas propias de cualquier comerciante mediante PayPal Platform (Partner Referrals, `PayPal-Auth-Assertion`): solo pruebas externas en sandbox, sin código en la app |
 | Acciones sobre disputas | `provide-evidence`; enviar mensaje, hacer oferta, aceptar reclamación, escalar (Desplegado; Verificado en sandbox en una ejecución local; en el servicio alojado solo se ha ejercitado hacer una oferta, 31/10/2026) | reembolsar |

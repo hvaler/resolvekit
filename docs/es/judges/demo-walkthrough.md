@@ -38,7 +38,7 @@ Demo: [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com). Víd
 6. En el borrador, cada frase está **Supported**, **Needs review** o *Removed: no supporting evidence* (tachada, nunca
    se envía). **Edit** una frase para ver cómo se vuelve a comprobar (*Re-checking support…*).
 7. Bajo **What to do** se listan las acciones que PayPal permite para esta disputa. El commit desplegado
-   (`667abb3`) incluye las demás acciones de disputa; en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026; enviar mensaje, aceptar y escalar, todavía no): elegir
+   (`334eeb3`) incluye las demás acciones de disputa; en el servicio alojado solo se ha ejercitado hacer una oferta (31/10/2026; enviar mensaje, aceptar y escalar, todavía no): elegir
    **Send message**, **Accept claim**, **Make an offer** o **Escalate** abre su propio editor, reproducido en el
    simulador solo con las transiciones de PayPal registradas; las acciones solo del Owner necesitan el caso de liquidación, que está vinculado en el `BINDINGS_JSON` alojado, y los revisores pueden enviar mensajes
    en la disputa activa de un caso vinculado; las variantes no disponibles dicen por qué

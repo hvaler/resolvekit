@@ -26,7 +26,9 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 
 ## Latest recorded run
 
-**2026-10-31 (night) · commit `667abb3` (`main`, deployed).** `npm test` passed; `npm run typecheck` was clean. 1,523 tests, all passed: node:test 1,025 and vitest 498. This run recorded the two totals only; the per-suite counts below are those of the 29/10/2026 run.
+**2026-11-01 · commit `334eeb3` (`main`, deployed).** `npm test` passed; `npm run typecheck` was clean. 1,541 tests, all passed: node:test 1,025 and vitest 516. This run recorded the two totals only; the per-suite counts below are those of the 29/10/2026 run.
+
+The run before that: **2026-10-31 (night) · commit `667abb3` (`main`).** `npm test` passed; `npm run typecheck` was clean. 1,523 tests, all passed: node:test 1,025 and vitest 498. This run recorded the two totals only; the per-suite counts below are those of the 29/10/2026 run.
 
 The run before that: **2026-10-31 · commit `d654478` (`main`, deployed: the post-shoot fixes).** 1,521 tests, all passed: node:test 1,025 and vitest 496 (totals only).
 
@@ -181,6 +183,6 @@ not by the model-driven agent.
 - Linux-only paths (RSS kill of the PDF child) not run on Linux; memory of a 5-page PDF on Render not measured.
 - Behaviour against live PayPal: none.
 - Dispute actions: tested with fakes and one recorded contract write per variant; the app's flow against the sandbox
-  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`667abb3`) but on the hosted service only make an offer has been exercised (31/10/2026).
+  was run once per verified variant (20/10/2026 and, for the message with a file, 21/10/2026; a local server); the code is deployed (`334eeb3`) but on the hosted service only make an offer has been exercised (31/10/2026).
 
 The full list, with sources, is in [Known issues](known-issues.md).

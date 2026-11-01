@@ -3,7 +3,7 @@
 # Configuration
 
 Every environment variable the code reads, from `apps/server/src/main.ts`, `apps/metermcp/src/main.ts`,
-`packages/*` and the scripts at commit `667abb3`. A template with safe placeholders is in
+`packages/*` and the scripts at commit `334eeb3`. A template with safe placeholders is in
 [`.env.example`](../../.env.example). The server and MeterMCP load the repository-root `.env` with
 `node --env-file-if-exists`; on Render the values come from the service settings and `render.yaml`.
 

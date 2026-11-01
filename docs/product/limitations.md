@@ -3,7 +3,7 @@
 # Limitations
 
 What ResolveKit does not do, does not do yet, or has not been shown to do. Checked against the code at commit
-`667abb3` (deployed 31/10/2026) and the maintainers' follow-up lists; the dispute actions against commit
+`334eeb3` (deployed 1/11/2026) and the maintainers' follow-up lists; the dispute actions against commit
 `076c74f` (20/10/2026). Code-level issues for contributors are in
 [Known issues](../quality/known-issues.md); this page is what a user, merchant or judge needs to know.
 
@@ -12,8 +12,8 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
 | Function | State today | Status |
 |---|---|---|
 | Connecting a merchant's own PayPal disputes | A merchant who signs in with **Continue with PayPal** gets the waiting screen. The app has no Partner Referrals, `merchant-integrations` or `PayPal-Auth-Assertion` code. Sandbox experiments were made outside the app (see [Merchant onboarding](../technical/merchant-onboarding.md)); they are not a feature | **Pending** (not implemented, not deployed, not available) |
-| Send message, accept claim (full or partial), make a partial-refund offer, escalate, evidence after an escalation | Built on recorded contracts and run with fakes; on 20/10/2026 each was sent once through the app's own flow in the sandbox and read back (the branch's server run locally). The code is deployed (`667abb3`, 31/10/2026) but on the hosted service only make an offer has been exercised (31/10/2026: four refund offers of 3.50 USD (on four disputes), recorded by PayPal as SELLER PROPOSED; code `f1b7236`, then `d654478` and `667abb3`); send message, accept claim and escalate have not yet been (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`). Per-variant status: [Functional specification](functional-specification.md#56-dispute-actions-other-than-evidence) | Verified in sandbox · Deployed (code); make an offer exercised on the hosted service (31/10/2026), the rest not yet |
-| A message with an attachment | The server path and the web composer are tested (one confirmed upload of the case); one message with a file was sent to PayPal through the app in the sandbox (V-7, 21/10/2026, a local run) | Verified in sandbox through the app (V-7); Deployed (`667abb3`, 31/10/2026), not yet exercised on the hosted service |
+| Send message, accept claim (full or partial), make a partial-refund offer, escalate, evidence after an escalation | Built on recorded contracts and run with fakes; on 20/10/2026 each was sent once through the app's own flow in the sandbox and read back (the branch's server run locally). The code is deployed (`334eeb3`, 1/11/2026) but on the hosted service only make an offer has been exercised (31/10/2026: four refund offers of 3.50 USD (on four disputes), recorded by PayPal as SELLER PROPOSED; code `f1b7236`, then `d654478` and `667abb3`); send message, accept claim and escalate have not yet been (escalate is only verified from `WAITING_FOR_SELLER_RESPONSE`). Per-variant status: [Functional specification](functional-specification.md#56-dispute-actions-other-than-evidence) | Verified in sandbox · Deployed (code); make an offer exercised on the hosted service (31/10/2026), the rest not yet |
+| A message with an attachment | The server path and the web composer are tested (one confirmed upload of the case); one message with a file was sent to PayPal through the app in the sandbox (V-7, 21/10/2026, a local run) | Verified in sandbox through the app (V-7); Deployed (`334eeb3`, 1/11/2026), not yet exercised on the hosted service |
 | Replacement offer | Not available: Not verified with PayPal: never offered on a sandbox dispute | Not available |
 | Withdrawing an offer | Not available: PayPal documents no route to withdraw an offer | Not available |
 | Appeal | Not available (not implemented). The one attempt to set up an appealable dispute (W-7, 20/10/2026, a normal buyer account) was refused; the product still shows the reason «Not implemented yet: appeal was not verified with PayPal». PayPal documents that the sandbox allows appeals when the buyer sandbox account's email contains `allowappeal` (and `noappeal` for the opposite; [PayPal](https://developer.paypal.com/disputes/test-go-live), as PayPal DevRel told the hackathon Discord on 30/10/2026); ResolveKit has not tried it | Not available |
@@ -44,7 +44,7 @@ What ResolveKit does not do, does not do yet, or has not been shown to do. Check
   requests and 60 PayPal reads per 5 minutes, 20 uploads, redactions and PDF page reads per 10 minutes. A refusal
   says when it resets.
 - **Redeploys** cause 1–2 minutes of errors (a service with a disk has no zero-downtime deploy).
-- **Which commit is live** cannot be proven from outside: `667abb3` is treated as deployed on the owner's
+- **Which commit is live** cannot be proven from outside: `334eeb3` is treated as deployed on the owner's
   decision to push it and a `demo:check` on 31/10/2026 that passed apart from the known empty reserve of the standard
   case (`d654478` earlier the same day, `f1b7236` on 29/10/2026, `c12faea` and `81c6242` on 21/10/2026, `5111b88` on 20/10/2026 and `fbe9621` on 19/10/2026 were treated as deployed the same way).
 

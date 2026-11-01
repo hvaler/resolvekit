@@ -33,7 +33,7 @@ Demo: [resolvekit-i3j2.onrender.com](https://resolvekit-i3j2.onrender.com). Vide
    Press **Explain in response** (adds a neutral sentence citing both) or **Mark resolved…** (records a note).
 6. In the draft, each sentence is **Supported**, **Needs review** or *Removed: no supporting evidence* (struck, never
    sent). **Edit** a sentence to see it checked again (*Re-checking support…*).
-7. Under **What to do**, the actions PayPal allows for this dispute are listed. The deployed commit (`667abb3`)
+7. Under **What to do**, the actions PayPal allows for this dispute are listed. The deployed commit (`334eeb3`)
    includes the other dispute actions; on the hosted service only make an offer has been exercised (31/10/2026; send message, accept claim and escalate not yet): choosing **Send
    message**, **Accept claim**, **Make an offer** or **Escalate** opens its own composer, played on the simulator with
    the recorded PayPal transitions only; owner-only actions need the settlement case, which is bound in the hosted `BINDINGS_JSON`, and reviewers can send messages on a bound case's active dispute; variants

@@ -2,7 +2,7 @@
 
 # Problemas conocidos
 
-Seguimientos abiertos, actualizados para el código en `667abb3` (desplegado el 31/10/2026); revisados línea a línea por primera vez en `fbe9621` (19/10/2026). Cada punto indica su fuente (las listas de seguimiento de los mantenedores, con la clave de abajo) y, cuando procede,
+Seguimientos abiertos, actualizados para el código en `334eeb3` (desplegado el 31/10/2026); revisados línea a línea por primera vez en `fbe9621` (19/10/2026). Cada punto indica su fuente (las listas de seguimiento de los mantenedores, con la clave de abajo) y, cuando procede,
 la ubicación en el código. Los puntos marcados **por diseño** se mantienen a propósito, pero conviene conocerlos. Los límites del producto
 (lo que ResolveKit no hace) están en [Limitaciones](../product/limitations.md).
 
@@ -10,7 +10,7 @@ Fuentes: **P1** seguimientos del trabajo de evidencia del comerciante (17/10) ·
 · **AG** seguimientos del agente comprador (18/10) · **ENV** seguimientos de los tres entornos (18/10) ·
 **EV** seguimientos de las evaluaciones del analista (19/10) · **TR** la ejecución de tests del 19/10 ([Pruebas](testing.md)) ·
 **DA** el diseño de las acciones de disputa (19/10) y el código
-en `076c74f` (20/10/2026), ahora en `667abb3`.
+en `076c74f` (20/10/2026), ahora en `334eeb3`.
 
 ## Subidas y PDF
 
@@ -42,7 +42,7 @@ en `076c74f` (20/10/2026), ahora en `667abb3`.
 |---|---|---|
 | Importe reembolsable en otra moneda | Si el importe reembolsable de PayPal estuviera en una moneda distinta de la de la disputa, un importe se rechaza con `AMOUNT_ABOVE_REFUNDABLE` («The amount must be below / at most what PayPal would refund, <amount>») citando la otra moneda, sin decir que las monedas difieren. Nunca visto en el sandbox (todas las disputas eran en USD) | DA; `apps/web/src/domain/actions.ts` (comprobaciones de importe en `composeActionWith`) |
 | README de contratos desactualizado | `packages/paypal/contracts/README.md` sigue diciendo que no se envió ninguna escritura y que todas las variantes están «Not available»; el registro (`actionContracts.ts`) y los archivos registrados son el estado actual | DA; `packages/paypal/contracts/README.md` |
-| Mensaje con archivo: una sola observación | El editor adjunta una subida confirmada (`send_message:file`); se envió una vez a través de la app en el sandbox (V-7, 21/10/2026, ejecución local) y se releyó «Recorded by PayPal» con 1 documento; la relectura prueba el texto y la presencia del documento, no su contenido; una sola observación; el estado del registro está desplegado (`667abb3`) | DA; `apps/web/src/components/ActionComposer.tsx` |
+| Mensaje con archivo: una sola observación | El editor adjunta una subida confirmada (`send_message:file`); se envió una vez a través de la app en el sandbox (V-7, 21/10/2026, ejecución local) y se releyó «Recorded by PayPal» con 1 documento; la relectura prueba el texto y la presencia del documento, no su contenido; una sola observación; el estado del registro está desplegado (`334eeb3`) | DA; `apps/web/src/components/ActionComposer.tsx` |
 | La respuesta del comprador a una oferta nunca se registró | Una oferta pendiente se juzga por el enlace `make_offer` en directo de PayPal y, como respaldo, cualquier entrada de oferta posterior la termina; los nombres de evento del comprador son desconocidos | DA; `actions.ts` (`pendingSellerOffer`) |
 | Las reglas cubren un motivo, una fase y los estados registrados | Aceptar, ofertar y escalar solo se componen en disputas de artículo no recibido que esperan al vendedor, un mensaje también mientras PayPal espera al comprador, y toda acción solo en `INQUIRY`, porque las escrituras registradas no cubrieron nada más; lo demás se rechaza, no se adivina (**por diseño**) | DA; `actions.ts` (`RECORDED_STAGES`, `RECORDED_STATUSES`, `ACTION_RULES`) |
 | «Ausente» tras 60 s es un riesgo residual | Una relectura prueba un envío ausente cuando PayPal no muestra ninguna entrada nueva del vendedor 60 s después de `send_started` y sigue ofreciendo la acción (`absentAfterMs`, el doble del retraso que mostró el sandbox). Si PayPal registrara alguna vez una entrada más tarde, un reintento tras «ausente» podría publicar la acción dos veces; nunca observado en el sandbox | DA; `actionContracts.ts` (`absentAfterMs`), `actionReadback.ts` (`proveSend`) |
@@ -50,7 +50,7 @@ en `076c74f` (20/10/2026), ahora en `667abb3`.
 | Apelación no implementada | El único intento de preparación (W-7, 20/10/2026, una cuenta de comprador normal) fue rechazado, así que la apelación sigue «Not available». PayPal documenta que el sandbox permite apelaciones cuando el email de la cuenta de comprador del sandbox contiene `allowappeal` (y `noappeal` para lo contrario; [PayPal](https://developer.paypal.com/disputes/test-go-live), según PayPal DevRel dijo en el Discord de la hackathon el 30/10/2026); ResolveKit no lo ha probado | DA; `packages/paypal/contracts/appeal-setup-adjudicate.json` |
 | `provide_supporting_info` no soportado | PayPal lo ofrece tras evidencia en una reclamación; ResolveKit no muestra nada que enviar | DA; `apps/web/src/domain/simulatedActions.ts` |
 | Prueba de reembolso no enviada | Si PayPal solo pide esa, en esta entrega no se puede enviar evidencia en esa disputa; W-11 es una prueba de sandbox pendiente | DA; `actionContracts.ts` |
-| El flujo de la app, verificado una vez por variante, ejercitado en el servicio alojado solo para hacer una oferta | Cada variante verificada se envió una vez a través de la app en un servidor local (20/10/2026, V-1 a V-6; el mensaje con archivo el 21/10/2026, V-7): observaciones únicas. Las variantes No disponibles no se ejecutaron a través de la app; el código está desplegado (`667abb3`) y en el servicio alojado solo se envió hacer una oferta (31/10/2026, cuatro ofertas de 3.50 USD (en cuatro disputas); código `f1b7236`, después `d654478` y `667abb3`), mientras que mensaje, aceptación y escalado no (**Pendiente**) | DA |
+| El flujo de la app, verificado una vez por variante, ejercitado en el servicio alojado solo para hacer una oferta | Cada variante verificada se envió una vez a través de la app en un servidor local (20/10/2026, V-1 a V-6; el mensaje con archivo el 21/10/2026, V-7): observaciones únicas. Las variantes No disponibles no se ejecutaron a través de la app; el código está desplegado (`334eeb3`) y en el servicio alojado solo se envió hacer una oferta (31/10/2026, cuatro ofertas de 3.50 USD (en cuatro disputas); código `f1b7236`, después `d654478` y `667abb3`), mientras que mensaje, aceptación y escalado no (**Pendiente**) | DA |
 
 ## Entornos, inicio de sesión y health
 

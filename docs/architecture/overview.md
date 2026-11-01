@@ -7,7 +7,7 @@ which every sentence cites its evidence, unsupported sentences are rejected, and
 content before anything is sent to PayPal. A second, smaller system, **MeterMCP**, is a metered MCP gateway that a
 **buying agent** pays through PayPal; its receipts become evidence in one of the cases.
 
-This page describes the architecture as it is in the code at commit `667abb3` (deployed 31/10/2026). Status words follow the
+This page describes the architecture as it is in the code at commit `334eeb3` (deployed 1/11/2026). Status words follow the
 project vocabulary: Designed · Implemented · Tested locally · Verified in sandbox · Deployed · Available to users ·
 Pending.
 
@@ -78,7 +78,9 @@ Shared packages (`packages/*`) are libraries inside those processes, not service
 | PayPal environment | `PAYPAL_ENV=sandbox`; hosted mode refuses to start otherwise unless `live` plus `RESOLVEKIT_ALLOW_LIVE_PAYPAL=yes-real-money`, which the blueprint never sets |
 | Auto-deploy | `commit` on both services (the agent follow-up recommends turning it off for `resolvekit`: Pending, operational) |
 
-`667abb3` is treated as Deployed: on 31/10/2026 the owner approved it, pushed it and Render redeployed (ResolveKit restarted at about 21:07 Madrid time), and `demo:check` against the hosted URLs passed all lines (ResolveKit up, landing, MeterMCP up, PayPal sandbox connected, webhook on, all three bindings verified, both AI models answered, warm-up cached) except one known FAIL: the standard case's binding is used and no dispute is left in reserve (refill for judging 28–30/11/2026); bindings as of 31/10/2026: the standard case used (no reserve), the settlement case bound, the agent case bound with 1 in reserve. Earlier the same day `d654478` was deployed (about 20:00; `main` fast-forwarded from `23728e2`, 12 commits). Earlier, `f1b7236` was deployed on 29/10/2026, `c12faea` and `81c6242` were deployed on 21/10/2026, `5111b88` on 20/10/2026 (the owner fast-forwarded `main` to it and pushed; the same `demo:check` result) and `fbe9621` on 19/10/2026 (owner's confirmation; the
+`334eeb3` is treated as Deployed: on 1/11/2026 the owner approved and pushed it; ResolveKit restarted at about 11:54 Madrid time. Since `667abb3`: `0d417f9` (31/10/2026, night: docs after the shoot and the appeal reason string «Not implemented yet: appeal was not verified with PayPal») and `334eeb3` (1/11/2026: the landing page is shown at `/` to everyone on the hosted service, signed in or not, with «Open your cases →» when signed in; its screenshots are real captures of 31/10/2026 and open full size in a lightbox; the in-app logo leads to the cases; returns from sign-in open the cases). `demo:check` after it: all PASS except the known FAIL (the standard case binding is used and no dispute is left in reserve; refill for judging 28–30/11/2026). Bindings as of 1/11/2026, unchanged: the standard case used (no reserve), the settlement case bound, the agent case bound with 1 in reserve.
+
+Before it, `667abb3` was treated as Deployed: on 31/10/2026 the owner approved it, pushed it and Render redeployed (ResolveKit restarted at about 21:07 Madrid time), and `demo:check` against the hosted URLs passed all lines (ResolveKit up, landing, MeterMCP up, PayPal sandbox connected, webhook on, all three bindings verified, both AI models answered, warm-up cached) except one known FAIL: the standard case's binding is used and no dispute is left in reserve (refill for judging 28–30/11/2026); bindings as of 31/10/2026: the standard case used (no reserve), the settlement case bound, the agent case bound with 1 in reserve. Earlier the same day `d654478` was deployed (about 20:00; `main` fast-forwarded from `23728e2`, 12 commits). Earlier, `f1b7236` was deployed on 29/10/2026, `c12faea` and `81c6242` were deployed on 21/10/2026, `5111b88` on 20/10/2026 (the owner fast-forwarded `main` to it and pushed; the same `demo:check` result) and `fbe9621` on 19/10/2026 (owner's confirmation; the
 same one empty reserve). `demo:check` cannot prove which commit is live. A persistent disk rules out
 zero-downtime deploys; one to two minutes of 502 per deploy were observed (private evidence). Details:
 [deployment](../operations/deployment.md).
@@ -131,7 +133,7 @@ sequenceDiagram
 ```
 
 On the hosted service, `provide-evidence` and make an offer (31/10/2026) have been exercised end to end. Since commit `5111b88` (deployed
-20/10/2026; now `667abb3`, 31/10/2026) the server also sends messages, accepts, offers and escalations through the same chain (compose, approve by hash, a
+20/10/2026; now `334eeb3`, 1/11/2026) the server also sends messages, accepts, offers and escalations through the same chain (compose, approve by hash, a
 second confirmation for the Owner's actions, a fresh read, `send_started` on disk, one POST, an attributable
 read-back), only for the variants whose contract is recorded; status: Deployed (code), Verified in sandbox through the app (20/10/2026, local
 server), exercised on the hosted service only for make an offer, 31/10/2026 ([functional specification](../product/functional-specification.md#56-dispute-actions-other-than-evidence)). There is
@@ -185,7 +187,7 @@ There is no `docs/architecture/decisions/` folder: the table above is the decisi
 
 ## Current architecture and future evolution
 
-| Area | Today (code at `667abb3`) | Not built (future, not promised) |
+| Area | Today (code at `334eeb3`) | Not built (future, not promised) |
 |---|---|---|
 | Merchants | One evaluation workspace: the seller of the bound sandbox disputes | Connecting any merchant's own disputes through PayPal Platform (Partner Referrals, `PayPal-Auth-Assertion`): external sandbox tests only, no app code |
 | Dispute actions | `provide-evidence`; send message, make offer, accept claim, escalate (Deployed; Verified in sandbox on a local run; on the hosted service only make an offer has been exercised, 31/10/2026) | refund |
