@@ -9,9 +9,13 @@ import { AccountMenu } from './AccountMenu';
 import { SyncIndicator } from './SyncIndicator';
 import { cx } from './ui';
 
-export function Logo() {
+/**
+ * The ResolveKit mark. Inside the app it leads to the cases (`/cases`, or `/demo/cases` in the Explore demo), so a
+ * working person is never dropped on the landing page; the landing and the sign-in pages pass `to="/"` (home).
+ */
+export function Logo({ to = '/cases' }: { to?: string }) {
   return (
-    <Link to="/" className="flex items-center gap-2 text-ink no-underline hover:text-ink" aria-label="ResolveKit, all cases">
+    <Link to={to} className="flex items-center gap-2 text-ink no-underline hover:text-ink" aria-label={to === '/' ? 'ResolveKit, home' : 'ResolveKit, all cases'}>
       <span aria-hidden="true" className="relative box-border block h-[17px] w-[17px] rounded-md border-2 border-acc">
         <span className="absolute bottom-0.5 right-0.5 h-[5px] w-[5px] rounded-[1px] bg-acc" />
       </span>
@@ -163,7 +167,7 @@ export function AppBar({
   const { area } = useServices();
   return (
     <header className="flex h-11 flex-none items-center gap-3.5 border-b border-line bg-surface px-[18px] max-md:h-auto max-md:flex-wrap max-md:gap-x-2.5 max-md:gap-y-2 max-md:px-4 max-md:py-2">
-      <Logo />
+      <Logo to={casesBase(area)} />
       <span aria-hidden="true" className="h-[18px] w-px bg-line-2" />
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-3.5 max-md:gap-2">
         {caseId ? (

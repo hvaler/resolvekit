@@ -2,7 +2,7 @@ import { matchPath } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { AccountWorkspace, DemoState } from './demoClient';
 import { draftKey } from './draftStore';
-import { accountRecheckMs, approvePath, approvePattern, casePath, casesBase, draftScope, environmentOf, healthRetryDelay, joinUrl, knownBound, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
+import { accountRecheckMs, afterSignIn, approvePath, approvePattern, casePath, casesBase, draftScope, environmentOf, healthRetryDelay, homeRoute, joinUrl, knownBound, signInUrl, signOutDestination, workspaceRoute, type Environment } from './environment';
 
 function state(connection: AccountWorkspace['connection'], role: 'owner' | 'member' = 'owner'): DemoState {
   return {
@@ -158,5 +158,33 @@ describe('accountRecheckMs', () => {
     expect(accountRecheckMs(state('not_connected'))).toBeNull();
     expect(accountRecheckMs(SIGNED_OUT)).toBeNull();
     expect(accountRecheckMs(null)).toBeNull();
+  });
+});
+
+describe('homeRoute (`/`)', () => {
+  it('waits until the account is known', () => {
+    expect(homeRoute(null, false, '')).toBe('blank');
+    expect(homeRoute(SIGNED_OUT, false, '')).toBe('blank');
+  });
+  it('hosted: the landing for everyone, signed in or not', () => {
+    expect(homeRoute(SIGNED_OUT, true, '')).toBe('landing');
+    for (const c of ['evaluation', 'not_connected', 'checking'] as const) expect(homeRoute(state(c), true, '')).toBe('landing');
+  });
+  it('hosted: coming back from a PayPal sign-in (`/?signed-in=paypal`) goes to the cases, not the landing', () => {
+    expect(homeRoute(state('evaluation'), true, '?signed-in=paypal')).toBe('cases');
+    // Signed out (the sign-in did not hold): the landing, not a redirect loop through sign-in.
+    expect(homeRoute(SIGNED_OUT, true, '?signed-in=paypal')).toBe('landing');
+  });
+  it('local mode (no account state) goes to the cases, as before', () => {
+    expect(homeRoute(null, true, '')).toBe('cases');
+    expect(homeRoute(null, true, '?signed-in=paypal')).toBe('cases');
+  });
+});
+
+describe('afterSignIn', () => {
+  it('a sign-in with nowhere to go back to opens the cases, not the landing', () => {
+    expect(afterSignIn('/')).toBe('/cases');
+    expect(afterSignIn('/cases/PP-R-TVH-10190665')).toBe('/cases/PP-R-TVH-10190665');
+    expect(afterSignIn('/agent?run=r1')).toBe('/agent?run=r1');
   });
 });

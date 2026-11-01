@@ -106,3 +106,17 @@ export function workspaceRoute(env: Environment, path: { caseId: string | null }
 
 /** Where signing out leads: the home page, or straight to a fresh PayPal sign-in for "Use another PayPal account". */
 export const signOutDestination = (another: boolean): string => (another ? '/signin' : '/');
+
+/**
+ * What `/` shows: nothing until the account is known; on the hosted service the landing page, for everyone signed in
+ * or not, except someone just back from a PayPal sign-in (the server's `/?signed-in=paypal`), who goes on to the cases;
+ * in local mode (no account state) the cases.
+ */
+export function homeRoute(demo: DemoState | null, accountKnown: boolean, search: string): 'blank' | 'landing' | 'cases' {
+  if (!accountKnown) return 'blank';
+  if (!demo) return 'cases';
+  return demo.signedIn && new URLSearchParams(search).has('signed-in') ? 'cases' : 'landing';
+}
+
+/** Where a sign-in (passkey, join, «Continue») leads: back where the person was going, or the cases, never the landing. */
+export const afterSignIn = (next: string): string => (next === '/' ? '/cases' : next);

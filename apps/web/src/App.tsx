@@ -1,8 +1,8 @@
-import { Navigate, Route, Routes, useMatch, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useMatch, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { setRecording, useRecording } from './app/recording';
 import { ServicesProvider, useServices } from './app/services';
-import { environmentOf, knownBound, workspaceRoute } from './domain/environment';
+import { environmentOf, homeRoute, knownBound, workspaceRoute } from './domain/environment';
 import type { SimulatedOutcome } from './domain/gateway';
 import { AgentPage } from './pages/AgentPage';
 import { JoinPage, MembersPage, SignInPage } from './pages/AuthPages';
@@ -83,11 +83,18 @@ function showDevControls(): boolean {
   }
 }
 
-/** `/`: a signed-out visitor on the hosted demo gets the landing page; everyone else goes to the cases. */
+/** `/`: the landing page on the hosted service, signed in or not; local mode (and a return from sign-in) goes to the cases. */
 function Home() {
   const { demo, accountKnown } = useServices();
-  if (!accountKnown) return <div className="min-h-[100dvh] bg-bg" />;
-  return demo && !demo.signedIn ? <LandingPage /> : <Navigate to="/cases" replace />;
+  const { search } = useLocation();
+  switch (homeRoute(demo, accountKnown, search)) {
+    case 'blank':
+      return <div className="min-h-[100dvh] bg-bg" />;
+    case 'landing':
+      return <LandingPage />;
+    default:
+      return <Navigate to="/cases" replace />;
+  }
 }
 
 /** `/cases` and `/cases/:id/*`: what they show depends on the environment (see `workspaceRoute`). */

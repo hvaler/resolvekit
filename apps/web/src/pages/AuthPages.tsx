@@ -4,6 +4,7 @@ import { useServices } from '../app/services';
 import { RoleChip, dateText } from '../components/AccountMenu';
 import { Logo, ThemeControls } from '../components/AppBar';
 import { Button, Spinner, cx } from '../components/ui';
+import { afterSignIn } from '../domain/environment';
 import { AuthClient, SIGN_IN_ERRORS, passkeysSupported, type InviteRow, type InviteView, type MemberRow } from '../domain/authClient';
 
 const auth = new AuthClient();
@@ -29,16 +30,16 @@ export function safeNext(raw: string | null): string {
   return path.length > MAX_NEXT ? '/' : path;
 }
 
-/** Full reload into the app: which disputes are live depends on who is signed in. */
-const enterApp = (to = '/') => window.location.assign(safeNext(to));
+/** Full reload into the app (which disputes are live depends on who is signed in): where the person was going, else the cases. */
+const enterApp = (to = '/') => window.location.assign(afterSignIn(safeNext(to)));
 
 function AuthShell({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+  // Signed in (the members page, «You are signed in»), the logo is the in-app one, to the cases; signed out, home.
+  const { demo } = useServices();
   return (
     <div className="flex min-h-[100dvh] flex-col bg-bg">
       <header className="flex h-11 flex-none items-center gap-3.5 border-b border-line bg-surface px-[18px] max-md:px-4">
-        <Link to="/" className="no-underline">
-          <Logo />
-        </Link>
+        <Logo to={demo?.signedIn ? '/cases' : '/'} />
         <span className="flex-1" />
         <ThemeControls />
       </header>
