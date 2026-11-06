@@ -3,30 +3,18 @@
  * and 17). The caller hands over a full dispute (read with `disputes.get`; list items lack the transaction details).
  * Strict, fail closed: the evaluation seller's dispute, not bound yet, "not received", WAITING_FOR_SELLER_RESPONSE with
  * a future response date, exactly one disputed capture whose `invoice_id` names a ResolveKit order, and the payment the
- * order stands for (standard / settlement: the template's amount, on the capture and on the dispute; agent: the
- * MeterMCP receipt's capture of this very capture, equal to the disputed amount). Anything else is skipped with a
- * reason; a failed read is a skip too, never a throw. Admissions run one at a time, so the same dispute arriving twice
+ * order stands for (standard / settlement: the template's amount; agent: what the MeterMCP receipt captured on this very
+ * capture), equal to the capture's amount and passing the send-time binding check (`verifyBinding`). Anything else is
+ * skipped with a reason; a failed read or an unexpected error is a skip too, never a throw. Admissions run one at a time, so the same dispute arriving twice
  * at once (webhook and scan) makes one case.
  */
 import { CASE_FILES, TEMPLATE_CASE_IDS, templateForOrderRef } from '@resolvekit/cases';
 import type { Dispute, PayPalClient } from '@resolvekit/paypal';
 import type { DiscoveredCase, CaseStore } from './caseStore.ts';
+import { isExpectedAmount, verifyBinding } from './bindings.ts';
 import { receiptPaymentOf, type MeterMcpSource } from './metermcp.ts';
 
 export type Admission = { created: DiscoveredCase } | { skipped: string };
-
-type Money = { value?: string; currency_code?: string } | undefined;
-
-function cents(value: string | undefined): number | null {
-  if (value == null || !/^\d+(\.\d{1,2})?$/.test(value)) return null;
-  return Math.round(Number(value) * 100);
-}
-
-/** Same currency and amount; a missing or malformed amount never matches. */
-function sameMoney(m: Money, value: string, currency: string): boolean {
-  const c = cents(m?.value);
-  return !!m && m.currency_code === currency && c != null && c === cents(value);
-}
 
 export function createDiscovery(o: {
   paypal: Pick<PayPalClient, 'payments'>;
@@ -82,11 +70,13 @@ export function createDiscovery(o: {
     } else {
       const summary = CASE_FILES[TEMPLATE_CASE_IDS[order.template]]!.summary;
       expected = { value: summary.amount, currency: summary.currency };
-      if (!sameMoney(capture.amount, expected.value, expected.currency)) return { skipped: 'amount does not match the order' };
     }
-    if (!sameMoney(d.dispute_amount, expected.value, expected.currency)) return { skipped: 'amount does not match the order' };
-    const gross = txs[0]?.gross_amount;
-    if (gross && !sameMoney(gross, expected.value, expected.currency)) return { skipped: 'amount does not match the order' };
+    // The capture PayPal holds must be the order's payment, and the dispute must pass the send-time binding check
+    // (disputed amount, gross amount when reported, the one disputed capture) so no case is made that cannot be sent.
+    if (!isExpectedAmount(capture.amount, expected)) return { skipped: 'amount does not match the order' };
+    if (verifyBinding({ ...expected, transactionId: captureId }, { dispute: id, capture: captureId }, d).status !== 'verified') {
+      return { skipped: 'amount does not match the order' };
+    }
 
     const created: DiscoveredCase = {
       caseId: id,
@@ -114,9 +104,9 @@ export function createDiscovery(o: {
         try {
           a = await decide(d, source);
         } catch (e) {
-          // Defensive: decide() catches its reads; an unexpected throw is still a skip, never a rejection.
+          // decide() catches its reads; anything else (a throwing anchor or isBound, the store) is still a skip.
           log(`discovery · ${d.dispute_id ?? '?'} · unexpected error · ${e instanceof Error ? e.message : String(e)}`);
-          return { skipped: 'capture could not be read' };
+          a = { skipped: 'dispute could not be checked' };
         }
         if ('created' in a) log(`discovery · ${a.created.disputeId} · case created (${a.created.template}, ${a.created.orderRef}) · ${source}`);
         else log(`discovery · ${d.dispute_id ?? '?'} · skipped: ${a.skipped} · ${source}`);

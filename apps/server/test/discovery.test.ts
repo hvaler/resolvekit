@@ -44,6 +44,7 @@ interface Setup {
   meter?: Pick<MeterMcpSource, 'findByCapture' | 'receipt'> | null;
   anchor?: string | null;
   bound?: string[];
+  isBound?: (id: string) => boolean;
 }
 
 function withDiscovery(s: Setup, f: (d: ReturnType<typeof createDiscovery>, store: CaseStore, lines: string[]) => Promise<void>) {
@@ -58,7 +59,7 @@ function withDiscovery(s: Setup, f: (d: ReturnType<typeof createDiscovery>, stor
         meterMcp: s.meter === undefined ? null : s.meter,
         store,
         anchor: () => (s.anchor === undefined ? SELLER : s.anchor),
-        isBound: (id) => (s.bound ?? []).includes(id),
+        isBound: s.isBound ?? ((id) => (s.bound ?? []).includes(id)),
         now: () => NOW,
         log: (l) => lines.push(l),
       });
@@ -158,11 +159,40 @@ test('an agent receipt of another amount does not match the order', withDiscover
   assert.deepEqual(store.all(), []);
 }));
 
-test('concurrent admits of one dispute create one case', withDiscovery({
-  getCapture: () => new Promise((r) => setTimeout(() => r(capture()), 5)),
+test('an agent capture of another amount than its receipt does not match the order', withDiscovery({
+  getCapture: async () => capture({ invoice_id: SESSION_REF, amount: { currency_code: 'USD', value: '0.50' } }),
+  meter: { findByCapture: async () => 'sess-1', receipt: async () => receipt('0.45') },
 }, async (disc, store) => {
-  const [a, b] = await Promise.all([disc.admit(dispute(), 'webhook'), disc.admit(dispute(), 'scan')]);
+  assert.equal(skipped(await disc.admit(dispute({ dispute_amount: { currency_code: 'USD', value: '0.45' } }, { gross_amount: undefined }), 'webhook')), 'amount does not match the order');
+  assert.deepEqual(store.all(), []);
+}));
+
+test('skipped: a gross amount other than the order does not match', withDiscovery({}, async (disc) => {
+  assert.equal(skipped(await disc.admit(dispute({}, { gross_amount: { currency_code: 'USD', value: '7.01' } }), 'webhook')), 'amount does not match the order');
+}));
+
+test('an unexpected error is a skip, never a rejection', withDiscovery({ isBound: () => { throw new Error('boom'); } }, async (disc, store, lines) => {
+  assert.equal(skipped(await disc.admit(dispute(), 'webhook')), 'dispute could not be checked');
+  assert.deepEqual(store.all(), []);
+  assert.ok(lines.some((l) => l.includes('unexpected error') && l.includes('boom')));
+}));
+
+let inFlight = 0;
+let maxInFlight = 0;
+test('concurrent admits of one dispute create one case', withDiscovery({
+  getCapture: async () => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight--;
+    return capture();
+  },
+}, async (disc, store) => {
+  const other = dispute({ dispute_id: 'PP-R-ABC-10002' });
+  const [a, b, c] = await Promise.all([disc.admit(dispute(), 'webhook'), disc.admit(dispute(), 'scan'), disc.admit(other, 'scan')]);
   assert.ok('created' in a);
   assert.equal(skipped(b), 'already bound');
-  assert.equal(store.all().length, 1);
+  assert.ok('created' in c);
+  assert.equal(maxInFlight, 1, 'admissions overlapped');
+  assert.equal(store.all().length, 2);
 }));

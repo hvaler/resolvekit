@@ -61,6 +61,12 @@ function cents(value: string | undefined): number | null {
   return Math.round(Number(value) * 100);
 }
 
+/** Whether a PayPal amount is the expected one (same currency, same cents); a missing or malformed amount never is. */
+export function isExpectedAmount(m: { value?: string; currency_code?: string } | null | undefined, expected: Pick<ExpectedPayment, 'value' | 'currency'>): boolean {
+  const c = cents(m?.value);
+  return !!m && m.currency_code === expected.currency && c != null && c === cents(expected.value);
+}
+
 /** Whether the dispute just read is the payment this case is bound to. Pure; fails closed on missing data. */
 export function verifyBinding(expected: ExpectedPayment, b: Binding, d: Dispute): BindingCheck {
   const reasons: string[] = [];
