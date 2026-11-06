@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { Ledger } from '../src/ledger.ts';
 import { Meter, type ToolAnswer } from '../src/meter.ts';
 import { toolByName } from '../src/tools.ts';
-import { fakePayPal } from './fakePayPal.ts';
+import { FAKE_AUTH_EXPIRES, fakePayPal } from './fakePayPal.ts';
 
 type Fake = ReturnType<typeof fakePayPal>;
 const body = (a: ToolAnswer) => JSON.parse(a.content[0]!.text);
@@ -95,7 +95,7 @@ test('a session whose authorization has expired runs no paid call', async () => 
   let now = new Date('2026-10-09T10:00:00Z');
   const { meter, pp, ledger } = setup(() => now);
   const id = await openSession(meter, pp);
-  now = new Date('2026-11-07T00:00:00Z'); // the fake authorization expires 2026-11-06T18:09:13Z
+  now = new Date(Date.parse(FAKE_AUTH_EXPIRES) + 6 * 3600_000); // past the fake authorization's expiration_time
   const c = countRuns('quote_lookup');
   try {
     assert.equal(body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' })).error, 'authorization_expired');

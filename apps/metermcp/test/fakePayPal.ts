@@ -8,6 +8,13 @@ type Money = { currency_code: string; value: string };
 interface FakeOrder { id: string; status: string; amount: Money; customId: string; body: any; authorizationId?: string }
 interface FakeAuth { id: string; status: string; reason?: string; amount: Money; orderId: string; captures: Array<{ id: string; amount: Money; body: any }> }
 
+/**
+ * expiration_time of every fake authorization. It used to be the real sandbox value '2026-11-06T18:09:13Z'
+ * (create_time + 29 days); once the wall clock passed it, MeterMCP rightly refused every authorization as expired
+ * and every test that opens a budget on the real clock failed or hung. Tests of expiry jump past this constant.
+ */
+export const FAKE_AUTH_EXPIRES = '2099-12-31T18:09:13Z';
+
 export function fakePayPal() {
   const orders = new Map<string, FakeOrder>();
   const auths = new Map<string, FakeAuth>();
@@ -62,7 +69,7 @@ export function fakePayPal() {
             ? {
                 payments: {
                   authorizations: [
-                    { id: o.authorizationId, status: auths.get(o.authorizationId)!.status, ...(auths.get(o.authorizationId)!.reason ? { status_details: { reason: auths.get(o.authorizationId)!.reason } } : {}), amount: o.amount, expiration_time: '2026-11-06T18:09:13Z', create_time: '2026-10-08T18:09:13Z' },
+                    { id: o.authorizationId, status: auths.get(o.authorizationId)!.status, ...(auths.get(o.authorizationId)!.reason ? { status_details: { reason: auths.get(o.authorizationId)!.reason } } : {}), amount: o.amount, expiration_time: FAKE_AUTH_EXPIRES, create_time: '2026-10-08T18:09:13Z' },
                   ],
                 },
               }

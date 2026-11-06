@@ -10,7 +10,7 @@ import { INJECTED_FAILURE, Meter, newSessionId, RUN_INJECTED_FAILURE, SESSION_ID
 import { fromCents, toCents } from '../src/money.ts';
 import { receiptLines, receiptPdf } from '../src/receipt.ts';
 import { toolByName } from '../src/tools.ts';
-import { fakePayPal } from './fakePayPal.ts';
+import { FAKE_AUTH_EXPIRES, fakePayPal } from './fakePayPal.ts';
 
 const body = (a: ToolAnswer) => JSON.parse(a.content[0]!.text);
 
@@ -513,7 +513,7 @@ test('closing a session whose authorization PayPal holds PENDING voids it: no ho
 
 test('closing a pending_approval session whose authorization is CREATED (refused by the opening checks) voids it', async () => {
   // Past the fake authorization's expiration_time: authorizationProblem refuses it, the session stays pending_approval.
-  const { meter, pp, ledger } = setup({ now: () => new Date('2026-12-01T00:00:00Z') });
+  const { meter, pp, ledger } = setup({ now: () => new Date(Date.parse(FAKE_AUTH_EXPIRES) + 6 * 3600_000) });
   const pr = body(await meter.call('mcp-1', 'quote_lookup', { symbol: 'A' }));
   pp.approve(pr.order_id);
   assert.equal(body(await meter.balance('mcp-1')).status, 'pending_approval');
