@@ -11,7 +11,8 @@
  * RESOLVEKIT_DATA_DIR (the disk) · BINDINGS_JSON (or RESOLVEKIT_BINDINGS, a file) · METERMCP_URL + METERMCP_ADMIN_TOKEN ·
  * DAILY_LIVE_ANALYSES (60) · DAILY_RECHECKS (200) · DAILY_EVIDENCE_SENDS (20) · DAILY_UPLOADS (40) · TRUSTED_PROXY_HOPS (1) ·
  * RESOLVEKIT_OPS_TOKEN (the operator's check, npm run demo:check) · DAILY_AGENT_RUNS (20) · DAILY_MESSAGE_SENDS (20) ·
- * DAILY_SETTLE_SENDS (20: accept, offer, escalate, appeal).
+ * DAILY_SETTLE_SENDS (20: accept, offer, escalate, appeal) · EVALUATION_MERCHANT_ID (the evaluation seller whose new
+ * disputes become discovered cases; absent: the one seller sellers.json confirmed, else none is discovered).
  * The buying agent (both modes): GEMINI_API_KEY / GROQ_API_KEY · AGENT_* run limits · RESOLVEKIT_PUBLIC_URL (falls back
  * to RENDER_EXTERNAL_URL) for PayPal's return to /agent?run=<id>; neither set: MeterMCP's own approval page.
  */
@@ -29,8 +30,8 @@ import { AgentService, RECONCILE_EVERY_MS } from './agent/service.ts';
 import { AccountStore } from './accounts.ts';
 import { AnalystService, InputPins } from './analysis.ts';
 import { createApp, DEFAULT_ORIGINS, type Handler } from './app.ts';
-import { boundCaptureSet, checkBindings, parseBindingPools, type BindingPools } from './bindings.ts';
-import { CASE_FILES } from './documents.ts';
+import { caseFileOf } from '@resolvekit/cases';
+import { boundCaptureSet, checkBindings, isBoundDispute, parseBindingPools, type BindingPools } from './bindings.ts';
 import { AGENT_RUNS_PER_PERSON, createHostedApp, type HostedApp } from './hosted.ts';
 import { PersonRunCaps } from './agent/person-caps.ts';
 import { SellerMemory } from './sellers.ts';
@@ -38,7 +39,8 @@ import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
 import { MeterMcpClient, receiptPaymentOf } from './metermcp.ts';
 import { ReserveMemory, keepHeldActive } from './reserve.ts';
-import { CaseStore } from './caseStore.ts';
+import { CaseStore, bindDiscovered } from './caseStore.ts';
+import { createDiscovery } from './discovery.ts';
 import { USAGE_MAX_AGE_MS, USAGE_MAX_BYTES, UsageLog } from './usage-log.ts';
 import { RecheckVerdicts } from './verdicts.ts';
 import { DAILY_UPLOADS } from './uploads/limits.ts';
@@ -103,7 +105,10 @@ const held = (disputeId: string) => intents.held(disputeId);
 // The disputes this server already moved each case past (reserve.ts): a restart starts after them, not at the first.
 const reserveMemory = new ReserveMemory({ file: join(dataDir, 'reserve-position.json'), log });
 for (const s of reserveMemory.apply({ bindings, reserve }, held)) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
+// The cases discovered from the evaluation seller's new disputes (webhook, owner's scan): each is bound to its one
+// dispute by the app (app.ts) at start and when made, never in a reserve.
 const caseStore = new CaseStore({ file: join(dataDir, 'cases.json'), log });
+const templateOf = (caseId: string) => caseStore.templateOf(caseId);
 const port = Number(process.env.PORT ?? (hosted ? 10000 : 8787));
 const host = hosted ? '0.0.0.0' : '127.0.0.1';
 
@@ -224,6 +229,19 @@ const clientAddress = {
   proxyTrust: (process.env.TRUSTED_PROXY_PEERS === 'any' ? 'any' : process.env.TRUSTED_PROXY_PEERS === 'none' ? 'none' : 'private') as ProxyTrust,
 };
 
+// The evaluation seller (decision 16): EVALUATION_MERCHANT_ID, else the one seller a complete read confirmed
+// (sellers.json, hosted); otherwise nobody, and discovery makes no case.
+const evaluationMerchant = process.env.EVALUATION_MERCHANT_ID?.trim() || null;
+let confirmedSellers: SellerMemory | null = null;
+const anchor = (): string | null => {
+  if (evaluationMerchant) return evaluationMerchant;
+  const last = confirmedSellers?.lastSellers() ?? [];
+  return last.length === 1 ? last[0]! : null;
+};
+const discovery = paypal
+  ? createDiscovery({ paypal, meterMcp, store: caseStore, anchor, isBound: (disputeId) => isBoundDispute({ bindings, reserve }, disputeId), log })
+  : null;
+
 let app: Handler;
 let hostedApp: HostedApp | null = null;
 let tokenFile: string | null = null;
@@ -268,6 +286,7 @@ if (hosted) {
   } catch (e) {
     sellerMemory = fail(`sellers file ${join(dataDir, 'sellers.json')}: ${(e as Error).message}`);
   }
+  confirmedSellers = sellerMemory;
   const dist = process.env.RESOLVEKIT_WEB_DIST ?? fileURLToPath(new URL('../../web/dist/', import.meta.url));
   if (!existsSync(join(dist, 'index.html'))) fail(`no web build at ${dist} (run npm run build)`);
   const counters = new DailyCounters({
@@ -285,7 +304,7 @@ if (hosted) {
   if (!meterToken) log('WARNING: METERMCP_ADMIN_TOKEN is not set: agent runs cannot authenticate to MeterMCP (/agent/mcp) and will stop as meter_unavailable; receipts and settlement through the admin routes fail too');
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
-    paypal, env, bindings, reserve, reserveMemory, caseStore, verdicts, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
+    paypal, env, bindings, reserve, reserveMemory, caseStore, discovery, verdicts, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
@@ -304,7 +323,7 @@ if (hosted) {
   tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('../.runtime-token', import.meta.url));
   writeFileSync(tokenFile, token, { mode: 0o600 });
   const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
-  app = createApp({ paypal, env, bindings, reserve, reserveMemory, caseStore, verdicts, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads, agent });
+  app = createApp({ paypal, env, bindings, reserve, reserveMemory, caseStore, discovery, verdicts, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads, agent });
 }
 
 // Runs a previous process left unfinished become interrupted and are settled, in the background: not awaited, so a
@@ -312,16 +331,22 @@ if (hosted) {
 agent.recover().catch((e) => log(`agent runs · recovery failed · ${(e as Error).message}`));
 
 // The listener derives the client address as hosted mode does (one large upload body per address at a time).
-const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`, { ...(hosted ? clientAddress : {}), log }));
+const server = createServer(toNodeListener(app, `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`, { ...(hosted ? clientAddress : {}), log, templateOf }));
 server.listen(port, host, () => {
   log(`ResolveKit server on http://${host}:${port} · PayPal ${paypal ? env : 'unconfigured'} · ${Object.keys(bindings).length} bound case(s)`);
   log(`Agent: ${agentModels ? `${agentModels.primary.provider}/${agentModels.primary.model}${agentModels.fallback ? ` (fallback ${agentModels.fallback.provider})` : ''}` : 'no model key: runs refused'} · return ${publicUrl ? `${publicUrl}/agent` : 'MeterMCP approval page'}`);
   log(`Analyst: ${analystConfig ? `${analystConfig.primary.provider}/${analystConfig.primary.model} (providers: ${analystConfig.available.join(', ')})` : 'no model key: stored analyses only'}`);
   for (const [caseId, b] of Object.entries(bindings)) log(`  ${caseId} → ${b.dispute}${b.capture ? ` · capture ${b.capture}` : " · no capture (cannot pass the send-time check)"}${reserve[caseId]?.length ? ` · ${reserve[caseId]!.length} in reserve` : ''}`);
   // Read and verify each bound dispute once in the background (logged); sending verifies again on its own fresh read.
-  const cases = Object.fromEntries(Object.entries(CASE_FILES).map(([id, c]) => [id, { value: c.summary.amount, currency: c.summary.currency, transactionId: c.summary.transactionId }]));
+  // Fixed and discovered cases alike (a discovered one expects its template's payment and its own capture).
+  const cases = Object.fromEntries(
+    Object.keys(bindings).flatMap((id) => {
+      const c = caseFileOf(id, templateOf);
+      return c ? [[id, { value: c.summary.amount, currency: c.summary.currency, transactionId: c.summary.transactionId }]] : [];
+    }),
+  );
   // The agent case: against the payment its MeterMCP receipt captured (as the send-time check does).
-  void checkBindings({ paypal, bindings, cases, expectedOf: (caseId, d) => (CASE_FILES[caseId]?.kind === 'agent' ? receiptPaymentOf(meterMcp, d) : Promise.resolve(null)), log });
+  void checkBindings({ paypal, bindings, cases, expectedOf: (caseId, d) => (caseFileOf(caseId, templateOf)?.kind === 'agent' ? receiptPaymentOf(meterMcp, d) : Promise.resolve(null)), log });
   // Hosted: analyse each bound case once in the background, so the seller's workspace finds an analysis ready.
   if (hostedApp) void hostedApp.warmUp();
 });
@@ -342,7 +367,10 @@ if (watchBindings) {
     // A held active dispute stays active even when the new file lists it elsewhere (never moved off mid-settlement).
     const kept = keepHeldActive({ bindings, reserve }, next, held);
     const skipped = reserveMemory.apply(next, held);
+    // The discovered cases keep their one binding each, after the file's (a fixed binding of the same dispute wins).
+    const left = bindDiscovered(next, caseStore.all());
     if (JSON.stringify(next) === JSON.stringify({ bindings, reserve })) return;
+    for (const id of left) log(`cases · discovered case ${id} not bound: the bindings file binds its id or dispute`);
     for (const k of kept) log(`reserve · case ${k.caseId}: ${k.active} is held by an action still settling → kept active`);
     for (const s of skipped) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
     for (const k of Object.keys(bindings)) delete bindings[k];

@@ -13,7 +13,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv, type WebhookEvent } from '@resolvekit/paypal';
 import { workspaceIdFor } from './accounts.ts';
-import { caseAllowedActions, caseInput, caseView, documentsSignature, type PayPalSource } from '@resolvekit/cases';
+import { caseAllowedActions, caseFileOf, caseInput, caseView, documentsSignature, type CaseTemplate, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
 import type { AgentReceiptSource, AgentRunSummary, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
 import { linesToConfirmOf, type Recheck } from '../../web/src/domain/draft.ts';
@@ -21,14 +21,15 @@ import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, t
 import { evidenceAfterEscalationRefusal, hasSellerEvidence, sellerEvidence, sellerEvidenceBlocks } from '../../web/src/domain/recorded.ts';
 import { InputPins, type AnalystService, type LiveGate, type Reservation } from './analysis.ts';
 import { receiptPayment, toBinding, verifyBinding, type Binding, type BindingState, type ExpectedPayment } from './bindings.ts';
-import { buildAttachments, CASE_FILES, UnknownFileError } from './documents.ts';
+import { buildAttachments, UnknownFileError } from './documents.ts';
 import { failureText, isTimeout, json, paypalIssue, readJson, tooMany } from './http.ts';
 import { IntentStore, publicIntent, requestAttachments, type DisputeHold, type StoredIntent } from './intents.ts';
 import { intentAction, isActionRequest, isSimpleAction, type ContractRegistry, type RulesOf, type SimpleAction } from '../../web/src/domain/actions.ts';
 import { CONTRACTS } from '../../web/src/domain/actionContracts.ts';
 import { createActionRoutes } from './actions/routes.ts';
 import type { ReserveMemory } from './reserve.ts';
-import type { CaseStore } from './caseStore.ts';
+import { bindDiscovered, type CaseStore } from './caseStore.ts';
+import type { Admission, createDiscovery } from './discovery.ts';
 import { RecheckVerdicts } from './verdicts.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
@@ -123,6 +124,11 @@ export interface ApiOptions {
   reserveMemory?: ReserveMemory | null;
   /** The cases discovered from the merchant's disputes (caseStore.ts; persisted on the data dir by main.ts). Default: none. */
   caseStore?: CaseStore | null;
+  /**
+   * Makes a new dispute its own case (discovery.ts; main.ts builds it with the evaluation seller). A webhook about an
+   * unknown dispute (CREATED or UPDATED) is admitted through it; a case made is bound at once. Absent: no discovery.
+   */
+  discovery?: ReturnType<typeof createDiscovery> | null;
   /** How long a dispute whose seller evidence just went in stays active, so whoever sent it sees PayPal's read-back (15 min). */
   rotateAfterMs?: number;
   /** The verifier's verdicts on edited sentences (verdicts.ts; persisted on the data dir by main.ts). Default: in memory. */
@@ -277,6 +283,11 @@ export type Api = Handler & {
   forgetReads: () => void;
   /** A verified PayPal webhook event (webhook.ts): the dispute is read again from PayPal; nothing in it is trusted. */
   paypalNotified: (e: WebhookEvent) => Promise<void>;
+  /**
+   * Admit a dispute just read in full from PayPal as a discovered case (webhook or the owner's scan); a case made is
+   * bound at once (its one dispute, no reserve). Without discovery: skipped.
+   */
+  discover: (d: Dispute, source: 'webhook' | 'scan') => Promise<Admission>;
   /** The intents and audit log (tests, main.ts). */
   intents: IntentStore;
   /** For the operator's check (hosted /api/ops/status): PayPal's state and each binding verified on a fresh read now. */
@@ -348,7 +359,22 @@ interface ComposedIntent {
 export function createApi(opts: ApiOptions): Api {
   const now = opts.now ?? (() => new Date());
   const log = opts.log ?? (() => {});
-  const isAgentCase = (caseId: string) => CASE_FILES[caseId]?.kind === 'agent';
+  /** Which template a discovered case was made from (null: not a discovered case). */
+  const templateOf = (caseId: string): CaseTemplate | null => opts.caseStore?.templateOf(caseId) ?? null;
+  /** The case file of a fixed or discovered case (caseFileOf), or null for an unknown id. */
+  const fileOf = (caseId: string) => caseFileOf(caseId, templateOf);
+  /** The discovered case whose one binding is active now, or null (a fixed case, or a discovered one left unbound). */
+  const discoveredBound = (caseId: string) => {
+    const c = opts.caseStore?.get(caseId);
+    return c && toBinding(opts.bindings[caseId])?.dispute === c.disputeId ? c : null;
+  };
+  // The discovered cases already stored are bound now (their one dispute each; a fixed binding of the same dispute wins).
+  if (opts.caseStore) {
+    for (const id of bindDiscovered({ bindings: opts.bindings as Record<string, string | Binding>, reserve: opts.reserve ?? null }, opts.caseStore.all())) {
+      log(`cases · discovered case ${id} not bound: its id or dispute is bound already`);
+    }
+  }
+  const isAgentCase = (caseId: string) => fileOf(caseId)?.kind === 'agent';
   const intents = opts.intents ?? new IntentStore({ now });
   /**
    * The verifier's verdicts on edited sentences, by analysis key and text: only these edits can be sent. Bounded, the
@@ -392,9 +418,9 @@ export function createApi(opts: ApiOptions): Api {
    * for the workspace of that case's own seller; everything else is UNKNOWN_CASE (three-environments plan, task 2).
    */
   const caseVisible = async (req: Request, caseId: string): Promise<boolean> =>
-    Object.hasOwn(CASE_FILES, caseId) && (!opts.gate || (!!bindingOf(caseId) && ownerSees(req, caseId) && (await viewerLive(req)) && (await sellerOfCase(req, caseId))));
+    !!fileOf(caseId) && (!opts.gate || (!!bindingOf(caseId) && ownerSees(req, caseId) && (await viewerLive(req)) && (await sellerOfCase(req, caseId))));
   /** An owner-only case (the settlement case) exists only for the workspace's owner; anyone else: UNKNOWN_CASE. */
-  const ownerSees = (req: Request, caseId: string): boolean => CASE_FILES[caseId]?.audience !== 'owner' || personOf(req)?.role === 'owner';
+  const ownerSees = (req: Request, caseId: string): boolean => fileOf(caseId)?.audience !== 'owner' || personOf(req)?.role === 'owner';
 
   /** The seller's PayPal merchant id on each bound dispute, from the last read of it. */
   const sellers = new Map<string, { dispute: string; merchant: string | null; name: string | null }>();
@@ -422,7 +448,8 @@ export function createApi(opts: ApiOptions): Api {
       await Promise.all(
         Object.keys(opts.bindings).map(async (caseId) => {
           const b = bindingOf(caseId);
-          if (!b || sellers.get(caseId)?.dispute === b.dispute) return;
+          // A discovered case's seller is the one stored when it was made: no read per case and request.
+          if (!b || discoveredBound(caseId) || sellers.get(caseId)?.dispute === b.dispute) return;
           try {
             noteSeller(caseId, await paypal.disputes.get(b.dispute));
           } catch {
@@ -436,6 +463,12 @@ export function createApi(opts: ApiOptions): Api {
     for (const caseId of Object.keys(opts.bindings)) {
       const b = bindingOf(caseId);
       if (!b) continue;
+      const found = discoveredBound(caseId);
+      if (found) {
+        cases.push({ caseId, dispute: b.dispute, read: true, merchant: found.merchantId });
+        ids.add(found.merchantId);
+        continue;
+      }
       const s = sellers.get(caseId);
       const read = s?.dispute === b.dispute;
       // A dispute that names no seller counts as read.
@@ -516,7 +549,7 @@ export function createApi(opts: ApiOptions): Api {
    * cannot be read or used, the demo case's fixed amount, which fails closed for a real run, with why (`note`).
    */
   const expectedPayment = async (caseId: string, d: Dispute): Promise<{ expected: ExpectedPayment; receipt: AgentReceiptSource | null; note: string | null }> => {
-    const demo = CASE_FILES[caseId]!;
+    const demo = fileOf(caseId)!;
     const fixed: ExpectedPayment = { value: demo.summary.amount, currency: demo.summary.currency, transactionId: demo.summary.transactionId };
     if (!isAgentCase(caseId)) return { expected: fixed, receipt: null, note: null };
     const receipt = await agentReceiptOrWhy(caseId, d);
@@ -598,7 +631,7 @@ export function createApi(opts: ApiOptions): Api {
     hasSellerEvidence(snap) || (snap.messages ?? []).some((m) => m.postedBy === 'SELLER') || (!!disputeId && intents.hasRecordedAction(disputeId));
   /** The analyst's input and the ids of the uploads in it. */
   const serverInputWith = async (caseId: string, req?: Request): Promise<{ input: AnalysisInput; uploadIds: string[] } | Response> => {
-    const demo = CASE_FILES[caseId]!;
+    const demo = fileOf(caseId)!;
     const disputeId = bindingOf(caseId)?.dispute;
     let source: PayPalSource = { kind: 'simulated' };
     if (disputeId && opts.paypal && (await viewerLive(req))) {
@@ -633,7 +666,7 @@ export function createApi(opts: ApiOptions): Api {
    * not this payment fails closed (409, with the reasons). A simulated case is the demo case.
    */
   const caseState = async (caseId: string, req?: Request): Promise<CaseState | Response> => {
-    const demo = CASE_FILES[caseId]!;
+    const demo = fileOf(caseId)!;
     const disputeId = await boundDispute(caseId, req);
     if (!disputeId) {
       const source: PayPalSource = { kind: 'simulated' };
@@ -693,6 +726,8 @@ export function createApi(opts: ApiOptions): Api {
   const rotateIfUsed = (caseId: string, binding: Binding, snap: DisputeSnapshot) => {
     // Another read of this case may have moved it on while this one waited for PayPal: one step per used dispute.
     if (bindingOf(caseId)?.dispute !== binding.dispute) return;
+    // A discovered case has exactly its own dispute: it is never moved on (it ends there, used or not).
+    if (opts.caseStore?.get(caseId)) return;
     const since = usedSince(binding.dispute, snap);
     usedNow.set(caseId, since != null);
     const queue = opts.reserve?.[caseId];
@@ -741,7 +776,7 @@ export function createApi(opts: ApiOptions): Api {
     const key = await analyst.key(st.input);
     const a = pinned && pinned.key === key ? { key, analysis: pinned } : await analyst.stored(st.input);
     if (!a) return json(409, { error: 'NO_ANALYSIS', detail: 'There is no analysis of these documents on the server; analyse the case first' });
-    const demo = CASE_FILES[caseId]!;
+    const demo = fileOf(caseId)!;
     const c = withAnalysis(caseView(demo, st.source), a.analysis, st.input);
     const used: Record<string, Recheck> = {};
     const composed = composeSubmission({
@@ -815,7 +850,7 @@ export function createApi(opts: ApiOptions): Api {
       }
     } else {
       try {
-        const pdfs = buildAttachments(caseId, caseFiles);
+        const pdfs = buildAttachments(caseId, caseFiles, templateOf);
         caseFiles.forEach((f, n) => {
           const { sha256: hash, ...data } = pdfs[n]!;
           out.push({ file: { name: f.name, size: f.size, sha256: hash, source: 'demo' }, data });
@@ -1173,6 +1208,8 @@ export function createApi(opts: ApiOptions): Api {
     reason: string | null;
     amount: { value: string; currency: string } | null;
     at: string;
+    /** The order a case was made from by this very event (discovery), e.g. rk-std-…; absent otherwise. */
+    orderRef?: string;
   }
   const notices: Notice[] = [];
   const MAX_NOTICES = 50;
@@ -1185,10 +1222,10 @@ export function createApi(opts: ApiOptions): Api {
     if (typeof disputeId !== 'string' || !DISPUTE_ID.test(disputeId)) return log(`paypal webhook · ${e.id} · no usable dispute id`);
     const paypal = opts.paypal;
     if (!paypal) return;
-    const caseId = Object.keys(opts.bindings).find((k) => bindingOf(k)?.dispute === disputeId) ?? null;
+    let caseId = Object.keys(opts.bindings).find((k) => bindingOf(k)?.dispute === disputeId) ?? null;
     // The notice names the case whose active binding or reserve lists the dispute (the reads and the audit trail below
     // stay with the active binding only).
-    const noticeCase = caseId ?? caseListing(disputeId);
+    let noticeCase = caseId ?? caseListing(disputeId);
     // The next view of the case reads PayPal again, even inside the read cache's lifetime.
     if (caseId) reads.delete(caseId);
     // PayPal will not deliver an acknowledged event again, so a failed read is retried here a few times.
@@ -1204,11 +1241,21 @@ export function createApi(opts: ApiOptions): Api {
       }
     }
     if (!d) return log(`paypal webhook · ${e.id} · dispute ${disputeId} could not be read (${failureText(lastError)}) · it is read again when the case is opened`);
+    // A dispute no case holds yet may become one (discovery, decisions 2 and 17): admitted from this read, never from
+    // the event. One that is UNDER_REVIEW now is looked at again on its UPDATED event (or the owner's scan).
+    let orderRef: string | undefined;
+    if (!noticeCase && opts.discovery && (e.event_type === 'CUSTOMER.DISPUTE.CREATED' || e.event_type === 'CUSTOMER.DISPUTE.UPDATED')) {
+      const a = await discover(d, 'webhook');
+      if ('created' in a) {
+        caseId = noticeCase = a.created.caseId;
+        orderRef = a.created.orderRef;
+      }
+    }
     const merchant = d.disputed_transactions?.[0]?.seller?.merchant_id ?? null;
     if (caseId) noteSeller(caseId, d);
     const amount = d.dispute_amount?.value && d.dispute_amount.currency_code ? { value: d.dispute_amount.value, currency: d.dispute_amount.currency_code } : null;
     const at = now().toISOString();
-    notices.unshift({ eventId: e.id, eventType: e.event_type, disputeId, caseId: noticeCase, merchant, status: d.status ?? null, reason: d.reason ?? null, amount, at });
+    notices.unshift({ eventId: e.id, eventType: e.event_type, disputeId, caseId: noticeCase, merchant, status: d.status ?? null, reason: d.reason ?? null, amount, at, ...(orderRef ? { orderRef } : {}) });
     if (notices.length > MAX_NOTICES) notices.length = MAX_NOTICES;
     if (caseId) {
       // One audit bucket per seller workspace, so one busy merchant cannot push another's history out.
@@ -1216,6 +1263,18 @@ export function createApi(opts: ApiOptions): Api {
       intents.record({ caseId, kind: 'paypal_notified', actor: 'PayPal (webhook)', owner: `PayPal (webhook) · ${team ?? 'unknown seller'}`, ...(team ? { team } : {}), disputeId, detail: `${e.event_type} · dispute ${disputeId} is ${d.status ?? 'without status'} at PayPal` });
     }
     log(`paypal webhook · ${e.id} · dispute ${disputeId} re-read · ${d.status ?? '?'}${caseId ? ` · case ${caseId}` : ' · not bound to a case'}`);
+  };
+
+  /** {@link Api.discover}: admitted one at a time by discovery; a case made gets its one binding at once. */
+  const discover = async (d: Dispute, source: 'webhook' | 'scan'): Promise<Admission> => {
+    if (!opts.discovery) return { skipped: 'discovery is off on this server' };
+    const a = await opts.discovery.admit(d, source);
+    if ('created' in a) {
+      for (const id of bindDiscovered({ bindings: opts.bindings as Record<string, string | Binding>, reserve: opts.reserve ?? null }, [a.created])) {
+        log(`cases · discovered case ${id} not bound: its id or dispute is bound already`);
+      }
+    }
+    return a;
   };
 
   /** GET /api/paypal/notices: the viewer's own (hosted: the signed-in merchant's disputes; local: all). */
@@ -1241,6 +1300,7 @@ export function createApi(opts: ApiOptions): Api {
     pdfJob: createPdfJob({ store: uploads, log, ...(opts.uploadStorageBytes ? { maxStorageBytes: opts.uploadStorageBytes } : {}) }),
     meterPages: opts.gate?.meterPages ? (req, pages) => opts.gate!.meterPages!(req, pages) : null,
     caseBinding: (caseId) => bindingOf(caseId)?.dispute ?? null,
+    templateOf,
     record: (e) => intents.record(e),
     // Deletion wins over reuse: an unsent intent attaching or quoting the upload is void; a send in flight is waited for.
     attachedTo: {
@@ -1402,6 +1462,7 @@ export function createApi(opts: ApiOptions): Api {
       intents.invalidateAll('the bindings changed');
     },
     paypalNotified,
+    discover,
     intents,
     opsReport,
     opsReadBack: (intentId: string) => actions.opsReadBack(intentId),

@@ -9,6 +9,7 @@ import { mkdirSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { openStoreFile, writeFileDurable } from '@resolvekit/hosting';
 import type { CaseTemplate } from '@resolvekit/cases';
+import { isBoundDispute, toBinding, type Binding } from './bindings.ts';
 
 export interface DiscoveredCase {
   caseId: string;
@@ -43,6 +44,25 @@ function parseCase(c: unknown): DiscoveredCase {
     createdAt: r.createdAt,
     ...(r.endedAt !== undefined ? { endedAt: r.endedAt } : {}),
   };
+}
+
+/**
+ * Put each discovered case into the bindings as its one `{ dispute, capture }` (never a reserve: a discovered case has
+ * exactly its own dispute and never rotates). A case whose id is already a key, or whose dispute a binding or reserve
+ * already holds (a fixed one wins), is left out. Returns the case ids left out.
+ */
+export function bindDiscovered(p: { bindings: Record<string, string | Binding>; reserve?: Readonly<Record<string, readonly Binding[]>> | null }, cases: readonly DiscoveredCase[]): string[] {
+  const skipped: string[] = [];
+  for (const c of cases) {
+    if (Object.hasOwn(p.bindings, c.caseId) || isBoundDispute(p, c.disputeId)) {
+      // Already bound exactly so (seeded before): nothing to do.
+      const b = toBinding(p.bindings[c.caseId]);
+      if (!(b && b.dispute === c.disputeId && b.capture === c.captureId)) skipped.push(c.caseId);
+      continue;
+    }
+    p.bindings[c.caseId] = { dispute: c.disputeId, capture: c.captureId };
+  }
+  return skipped;
 }
 
 export class CaseStore {

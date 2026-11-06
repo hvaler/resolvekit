@@ -183,6 +183,11 @@ export function boundCaptureSet(p: BindingPools): Set<string> {
   return out;
 }
 
+/** Whether any case's active binding or reserve holds this dispute (string bindings included). */
+export function isBoundDispute(p: { bindings: Readonly<Record<string, string | Binding>>; reserve?: Readonly<Record<string, readonly Binding[]>> | null }, disputeId: string): boolean {
+  return Object.values(p.bindings).some((v) => toBinding(v)?.dispute === disputeId) || Object.values(p.reserve ?? {}).some((l) => l.some((b) => b.dispute === disputeId));
+}
+
 /**
  * Like {@link parseBindings}, and a case may also map to a list `[{ dispute, capture }, …]`: a reserve of fresh
  * disputes for the same demo case. PayPal takes a seller's evidence once per dispute, so when the active one is used

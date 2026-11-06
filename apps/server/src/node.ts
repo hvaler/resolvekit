@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PEER_HEADER, clientIp, type ProxyTrust } from '@resolvekit/hosting';
 import type { Handler } from './app.ts';
-import { CASE_FILES } from './documents.ts';
+import { caseFileOf, type CaseTemplate } from '@resolvekit/cases';
 import { MAX_FILE_BYTES, PDF_MAX_BYTES } from './uploads/limits.ts';
 import { UPLOAD_PATH, isImageType, isPdfType } from './uploads/routes.ts';
 
@@ -18,9 +18,9 @@ const DRAIN_MS = 1_000;
  * (image/png, image/jpeg) and PDF_MAX_BYTES for a PDF (application/pdf); 256 KB for everything else. Decided on the
  * request line and headers alone, before reading.
  */
-export function bodyLimit(method: string, path: string, contentType: string | null | undefined): number {
+export function bodyLimit(method: string, path: string, contentType: string | null | undefined, templateOf: (caseId: string) => CaseTemplate | null = () => null): number {
   const caseId = UPLOAD_PATH.exec(path)?.[1];
-  if (method !== 'POST' || !caseId || !Object.hasOwn(CASE_FILES, caseId)) return MAX_BODY;
+  if (method !== 'POST' || !caseId || !caseFileOf(caseId, templateOf)) return MAX_BODY;
   return isImageType(contentType ?? null) ? MAX_FILE_BYTES : isPdfType(contentType ?? null) ? PDF_MAX_BYTES : MAX_BODY;
 }
 
@@ -72,6 +72,8 @@ export interface NodeListenerOptions {
   largeBodyDeadlineMs?: number;
   /** One line per failed request: the error's name only. */
   log?: (line: string) => void;
+  /** Which template a discovered case was made from (its uploads take file bodies too); absent: fixed cases only. */
+  templateOf?: (caseId: string) => CaseTemplate | null;
 }
 
 /** The client's address key, derived as hosted mode does (clientIp), from the peer and X-Forwarded-For only. */
@@ -108,7 +110,7 @@ export function toNodeListener(handler: Handler, origin: string, o: NodeListener
 
   const serve = async (req: IncomingMessage, res: ServerResponse) => {
     const method = req.method ?? 'GET';
-    const limit = bodyLimit(method, (req.url ?? '/').split('?')[0]!, req.headers['content-type']);
+    const limit = bodyLimit(method, (req.url ?? '/').split('?')[0]!, req.headers['content-type'], o.templateOf);
     const declared = req.headers['content-length'] === undefined ? NaN : Number(req.headers['content-length']);
     if (Number.isFinite(declared) && declared > limit) return refuseUnread(req, res, 413, 'BODY_TOO_LARGE');
     let release = () => {};

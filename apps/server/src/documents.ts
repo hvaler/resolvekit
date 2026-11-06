@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto';
 import type { EvidenceFile } from '@resolvekit/paypal';
 import type { Evidence, SubmissionFile } from '../../web/src/domain/types.ts';
-import { CASE_FILES } from '@resolvekit/cases';
+import { CASE_FILES, caseFileOf, type CaseTemplate } from '@resolvekit/cases';
 import { writePdf } from '@resolvekit/pdf';
 
 export const SYNTHETIC_HEADER = 'SYNTHETIC TEST DOCUMENT';
@@ -42,10 +42,10 @@ export class UnknownFileError extends Error {
 /**
  * Build the PDFs named in the submission from the case's documents, each with the SHA-256 of its bytes (the build is
  * deterministic: the same case gives the same bytes, so the approval can cover them). Unknown names are refused,
- * never invented.
+ * never invented. A discovered case (`templateOf`) has its template's documents under its own id.
  */
-export function buildAttachments(caseId: string, files: readonly SubmissionFile[]): (EvidenceFile & { sha256: string })[] {
-  const c = CASE_FILES[caseId];
+export function buildAttachments(caseId: string, files: readonly SubmissionFile[], templateOf: (caseId: string) => CaseTemplate | null = () => null): (EvidenceFile & { sha256: string })[] {
+  const c = caseFileOf(caseId, templateOf);
   return files.map((f) => {
     const att = c?.attachments.find((a) => a.name === f.name);
     const ev = att && c?.evidence.find((e) => e.id === att.fromEvidenceId);

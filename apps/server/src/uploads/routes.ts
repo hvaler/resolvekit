@@ -31,7 +31,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { ActingPerson, Reservation } from '../app.ts';
-import { CASE_FILES } from '../documents.ts';
+import { caseFileOf, type CaseTemplate } from '@resolvekit/cases';
 import type { AuditEvent } from '../intents.ts';
 import { uploadDocuments, uploadTitle } from './documents.ts';
 import { UploadError, coverImage, oneImageAtATime, sanitiseImage, type Rect } from './image.ts';
@@ -98,6 +98,8 @@ export interface UploadRoutesOptions {
   reserve: ((req: Request) => Reservation) | null;
   /** The case's active PayPal dispute id, or null for a simulated case. */
   caseBinding: (caseId: string) => string | null;
+  /** Which template a discovered case was made from (caseFileOf); absent: fixed cases only. */
+  templateOf?: (caseId: string) => CaseTemplate | null;
   /** The audit trail (intents.record). */
   record: (e: Omit<AuditEvent, 'at'>) => void;
   log: (line: string) => void;
@@ -611,7 +613,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (!last?.pdf || last.status !== 'reviewing' || archived(s, last) || last.pdf.pages.some((p, i) => p.sha256 !== pages[i]!.sha256)) return changed();
     const highest = Math.max(
       0,
-      ...CASE_FILES[s.caseId]!.evidence.map((e) => evidenceNumber(e.id)),
+      ...caseFileOf(s.caseId, o.templateOf ?? (() => null))!.evidence.map((e) => evidenceNumber(e.id)),
       ...store.list({ workspaceId: s.person.workspaceId, caseId: s.caseId, boundDisputeId: s.disputeId }).map((r) => evidenceNumber(r.evidenceId)),
     );
     const confirmed = last.pdf.pages.map((p, i) => ({
@@ -650,7 +652,7 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     if (b.sha256 !== cur.sha256) return refuse(409, 'UPLOAD_CHANGED', 'The file changed since you reviewed it; review it again');
     const highest = Math.max(
       0,
-      ...CASE_FILES[s.caseId]!.evidence.map((e) => evidenceNumber(e.id)),
+      ...caseFileOf(s.caseId, o.templateOf ?? (() => null))!.evidence.map((e) => evidenceNumber(e.id)),
       ...store.list({ workspaceId: s.person.workspaceId, caseId: s.caseId, boundDisputeId: s.disputeId }).map((r) => evidenceNumber(r.evidenceId)),
     );
     const final = lines.map((text, i) => {
