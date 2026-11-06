@@ -22,7 +22,7 @@ function fakeFetch(responses: Array<{ status: number; body: unknown }>) {
 
 const client = (f: typeof fetch) => new PayPalClient({ clientId: 'id', clientSecret: 'secret', env: 'sandbox', fetch: f });
 
-test('finds a dispute by capture with disputed_transaction_id (the plain list omits disputed_transactions)', async () => {
+test('finds a dispute by capture with disputed_transaction_id (the list has no capture id)', async () => {
   const { fn, calls } = fakeFetch([{ status: 200, body: { items: [{ dispute_id: 'PP-R-1', status: 'WAITING_FOR_SELLER_RESPONSE' }] } }]);
   const d = await client(fn).disputes.findByCapture('CAP123');
   assert.equal(d?.dispute_id, 'PP-R-1');
@@ -32,6 +32,31 @@ test('finds a dispute by capture with disputed_transaction_id (the plain list om
 test('returns null when PayPal has not propagated the dispute yet', async () => {
   const { fn } = fakeFetch([{ status: 200, body: { items: [] } }]);
   assert.equal(await client(fn).disputes.findByCapture('CAP123'), null);
+});
+
+test('list asks for the disputes that need the seller action and returns the items of the recorded list', async () => {
+  const recorded = JSON.parse(readFileSync(new URL('../contracts/reads/list.json', import.meta.url), 'utf8')) as { items: Dispute[] };
+  const { fn, calls } = fakeFetch([{ status: 200, body: recorded }]);
+  const items = await client(fn).disputes.list({ disputeState: 'REQUIRED_ACTION' });
+  assert.equal(calls[1].init.method, 'GET');
+  assert.match(calls[1].url, /\/v1\/customer\/disputes\?dispute_state=REQUIRED_ACTION&page_size=50$/);
+  assert.deepEqual(items, recorded.items);
+  assert.ok(items.length > 0);
+  assert.equal(items[0].dispute_id, 'PP-R-KHH-10193360');
+  assert.equal(items[0].seller_response_due_date, '2026-11-07T08:04:20.000Z');
+});
+
+test('list sends the page size it is given', async () => {
+  const { fn, calls } = fakeFetch([{ status: 200, body: { items: [] } }]);
+  await client(fn).disputes.list({ disputeState: 'REQUIRED_ACTION', pageSize: 10 });
+  assert.match(calls[1].url, /dispute_state=REQUIRED_ACTION&page_size=10$/);
+});
+
+test('list returns [] when PayPal answers without items', async () => {
+  const empty = fakeFetch([{ status: 200, body: { items: [] } }]);
+  assert.deepEqual(await client(empty.fn).disputes.list({ disputeState: 'REQUIRED_ACTION' }), []);
+  const none = fakeFetch([{ status: 200, body: {} }]);
+  assert.deepEqual(await client(none.fn).disputes.list({ disputeState: 'REQUIRED_ACTION' }), []);
 });
 
 test('reads the evidence PayPal requests from the seller and the allowed actions', () => {

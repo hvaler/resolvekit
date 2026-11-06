@@ -45,6 +45,8 @@ export interface Dispute {
     transaction_status?: string;
     gross_amount?: { currency_code: string; value: string };
     items?: Array<{ item_type?: string }>;
+    /** The order's invoice number (the capture's invoice_id), when PayPal returns it. */
+    invoice_number?: string;
     /** The seller's PayPal account: its merchant id is the payer id that account approves with. */
     seller?: { merchant_id?: string; name?: string };
   }>;
@@ -117,11 +119,18 @@ export class DisputesApi {
     this.client = client;
   }
 
-  // The plain list omits disputed_transactions, so look disputes up by capture. A dispute the buyer just
-  // opened can take ~5 minutes to show up here.
+  // The list returns disputed_transactions too (contracts/reads/list.json), but with the buyer's transaction id and
+  // not the seller's capture id, so look a dispute up by capture with this. A dispute the buyer just opened can take
+  // ~5 minutes to show up here.
   async findByCapture(captureId: string): Promise<Dispute | null> {
     const r = await this.client.request<{ items?: Dispute[] }>('GET', `/v1/customer/disputes?disputed_transaction_id=${encodeURIComponent(captureId)}`);
     return r.items?.[0] ?? null;
+  }
+
+  /** One page of disputes (no pagination followed): 50 is enough for the scan. */
+  async list(q: { disputeState: 'REQUIRED_ACTION'; pageSize?: number }): Promise<Dispute[]> {
+    const r = await this.client.request<{ items?: Dispute[] }>('GET', `/v1/customer/disputes?dispute_state=${encodeURIComponent(q.disputeState)}&page_size=${q.pageSize ?? 50}`);
+    return r.items ?? [];
   }
 
   get(disputeId: string): Promise<Dispute> {
