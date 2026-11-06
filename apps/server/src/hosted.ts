@@ -50,9 +50,10 @@ export type HostedApp = Handler & {
   /** The bindings object was changed in place: forget the old reads and warm up again. */
   bindingsChanged: () => Promise<WarmUpOutcome[]>;
   /**
-   * Warm the discovered cases in their own lane (at start, and after each case made): one live analysis at a time, a
-   * start at most every 10 min, without the people's hourly limit; a case with a stored analysis is skipped, a failed
-   * one is tried again in the next slot. Returns at once (the lane runs in the background).
+   * Warm the open discovered cases in their own lane (at start, and after each case made): one live analysis at a
+   * time, a start at most every 10 min, without the people's hourly limit; a case with a stored analysis or ended is
+   * skipped, a failed one is tried again in the next slot, at most 3 attempts per case per process. Returns at once
+   * (the lane runs in the background).
    */
   warmDiscovered: () => void;
   /** The person acting on a request (null when signed out). */
@@ -103,7 +104,7 @@ export interface HostedOptions extends Omit<ApiOptions, 'gate'> {
    * The warm-up lane of the discovered cases: the least time between two starts (10 min) and how a later pass is
    * scheduled (default: an unref'd timer). Its clock is `now`. Tests: a fake clock and timers.
    */
-  warmLane?: { gapMs?: number; later?: (run: () => void, ms: number) => void };
+  warmLane?: { gapMs?: number; later?: (run: () => void, ms: number) => void; waitMs?: number };
 }
 
 export interface HostedLimits {
@@ -619,12 +620,38 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   };
 
   // ------------------------------------------------------------------------------- warm-up lane of discovered cases
-  // Decisions 10 and 15: each discovered case listed (settlement ones too: the owner sees them) is analysed ahead, one
-  // at a time, a start at most every gap, as a system run (the daily cap, as the warm-up above) that takes no slot of
-  // the people's hourly limit. A pass starts at most one analysis; the next pass is scheduled for the next slot while
-  // something is left to try (a failed run, a refusal, an unreadable dispute); otherwise the lane stops until the next
-  // case is made (or the next start).
+  // Decisions 10 and 15: each open discovered case (settlement ones too: the owner sees them; not an ended one, which
+  // is read-only) is analysed ahead, one at a time, a start at most every gap, as a system run (the daily cap, as the
+  // warm-up above) that takes no slot of the people's hourly limit. A pass starts at most one analysis; the next pass is
+  // scheduled for the next slot while something is left to try (a failed run, a refusal, an unreadable dispute);
+  // otherwise the lane stops until the next case is made (or the next start). A case that failed or was refused 3
+  // times is given up until the next start, so it neither blocks the newer ones nor spends the daily cap.
   const LANE_GAP_MS = o.warmLane?.gapMs ?? 10 * MIN;
+  /** How long the lane waits for one run (each model call has its own timeout, the run as a whole none). */
+  const LANE_WAIT_MS = o.warmLane?.waitMs ?? 15 * MIN;
+  const LANE_ATTEMPTS = 3;
+  /** Failed or refused runs per case (this process); at {@link LANE_ATTEMPTS} the case is skipped. */
+  const laneAttempts = new Map<string, number>();
+  /** Cases the lane found analysed (this process): skipped without reading PayPal again. */
+  const laneDone = new Set<string>();
+  const laneFailed = (caseId: string, why: string) => {
+    const n = (laneAttempts.get(caseId) ?? 0) + 1;
+    laneAttempts.set(caseId, n);
+    log(`warm-up lane · case ${caseId} · ${why} · ${n < LANE_ATTEMPTS ? 'tried again in the next slot' : `given up after ${LANE_ATTEMPTS} attempts (until the next start)`}`);
+  };
+  /** The run's end, or null when it did not settle within {@link LANE_WAIT_MS} (the lane moves on; the run may still finish). */
+  const settledWithin = async (analyst: NonNullable<HostedOptions['analyst']>, key: string): Promise<{ status?: string; error?: string } | null> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<null>((r) => {
+      timer = setTimeout(() => r(null), LANE_WAIT_MS);
+      timer.unref?.();
+    });
+    try {
+      return await Promise.race([analyst.settled(key).then((a) => a.body as { status?: string; error?: string }), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const later =
     o.warmLane?.later ??
     ((run: () => void, ms: number) => {
@@ -667,24 +694,39 @@ export function createHostedApp(o: HostedOptions): HostedApp {
     const t = now().getTime();
     if (laneStarted !== null && t - laneStarted < LANE_GAP_MS) return laneStarted + LANE_GAP_MS - t;
     let unreadable = false;
-    for (const caseId of api.discoveredListed()) {
+    for (const caseId of api.discoveredToWarm()) {
+      // Already analysed, or given up: no PayPal read for it.
+      if (laneDone.has(caseId) || (laneAttempts.get(caseId) ?? 0) >= LANE_ATTEMPTS) continue;
       const input = await api.inputFor(caseId);
       if (input instanceof Response) {
         unreadable = true;
         log(`warm-up lane · case ${caseId} · skipped · PayPal could not be read (${input.status}) · tried again in the next slot`);
         continue;
       }
-      if (await analyst.stored(input)) continue;
+      // That read may have shown it ended (closed, evidence recorded, chargeback, past due): read-only, not analysed.
+      if (!api.discoveredToWarm().includes(caseId)) continue;
+      if (await analyst.stored(input)) {
+        laneDone.add(caseId);
+        continue;
+      }
       const r = await analyst.request(caseId, input, false, systemGate, { ownLane: true });
       const body = r.body as { key?: string; error?: string; detail?: string };
-      if (r.status === 200) continue;
+      if (r.status === 200) {
+        laneDone.add(caseId);
+        continue;
+      }
       laneStarted = now().getTime();
       if (r.status !== 202 || !body.key) {
-        log(`warm-up lane · case ${caseId} · skipped · ${`${body.error ?? r.status}: ${body.detail ?? ''}`.trim()} · tried again in the next slot`);
+        laneFailed(caseId, `refused · ${`${body.error ?? r.status}: ${body.detail ?? ''}`.trim()}`);
         return LANE_GAP_MS;
       }
-      const end = (await analyst.settled(body.key)).body as { status?: string; error?: string };
-      log(`warm-up lane · case ${caseId} · ${end.status === 'ready' ? 'done' : `failed · ${end.error ?? end.status ?? 'unknown'} · tried again in the next slot`}`);
+      const end = await settledWithin(analyst, body.key);
+      if (end?.status === 'ready') {
+        laneDone.add(caseId);
+        log(`warm-up lane · case ${caseId} · done`);
+      } else {
+        laneFailed(caseId, end ? `failed · ${end.error ?? end.status ?? 'unknown'}` : `failed · no result within ${Math.round(LANE_WAIT_MS / 1000)} s`);
+      }
       return Math.max(0, laneStarted + LANE_GAP_MS - now().getTime());
     }
     return unreadable ? LANE_GAP_MS : null;

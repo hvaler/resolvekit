@@ -83,15 +83,17 @@ const captureOf = (id: string, invoice: string): Capture => ({ id, status: 'COMP
 function fakePayPal() {
   const disputes: Record<string, Dispute> = { [BOUND]: { ...standardDispute(), dispute_id: BOUND } };
   const captures: Record<string, Capture> = {};
+  const calls: string[] = [];
   const fetch = (async (url: string | URL) => {
     const u = new URL(String(url));
     if (u.pathname === '/v1/oauth2/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 32400 }), { status: 200 });
+    calls.push(u.pathname);
     if (u.pathname === '/v1/customer/disputes') return new Response(JSON.stringify({ items: Object.keys(disputes).map((dispute_id) => ({ dispute_id })) }), { status: 200 });
     const id = decodeURIComponent(u.pathname.split('/').pop()!);
     const found = u.pathname.startsWith('/v2/payments/captures/') ? captures[id] : disputes[id];
     return found ? new Response(JSON.stringify(found), { status: 200 }) : new Response('{"name":"RESOURCE_NOT_FOUND"}', { status: 404 });
   }) as typeof globalThis.fetch;
-  return { disputes, captures, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
+  return { disputes, captures, reads: (id: string) => calls.filter((c) => c === `/v1/customer/disputes/${id}`).length, client: new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch }) };
 }
 
 const record = (caseId: string, template: DiscoveredCase['template'], orderRef: string, createdAt: number): DiscoveredCase => ({
@@ -116,10 +118,11 @@ async function withDir(f: (dir: string) => Promise<void>) {
 
 /**
  * The hosted app on a fake clock: the fixed standard case bound to BOUND, the store seeded with `seed` (their disputes
- * waiting for the seller), an analyst on a fake model (`failFirst`: its first run fails) whose runs are recorded with
- * the clock's time.
+ * waiting for the seller), an analyst on a fake model whose runs are recorded with the clock's time (`failFirst`: its
+ * first run fails; `failCase`: every run of that case fails; `hangCase`: every run of that case never answers, and the
+ * lane waits `waitMs` real ms for a run).
  */
-function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean } = {}) {
+function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean; failCase?: string; hangCase?: string; waitMs?: number } = {}) {
   const time = fakeTime();
   const pp = fakePayPal();
   for (const c of o.seed ?? []) pp.disputes[c.caseId] = newDispute(c.caseId, T0);
@@ -136,6 +139,9 @@ function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean }
     model: {
       ...fm.model,
       generate: async (r) => {
+        const running = starts.at(-1)?.caseId;
+        if (running === o.failCase) throw new Error('model down');
+        if (running === o.hangCase) return new Promise<never>(() => {});
         if (!failed) {
           failed = true;
           throw new Error('model down');
@@ -172,7 +178,7 @@ function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean }
     https: true,
     opsToken: OPS,
     now: time.now,
-    warmLane: { later: time.later },
+    warmLane: { later: time.later, ...(o.waitMs ? { waitMs: o.waitMs } : {}) },
   });
   return { app, pp, people, lines, store, bindings, time, analyst, starts, counters };
 }
@@ -414,5 +420,76 @@ test('warm-up lane: a case made by discovery is warmed at once (after the previo
     // The fixed warm-up does not analyse discovered cases (they are this lane's).
     const fixed = await h.app.warmUp();
     assert.ok(!fixed.some((w) => w.caseId === A));
+  });
+});
+
+test('warm-up lane: a case that always fails is given up after 3 attempts, and the newer cases are warmed after it; the daily cap spent is bounded', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - 2 * MIN), record(B, 'standard', 'rk-std-b', T0 - MIN)], failCase: A });
+    h.app.warmDiscovered();
+    for (let k = 1; k <= 3; k++) {
+      await until(() => h.starts.length === k && h.time.timers.length === 1, `attempt ${k}`);
+      h.time.fire();
+    }
+    await until(() => h.starts.length === 4 && h.time.timers.length === 1, 'the newer case');
+    assert.deepEqual(h.starts, [
+      { caseId: A, at: T0 },
+      { caseId: A, at: T0 + 10 * MIN },
+      { caseId: A, at: T0 + 20 * MIN },
+      { caseId: B, at: T0 + 30 * MIN },
+    ]);
+    assert.equal(h.lines.filter((l) => l.startsWith(`warm-up lane · case ${A}`) && l.includes('given up after 3 attempts')).length, 1);
+    // Nothing left to try: the lane stops; warmed again, the given-up case is not tried (nor read) again.
+    h.time.fire();
+    await sleep(50);
+    assert.equal(h.time.timers.length, 0);
+    const reads = h.pp.reads(A);
+    h.app.warmDiscovered();
+    await sleep(50);
+    assert.equal(h.starts.length, 4);
+    assert.equal(h.pp.reads(A), reads);
+    assert.equal(h.counters.state().caps['live-analysis']!.used, 4);
+  });
+});
+
+test('warm-up lane: an ended case (closed, not yet hidden) is not analysed ahead; the open one is', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - 2 * MIN), record(B, 'standard', 'rk-std-b', T0 - MIN)] });
+    // Closed at PayPal, never opened here: the lane's own read finds it ended.
+    h.pp.disputes[A] = { ...h.pp.disputes[A]!, status: 'RESOLVED', update_time: new Date(T0).toISOString() };
+    h.app.warmDiscovered();
+    await until(() => h.starts.length === 1, 'the open case');
+    assert.deepEqual(h.starts, [{ caseId: B, at: T0 }]);
+    assert.equal(h.store.get(A)!.endedBy, 'resolved');
+    h.time.fire();
+    await sleep(50);
+    assert.deepEqual(h.starts.map((x) => x.caseId), [B]);
+  });
+});
+
+test('warm-up lane: a run with no result in time is a failed attempt; the lane is free for the next slot', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - MIN)], hangCase: A, waitMs: 30 });
+    h.app.warmDiscovered();
+    await until(() => h.time.timers.length === 1, 'the wait to time out');
+    assert.ok(h.lines.some((l) => l.startsWith(`warm-up lane · case ${A} · failed · no result within`) && l.includes('tried again in the next slot')), h.lines.join(' | '));
+    assert.equal(h.time.timers[0]!.at, T0 + 10 * MIN);
+  });
+});
+
+test('warm-up lane: a case found analysed is not read from PayPal again by later passes', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - MIN)] });
+    h.app.warmDiscovered();
+    await until(() => h.time.timers.length === 1, 'the run');
+    h.time.fire();
+    await sleep(50);
+    const reads = h.pp.reads(A);
+    // Past the read cache's minute: only the lane's own memory spares the read.
+    h.time.set(h.time.get() + 2 * MIN);
+    h.app.warmDiscovered();
+    await sleep(50);
+    assert.equal(h.pp.reads(A), reads);
+    assert.equal(h.starts.length, 1);
   });
 });

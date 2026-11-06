@@ -292,10 +292,10 @@ export type Api = Handler & {
    */
   discover: (d: Dispute, source: 'webhook' | 'scan') => Promise<Admission>;
   /**
-   * The discovered cases listed now (bound to their one dispute, not hidden by their lifecycle), oldest first: what the
-   * hosted warm-up lane analyses ahead.
+   * The discovered cases still open, oldest first: bound to their one dispute and not ended (so not hidden either). What
+   * the hosted warm-up lane analyses ahead; an ended case is read-only and is not analysed ahead.
    */
-  discoveredListed: () => string[];
+  discoveredToWarm: () => string[];
   /** The intents and audit log (tests, main.ts). */
   intents: IntentStore;
   /** For the operator's check (hosted /api/ops/status): PayPal's state and each binding verified on a fresh read now. */
@@ -1592,12 +1592,12 @@ export function createApi(opts: ApiOptions): Api {
     },
     paypalNotified,
     discover,
-    discoveredListed: () =>
+    discoveredToWarm: () =>
       (opts.caseStore?.all() ?? [])
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .filter((c) => {
           const life = lifecycleOf(c.caseId);
-          return !!life && !life.hidden;
+          return !!life && !life.ended && !life.hidden;
         })
         .map((c) => c.caseId),
     intents,
