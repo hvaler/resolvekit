@@ -11,7 +11,7 @@ test('templateForOrderRef maps the order reference prefix to a template', () => 
 });
 
 test('templateForOrderRef rejects anything else', () => {
-  for (const v of ['INV2-ABCD', '', null, undefined, 'rk-std-', 'rk-stl-', 'mm-sess-abc-settle']) assert.equal(templateForOrderRef(v), null);
+  for (const v of ['INV2-ABCD', '', null, undefined, 'rk-std-', 'rk-stl-', 'mm-sess-abc-settle', 'rk-std-a b', 'rk-std-x\n', 'rk-stl-x\n']) assert.equal(templateForOrderRef(v), null);
 });
 
 test('TEMPLATE_CASE_IDS points at fixed case files', () => {
@@ -35,4 +35,8 @@ test('caseFileOf: fixed first, then discovered, else null', () => {
   assert.equal(caseFileOf(SETTLEMENT_CASE_ID, () => 'standard'), CASE_FILES[SETTLEMENT_CASE_ID]);
   assert.equal(caseFileOf('PP-R-NEW-1', (id) => (id === 'PP-R-NEW-1' ? 'agent' : null))!.summary.id, 'PP-R-NEW-1');
   assert.equal(caseFileOf('PP-R-NOPE', () => null), null);
+});
+
+test('caseFileOf ignores inherited object keys', () => {
+  for (const id of ['constructor', 'toString', '__proto__']) assert.equal(caseFileOf(id, () => null), null);
 });

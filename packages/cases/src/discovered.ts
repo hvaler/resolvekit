@@ -35,8 +35,7 @@ export function discoveredCaseFile(template: CaseTemplate, caseId: string): Case
 
 /** The case file for a case id: a fixed one first, else the discovered clone, else null. */
 export function caseFileOf(caseId: string, templateOf: (caseId: string) => CaseTemplate | null): CaseFile | null {
-  const fixed = CASE_FILES[caseId];
-  if (fixed) return fixed;
+  if (Object.hasOwn(CASE_FILES, caseId)) return CASE_FILES[caseId]!;
   const template = templateOf(caseId);
   return template ? discoveredCaseFile(template, caseId) : null;
 }
