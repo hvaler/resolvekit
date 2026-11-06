@@ -38,6 +38,7 @@ import { WEBHOOK_KEY } from './webhook.ts';
 import { IntentStore } from './intents.ts';
 import { MeterMcpClient, receiptPaymentOf } from './metermcp.ts';
 import { ReserveMemory, keepHeldActive } from './reserve.ts';
+import { CaseStore } from './caseStore.ts';
 import { USAGE_MAX_AGE_MS, USAGE_MAX_BYTES, UsageLog } from './usage-log.ts';
 import { RecheckVerdicts } from './verdicts.ts';
 import { DAILY_UPLOADS } from './uploads/limits.ts';
@@ -102,6 +103,7 @@ const held = (disputeId: string) => intents.held(disputeId);
 // The disputes this server already moved each case past (reserve.ts): a restart starts after them, not at the first.
 const reserveMemory = new ReserveMemory({ file: join(dataDir, 'reserve-position.json'), log });
 for (const s of reserveMemory.apply({ bindings, reserve }, held)) log(`reserve · case ${s.caseId}: ${s.skipped.join(', ')} used before (reserve-position.json) → ${s.active}`);
+const caseStore = new CaseStore({ file: join(dataDir, 'cases.json'), log });
 const port = Number(process.env.PORT ?? (hosted ? 10000 : 8787));
 const host = hosted ? '0.0.0.0' : '127.0.0.1';
 
@@ -283,7 +285,7 @@ if (hosted) {
   if (!meterToken) log('WARNING: METERMCP_ADMIN_TOKEN is not set: agent runs cannot authenticate to MeterMCP (/agent/mcp) and will stop as meter_unavailable; receipts and settlement through the admin routes fail too');
   const site = StaticSite.load(dist);
   app = hostedApp = createHostedApp({
-    paypal, env, bindings, reserve, reserveMemory, verdicts, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
+    paypal, env, bindings, reserve, reserveMemory, caseStore, verdicts, log, meterMcp, analyst, pins, intents, uploads, site, counters, accounts, sellerMemory, identity, sessionSecret,
     origins: pub.origins,
     hosts: pub.hosts,
     https: pub.https,
@@ -302,7 +304,7 @@ if (hosted) {
   tokenFile = process.env.RESOLVEKIT_TOKEN_FILE ?? fileURLToPath(new URL('../.runtime-token', import.meta.url));
   writeFileSync(tokenFile, token, { mode: 0o600 });
   const allowedOrigins = process.env.RESOLVEKIT_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
-  app = createApp({ paypal, env, bindings, reserve, reserveMemory, verdicts, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads, agent });
+  app = createApp({ paypal, env, bindings, reserve, reserveMemory, caseStore, verdicts, log, port, token, allowedOrigins, meterMcp, analyst, pins, intents, uploads, agent });
 }
 
 // Runs a previous process left unfinished become interrupted and are settled, in the background: not awaited, so a

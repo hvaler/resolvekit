@@ -28,6 +28,7 @@ import { intentAction, isActionRequest, isSimpleAction, type ContractRegistry, t
 import { CONTRACTS } from '../../web/src/domain/actionContracts.ts';
 import { createActionRoutes } from './actions/routes.ts';
 import type { ReserveMemory } from './reserve.ts';
+import type { CaseStore } from './caseStore.ts';
 import { RecheckVerdicts } from './verdicts.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
 import { toSnapshot } from './mapping.ts';
@@ -120,6 +121,8 @@ export interface ApiOptions {
   reserve?: Record<string, Binding[]> | null;
   /** Remembers the disputes a case moved past, so a restart does not walk past them again (reserve.ts). Default: none. */
   reserveMemory?: ReserveMemory | null;
+  /** The cases discovered from the merchant's disputes (caseStore.ts; persisted on the data dir by main.ts). Default: none. */
+  caseStore?: CaseStore | null;
   /** How long a dispute whose seller evidence just went in stays active, so whoever sent it sees PayPal's read-back (15 min). */
   rotateAfterMs?: number;
   /** The verifier's verdicts on edited sentences (verdicts.ts; persisted on the data dir by main.ts). Default: in memory. */
@@ -558,6 +561,7 @@ export function createApi(opts: ApiOptions): Api {
       { store: 'analysis-inputs', problem: pins.storageProblem() },
       { store: 'recheck-verdicts', problem: verified.storageProblem() },
       { store: 'reserve-position', problem: opts.reserveMemory?.storageProblem() ?? null },
+      { store: 'cases', problem: opts.caseStore?.storageProblem() ?? null },
     ].filter((p): p is { store: string; problem: string } => !!p.problem);
   /**
    * The confirmed uploads the requesting person's workspace made for this case and dispute: none without a request
