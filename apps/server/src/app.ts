@@ -15,6 +15,7 @@ import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type P
 import { workspaceIdFor } from './accounts.ts';
 import { caseAllowedActions, caseFileOf, caseInput, caseView, documentsSignature, type CaseTemplate, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
+import { RateLimiter } from '@resolvekit/analyst/node';
 import type { AgentReceiptSource, AgentRunSummary, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
 import { linesToConfirmOf, type Recheck } from '../../web/src/domain/draft.ts';
 import { composeSubmission, contentHash, isComposeProblem, parseIntentRequest, type IntentContent, type IntentRequest } from '../../web/src/domain/intent.ts';
@@ -1360,9 +1361,61 @@ export function createApi(opts: ApiOptions): Api {
     ...(opts.actionRegistry ? { contracts: opts.actionRegistry.contracts, rules: opts.actionRegistry.rules } : {}),
   });
 
+  /** One scan per minute per workspace (the local operator is the workspace 'local'). */
+  const scanLimits = new Map<string, RateLimiter>();
+  const SCAN_WINDOW_MS = 60_000;
+
+  /**
+   * POST /api/discovery/scan («Find new disputes»): the owner of the seller's workspace only. Lists the disputes that
+   * need the seller, reads each one in full, and admits it (discover): a list item lacks the transaction and invoice.
+   */
+  const scanRoute = async (req: Request): Promise<Response> => {
+    if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+    const p = personOf(req);
+    if (!p) return json(401, { error: 'SIGN_IN_REQUIRED', detail: 'Sign in first' });
+    if (p.role !== 'owner' || p.reviewer || !(await viewerLive(req))) {
+      return json(403, { error: 'OWNER_ONLY', detail: 'Only the owner of the seller’s workspace can look for new disputes' });
+    }
+    let limit = scanLimits.get(p.workspaceId);
+    if (!limit) scanLimits.set(p.workspaceId, (limit = new RateLimiter({ limit: 1, windowMs: SCAN_WINDOW_MS, now: () => now().getTime() })));
+    if (!limit.take()) {
+      const retryAfterSec = Math.max(1, limit.state().resetInSec);
+      return tooMany({ status: 429, error: 'SCAN_TOO_SOON', detail: `Looked for new disputes a moment ago; try again in ${retryAfterSec} s`, retryAfterSec });
+    }
+    const paypal = opts.paypal;
+    if (!paypal) return json(503, { error: 'PAYPAL_UNAVAILABLE', detail: 'PayPal is not configured on this server' });
+    let listed: Dispute[];
+    try {
+      listed = await paypal.disputes.list({ disputeState: 'REQUIRED_ACTION' });
+    } catch (e) {
+      log(`discovery · scan: PayPal could not list the disputes (${failureText(e)})`);
+      return json(503, { error: 'PAYPAL_UNAVAILABLE', detail: 'PayPal could not list the disputes now; try again in a moment' });
+    }
+    const created: { caseId: string; orderRef: string }[] = [];
+    const skipped: { disputeId: string; why: string }[] = [];
+    for (const item of listed) {
+      const id = item.dispute_id;
+      if (!id) continue;
+      let d: Dispute;
+      try {
+        d = await paypal.disputes.get(id);
+      } catch (e) {
+        log(`discovery · scan: dispute ${id} not read (${failureText(e)})`);
+        skipped.push({ disputeId: id, why: 'dispute could not be read' });
+        continue;
+      }
+      const a = await discover(d, 'scan');
+      if ('created' in a) created.push({ caseId: a.created.caseId, orderRef: a.created.orderRef });
+      else skipped.push({ disputeId: id, why: a.skipped });
+    }
+    log(`discovery · scan: ${listed.length} listed, ${created.length} case(s) made, ${skipped.length} skipped`);
+    return json(200, { created, skipped });
+  };
+
   const route = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
+    if (path === '/api/discovery/scan') return scanRoute(req);
     if (path === '/api/paypal/notices') return req.method === 'GET' ? noticesFor(req) : json(405, { error: 'METHOD_NOT_ALLOWED' });
     // Local mode has no demo lock; answering here keeps the web app's lock check from logging a 404.
     if (path === '/api/demo' && req.method === 'GET') return json(200, { hosted: false });
