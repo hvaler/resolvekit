@@ -10,7 +10,7 @@ export interface OpsBody {
   notices?: string[];
   paypal: string;
   webhook: 'on' | 'off' | string;
-  bindings: Record<string, { dispute: string; capture: string | null; status: string; reasons: string[]; checkedAt: string | null; used?: boolean; reserve?: number }>;
+  bindings: Record<string, { dispute: string; capture: string | null; status: string; reasons: string[]; checkedAt: string | null; used?: boolean; reserve?: number; discovered?: boolean }>;
   warmUp: Array<{ caseId: string; outcome: string; detail: string }> | null;
   models: Array<{ name: string; ok: boolean; error?: string }> | null;
 }
@@ -69,8 +69,9 @@ export function evaluate(o: Observed): { ok: boolean; lines: Line[] } {
   for (const [caseId, x] of Object.entries(b.bindings)) {
     if (x.status !== 'verified') continue;
     const left = x.reserve ?? 0;
-    add(true, `binding ${caseId} → ${x.dispute}`, `verified · capture ${x.capture}${x.used ? ' · used' : ''} · ${left} in reserve`);
-    if (left < 2) lines.push({ ok: true, warn: true, what: `reserve · case ${caseId}`, detail: `only ${left} fresh dispute${left === 1 ? '' : 's'} left in reserve: npm run demo:prepare and add them to BINDINGS_JSON` });
+    // A discovered case has its one dispute, never a reserve: nothing to refill.
+    add(true, `binding ${caseId} → ${x.dispute}`, `verified · capture ${x.capture}${x.used ? ' · used' : ''} · ${x.discovered ? 'discovered case (its own dispute, no reserve)' : `${left} in reserve`}`);
+    if (!x.discovered && left < 2) lines.push({ ok: true, warn: true, what: `reserve · case ${caseId}`, detail: `only ${left} fresh dispute${left === 1 ? '' : 's'} left in reserve: npm run demo:prepare and add them to BINDINGS_JSON` });
   }
   for (const m of b.models ?? []) if (m.ok) add(true, `AI model ${m.name}`, 'answered');
   if (b.warmUp === null) add(true, 'warm-up of the bound cases', 'not finished yet (runs after each start)');

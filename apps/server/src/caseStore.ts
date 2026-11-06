@@ -20,8 +20,14 @@ export interface DiscoveredCase {
   orderRef: string;
   source: 'webhook' | 'scan';
   createdAt: string;
+  /** When the case ended (lifecycle, app.ts): PayPal's close time, the due date, or when the end was first seen. */
   endedAt?: string;
+  /** What ended it: closed, past its due date (both hidden 7 days later), seller evidence recorded, or in chargeback. */
+  endedBy?: EndedBy;
 }
+
+export type EndedBy = 'resolved' | 'past-due' | 'evidence' | 'chargeback';
+const ENDED_BY: readonly string[] = ['resolved', 'past-due', 'evidence', 'chargeback'];
 
 const TEMPLATES: readonly string[] = ['standard', 'settlement', 'agent'];
 const str = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
@@ -33,6 +39,7 @@ function parseCase(c: unknown): DiscoveredCase {
   if (typeof r.template !== 'string' || !TEMPLATES.includes(r.template)) throw new Error('shape');
   if (r.source !== 'webhook' && r.source !== 'scan') throw new Error('shape');
   if (r.endedAt !== undefined && !str(r.endedAt)) throw new Error('shape');
+  if (r.endedBy !== undefined && (typeof r.endedBy !== 'string' || !ENDED_BY.includes(r.endedBy))) throw new Error('shape');
   return {
     caseId: r.caseId,
     merchantId: r.merchantId,
@@ -43,6 +50,7 @@ function parseCase(c: unknown): DiscoveredCase {
     source: r.source,
     createdAt: r.createdAt,
     ...(r.endedAt !== undefined ? { endedAt: r.endedAt } : {}),
+    ...(r.endedBy !== undefined ? { endedBy: r.endedBy as EndedBy } : {}),
   };
 }
 
@@ -115,10 +123,12 @@ export class CaseStore {
     return true;
   }
 
-  markEnded(caseId: string, at: string): void {
+  /** Record when (and, if known, why) the case ended; written at once. */
+  markEnded(caseId: string, at: string, by?: EndedBy): void {
     const c = this.cases.find((x) => x.caseId === caseId);
     if (!c || this.problem) return;
     c.endedAt = at;
+    if (by) c.endedBy = by;
     this.save();
   }
 

@@ -13,7 +13,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { PayPalError, type Dispute, type EvidenceFile, type PayPalClient, type PayPalEnv, type WebhookEvent } from '@resolvekit/paypal';
 import { workspaceIdFor } from './accounts.ts';
-import { caseAllowedActions, caseFileOf, caseInput, caseView, documentsSignature, type CaseTemplate, type PayPalSource } from '@resolvekit/cases';
+import { CASE_FILES, caseAllowedActions, caseFileOf, caseInput, caseView, documentsSignature, type CaseTemplate, type PayPalSource } from '@resolvekit/cases';
 import { toCitations, withAnalysis, type AnalysisInput, type CaseAnalysis } from '@resolvekit/analyst';
 import { RateLimiter } from '@resolvekit/analyst/node';
 import type { AgentReceiptSource, AgentRunSummary, DisputeSnapshot, SubmissionFile } from '../../web/src/domain/types.ts';
@@ -29,7 +29,7 @@ import { intentAction, isActionRequest, isSimpleAction, type ContractRegistry, t
 import { CONTRACTS } from '../../web/src/domain/actionContracts.ts';
 import { createActionRoutes } from './actions/routes.ts';
 import type { ReserveMemory } from './reserve.ts';
-import { bindDiscovered, type CaseStore } from './caseStore.ts';
+import { bindDiscovered, type CaseStore, type DiscoveredCase, type EndedBy } from './caseStore.ts';
 import type { Admission, createDiscovery } from './discovery.ts';
 import { RecheckVerdicts } from './verdicts.ts';
 import { MeterMcpError, receiptFileName, toMeteredSession, type MeterMcpSource } from './metermcp.ts';
@@ -130,6 +130,8 @@ export interface ApiOptions {
    * unknown dispute (CREATED or UPDATED) is admitted through it; a case made is bound at once. Absent: no discovery.
    */
   discovery?: ReturnType<typeof createDiscovery> | null;
+  /** A discovered case was just made and bound (hosted: its analysis is warmed in the lane of discovered cases). */
+  onDiscovered?: (caseId: string) => void;
   /** How long a dispute whose seller evidence just went in stays active, so whoever sent it sees PayPal's read-back (15 min). */
   rotateAfterMs?: number;
   /** The verifier's verdicts on edited sentences (verdicts.ts; persisted on the data dir by main.ts). Default: in memory. */
@@ -289,6 +291,11 @@ export type Api = Handler & {
    * bound at once (its one dispute, no reserve). Without discovery: skipped.
    */
   discover: (d: Dispute, source: 'webhook' | 'scan') => Promise<Admission>;
+  /**
+   * The discovered cases listed now (bound to their one dispute, not hidden by their lifecycle), oldest first: what the
+   * hosted warm-up lane analyses ahead.
+   */
+  discoveredListed: () => string[];
   /** The intents and audit log (tests, main.ts). */
   intents: IntentStore;
   /** For the operator's check (hosted /api/ops/status): PayPal's state and each binding verified on a fresh read now. */
@@ -320,6 +327,8 @@ export interface OpsReport {
       used: boolean;
       /** Fresh disputes left behind it. */
       reserve: number;
+      /** A discovered case: its one dispute, never a reserve (an empty reserve is not a problem for it). */
+      discovered?: boolean;
       /** The send holding the active dispute (in flight, else unproven: rotation waits for its read-back), or null. */
       held: { intentId: string; since: string } | null;
     }
@@ -368,6 +377,56 @@ export function createApi(opts: ApiOptions): Api {
   const discoveredBound = (caseId: string) => {
     const c = opts.caseStore?.get(caseId);
     return c && toBinding(opts.bindings[caseId])?.dispute === c.disputeId ? c : null;
+  };
+  /** A discovered case's id (not a fixed case's): it exists for a request only while bound to its one dispute. */
+  const isDiscovered = (caseId: string) => !Object.hasOwn(CASE_FILES, caseId) && !!templateOf(caseId);
+
+  // ------------------------------------------------------------------- lifecycle of discovered cases (decision A)
+  /** Ended closed or past due more than this long ago: left out of the inbox (still stored, still addressable). */
+  const HIDE_AFTER_MS = 7 * 86_400_000;
+  /** The ends that hide a case after {@link HIDE_AFTER_MS}; one ended by evidence or chargeback stays listed. */
+  const HIDING: readonly EndedBy[] = ['resolved', 'past-due'];
+  /** The last read of each discovered case's dispute: its lifecycle is judged on it (a due date also lapses as time passes). */
+  const lastRead = new Map<string, { dispute: string; snap: DisputeSnapshot; updated: string | null }>();
+  /**
+   * How a read shows the case ended, and since when, or null: closed (PayPal's update time, else now), seller evidence
+   * recorded (as the web app shows «Evidence recorded by PayPal»), in chargeback, or past its due date (the due date).
+   */
+  const endOf = (r: { snap: DisputeSnapshot; updated: string | null }): { by: EndedBy; at: string } | null => {
+    const t = now();
+    if (r.snap.status === 'RESOLVED') return { by: 'resolved', at: r.updated && Number.isFinite(Date.parse(r.updated)) ? r.updated : t.toISOString() };
+    if (sellerEvidenceBlocks(r.snap)) return { by: 'evidence', at: t.toISOString() };
+    if (r.snap.stage === 'CHARGEBACK') return { by: 'chargeback', at: t.toISOString() };
+    const due = Date.parse(r.snap.respondBy ?? '');
+    if (Number.isFinite(due) && due < t.getTime()) return { by: 'past-due', at: new Date(due).toISOString() };
+    return null;
+  };
+  /**
+   * The case with its end judged on its last read: an end is stored the first time it is seen; a close or lapse seen
+   * after an end by evidence or chargeback replaces it (only those two hide a case, from their own time).
+   */
+  const judged = (c: DiscoveredCase): DiscoveredCase => {
+    const r = lastRead.get(c.caseId);
+    const end = r && r.dispute === c.disputeId ? endOf(r) : null;
+    if (!end || (c.endedAt && ((c.endedBy && HIDING.includes(c.endedBy)) || !HIDING.includes(end.by)))) return c;
+    opts.caseStore?.markEnded(c.caseId, end.at, end.by);
+    return { ...c, endedAt: end.at, endedBy: end.by };
+  };
+  /** A fresh read of a bound discovered case's own dispute: remembered, and its end (if any) stored. */
+  const noteRead = (caseId: string, disputeId: string, d: Dispute, snap: DisputeSnapshot) => {
+    const c = discoveredBound(caseId);
+    if (!c || c.disputeId !== disputeId) return;
+    lastRead.set(caseId, { dispute: disputeId, snap, updated: d.update_time ?? null });
+    judged(c);
+  };
+  /** A bound discovered case's lifecycle now (null: not one): ended, and hidden from the inbox. */
+  const lifecycleOf = (caseId: string): { c: DiscoveredCase; ended: boolean; hidden: boolean } | null => {
+    const found = discoveredBound(caseId);
+    if (!found) return null;
+    const c = judged(found);
+    const since = Date.parse(c.endedAt ?? '');
+    const hidden = !!c.endedBy && HIDING.includes(c.endedBy) && Number.isFinite(since) && now().getTime() - since > HIDE_AFTER_MS;
+    return { c, ended: !!c.endedAt, hidden };
   };
   // The discovered cases already stored are bound now (their one dispute each; a fixed binding of the same dispute wins).
   if (opts.caseStore) {
@@ -419,7 +478,7 @@ export function createApi(opts: ApiOptions): Api {
    * for the workspace of that case's own seller; everything else is UNKNOWN_CASE (three-environments plan, task 2).
    */
   const caseVisible = async (req: Request, caseId: string): Promise<boolean> =>
-    !!fileOf(caseId) && (!opts.gate || (!!bindingOf(caseId) && ownerSees(req, caseId) && (await viewerLive(req)) && (await sellerOfCase(req, caseId))));
+    !!fileOf(caseId) && (!isDiscovered(caseId) || !!discoveredBound(caseId)) && (!opts.gate || (!!bindingOf(caseId) && ownerSees(req, caseId) && (await viewerLive(req)) && (await sellerOfCase(req, caseId))));
   /** An owner-only case (the settlement case) exists only for the workspace's owner; anyone else: UNKNOWN_CASE. */
   const ownerSees = (req: Request, caseId: string): boolean => fileOf(caseId)?.audience !== 'owner' || personOf(req)?.role === 'owner';
 
@@ -574,6 +633,7 @@ export function createApi(opts: ApiOptions): Api {
     noteSeller(caseId, d);
     const snap = await snapshotOf(caseId, d);
     reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
+    noteRead(caseId, disputeId, d, snap);
     // A judge who only opens the case moves it on too: this answer is the used dispute's, the next view the fresh one's.
     const b = bindingOf(caseId);
     if (b && b.dispute === disputeId) rotateIfUsed(caseId, b, snap);
@@ -695,6 +755,7 @@ export function createApi(opts: ApiOptions): Api {
     }
     const snap = await snapshotOf(caseId, dispute, want.receipt);
     reads.set(caseId, { at: now().getTime(), dispute: disputeId, snap });
+    noteRead(caseId, disputeId, dispute, snap);
     const source: PayPalSource = { kind: 'live', snap, failed: null };
     const recs = await confirmedUploads(caseId, disputeId, req);
     const state = { source, input: withUploads(pins.resolve(caseId, caseInput(demo, source), sellerActed(snap, disputeId)), recs), dispute, snap, disputeId, uploads: recs };
@@ -727,8 +788,12 @@ export function createApi(opts: ApiOptions): Api {
   const rotateIfUsed = (caseId: string, binding: Binding, snap: DisputeSnapshot) => {
     // Another read of this case may have moved it on while this one waited for PayPal: one step per used dispute.
     if (bindingOf(caseId)?.dispute !== binding.dispute) return;
-    // A discovered case has exactly its own dispute: it is never moved on (it ends there, used or not).
-    if (opts.caseStore?.get(caseId)) return;
+    // A discovered case has exactly its own dispute: it is never moved on (it ends there, used or not). Used is still
+    // reported (PayPal has the seller's evidence, or closed it), for the operator's check.
+    if (opts.caseStore?.get(caseId)) {
+      usedNow.set(caseId, sellerEvidenceBlocks(snap) || snap.status === 'RESOLVED');
+      return;
+    }
     const since = usedSince(binding.dispute, snap);
     usedNow.set(caseId, since != null);
     const queue = opts.reserve?.[caseId];
@@ -1254,6 +1319,8 @@ export function createApi(opts: ApiOptions): Api {
     }
     const merchant = d.disputed_transactions?.[0]?.seller?.merchant_id ?? null;
     if (caseId) noteSeller(caseId, d);
+    // A discovered case's lifecycle is judged on this read too (no MeterMCP read: its end does not depend on it).
+    if (caseId && discoveredBound(caseId)) noteRead(caseId, disputeId, d, toSnapshot(d, caseId, opts.env, now()));
     const amount = d.dispute_amount?.value && d.dispute_amount.currency_code ? { value: d.dispute_amount.value, currency: d.dispute_amount.currency_code } : null;
     const at = now().toISOString();
     notices.unshift({ eventId: e.id, eventType: e.event_type, disputeId, caseId: noticeCase, merchant, status: d.status ?? null, reason: d.reason ?? null, amount, at, ...(orderRef ? { orderRef } : {}) });
@@ -1274,6 +1341,7 @@ export function createApi(opts: ApiOptions): Api {
       for (const id of bindDiscovered({ bindings: opts.bindings as Record<string, string | Binding>, reserve: opts.reserve ?? null }, [a.created])) {
         log(`cases · discovered case ${id} not bound: its id or dispute is bound already`);
       }
+      if (discoveredBound(a.created.caseId)) opts.onDiscovered?.(a.created.caseId);
     }
     return a;
   };
@@ -1424,14 +1492,22 @@ export function createApi(opts: ApiOptions): Api {
       // Hosted: each real dispute is listed only to its own seller's workspace; everyone else runs them on the simulator.
       const live = await viewerLive(req);
       const candidates = h.paypal === 'unconfigured' || !live ? [] : Object.keys(opts.bindings).filter((k) => bindingOf(k));
-      // Per case: only the cases whose seller is this workspace.
+      // Per case: only the cases whose seller is this workspace. A discovered case closed or past due for more than 7
+      // days is left out (still stored, still addressable); the others are listed with their order and whether ended.
       const bound: string[] = [];
-      for (const k of candidates) if (ownerSees(req, k) && (await sellerOfCase(req, k))) bound.push(k);
+      const cases: Record<string, { template: CaseTemplate; orderRef: string; source: 'webhook' | 'scan'; createdAt: string; ended: boolean }> = {};
+      for (const k of candidates) {
+        if (!(ownerSees(req, k) && (await sellerOfCase(req, k)))) continue;
+        const life = lifecycleOf(k);
+        if (life?.hidden) continue;
+        bound.push(k);
+        if (life) cases[k] = { template: life.c.template, orderRef: life.c.orderRef, source: life.c.source, createdAt: life.c.createdAt, ended: life.ended };
+      }
       // A store file that could not be read. Local: the stores' names. Hosted (public): only `true`, no names. The reason
       // and where it was kept: the operator's check and the log.
       const names = storageProblems().map((p) => p.store);
       const storage = names.length ? (opts.gate ? true : names) : null;
-      return json(200, { ...h, bound, bindings: Object.fromEntries(bound.map((k) => [k, bindingState(k)])), ...(storage ? { storage } : {}) });
+      return json(200, { ...h, bound, cases, bindings: Object.fromEntries(bound.map((k) => [k, bindingState(k)])), ...(storage ? { storage } : {}) });
     }
     const a = /^\/api\/cases\/([A-Za-z0-9-]{1,64})\/analysis(\/progress|\/verify)?$/.exec(path);
     if (a) return analysisRoute(req, url, a[1]!, a[2] ?? '');
@@ -1516,6 +1592,14 @@ export function createApi(opts: ApiOptions): Api {
     },
     paypalNotified,
     discover,
+    discoveredListed: () =>
+      (opts.caseStore?.all() ?? [])
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .filter((c) => {
+          const life = lifecycleOf(c.caseId);
+          return !!life && !life.hidden;
+        })
+        .map((c) => c.caseId),
     intents,
     opsReport,
     opsReadBack: (intentId: string) => actions.opsReadBack(intentId),
@@ -1547,6 +1631,7 @@ export function createApi(opts: ApiOptions): Api {
         checkedAt: st?.checkedAt ?? null,
         used: usedNow.get(caseId) ?? false,
         reserve: opts.reserve?.[caseId]?.length ?? 0,
+        ...(discoveredBound(caseId) ? { discovered: true } : {}),
         held: intents.holdOf(active.dispute),
       };
     }

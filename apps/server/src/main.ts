@@ -349,6 +349,8 @@ server.listen(port, host, () => {
   void checkBindings({ paypal, bindings, cases, expectedOf: (caseId, d) => (caseFileOf(caseId, templateOf)?.kind === 'agent' ? receiptPaymentOf(meterMcp, d) : Promise.resolve(null)), log });
   // Hosted: analyse each bound case once in the background, so the seller's workspace finds an analysis ready.
   if (hostedApp) void hostedApp.warmUp();
+  // And the discovered cases in their own lane (one analysis at a time, at most every 10 min; again after each new case).
+  hostedApp?.warmDiscovered();
 });
 
 // Hosted with bindings from a file (no BINDINGS_JSON): a changed file is picked up without a restart (BINDINGS_JSON

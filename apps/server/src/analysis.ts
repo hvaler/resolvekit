@@ -92,8 +92,11 @@ export class AnalystService {
     return analysisKey(input, this.primaryModel);
   }
 
-  /** Stored analysis, running job, or a new live run. */
-  async request(caseId: string, input: AnalysisInput, refresh: boolean, gate?: LiveGate): Promise<ServiceAnswer> {
+  /**
+   * Stored analysis, running job, or a new live run. `ownLane`: a run of the discovered cases' warm-up lane (hosted.ts),
+   * which has its own pace and so neither needs nor takes a slot of the people's hourly limit.
+   */
+  async request(caseId: string, input: AnalysisInput, refresh: boolean, gate?: LiveGate, o: { ownLane?: boolean } = {}): Promise<ServiceAnswer> {
     const key = await this.key(input);
     const live = () => this.liveState();
     const running = this.jobs.get(key);
@@ -106,13 +109,13 @@ export class AnalystService {
       return { status: 503, body: { error: 'ANALYST_UNCONFIGURED', detail: 'No analysis is stored for these documents and no model key (GEMINI_API_KEY / GROQ_API_KEY) is set on the server', key, live: live() } };
     }
     const s = live();
-    if (s.remaining <= 0) {
+    if (!o.ownLane && s.remaining <= 0) {
       return { status: 429, body: { error: 'RATE_LIMITED', detail: `Live analyses are limited to ${s.limit} per hour on this server; try again in ${Math.ceil(s.resetInSec / 60)} min`, key, live: s } };
     }
     // From here to start() nothing awaits: the hourly slot and the gate's reservation are taken together.
     const r = gate?.();
     if (r && !r.ok) return { status: r.refusal.status, body: { ...(r.refusal.body as object), key, live: s } };
-    this.live.take();
+    if (!o.ownLane) this.live.take();
     this.start(key, caseId, input);
     return { status: 202, body: { status: 'running', key, progress: [], live: live() } };
   }
