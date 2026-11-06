@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { standardCase } from '@resolvekit/cases';
+import { standardCase, settlementCase, templateForOrderRef } from '@resolvekit/cases';
 import {
   AGENT_CASE_ID,
   DEFAULT_METERMCP_URL,
+  DISCOVERY_NOTE,
+  orderRef,
   STANDARD_CASE_ID,
   DEFAULT_AGENT_CAP,
   DEFAULT_AGENT_GOAL,
@@ -64,7 +66,7 @@ test('demo:prepare captures: positional (either may be empty or "-") or labelled
 });
 
 test('demo:prepare standard order: exactly the fixture’s order (1 × Linen tote, natural · 7.00 USD · physical goods)', () => {
-  const b = standardOrder(standardCase, 'https://resolvekit-i3j2.onrender.com');
+  const b = standardOrder(standardCase, 'https://resolvekit-i3j2.onrender.com', orderRef('std', 'a1b2c3d4e5f6'));
   assert.deepEqual(b.amount, { currency_code: 'USD', value: '7.00' });
   assert.deepEqual(b.items, [{ name: 'Linen tote, natural', quantity: '1', unit_amount: { currency_code: 'USD', value: '7.00' }, category: 'PHYSICAL_GOODS' }]);
   assert.equal(b.shipping, 'GET_FROM_FILE');
@@ -455,4 +457,32 @@ test('M-1: an engine run (--agent-count) is bound by its session only; a page ru
   assert.equal(b[0].run, undefined);
   assert.equal(b[0].session, SESSION);
   assert.equal(b[1].run, RUN2);
+});
+
+test('demo:prepare order reference: invoice_id rk-std-/rk-stl- plus a 12-hex tag, which the service reads back to pick the template', () => {
+  const std = standardOrder(standardCase, 'https://x.example/', orderRef('std', 'a1b2c3d4e5f6'));
+  assert.equal(std.invoiceId, 'rk-std-a1b2c3d4e5f6');
+  assert.deepEqual(templateForOrderRef(std.invoiceId), { template: 'standard', orderRef: 'rk-std-a1b2c3d4e5f6' });
+  const stl = standardOrder(settlementCase, 'https://x.example/', orderRef('stl', '0123456789ab'));
+  assert.equal(stl.invoiceId, 'rk-stl-0123456789ab');
+  assert.deepEqual(templateForOrderRef(stl.invoiceId)?.template, 'settlement');
+  assert.deepEqual(stl.amount, std.amount);
+  assert.deepEqual(stl.items, std.items);
+  assert.match(orderRef('std', undefined), /^rk-std-[0-9a-f]{12}$/);
+  assert.match(orderRef('stl'), /^rk-stl-[0-9a-f]{12}$/);
+  assert.notEqual(orderRef('std'), orderRef('std'));
+});
+
+test('demo:prepare --settlement: its own step (not part of "all steps"), --count applies to it, goes with --wait-disputes', () => {
+  assert.equal(ok([]).settlement, false);
+  const s = ok(['--settlement']);
+  assert.deepEqual([s.settlement, s.standard, s.agent, s.waitDisputes], [true, false, false, false]);
+  assert.equal(ok(['--settlement', '--count', '3']).count, 3);
+  const both = ok(['--standard', '--settlement', '--wait-disputes']);
+  assert.deepEqual([both.standard, both.settlement, both.waitDisputes], [true, true, true]);
+  assert.ok('error' in parseArgs(['--agent', '--count', '2']));
+});
+
+test('demo:prepare prints that disputes are discovered automatically, with BINDINGS_JSON only for the fixed cases', () => {
+  assert.equal(DISCOVERY_NOTE, 'Discovered automatically on the hosted service (webhook or Find new disputes); BINDINGS_JSON is only needed for the fixed cases.');
 });

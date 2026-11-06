@@ -4,6 +4,7 @@
  * reserve, and the BINDINGS_JSON to paste. The run readers get their fetch / MeterMCP client from the caller; nothing
  * here prints a secret.
  */
+import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CreateCaptureOrder, Dispute } from '@resolvekit/paypal';
@@ -15,6 +16,8 @@ import type { MeterMcpClient, Receipt } from '../src/metermcp.ts';
 export const DEFAULT_METERMCP_URL = 'https://resolvekit-metermcp.onrender.com/mcp';
 export const DEFAULT_APP_URL = 'https://resolvekit-i3j2.onrender.com/';
 export const STANDARD_CASE_ID = 'PP-R-TVH-10190665';
+/** Printed once the disputes are ready: the hosted service reads each order's invoice_id to find its template. */
+export const DISCOVERY_NOTE = 'Discovered automatically on the hosted service (webhook or Find new disputes); BINDINGS_JSON is only needed for the fixed cases.';
 export const AGENT_CASE_ID = 'PP-R-MMC-10190702';
 /** `--agent-count`: what the engine is asked, and the budget it may ask for, unless `--agent-goal` / `--agent-cap`. */
 export const DEFAULT_AGENT_GOAL = 'Find the current quote for ACME-42 and whether there is any supplier risk.';
@@ -31,13 +34,15 @@ const MERCHANT_ID = /^[A-Z0-9]{8,20}$/;
 export interface PrepareOptions {
   /** (a) create, approve and capture the standard order. */
   standard: boolean;
+  /** `--settlement`: create, approve and capture orders from the settlement template (owner-only case). */
+  settlement: boolean;
   /** (b) run the model-driven agent (packages/agent) against MeterMCP. */
   agent: boolean;
   /** (d) wait for the disputes on these captures (from this run or `--captures`). */
   waitDisputes: boolean;
   /** Captures of each case (several: a reserve of disputes for the same case). */
   captures: { standard?: string[]; agent?: string[] };
-  /** (a) how many standard payments to create: each becomes one dispute of the case's reserve. */
+  /** (a) how many payments to create per step (standard, settlement): each becomes one dispute. */
   count: number;
   /** (b) how many agent sessions to run: each becomes one dispute of the agent case's reserve. */
   agentCount: number;
@@ -64,6 +69,8 @@ the disputes you open and prints the BINDINGS_JSON to paste into Render.
 
 Steps (default: all of them, in order)
   --standard                 (a) Orders v2 CAPTURE order for the standard case; approve it; it is captured
+  --settlement               like --standard, from the owner settlement case's order (reference rk-stl-...); not part of
+                             "all steps"; --count applies to it too
   --agent                    (b) the model-driven agent against MeterMCP (budget approval, its calls, close)
   --wait-disputes            (d)+(e) wait for the disputes on the captures, then print BINDINGS_JSON
   --count N                  (a) N standard payments (1-20): N disputes for the case's reserve
@@ -95,6 +102,7 @@ Nothing secret is printed.`;
 export function parseArgs(argv: readonly string[]): PrepareOptions | { error: string } {
   const o: PrepareOptions = {
     standard: false,
+    settlement: false,
     agent: false,
     waitDisputes: false,
     captures: {},
@@ -153,6 +161,9 @@ export function parseArgs(argv: readonly string[]): PrepareOptions | { error: st
       case '--standard':
         o.standard = true;
         break;
+      case '--settlement':
+        o.settlement = true;
+        break;
       case '--agent':
         o.agent = true;
         break;
@@ -208,18 +219,18 @@ export function parseArgs(argv: readonly string[]): PrepareOptions | { error: st
   // --agent-run on its own: take those runs and wait for their disputes (it creates nothing, so it is not "all steps").
   // Its entries are always waited for here: a resume with --captures would drop the run and session they carry.
   if (o.agentRuns.length) {
-    if (!o.standard && !o.agent && !o.waitDisputes && (o.captures.standard || o.captures.agent)) return { error: '--captures goes with --wait-disputes' };
+    if (!o.standard && !o.settlement && !o.agent && !o.waitDisputes && (o.captures.standard || o.captures.agent)) return { error: '--captures goes with --wait-disputes' };
     o.waitDisputes = true;
     if (!o.seller) return { error: '--agent-run needs --seller <merchant id>: each run’s dispute must be the seller’s' };
   }
-  if (!o.standard && !o.agent && !o.waitDisputes) {
+  if (!o.standard && !o.settlement && !o.agent && !o.waitDisputes) {
     if (o.captures.standard || o.captures.agent) return { error: '--captures goes with --wait-disputes' };
     o.standard = o.agent = o.waitDisputes = true;
   }
-  if (o.count > 1 && !o.standard) return { error: '--count goes with the standard step (--standard, or all steps)' };
+  if (o.count > 1 && !o.standard && !o.settlement) return { error: '--count goes with the standard or settlement step (--standard, --settlement, or all steps)' };
   if (o.agentCount > 1 && !o.agent) return { error: '--agent-count goes with the agent step (--agent, or all steps)' };
   if (engineFlags.length && !o.agent) return { error: `${engineFlags[0]} goes with the agent step (--agent, or all steps)` };
-  if (o.waitDisputes && !o.standard && !o.agent && !o.agentRuns.length && !o.captures.standard && !o.captures.agent) {
+  if (o.waitDisputes && !o.standard && !o.settlement && !o.agent && !o.agentRuns.length && !o.captures.standard && !o.captures.agent) {
     return { error: '--wait-disputes on its own needs --captures STD,AGENT' };
   }
   return o;
@@ -254,7 +265,7 @@ export function parseCaptures(v: string): { standard?: string[]; agent?: string[
  * The standard case's order, from its own fixture: exactly the amount and the item of order #10482 (one
  * "Linen tote, natural", 7.00 USD, physical goods shipped to the buyer's PayPal address).
  */
-export function standardOrder(c: CaseFile, appUrl: string): CreateCaptureOrder {
+export function standardOrder(c: CaseFile, appUrl: string, invoiceId: string): CreateCaptureOrder {
   const order = c.evidence.find((e) => e.id === 'E1');
   const lines = order?.body.kind === 'lines' ? order.body.lines.map((l) => l.text) : [];
   let item: { qty: string; name: string; value: string; currency: string } | null = null;
@@ -276,7 +287,13 @@ export function standardOrder(c: CaseFile, appUrl: string): CreateCaptureOrder {
     returnUrl: `${base}?demo=approved`,
     cancelUrl: `${base}?demo=cancelled`,
     shipping: 'GET_FROM_FILE',
+    invoiceId,
   };
+}
+
+/** The order's ResolveKit reference (its invoice_id): `rk-std-<tag>` or `rk-stl-<tag>`, tag = 12 lowercase hex. */
+export function orderRef(kind: 'std' | 'stl', tag: string = randomBytes(6).toString('hex')): string {
+  return `rk-${kind}-${tag}`;
 }
 
 /**

@@ -23,13 +23,15 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PayPalClient, PayPalError, approvalUrl, orderCapture, type Dispute } from '@resolvekit/paypal';
-import { standardCase } from '@resolvekit/cases';
+import { settlementCase, standardCase } from '@resolvekit/cases';
 import { agentModelsFromEnv, limitsFromEnv, type AgentModel } from '@resolvekit/agent';
 import { isLocal, runCli } from '../../metermcp/scripts/demo-agent.ts';
 import { MeterMcpClient, type Receipt } from '../src/metermcp.ts';
 import {
   agentEntries,
+  DISCOVERY_NOTE,
   bindingsJson,
+  orderRef,
   boundCaptures,
   buyerInstructions,
   disputeReadiness,
@@ -49,15 +51,17 @@ const rule = () => console.log('-'.repeat(100));
 const why = (e: unknown) => (e instanceof PayPalError ? `${e.message}${e.debugId ? ` (debug id ${e.debugId})` : ''}` : e instanceof Error ? e.message : String(e));
 const dataDir = process.env.RESOLVEKIT_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
 
-async function standardStep(paypal: PayPalClient, o: PrepareOptions): Promise<string | null> {
+async function standardStep(paypal: PayPalClient, o: PrepareOptions, kind: 'std' | 'stl' = 'std'): Promise<string | null> {
   rule();
-  say('(a) Standard case: Orders v2 CAPTURE order for the standard case’s order');
-  const body = standardOrder(standardCase, o.appUrl);
+  const settlement = kind === 'stl';
+  say(settlement ? '(a) Settlement case: Orders v2 CAPTURE order for the settlement case’s order' : '(a) Standard case: Orders v2 CAPTURE order for the standard case’s order');
   const tag = randomBytes(6).toString('hex');
-  const order = await paypal.orders.createCapture(body, { requestId: `rk-demo-std-${tag}` });
+  const ref = orderRef(kind, tag);
+  const body = standardOrder(settlement ? settlementCase : standardCase, o.appUrl, ref);
+  const order = await paypal.orders.createCapture(body, { requestId: `rk-demo-${kind}-${tag}` });
   const url = approvalUrl(order);
   if (!url) throw new Error(`PayPal returned no approval link for order ${order.id}`);
-  say(`order ${order.id} · ${body.items[0]!.quantity} × ${body.items[0]!.name} · ${body.amount.value} ${body.amount.currency_code} · ${body.items[0]!.category}`);
+  say(`order ${order.id} · reference ${ref} · ${body.items[0]!.quantity} × ${body.items[0]!.name} · ${body.amount.value} ${body.amount.currency_code} · ${body.items[0]!.category}`);
   console.log(`\n  Approve it in PayPal with the sandbox BUYER (personal) account:\n\n  ${url}\n`);
   const until = Date.now() + o.approvalMinutes * 60_000;
   for (;;) {
@@ -65,23 +69,23 @@ async function standardStep(paypal: PayPalClient, o: PrepareOptions): Promise<st
     if (cur.status === 'APPROVED') break;
     if (cur.status === 'COMPLETED') {
       const done = orderCapture(cur);
-      if (done) return printCapture(done.id);
+      if (done) return printCapture(done.id, undefined, settlement);
     }
     if (cur.status === 'VOIDED' || Date.now() > until) {
-      say(`order ${order.id} not approved (${cur.status}); stopping. Run again with --standard.`);
+      say(`order ${order.id} not approved (${cur.status}); stopping. Run again with ${settlement ? '--settlement' : '--standard'}.`);
       return null;
     }
     await sleep(4000);
   }
   say('approved by the buyer · capturing');
-  const captured = await paypal.orders.capture(order.id, { requestId: `rk-demo-std-${tag}-capture` });
+  const captured = await paypal.orders.capture(order.id, { requestId: `rk-demo-${kind}-${tag}-capture` });
   const cap = orderCapture(captured);
   if (!cap) throw new Error(`order ${order.id} captured but PayPal returned no capture (status ${captured.status})`);
-  return printCapture(cap.id, cap.status);
+  return printCapture(cap.id, cap.status, settlement);
 }
 
-function printCapture(id: string, status?: string): string {
-  console.log(`\n  Standard capture id: ${id}${status ? ` (${status})` : ''}\n`);
+function printCapture(id: string, status?: string, settlement = false): string {
+  console.log(`\n  ${settlement ? 'Settlement' : 'Standard'} capture id: ${id}${status ? ` (${status})` : ''}\n`);
   return id;
 }
 
@@ -132,7 +136,7 @@ interface AgentPending {
   note: string | null;
 }
 
-async function waitForDispute(paypal: PayPalClient, which: string, capture: string, o: PrepareOptions, resume: string): Promise<Dispute | null> {
+async function waitForDispute(paypal: PayPalClient, which: string, capture: string, o: PrepareOptions, resume: string, resumeText?: string): Promise<Dispute | null> {
   const until = Date.now() + o.disputeMinutes * 60_000;
   let last = '';
   for (;;) {
@@ -153,7 +157,7 @@ async function waitForDispute(paypal: PayPalClient, which: string, capture: stri
     if (line !== last) say(line);
     last = line;
     if (Date.now() > until) {
-      say(`${which}: gave up after ${o.disputeMinutes} min. Resume with: npm run demo:prepare -- ${resume}`);
+      say(`${which}: gave up after ${o.disputeMinutes} min. ${resumeText ?? `Resume with: npm run demo:prepare -- ${resume}`}`);
       return null;
     }
     await sleep(30_000);
@@ -191,9 +195,10 @@ async function main() {
 
   const steps = [
     o.standard && '(a) standard order',
+    o.settlement && '(a) settlement order',
     o.agent && '(b) agent session',
     o.agentRuns.length && `(b) ${o.agentRuns.length} agent run${o.agentRuns.length > 1 ? 's' : ''} from the page`,
-    (o.standard || o.agent || o.agentRuns.length) && '(c) buyer instructions',
+    (o.standard || o.settlement || o.agent || o.agentRuns.length) && '(c) buyer instructions',
     o.waitDisputes && '(d) wait for disputes + (e) BINDINGS_JSON',
   ].filter(Boolean);
   say(`steps: ${steps.join(' · ')}`);
@@ -202,8 +207,12 @@ async function main() {
     await paypal.verifyCredentials();
     say('PayPal sandbox credentials work (OAuth token obtained).');
     if (o.standard) {
-      const b = standardOrder(standardCase, o.appUrl);
-      say(`would create: Orders v2 CAPTURE · ${b.items[0]!.quantity} × "${b.items[0]!.name}" · ${b.amount.value} ${b.amount.currency_code} · ${b.items[0]!.category} · shipping ${b.shipping}`);
+      const b = standardOrder(standardCase, o.appUrl, orderRef('std'));
+      say(`would create: Orders v2 CAPTURE · ${b.items[0]!.quantity} × "${b.items[0]!.name}" · ${b.amount.value} ${b.amount.currency_code} · ${b.items[0]!.category} · shipping ${b.shipping} · reference ${b.invoiceId}`);
+    }
+    if (o.settlement) {
+      const b = standardOrder(settlementCase, o.appUrl, orderRef('stl'));
+      say(`would create from the settlement case: Orders v2 CAPTURE · ${b.items[0]!.quantity} × "${b.items[0]!.name}" · ${b.amount.value} ${b.amount.currency_code} · reference ${b.invoiceId}${o.count > 1 ? ` · ${o.count} of them` : ''}`);
     }
     if (o.agent) say(`would run the agent engine (${models!.primary.provider}/${models!.primary.model}) against ${o.meterUrl} · goal "${o.agentGoal}" · cap ${o.agentCap} USD${o.agentFailFirst.length ? ` · fail first: ${o.agentFailFirst.join(', ')}` : ''} · METERMCP_DEMO_CODE ${process.env.METERMCP_DEMO_CODE ? 'set' : 'NOT set'}`);
     if (o.agent && o.agentCount > 1) say(`would run ${o.agentCount} agent sessions, one after another (each budget approved by the buyer): ${o.agentCount} disputes for the agent case's reserve`);
@@ -214,14 +223,14 @@ async function main() {
       for (const e of r.entries) say(`would take run ${e.run}: capture ${e.capture} · ${e.amount}${e.note ? ` · ${e.note}` : ''}`);
       for (const x of r.refused) say(`would refuse run ${x.run}: ${x.problems.join('; ')}`);
     }
-    if (o.waitDisputes) say(`would wait for disputes on: ${[o.captures.standard?.join(', ') ?? (o.standard ? `(${o.count} new standard capture${o.count > 1 ? 's' : ''})` : null), o.captures.agent?.join(', ') ?? (o.agent ? `(${o.agentCount} new agent capture${o.agentCount > 1 ? 's' : ''})` : null)].filter(Boolean).join(', ') || 'the agent runs’ captures'}`);
+    if (o.waitDisputes) say(`would wait for disputes on: ${[o.settlement ? `(${o.count} new settlement capture${o.count > 1 ? 's' : ''})` : null, o.captures.standard?.join(', ') ?? (o.standard ? `(${o.count} new standard capture${o.count > 1 ? 's' : ''})` : null), o.captures.agent?.join(', ') ?? (o.agent ? `(${o.agentCount} new agent capture${o.agentCount > 1 ? 's' : ''})` : null)].filter(Boolean).join(', ') || 'the agent runs’ captures'}`);
     say('--dry-run: nothing created.');
     return;
   }
 
   const standard: string[] = [...(o.captures.standard ?? [])];
   const agent: AgentPending[] = (o.captures.agent ?? []).map((c) => ({ capture: c, amount: 'agent', note: null }));
-  const approvals = (o.standard ? o.count : 0) + (o.agent ? o.agentCount : 0);
+  const approvals = (o.standard ? o.count : 0) + (o.settlement ? o.count : 0) + (o.agent ? o.agentCount : 0);
   if (approvals > 1) say(`this run needs ${approvals} buyer approvals and then ${approvals} disputes opened by you, one per payment; allow about ${approvals * 5} minutes plus PayPal's time to open each dispute`);
   if (o.standard) {
     // One after another: each needs the buyer's approval. --count N makes N disputes for the case's reserve.
@@ -236,6 +245,17 @@ async function main() {
     }
     standard.splice(0, standard.length, ...made);
   }
+  const settlement: string[] = [];
+  if (o.settlement) {
+    for (let k = 1; k <= o.count; k++) {
+      if (o.count > 1) say(`settlement payment ${k} of ${o.count}`);
+      const id = await standardStep(paypal, o, 'stl');
+      if (id) {
+        settlement.push(id);
+        used.add(id.toUpperCase());
+      }
+    }
+  }
   if (o.agent || o.agentRuns.length) {
     // Engine runs one after another (each budget needs its own approval), then the page's runs, only read.
     const r = await agentEntries(o, { runEngine: () => engineStep(o, models!), read, used, say });
@@ -246,10 +266,13 @@ async function main() {
     }
   }
 
-  if (o.standard || o.agent || o.agentRuns.length) {
+  if (o.standard || o.settlement || o.agent || o.agentRuns.length) {
     rule();
     say('(c) Now open the disputes as the buyer (a capture whose dispute is already open needs nothing):');
     if (o.standard) for (const c of standard) console.log(`\n${buyerInstructions('standard', c, '7.00 USD')}\n`);
+    for (const c of settlement) console.log(`
+${buyerInstructions('standard', c, '7.00 USD')}
+`);
     for (const a of agent.filter((x) => x.session)) console.log(`\n${buyerInstructions('agent', a.capture, a.amount)}\n`);
   }
 
@@ -260,7 +283,8 @@ async function main() {
   }
   rule();
   say('(d) Waiting for the disputes (PayPal lists a new dispute after ~5 min, then opens it). Ctrl+C is safe; resume with --wait-disputes --captures (or --agent-run again).');
-  const [stdFound, agentFound] = await Promise.all([
+  const resumeSettlement = 'The hosted service discovers it by its order reference: use Find new disputes (or the webhook) once PayPal has opened it.';
+  const [stdFound, agentFound, stlFound] = await Promise.all([
     Promise.all(standard.map(async (c) => ({ capture: c, dispute: await waitForDispute(paypal, 'standard', c, o, `--wait-disputes --captures ${c},`) }))),
     Promise.all(
       agent.map(async (a) => ({
@@ -268,6 +292,7 @@ async function main() {
         dispute: await waitForDispute(paypal, 'agent', a.capture, o, a.run && o.agentRuns.includes(a.run) ? `--agent-run ${a.run} --seller ${o.seller}` : `--wait-disputes --captures ,${a.capture}`),
       })),
     ),
+    Promise.all(settlement.map(async (c) => ({ capture: c, dispute: await waitForDispute(paypal, 'settlement', c, o, '', resumeSettlement) }))),
   ]);
   // With --seller, an agent dispute that is not that seller's is left out (the run joins no reserve).
   const agentReady = agentFound.filter((a) => {
@@ -284,12 +309,14 @@ async function main() {
     ...(stdReady.length ? { standard: stdReady.map((f) => ({ dispute: f.dispute!.dispute_id!, capture: f.capture })) } : {}),
     ...(agentReady.length ? { agent: agentReady.map((a) => ({ dispute: a.dispute!.dispute_id!, capture: a.capture, ...(a.run ? { run: a.run } : {}), ...(a.session ? { session: a.session } : {}) })) } : {}),
   });
+  say(DISCOVERY_NOTE);
+  for (const f of stlFound.filter((x) => x.dispute)) say(`settlement ${f.capture}: dispute ${f.dispute!.dispute_id} is ready (found by its reference rk-stl-..., no binding)`);
   say('(e) BINDINGS_JSON for Render (resolvekit service → Environment), ready to paste:');
   console.log(`\n${b.json}\n`);
   for (const a of agentReady) if (a.note) say(`note · agent ${a.capture} (${a.run ? `run ${a.run}` : `session ${a.session}`}): ${a.note}`);
   if (b.missing.length) say(`not bound (no ready dispute): ${b.missing.join(', ')}; keep their current binding if they have one.`);
   // A capture whose dispute never got ready is left out of its case's list: say so, and how to add it later.
-  const late = [...stdFound.filter((f) => !f.dispute).map((f) => `standard ${f.capture}`), ...agentFound.filter((f) => !f.dispute).map((f) => `agent ${f.capture}`)];
+  const late = [...stdFound.filter((f) => !f.dispute).map((f) => `standard ${f.capture}`), ...agentFound.filter((f) => !f.dispute).map((f) => `agent ${f.capture}`), ...stlFound.filter((f) => !f.dispute).map((f) => `settlement ${f.capture}`)];
   if (late.length) say(`left out (no ready dispute yet): ${late.join(', ')}. When ready, run --wait-disputes --captures (or --agent-run for a page run) to print them.`);
   say('After saving it, Render restarts the service; the warm-up then analyses each bound case once (see the service log).');
 }
