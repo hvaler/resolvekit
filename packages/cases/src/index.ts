@@ -22,3 +22,4 @@ export { RESOLVED_SENT_NOTES, UNAUTHORISED_SENT_NOTES };
 export const CASE_FILES: Readonly<Record<string, CaseFile>> = Object.fromEntries(
   [standardCase, agentCase, notAsDescribedCase, sizeCase, budgetCase, unauthorisedCase, resolvedCase, settlementCase].map((c) => [c.summary.id, c]),
 );
+export * from './discovered.ts';
