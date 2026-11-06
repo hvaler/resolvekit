@@ -15,7 +15,7 @@ import { AgGridReact } from 'ag-grid-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   chipFilterModel,
-  compareDue,
+  compareDueRows,
   computeTotals,
   quickFilterText,
   sameRow,
@@ -45,7 +45,8 @@ const COLUMNS: ColDef<GridRow>[] = [
     headerName: 'Due',
     width: 132,
     sort: 'asc',
-    comparator: (a: number | null, b: number | null, _na, _nb, desc) => compareDue(a, b, desc),
+    // Open disputes first; an ended discovered case after them, whichever way the column is sorted.
+    comparator: (a: number | null, b: number | null, na, nb, desc) => compareDueRows(a, b, !!asDispute(na?.data)?.ended, !!asDispute(nb?.data)?.ended, desc),
     filter: 'agNumberColumnFilter',
     cellRenderer: DueCell,
     getQuickFilterText: quickFilterText.due,

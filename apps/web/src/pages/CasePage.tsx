@@ -1,5 +1,5 @@
 import { buildInput, withAnalysis } from '@resolvekit/analyst';
-import { caseView, documentsFinal } from '@resolvekit/cases';
+import { caseFileOf, caseView, documentsFinal } from '@resolvekit/cases';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { HighlightProvider } from '../app/highlight';
@@ -35,13 +35,14 @@ import { actionAvailability, type ActionRequest, type Viewer } from '../domain/a
 import { onSimulator, onSimulatorFile } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
+import { discoveredInfo, provenanceText, templateOfCase } from '../domain/discovered';
 import { ACTION_LABEL } from '../domain/status';
 import { evidenceAfterEscalationRefusal, payPalEvents, sellerEvidenceBlocks, startsFurtherOn } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
 import { utcClock } from '../domain/time';
 import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
 import { approvalRequest, canReviewUpload, confirmedUploads, evidenceCount, uploadsForInput, createUploadsClient, notAnalysed, uploadCorrections, uploadEvidence, withUploadDocuments, type UploadRecordView } from '../domain/uploads';
-import { caseFiles, processingDispute } from '../fixtures';
+import { processingDispute } from '../fixtures';
 
 /** "the address contradiction" → "Address contradiction" (the badge on the documents involved). */
 function contradictionLabel(blockerName: string | undefined): string {
@@ -56,11 +57,14 @@ export function ago(secs: number | null): string {
 
 export function CasePage() {
   const { id = '' } = useParams();
-  const { health, modeKnown } = useServices();
-  const c = caseFiles[id];
-  // An owner-only case (the settlement case) exists only where the server lists it as bound for this viewer; until
-  // the server has said, it is loading (never a «not found» flash).
-  if (c?.audience === 'owner' && !modeKnown) return <LoadingCase id={id} />;
+  const { health, modeKnown, area } = useServices();
+  // A fixed case file, or a discovered case's (its template's under its own id) when the server lists it for this
+  // viewer; the Explore demo never opens a discovered one.
+  const template = templateOfCase(area, health)(id);
+  const c = useMemo(() => caseFileOf(id, () => template), [id, template]);
+  // An owner-only case (the settlement case) or a discovered one exists only where the server lists it for this
+  // viewer; until the server has said, it is loading (never a «not found» flash).
+  if ((c?.audience === 'owner' || !c) && !modeKnown && id !== processingDispute.id) return <LoadingCase id={id} />;
   if (c && (c.audience !== 'owner' || (health?.bound ?? []).includes(id))) return <CaseFileScreen key={id} c={c} />;
   if (id === processingDispute.id) return <ProcessingScreen />;
   return <NotFound id={id} />;
@@ -68,7 +72,7 @@ export function CasePage() {
 
 function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const id = demo.summary.id;
-  const { snapshots, addAudit, analysis: analysisClient, demo: demoLock, area } = useServices();
+  const { snapshots, addAudit, analysis: analysisClient, demo: demoLock, area, health } = useServices();
   usePolling([id]);
   const source = usePayPalSource(id);
   // A bound case only uses a snapshot read from PayPal; a simulated one uses the simulator's.
@@ -78,6 +82,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const secs = useSecondsSince(snap?.checkedAt ?? null);
   // PayPal's fields (amount, reason, status, requested evidence…) from PayPal for a bound case; demo data otherwise.
   const liveSnap = source.kind === 'live' ? source.snap : null;
+  // A case the server made from a new PayPal dispute: where it came from (shown under the header).
+  const found = discoveredInfo(area, health, id);
   // `source` is rebuilt every render; its kind and PayPal snapshot are what matter.
   // The agent case's mandate/receipt/settlement from the real MeterMCP session when the server found one. The same
   // assembly (@resolvekit/cases) builds the analyst's input on the server.
@@ -242,6 +248,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             ...(source.kind === 'simulated' && snap ? { simulatedSnap: snap } : {}),
           })}
           statusHighlight={submitted}
+          provenance={found ? provenanceText(id, found, liveSnap?.transaction?.id) : null}
           wide={c.kind === 'agent'}
           className="border-b border-line"
         />

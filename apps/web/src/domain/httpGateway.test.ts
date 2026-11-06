@@ -82,6 +82,25 @@ describe('HttpDisputeGateway', () => {
     const up = fake(() => json(200, { paypal: 'sandbox', bound: ['CASE-1'] }));
     expect(await new HttpDisputeGateway({ fetch: up.fetch }).health()).toEqual({ paypal: 'sandbox', bound: ['CASE-1'] });
   });
+
+  it('health keeps the discovered cases it also lists as bound, well-formed ones only', async () => {
+    const c = { template: 'standard', orderRef: 'rk-std-a1', source: 'scan', createdAt: '2026-11-06T10:00:00Z', ended: true };
+    const up = fake(() =>
+      json(200, { paypal: 'sandbox', bound: ['CASE-1', 'PP-R-NEW-1', 'PP-R-BAD-1'], cases: { 'PP-R-NEW-1': c, 'PP-R-BAD-1': { ...c, template: 'other' }, 'PP-R-UNBOUND': c } }),
+    );
+    expect(await new HttpDisputeGateway({ fetch: up.fetch }).health()).toEqual({ paypal: 'sandbox', bound: ['CASE-1', 'PP-R-NEW-1', 'PP-R-BAD-1'], cases: { 'PP-R-NEW-1': c } });
+  });
+
+  it('scan: POST /api/discovery/scan, its answer as is; a refusal is a GatewayRequestError with the body', async () => {
+    const answer = { created: [{ caseId: 'PP-R-NEW-1', orderRef: 'rk-std-a1' }], skipped: [{ disputeId: 'PP-R-X', why: 'not from a ResolveKit order' }] };
+    const ok = fake(() => json(200, answer));
+    expect(await new HttpDisputeGateway({ fetch: ok.fetch }).scan()).toEqual(answer);
+    expect(ok.calls[0]).toMatchObject({ url: '/api/discovery/scan', init: { method: 'POST' } });
+    const soon = fake(() => json(429, { error: 'SCAN_TOO_SOON', detail: 'later', retryAfterSec: 40 }));
+    const e = await new HttpDisputeGateway({ fetch: soon.fetch }).scan().catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(GatewayRequestError);
+    expect(e).toMatchObject({ status: 429, code: 'SCAN_TOO_SOON', body: { retryAfterSec: 40 } });
+  });
 });
 
 describe('real or simulated, per case', () => {

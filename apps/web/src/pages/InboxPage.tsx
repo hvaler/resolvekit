@@ -3,10 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { usePolling, useServices } from '../app/services';
 import { AppBar } from '../components/AppBar';
 import { InboxGrid } from '../components/inbox/InboxGrid';
+import { FindNewDisputes } from '../components/FindNewDisputes';
 import { PayPalNotices } from '../components/PayPalNotices';
 import { cx } from '../components/ui';
 import { casesBase, environmentOf } from '../domain/environment';
-import { CHIPS, applySnapshot, chipCounts, clockNote, emptyInboxNote, evaluationRows, inboxView, inboxSummary, toGridRow, type ChipKey, type InboxDispute, type InboxGridRow } from '../domain/inbox';
+import { CHIPS, applySnapshot, chipCounts, clockNote, emptyInboxNote, evaluationRows, inboxView, inboxSummary, toGridRow, workspaceInbox, type ChipKey, type InboxDispute, type InboxGridRow } from '../domain/inbox';
 import { boundInboxRow, payPalSource } from '../domain/paypalView';
 import { DEMO_NOW, inbox, ownerInbox } from '../fixtures';
 
@@ -34,13 +35,15 @@ function useRows(disputes: InboxDispute[]): { rows: InboxGridRow[]; clock: { sim
 export function InboxPage() {
   const { snapshots, sync, refreshAll, modeKnown, area, demo, health } = useServices();
   const env = environmentOf(area, demo);
-  // The demo shows every fictional case; the evaluation workspace only the cases bound to real sandbox disputes.
-  const bound = health?.bound;
-  // An owner-only case (the settlement case) is listed only when the server lists it as bound for this viewer; the
-  // demo and local inboxes never list it (local: open it by its URL once bound).
-  const disputes = useMemo(() => (env.kind === 'evaluation' ? evaluationRows([...inbox, ...ownerInbox], bound ?? []) : inbox), [env.kind, bound]);
-  const { rows, clock } = useRows(disputes);
+  // The demo shows every fictional case; the evaluation workspace only the cases bound to real sandbox disputes, then
+  // the cases discovered from new PayPal disputes (ended ones last). An owner-only case (the settlement case, fixed or
+  // discovered) is listed only when the server lists it for this viewer; the demo and local inboxes never list it
+  // (local: open it by its URL once bound), nor any discovered case.
   const envKey = env.kind === 'evaluation' ? 'evaluation' : env.kind === 'demo' ? 'demo' : 'local';
+  const disputes = useMemo(() => workspaceInbox(envKey, inbox, ownerInbox, health), [envKey, health]);
+  // The fixed fictional cases this workspace lists (for the «Explore demo · N more» count).
+  const fixedListed = useMemo(() => (envKey === 'evaluation' ? evaluationRows(inbox, health?.bound ?? []).length : inbox.length), [envKey, health]);
+  const { rows, clock } = useRows(disputes);
   const emptyNote = modeKnown ? emptyInboxNote(envKey, rows.length) : null;
   const showGrid = !modeKnown || inboxView(envKey, rows.length) === 'grid';
   const note = clockNote(clock);
@@ -74,6 +77,7 @@ export function InboxPage() {
             <span className="text-[13.5px] text-ink-2">{modeKnown ? inboxSummary(rows) : 'Loading disputes…'}</span>
           </div>
           <div className="flex flex-col items-end gap-[3px] text-right max-md:items-start max-md:text-left">
+            {env.kind === 'evaluation' && <FindNewDisputes />}
             <span className="text-[12.5px] text-ink-3">Sorted by due date. New disputes can take a few minutes to appear and to open.</span>
             {modeKnown && note && <span className="text-[12px] text-info">{note}</span>}
           </div>
@@ -84,7 +88,7 @@ export function InboxPage() {
         {env.kind === 'evaluation' && (
           <div className="flex flex-wrap gap-x-5 gap-y-1">
             <Link to="/demo" className="text-[12.5px] text-acc">
-              Explore demo · {inbox.length - disputes.filter((d) => d.audience !== 'owner').length} more fictional cases
+              Explore demo · {inbox.length - fixedListed} more fictional cases
             </Link>
             <Link to="/agent" className="text-[12.5px] text-acc">
               Try the buying agent

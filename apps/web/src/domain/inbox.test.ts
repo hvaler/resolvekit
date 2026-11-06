@@ -3,7 +3,10 @@ import { DEMO_NOW, caseFiles, inbox, initialSnapshots, ownerInbox, processingOpe
 import { goldenAnalyses } from '../fixtures/golden';
 import {
   NO_BOUND_CASES,
+  compareDueRows,
+  discoveredInboxRows,
   emptyInboxNote,
+  workspaceInbox,
   inboxView,
   evaluationRows,
   CHIPS,
@@ -242,5 +245,63 @@ describe('the evaluation inbox', () => {
     expect(inboxView('evaluation', 2)).toBe('grid');
     expect(inboxView('demo', 0)).toBe('grid');
     expect(inboxView('local', 0)).toBe('grid');
+  });
+});
+
+describe('discovered cases in the inbox', () => {
+  const templates = [...inbox, ...ownerInbox];
+  const at = '2026-11-06T10:00:00Z';
+  const cases = {
+    'PP-R-QFP-10195597': { template: 'standard' as const, orderRef: 'rk-std-a1', source: 'webhook' as const, createdAt: at, ended: false },
+    'PP-R-ZZS-10195600': { template: 'settlement' as const, orderRef: 'rk-stl-b2', source: 'scan' as const, createdAt: '2026-11-06T11:00:00Z', ended: false },
+  };
+
+  it('a standard and a settlement case (owner) are their templates’ rows under the new ids', () => {
+    const rows = discoveredInboxRows(templates, cases);
+    expect(rows.map((r) => r.id)).toEqual(['PP-R-QFP-10195597', 'PP-R-ZZS-10195600']);
+    const std = inbox.find((d) => d.id === 'PP-R-TVH-10190665')!;
+    const stl = ownerInbox.find((d) => d.id === 'PP-R-STL-10190667')!;
+    expect(rows[0]).toEqual({ ...std, id: 'PP-R-QFP-10195597' });
+    expect(rows[1]).toEqual({ ...stl, id: 'PP-R-ZZS-10195600' });
+    // The template rows themselves are untouched.
+    expect(std.id).toBe('PP-R-TVH-10190665');
+  });
+
+  it('the agent template too; no cases, no rows', () => {
+    const rows = discoveredInboxRows(templates, { 'PP-R-AGT-1': { template: 'agent', orderRef: 'mm-sess-x-settle', source: 'scan', createdAt: at, ended: false } });
+    expect(rows[0]).toMatchObject({ id: 'PP-R-AGT-1', caseType: 'Agent purchase' });
+    expect(discoveredInboxRows(templates, undefined)).toEqual([]);
+    expect(discoveredInboxRows(templates, {})).toEqual([]);
+  });
+
+  it('ended cases come after the open ones and are marked ended', () => {
+    const rows = discoveredInboxRows(templates, {
+      'PP-R-END-1': { template: 'standard', orderRef: 'rk-std-e', source: 'webhook', createdAt: '2026-11-01T00:00:00Z', ended: true },
+      ...cases,
+    });
+    expect(rows.map((r) => r.id)).toEqual(['PP-R-QFP-10195597', 'PP-R-ZZS-10195600', 'PP-R-END-1']);
+    expect(rows[2]!.ended).toBe(true);
+    expect(rows[0]!.ended).toBeUndefined();
+  });
+
+  it('the due sort puts ended rows after open ones in both directions, then soonest first', () => {
+    const open = [{ due: 30, ended: false }, { due: null, ended: false }, { due: 5, ended: true }, { due: 100, ended: false }];
+    const asc = [...open].sort((a, b) => compareDueRows(a.due, b.due, a.ended, b.ended));
+    expect(asc).toEqual([{ due: 30, ended: false }, { due: 100, ended: false }, { due: null, ended: false }, { due: 5, ended: true }]);
+    const desc = [...open].sort((a, b) => -compareDueRows(a.due, b.due, a.ended, b.ended, true));
+    expect(desc).toEqual([{ due: 100, ended: false }, { due: 30, ended: false }, { due: null, ended: false }, { due: 5, ended: true }]);
+  });
+
+  it('the evaluation inbox lists its bound fixed cases, then the discovered ones, ended last', () => {
+    const ended = { template: 'standard' as const, orderRef: 'rk-std-e', source: 'webhook' as const, createdAt: at, ended: true };
+    const h = { bound: ['PP-R-END-1', 'PP-R-TVH-10190665', 'PP-R-QFP-10195597'], cases: { 'PP-R-END-1': ended, 'PP-R-QFP-10195597': cases['PP-R-QFP-10195597'] } };
+    expect(workspaceInbox('evaluation', inbox, ownerInbox, h).map((d) => d.id)).toEqual(['PP-R-TVH-10190665', 'PP-R-QFP-10195597', 'PP-R-END-1']);
+  });
+
+  it('the Explore demo (and local mode) never lists a discovered case', () => {
+    const h = { bound: ['PP-R-QFP-10195597'], cases };
+    expect(workspaceInbox('demo', inbox, ownerInbox, h)).toEqual(inbox);
+    expect(workspaceInbox('local', inbox, ownerInbox, h)).toEqual(inbox);
+    expect(workspaceInbox('demo', inbox, ownerInbox, h).some((d) => d.id in cases)).toBe(false);
   });
 });

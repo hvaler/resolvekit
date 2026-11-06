@@ -3,7 +3,8 @@
  * text, the saved-filter chips (as AG Grid filter models), the "Totals at risk" row and how a fresh read
  * from PayPal changes a row.
  */
-import { utcDateTime } from '@resolvekit/cases';
+import { TEMPLATE_CASE_IDS, utcDateTime } from '@resolvekit/cases';
+import type { HealthCases } from './httpGateway';
 import { STAGE_LABEL } from './status';
 import { ESCALATION_REVIEW, escalating, sellerEvidenceBlocks } from './recorded';
 import type { BuyerItemType, DisputeSnapshot, DisputeStatus } from './types';
@@ -41,6 +42,8 @@ export interface InboxDispute {
   paypal?: 'loading' | 'live' | 'saved' | 'unavailable';
   /** `owner`: listed only when the server lists it as bound for this viewer (the owner's settlement case). */
   audience?: 'owner';
+  /** A discovered case that has ended (evidence recorded, closed, escalated, past due): listed after the open ones. */
+  ended?: true;
 }
 
 /** What the grid shows: the dispute plus the values its columns sort and filter on. */
@@ -126,6 +129,13 @@ export function compareDue(a: number | null | undefined, b: number | null | unde
   if (a == null) return descending ? -1 : 1;
   if (b == null) return descending ? 1 : -1;
   return a - b;
+}
+
+/** The inbox's due sort: open disputes first, ended (discovered) ones after them in both directions, then by due. */
+export function compareDueRows(a: number | null | undefined, b: number | null | undefined, endedA: boolean, endedB: boolean, descending = false): number {
+  // AG Grid reverses the comparator's result for a descending sort, so "after" flips sign there too.
+  if (endedA !== endedB) return (endedA ? 1 : -1) * (descending ? -1 : 1);
+  return compareDue(a, b, descending);
 }
 
 export type ReadinessTone = 'warn' | 'acc' | 'ok';
@@ -359,6 +369,37 @@ export function sameRow(a: InboxGridRow, b: InboxGridRow): boolean {
 /** The evaluation workspace's inbox: only the cases bound to real sandbox disputes, in the inbox order. */
 export function evaluationRows(all: InboxDispute[], bound: readonly string[]): InboxDispute[] {
   return all.filter((d) => bound.includes(d.id));
+}
+
+/**
+ * The rows of the discovered cases: each its template's row under the case's own id (PayPal's fields are overlaid
+ * later, as on a fixed bound row). Open ones first, then the ended ones, each oldest first.
+ */
+export function discoveredInboxRows(templateRows: readonly InboxDispute[], cases: HealthCases | undefined): InboxDispute[] {
+  if (!cases) return [];
+  const listed = Object.entries(cases).sort(([, a], [, b]) => Number(a.ended) - Number(b.ended) || a.createdAt.localeCompare(b.createdAt));
+  const rows: InboxDispute[] = [];
+  for (const [id, c] of listed) {
+    const template = templateRows.find((d) => d.id === TEMPLATE_CASE_IDS[c.template]);
+    if (template) rows.push({ ...template, id, ...(c.ended ? { ended: true as const } : {}) });
+  }
+  return rows;
+}
+
+/**
+ * What an inbox lists. The evaluation workspace: its bound fixed cases (the owner-only one only when bound), then its
+ * discovered cases, ended ones last. The Explore demo and local mode: the fictional cases, never a discovered one.
+ */
+export function workspaceInbox(
+  env: 'demo' | 'evaluation' | 'local',
+  fixed: readonly InboxDispute[],
+  ownerOnly: readonly InboxDispute[],
+  health: { bound: readonly string[]; cases?: HealthCases } | null | undefined,
+): InboxDispute[] {
+  if (env !== 'evaluation') return [...fixed];
+  const templates = [...fixed, ...ownerOnly];
+  const rows = [...evaluationRows(templates, health?.bound ?? []), ...discoveredInboxRows(templates, health?.cases)];
+  return [...rows.filter((d) => !d.ended), ...rows.filter((d) => d.ended)];
 }
 
 export const NO_BOUND_CASES = 'No sandbox disputes are bound right now.';

@@ -27,12 +27,14 @@ export interface CaseHeaderProps {
   /** Highlight the status cell (just re-read, or still processing). */
   statusHighlight?: boolean;
   processing?: boolean;
+  /** A discovered case's provenance line (how it was found, the dispute, the capture, the order, when); null otherwise. */
+  provenance?: string | null;
   wide?: boolean;
   className?: string;
 }
 
 /** Amount, reason and buyer-declared item type, stage, PayPal status, deadline, disputed transaction. */
-export function CaseHeader({ view: v, statusHighlight = false, processing = false, wide = false, className }: CaseHeaderProps) {
+export function CaseHeader({ view: v, statusHighlight = false, processing = false, provenance = null, wide = false, className }: CaseHeaderProps) {
   return (
     <div className={cx('flex flex-none flex-col bg-surface', className)}>
       {v.notice && (
@@ -114,6 +116,11 @@ export function CaseHeader({ view: v, statusHighlight = false, processing = fals
           <span className="text-[12px] text-ink-2">{v.transactionText}</span>
         </Cell>
       </div>
+      {provenance && (
+        <p data-testid="case-provenance" className="m-0 border-t border-line px-[22px] py-1.5 font-mono text-caption leading-[1.4] text-ink-3 [overflow-wrap:anywhere] max-md:px-4">
+          {provenance}
+        </p>
+      )}
       {v.mismatch && (
         <p role="alert" className="m-0 flex items-start gap-2 border-t border-warn-line bg-warn-soft px-[22px] py-2 text-[12.5px] text-warn">
           <span aria-hidden="true" className="mt-[5px] h-[7px] w-[7px] flex-none rotate-45 bg-warn" />

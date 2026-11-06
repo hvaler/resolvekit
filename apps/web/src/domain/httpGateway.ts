@@ -1,12 +1,37 @@
 import { GatewayTimeoutError, GatewayUnavailableError, type ActionSendAnswer, type DisputeGateway } from './gateway';
 import type { SubmissionIntent } from './intent';
+import type { CaseTemplate } from '@resolvekit/cases';
 import type { DisputeSnapshot, EvidenceSubmission } from './types';
+
+/** A case the server made from a new PayPal dispute (its id is the dispute's), as `/api/health` lists it. */
+export interface DiscoveredCaseInfo {
+  /** The fixed case its case file is cloned from. */
+  template: CaseTemplate;
+  /** The ResolveKit order the dispute was opened on (the capture's invoice id). */
+  orderRef: string;
+  /** Found by PayPal's webhook, or by the owner's «Find new disputes». */
+  source: 'webhook' | 'scan';
+  createdAt: string;
+  /** Evidence recorded by PayPal, closed, escalated or past its due date: listed after the open ones, read-only. */
+  ended: boolean;
+}
+
+/** The discovered cases this viewer may see, by case id. */
+export type HealthCases = Readonly<Record<string, DiscoveredCaseInfo>>;
+
+/** What `POST /api/discovery/scan` answers: the cases it made and the disputes it left out, with why. */
+export interface ScanResult {
+  created: { caseId: string; orderRef: string }[];
+  skipped: { disputeId: string; why: string }[];
+}
 
 /** What the ResolveKit server says about its PayPal connection (`GET /api/health`). */
 export interface ServerHealth {
   paypal: 'sandbox' | 'live' | 'unconfigured';
-  /** Case ids bound to a real PayPal dispute. */
+  /** Case ids bound to a real PayPal dispute (discovered ones included). */
   bound: string[];
+  /** The discovered cases among {@link bound}; absent from an older server. */
+  cases?: HealthCases;
   error?: string;
   /** The health read itself failed (timeout, 429, 5xx, no server): what is bound is unknown, not "nothing". */
   failed?: true;
@@ -36,6 +61,8 @@ export interface HttpGatewayOptions {
   readTimeoutMs?: number;
   /** The server reads the dispute, then sends: allow for two PayPal calls. */
   sendTimeoutMs?: number;
+  /** «Find new disputes» lists the disputes and reads each one. */
+  scanTimeoutMs?: number;
 }
 
 /**
@@ -48,12 +75,14 @@ export class HttpDisputeGateway implements DisputeGateway {
   private readonly fetch: typeof fetch;
   private readonly readTimeoutMs: number;
   private readonly sendTimeoutMs: number;
+  private readonly scanTimeoutMs: number;
 
   constructor(opts: HttpGatewayOptions = {}) {
     this.base = opts.base ?? '/api';
     this.fetch = opts.fetch ?? ((...a) => globalThis.fetch(...a));
     this.readTimeoutMs = opts.readTimeoutMs ?? 35_000;
     this.sendTimeoutMs = opts.sendTimeoutMs ?? 75_000;
+    this.scanTimeoutMs = opts.scanTimeoutMs ?? 90_000;
   }
 
   private async call<T>(path: string, init: RequestInit, timeoutMs: number): Promise<T> {
@@ -105,11 +134,33 @@ export class HttpDisputeGateway implements DisputeGateway {
     try {
       const h = await this.call<ServerHealth>('/health', { method: 'GET' }, timeoutMs);
       const paypal = h.paypal === 'sandbox' || h.paypal === 'live' ? h.paypal : 'unconfigured';
-      return { paypal, bound: paypal === 'unconfigured' ? [] : Array.isArray(h.bound) ? h.bound : [], ...(h.error ? { error: h.error } : {}) };
+      const bound = paypal === 'unconfigured' ? [] : Array.isArray(h.bound) ? h.bound : [];
+      const cases = discoveredCases(h.cases, bound);
+      return { paypal, bound, ...(Object.keys(cases).length ? { cases } : {}), ...(h.error ? { error: h.error } : {}) };
     } catch (e) {
       return { paypal: 'unconfigured', bound: [], failed: true, error: e instanceof Error ? e.message : String(e) };
     }
   }
+
+  /** «Find new disputes» (the evaluation workspace's owner): the server looks at PayPal for new disputes now. */
+  scan(): Promise<ScanResult> {
+    return this.call<ScanResult>('/discovery/scan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }, this.scanTimeoutMs);
+  }
+}
+
+const TEMPLATES: readonly string[] = ['standard', 'settlement', 'agent'];
+
+/** The well-formed discovered cases of a health answer, only those also listed as bound. */
+function discoveredCases(raw: unknown, bound: readonly string[]): HealthCases {
+  const out: Record<string, DiscoveredCaseInfo> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!bound.includes(id) || !v || typeof v !== 'object') continue;
+    const c = v as Record<string, unknown>;
+    if (typeof c.template !== 'string' || !TEMPLATES.includes(c.template) || typeof c.orderRef !== 'string' || typeof c.createdAt !== 'string') continue;
+    out[id] = { template: c.template as CaseTemplate, orderRef: c.orderRef, source: c.source === 'scan' ? 'scan' : 'webhook', createdAt: c.createdAt, ended: c.ended === true };
+  }
+  return out;
 }
 
 /** Where each case is served from: a bound case goes to real PayPal (when the server reports it connected). */

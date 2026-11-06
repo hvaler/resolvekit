@@ -13,6 +13,8 @@ export interface PayPalNotice {
   reason: string | null;
   amount: { value: string; currency: string } | null;
   at: string;
+  /** The ResolveKit order a case was made from on this notice (a discovered case); absent otherwise. */
+  orderRef?: string;
 }
 
 const EVENT_TEXT: Record<string, string> = {
@@ -23,13 +25,17 @@ const EVENT_TEXT: Record<string, string> = {
 
 const words = (s: string) => s.toLowerCase().replace(/_/g, ' ');
 
-/** One line of the notices strip: "New dispute PP-R-… · 24.50 USD · merchandise or service not as described · waiting for seller response". */
+/**
+ * One line of the notices strip: "New dispute PP-R-… · 24.50 USD · merchandise or service not as described · PayPal:
+ * waiting for seller response", and " · case created from order rk-std-…" when the notice made the dispute a case.
+ */
 export function noticeText(n: PayPalNotice): string {
   return [
     `${EVENT_TEXT[n.eventType] ?? words(n.eventType)} ${n.disputeId}`,
     n.amount ? `${n.amount.value} ${n.amount.currency}` : null,
     n.reason ? words(n.reason) : null,
     n.status ? `PayPal: ${words(n.status)}` : null,
+    n.orderRef ? `case created from order ${n.orderRef}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
