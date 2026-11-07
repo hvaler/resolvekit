@@ -108,7 +108,7 @@ There is no backup code. The Render disk is the only copy of each service's stat
 
 | Concern | Mechanism | Status |
 |---|---|---|
-| Atomic file writes | Write to `<file>.tmp`, then rename; JSONL logs append. No `fsync` call | Implemented · Tested locally |
+| Atomic file writes | Write to a temporary file, fsync, rename, best-effort fsync of the directory; JSONL logs append and fsync | Implemented · Tested locally |
 | Two confirmations of one intent | `approved → sending` is checked and set in one synchronous step | Implemented · Tested locally |
 | Two intents for one dispute | Per-dispute lock taken in the same step (`DISPUTE_BUSY`); once a send is accepted and persisted, every other intent for that dispute is refused (`SELLER_EVIDENCE_EXISTS`) | Implemented · Tested locally |
 | Send durability | The `sending` state and `send_started` must be written before anything goes to PayPal, otherwise 503 `AUDIT_UNAVAILABLE`; an outcome that cannot be written after PayPal accepted is logged `AUDIT NOT DURABLE` | Implemented · Tested locally |

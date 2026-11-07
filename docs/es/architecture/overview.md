@@ -169,7 +169,7 @@ Detalles: [agente comprador](../technical/buying-agent.md), [herramientas MCP](.
 
 ### Casos descubiertos
 
-Una disputa hecha a partir de un pedido de ResolveKit se convierte en su propio caso, sin editar `BINDINGS_JSON` ni Render. Estado (7/11/2026): Implementado · Probado en local · Verificado en sandbox (7/11/2026, ejemplo real más abajo) · Desplegado (`main` en `a8af10d`, sin cambio de configuración en Render). Las correcciones del caso terminado `2f0dcf9` y `c3987b0` (rama `fix/ended-case`: un caso terminado conserva su último análisis y no ejecuta uno nuevo; una cita de la ficha trae a la vista el documento citado) están Implementadas · Probadas en local, no Desplegadas. Los tres
+Una disputa hecha a partir de un pedido de ResolveKit se convierte en su propio caso, sin editar `BINDINGS_JSON` ni Render. Estado (7/11/2026): Implementado · Probado en local · Verificado en sandbox (7/11/2026, ejemplo real más abajo) · Desplegado (sin cambio de configuración en Render). Que un caso terminado conserve su último análisis y no ejecute uno nuevo, y que una cita de la ficha traiga a la vista el documento citado, está Implementado · Probado en local. Los tres
 casos fijos vinculados con `BINDINGS_JSON` (con su reserva y su rotación) no cambian y son el respaldo.
 
 ```mermaid

@@ -109,7 +109,7 @@ seguridad y la restauración están **Pendientes** (manuales): ver [copia de seg
 
 | Aspecto | Mecanismo | Estado |
 |---|---|---|
-| Escrituras atómicas de archivos | Escribir en `<file>.tmp` y después renombrar; los registros JSONL anexan. Sin llamada a `fsync` | Implementado · Probado en local |
+| Escrituras atómicas de archivos | Escribir en un archivo temporal, fsync, renombrar y fsync del directorio en la medida de lo posible; los registros JSONL anexan con fsync | Implementado · Probado en local |
 | Dos confirmaciones de un mismo intent | `approved → sending` se comprueba y se establece en un único paso síncrono | Implementado · Probado en local |
 | Dos intents para una misma disputa | Bloqueo por disputa tomado en el mismo paso (`DISPUTE_BUSY`); en cuanto un envío se acepta y se persiste, se rechaza cualquier otro intent para esa disputa (`SELLER_EVIDENCE_EXISTS`) | Implementado · Probado en local |
 | Durabilidad del envío | El estado `sending` y `send_started` deben escribirse antes de que nada vaya a PayPal; si no, 503 `AUDIT_UNAVAILABLE`; un resultado que no se puede escribir después de que PayPal aceptara se registra como `AUDIT NOT DURABLE` | Implementado · Probado en local |

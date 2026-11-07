@@ -168,7 +168,7 @@ Details: [buying agent](../technical/buying-agent.md), [MCP tools](../technical/
 
 ### Discovered cases
 
-A dispute made from a ResolveKit order becomes its own case, without editing `BINDINGS_JSON` or Render. Status (7/11/2026): Implemented · Tested locally · Verified in sandbox (7/11/2026, worked example below) · Deployed (`main` at `a8af10d`, no Render configuration change). The ended-case fixes `2f0dcf9` and `c3987b0` (branch `fix/ended-case`: an ended case keeps its last analysis and runs no new one; a citation chip brings the cited document into view) are Implemented · Tested locally, not Deployed. The three
+A dispute made from a ResolveKit order becomes its own case, without editing `BINDINGS_JSON` or Render. Status (7/11/2026): Implemented · Tested locally · Verified in sandbox (7/11/2026, worked example below) · Deployed (no Render configuration change). An ended case keeping its last analysis and running no new one, and a citation chip bringing the cited document into view, are Implemented · Tested locally. The three
 fixed cases bound by `BINDINGS_JSON` (with their reserve and rotation) are unchanged and are the fallback.
 
 ```mermaid
