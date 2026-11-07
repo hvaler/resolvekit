@@ -209,7 +209,7 @@ casos fijos vinculados con `BINDINGS_JSON` (con su reserva y su rotación) no ca
    solo el propietario; nadie más, y nadie sin sesión.
 6. **Ciclo de vida.** Un caso está *terminado* cuando PayPal ha registrado la evidencia del vendedor, la disputa está `RESOLVED`
    o en la etapa `CHARGEBACK`, o ha pasado su fecha límite. Escalar a reclamación no basta para terminarlo: después PayPal aún puede pedir evidencia al vendedor; el caso termina en `CHARGEBACK`. Los casos terminados se listan después de los abiertos, marcados,
-   y se abren con en solo lectura (lo impone el servidor: `409 CASE_ENDED` en toda composición, aprobación, envío y subida nueva; la relectura del envío que lo terminó sigue funcionando), y la página del caso dice *This case has ended · read-only*. Un caso `RESOLVED` o vencido se
+   y se abren en solo lectura (lo impone el servidor: `409 CASE_ENDED` en toda composición, aprobación, envío y subida nueva; la relectura del envío que lo terminó sigue funcionando), y la página del caso dice *This case has ended · read-only*. Un caso `RESOLVED` o vencido se
    oculta de la bandeja 7 días después de terminar (sigue en el almacén y se puede abrir por su dirección); uno terminado por
    evidencia o por contracargo sigue listado. El final se juzga a partir de una lectura de la disputa, así que una fecha límite
    que pasa sin lectura se nota en la siguiente.
