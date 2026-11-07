@@ -35,7 +35,7 @@ import { actionAvailability, type ActionRequest, type Viewer } from '../domain/a
 import { onSimulator, onSimulatorFile } from '../domain/simulatedActions';
 import { actorName, lockedReason } from '../domain/demoClient';
 import { caseAllowedActions, caseHeaderView } from '../domain/paypalView';
-import { discoveredInfo, provenanceText, templateOfCase } from '../domain/discovered';
+import { CASE_ENDED_TEXT, discoveredInfo, provenanceText, templateOfCase } from '../domain/discovered';
 import { ACTION_LABEL } from '../domain/status';
 import { evidenceAfterEscalationRefusal, payPalEvents, sellerEvidenceBlocks, startsFurtherOn } from '../domain/recorded';
 import { buildSubmission } from '../domain/submission';
@@ -84,6 +84,9 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const liveSnap = source.kind === 'live' ? source.snap : null;
   // A case the server made from a new PayPal dispute: where it came from (shown under the header).
   const found = discoveredInfo(area, health, id);
+  // An ended discovered case (closed, evidence recorded, chargeback, past due) is open read-only: no send, no upload
+  // (the server refuses them too: 409 CASE_ENDED).
+  const ended = !!found?.ended;
   // `source` is rebuilt every render; its kind and PayPal snapshot are what matter.
   // The agent case's mandate/receipt/settlement from the real MeterMCP session when the server found one. The same
   // assembly (@resolvekit/cases) builds the analyst's input on the server.
@@ -114,7 +117,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const locked = useMemo(() => ({ live: lockedReason(demoLock, 'live-analysis'), recheck: lockedReason(demoLock, 'recheck') }), [demoLock]);
   // The server's reason when this person cannot add evidence here (signed out, another workspace).
   const uploadRefused = area === 'demo' ? DEMO_UPLOAD_REASON : (lockedReason(demoLock, 'upload') ?? up.refused);
-  const uploadLocked = uploadRefused ?? (uploadsClient ? null : 'Adding evidence needs the ResolveKit server (npm run server)');
+  const uploadLocked = ended ? CASE_ENDED_TEXT : (uploadRefused ?? (uploadsClient ? null : 'Adding evidence needs the ResolveKit server (npm run server)'));
   const analysis = useAnalysis(id, input, analysisClient, locked);
   const an = analysis.state;
   // A case that starts further on (evidence recorded, closed) also shows what happened at PayPal after the documents.
@@ -189,7 +192,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
   const viewer: Viewer = demoLock?.person ? { role: demoLock.person.role, reviewer: demoLock.person.reviewer } : { role: 'owner', reviewer: false };
   const readNow: DisputeSnapshot = snap ? { ...snap, allowedActions: [...allowed] } : { id, status, stage: demo.summary.stage, allowedActions: [...allowed], evidences: [], readAt: '' };
   // Real PayPal sends belong to the seller's workspace (as evidence does); the simulator is anyone's.
-  const actionLocked = source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
+  // An ended discovered case: no action can be sent, whoever is signed in.
+  const actionLocked = ended ? CASE_ENDED_TEXT : source.kind === 'live' ? lockedReason(demoLock, 'evidence') : null;
   const otherAction = d.action === 'provide_evidence' ? null : d.action;
   // On the simulator, also what the simulator would refuse (no recorded transition from this state) is not composable.
   // A message with a file only from the state W-3 was recorded from; elsewhere it is «Not available» with the reason.
@@ -301,6 +305,11 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                 </button>
               )}
             </div>
+            {ended && (
+              <p role="note" data-testid="case-ended" className="m-0 rounded-lg border border-info-line bg-info-soft px-3 py-2 text-[12.5px] text-info">
+                {CASE_ENDED_TEXT}
+              </p>
+            )}
             {uploadRefused && c.kind !== 'agent' && (
               <p className="m-0 text-[12px] text-ink-3" data-testid="upload-locked">
                 {uploadRefused}
@@ -424,6 +433,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
             realPayPal={snap?.origin?.kind === 'paypal'}
             checkedAt={snap?.checkedAt ?? null}
             submitted={submitted}
+            ended={ended}
             {...(snap ? { snapshot: snap } : {})}
             onReview={() => navigate(approvePath(area, id))}
             draftedActions={draftedActions}

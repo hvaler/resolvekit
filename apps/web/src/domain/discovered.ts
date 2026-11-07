@@ -24,6 +24,12 @@ export function discoveredInfo(area: Area, health: ServerHealth | null, caseId: 
   return cases && Object.hasOwn(cases, caseId) ? cases[caseId]! : null;
 }
 
+/**
+ * Why nothing can be done on an ended discovered case (closed, evidence recorded, chargeback, past due): it is open
+ * read-only. The server enforces it (409 CASE_ENDED); the case page says it and offers no send or upload.
+ */
+export const CASE_ENDED_TEXT = 'This case has ended · read-only';
+
 const SOURCE_TEXT: Readonly<Record<DiscoveredCaseInfo['source'], string>> = { webhook: 'webhook', scan: 'owner scan' };
 
 /**

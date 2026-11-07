@@ -3,6 +3,7 @@ import { useHighlight } from '../app/highlight';
 import { useSecondsSince } from '../app/services';
 import type { CaseDraft } from '../app/useCaseDraft';
 import type { ActionCardVerdict } from '../domain/actionCards';
+import { CASE_ENDED_TEXT } from '../domain/discovered';
 import { NOTES_LIMIT, blockerSentence, draftSummary, notesCountLabel } from '../domain/draft';
 import { ACTION_LABEL } from '../domain/status';
 import type { ActionCode, CaseFile, DisputeSnapshot } from '../domain/types';
@@ -178,6 +179,8 @@ export interface ResponseComposerProps {
   allowedActions: readonly ActionCode[];
   checkedAt: number | null;
   submitted: boolean;
+  /** An ended discovered case (closed, evidence recorded, chargeback, past due): read-only, nothing can be sent. */
+  ended?: boolean;
   /** Each action's verdict as its composer gives it (the cards say the same). */
   actionVerdicts?: Partial<Record<ActionCode, ActionCardVerdict>>;
   /** The dispute is on real PayPal (not the simulator): only then does the copy say "recorded by PayPal". */
@@ -192,11 +195,13 @@ export interface ResponseComposerProps {
 }
 
 /** Right zone: the draft with its sentence states, evidence type, attachments, action, and the way forward. */
-export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checkedAt, submitted, realPayPal = false, snapshot, onReview, draftedActions, onChooseAction }: ResponseComposerProps) {
+export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checkedAt, submitted, ended = false, realPayPal = false, snapshot, onReview, draftedActions, onChooseAction }: ResponseComposerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const busy = d.blockers.some((b) => b.kind === 'analysis' || b.kind === 'checking');
   const actionable = d.actionable;
   const notesLen = d.notes.length;
+  // Nothing more can be composed: evidence is in (or the dispute closed), or the case has ended (read-only).
+  const frozen = submitted || ended;
 
   let blockText: string;
   let blockColor = 'var(--ink2)';
@@ -207,6 +212,9 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
   } else if (submitted) {
     blockText = 'Evidence was submitted. PayPal no longer offers "Provide evidence" for this dispute.';
     btnLabel = realPayPal ? 'Evidence recorded by PayPal' : 'Evidence recorded by the simulator';
+  } else if (ended) {
+    blockText = `${CASE_ENDED_TEXT}: nothing more can be sent to PayPal from this case.`;
+    btnLabel = 'Read-only';
   } else if (actionable.length && !busy) {
     blockText = blockerSentence(actionable);
     blockColor = 'var(--warn)';
@@ -292,14 +300,14 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
                       onApplySuggestion: () => d.saveEdit(v.id, sug.text, `Applied the analyst's rephrasing of sentence ${v.num}`),
                     }
                   : {})}
-                readOnly={submitted}
+                readOnly={frozen}
                 {...(k ? { confirmCorrection: { correction: k, onConfirm: () => d.confirmCorrection(v.id, k) } } : {})}
               />
             );
           })}
         </ol>
 
-        {!submitted && (
+        {!frozen && (
           <EvidenceTypeSelector
             options={d.options}
             selected={d.evidenceType}
@@ -312,7 +320,7 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
 
         {isAgent ? (
           <>
-            {c.fulfillment.digital ? <DigitalDelivery c={c} /> : !submitted && <Attachments c={c} />}
+            {c.fulfillment.digital ? <DigitalDelivery c={c} /> : !frozen && <Attachments c={c} />}
             <section aria-label="Action" className="flex flex-col gap-1.5">
               <div className="flex justify-between text-[12.5px]">
                 <span className="font-semibold">
@@ -335,9 +343,9 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
           </>
         ) : (
           <>
-            {!submitted && <Attachments c={c} />}
+            {!frozen && <Attachments c={c} />}
             <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} {...(actionVerdicts ? { verdicts: actionVerdicts } : {})} {...(draftedActions ? { drafted: draftedActions } : {})} {...(onChooseAction ? { onChoose: onChooseAction } : {})} />
-            {!submitted && (
+            {!frozen && (
               <section aria-label="Notes length" className="flex flex-col gap-1.5">
                 <div className="flex justify-between text-[12.5px]">
                   <span className="font-semibold">Notes sent to PayPal</span>
@@ -370,7 +378,7 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
         <span className="text-[12px]" style={{ color: blockColor }} aria-live="polite">
           {blockText}
         </span>
-        <PrimaryAction enabled={d.ready && !submitted && d.action === 'provide_evidence'} onClick={onReview}>
+        <PrimaryAction enabled={d.ready && !frozen && d.action === 'provide_evidence'} onClick={onReview}>
           {btnLabel}
         </PrimaryAction>
       </div>
