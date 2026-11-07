@@ -18,6 +18,7 @@ Code at commit `334eeb3`.
 | `analysis-last.json` | JSON map case → `{key, input}`, durable write | The last analysis each case had ready and the input it was made from: an ended discovered case keeps showing it, with no new run | `analysis.ts` |
 | `recheck-verdicts.json` | JSON `{v, verdicts}`, durable write, 2 000 kept | The verifier's verdicts on edited sentences, by analysis key and SHA-256 of the text (not the text): a re-check survives a restart | `verdicts.ts` |
 | `reserve-position.json` | JSON `{v, used: {case: [dispute ids]}}`, durable write | The disputes each case moved past in its reserve, skipped again at start | `reserve.ts` |
+| `cases.json` | JSON `{v: 1, cases: [...]}`, durable write, rewritten whole on each change | The discovered cases, one record per dispute: `caseId` (equal to `disputeId`), `merchantId`, `disputeId`, `captureId`, `template` (`standard`, `settlement` or `agent`), `orderRef`, `source` (`webhook` or `scan`), `createdAt`, and once the case ends `endedAt` and `endedBy` (`resolved`, `past-due`, `evidence` or `chargeback`). A case id and a dispute id each appear once | `caseStore.ts` (`CaseStore`), built in `main.ts` |
 | `intents.json` | JSON `{intents, sentDisputes}`, durable write | Submission intents, including the approved notes text | `intents.ts` |
 | `audit-events.jsonl` | append JSONL (fsynced), compacted above 4 MiB | Audit events: codes, hashes, ids, who and when; no document text | `intents.ts` |
 | `audit-events-sends.jsonl` | append JSONL (fsynced), never compacted or expired | Send events (started, sent, failed) | `intents.ts` |
@@ -38,6 +39,22 @@ unreadable `daily-caps.json` or a failed save makes capped actions refuse (`CAPS
 `<file>.corrupt-<time>` and reported (`/api/health` `storage`, the operator's check); the store starts empty. Durable
 write: temporary file in the same directory, fsync, rename, best-effort fsync of the directory
 (`packages/hosting/src/durable.ts`).
+
+`cases.json` is stricter than those stores, because a lost record would hide a case from its merchant:
+
+| Situation | What the code does |
+|---|---|
+| No file | Starts empty; the first case written creates it |
+| Valid file | Every record is checked (required fields, known template and source, `endedBy` one of the four values, no repeated case id or dispute id, `v` equal to 1) |
+| File cannot be read (an I/O error) | Left in place and never written over; no case is added; `/api/health` `storage` reports it |
+| File is not the expected shape (or not JSON) | Moved aside as `cases.json.corrupt-<time>`; the store starts empty and reports the problem; **no case is added or written while the problem is reported**, so the moved-aside copy is the only one |
+| File cannot be moved aside | Left in place and never written over; no case is added; reported |
+| A write fails | The record stays in memory and the failure is logged (`cases · cannot save …`); the case is lost at the next restart unless the dispute is found again (webhook or scan) |
+
+Each stored case is added to the `bindings` map at start and after a bindings reload (`bindDiscovered`), as its one
+`{dispute, capture}` and never as a reserve; a fixed binding of the same dispute or case id wins and the case is
+left out (logged). Without `cases.json` the cases are not lost at PayPal: the next webhook or **Find new disputes**
+finds them again if they are still open.
 
 ## MeterMCP data directory
 
@@ -112,6 +129,7 @@ There is no backup code. The Render disk is the only copy of each service's stat
 | MeterMCP `capture_pending` | Read back every 30 s, on demand and on close |
 | Pending uploads, interrupted writes | Removed by the sweep at start and hourly |
 | Bindings | Re-read from `BINDINGS_JSON` or the file; each verified on a fresh PayPal read in the background |
+| Discovered cases | Read from `cases.json` at start and bound again; their last read of the dispute is not kept, so the end of a case is judged again on the first read after the restart |
 | Hosted analyses | Warm-up: each bound case analysed once after boot or a bindings change (system runs, same limits and caps) |
 
 Shutdown (`SIGINT`/`SIGTERM`): agent loops get 20 s to end and settle, then intents are flushed, the OCR worker

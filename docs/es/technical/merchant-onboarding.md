@@ -30,10 +30,27 @@ Esta página separa tres cosas que no deben confundirse:
 | 7 | Respuesta autorizada (`provide-evidence` aprobado explícitamente) | Logrado una vez (200) sobre la disputa procesada por la plataforma | No | No |
 | 8 | Relectura | Logrado: la relectura mostró `SUBMITTED_BY_SELLER` | No | No |
 | 9 | Aislamiento y revocación | PayPal rechazó los intentos entre vendedores (403 para la disputa de otro vendedor; 400 al listar para un vendedor que no había dado su consentimiento). Revocación y desconexión: no probadas (Pendiente) | No | No |
-| 10 | Integración y disponibilidad en ResolveKit (vinculación con el espacio de trabajo con sesión iniciada, fuente de casos por comerciante, aislamiento en el lado de ResolveKit, webhooks de disputas de partner) | No probado: requiere código en la app | No (Pendiente) | No (solo la pantalla de espera) |
+| 10 | Integración y disponibilidad en ResolveKit (vinculación con el espacio de trabajo con sesión iniciada, fuente de casos por comerciante, aislamiento en el lado de ResolveKit, webhooks de disputas de partner) | No probado: requiere código en la app | En parte. Hecho: un registro de casos por comerciante (`cases.json`, con el id del comerciante y de la disputa) y la creación automática de casos a partir de un webhook o de la búsqueda del propietario, **solo para el vendedor de la evaluación** (ver abajo). Sin hacer: vincular el espacio de trabajo de otro comerciante, Partner Referrals, aislamiento entre comerciantes en el lado de ResolveKit, webhooks de disputas de partner | En parte: el registro y la creación automática de casos para el vendedor de la evaluación (`a8af10d`, 7/11/2026); nada para ningún otro comerciante |
 
 Fuente: salidas de los comandos de la prueba externa en sandbox del 18/10/2026, registradas en la sesión de desarrollo;
 no se guardan en este repositorio (se omiten los ids).
+
+### Qué tiene ahora el paso 10, con precisión
+
+Desde el 7/11/2026 la app convierte una disputa en caso por sí sola, sin editar `BINDINGS_JSON`: un webhook con firma
+verificada o el botón **Find new disputes** del propietario leen de PayPal la disputa y su captura y, si el vendedor es el
+de la evaluación y el pedido es de ResolveKit, guardan un caso en `cases.json` (el registro incluye `merchantId`,
+`disputeId`, `captureId`, `template`, `orderRef`, `source`). Flujo y reglas:
+[visión general de la arquitectura](../architecture/overview.md#casos-descubiertos); datos:
+[datos y almacenamiento](../architecture/data-and-storage.md); frontera:
+[fronteras de confianza](../architecture/trust-boundaries.md#casos-descubiertos-qué-puede-crear-un-caso).
+
+Esto **no** es el alta de comerciantes. La admisión se limita al único vendedor de la evaluación (`EVALUATION_MERCHANT_ID`,
+o el único vendedor ya confirmado): la disputa de cualquier otro vendedor se descarta, y ningún código lee las disputas de
+otro comerciante con `PayPal-Auth-Assertion`. El registro está pensado para poder guardar más comerciantes, pero nada
+los conecta. Sigue siendo futuro, sin prometer: Partner Referrals y consentimiento de varios comerciantes reales, leer sus
+disputas a través de la plataforma, pruebas de aislamiento entre comerciantes (rutas, subidas, análisis, cachés,
+auditoría) y webhooks de disputas de partner.
 
 ## La diferencia según el origen del pago (solo una observación)
 

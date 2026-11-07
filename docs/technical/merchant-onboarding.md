@@ -29,10 +29,27 @@ This page separates three things that must not be confused:
 | 7 | Authorised response (explicitly approved `provide-evidence`) | Achieved once (200) on the platform-processed dispute | No | No |
 | 8 | Read-back | Achieved: the read-back showed `SUBMITTED_BY_SELLER` | No | No |
 | 9 | Isolation and revocation | Cross-seller attempts refused by PayPal (403 for another seller's dispute; 400 when listing for a seller that had not consented). Revocation and disconnect: not tested (Pending) | No | No |
-| 10 | Integration and availability in ResolveKit (link to the signed-in workspace, per-merchant case source, ResolveKit-side isolation, partner dispute webhooks) | Not tried: needs app code | No (Pending) | No (only the waiting screen) |
+| 10 | Integration and availability in ResolveKit (link to the signed-in workspace, per-merchant case source, ResolveKit-side isolation, partner dispute webhooks) | Not tried: needs app code | Partly. Done: a per-merchant case record (`cases.json`, keyed by merchant id and dispute) and automatic case creation from a webhook or the owner's scan, for the **evaluation seller only** (see below). Not done: linking another merchant's workspace, Partner Referrals, ResolveKit-side isolation between merchants, partner dispute webhooks | Partly: the record and automatic case creation for the evaluation seller (`a8af10d`, 7/11/2026); nothing for any other merchant |
 
 Source: command outputs of the external sandbox test of 18/10/2026, recorded in the development session; not stored in
 this repository (ids omitted).
+
+### What step 10 has now, precisely
+
+Since 7/11/2026 the app turns a dispute into a case by itself, without editing `BINDINGS_JSON`: a signature-verified
+webhook or the owner's **Find new disputes** reads the dispute and its capture from PayPal and, if the seller is the
+evaluation seller and the order is a ResolveKit one, stores a case in `cases.json` (record fields include `merchantId`,
+`disputeId`, `captureId`, `template`, `orderRef`, `source`). Flow and rules:
+[architecture overview](../architecture/overview.md#discovered-cases); data:
+[data and storage](../architecture/data-and-storage.md); boundary:
+[trust boundaries](../architecture/trust-boundaries.md#discovered-cases-what-can-create-a-case).
+
+This is **not** merchant onboarding. Admission is limited to the one evaluation seller (`EVALUATION_MERCHANT_ID`, or
+the one seller already confirmed): a dispute of any other seller is skipped, and no code reads another merchant's
+disputes with `PayPal-Auth-Assertion`. The record is keyed so that more merchants could be stored, but nothing
+connects them. Still future, not promised: Partner Referrals and consent for several real merchants, reading their
+disputes through the platform, isolation tests across merchants (routes, uploads, analyses, caches, audit) and partner
+dispute webhooks.
 
 ## The payment-origin difference (observation only)
 

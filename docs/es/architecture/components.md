@@ -19,6 +19,28 @@ flowchart TB
 `binding.ts`, `types.ts`, `time.ts`), de modo que el navegador y el servidor componen y comprueban los intents con el
 mismo código.
 
+Los módulos que hay detrás de los casos descubiertos (el flujo está en la [visión general](overview.md#casos-descubiertos)):
+
+```mermaid
+flowchart LR
+  subgraph Web[apps/web]
+    FND[FindNewDisputes.tsx<br/>botón del propietario] --> DD[domain/discovered.ts]
+    INB[InboxPage: aviso y filas terminadas] --> DD
+    CH[CaseHeader: línea de procedencia] --> DD
+  end
+  subgraph Srv[apps/server]
+    WHK[webhook.ts → app.ts paypalNotified] --> DSC[discovery.ts<br/>reglas de admisión]
+    SCN[app.ts ruta de búsqueda<br/>POST /api/discovery/scan] --> DSC
+    DSC --> CST[caseStore.ts<br/>cases.json]
+    CST --> LIF[app.ts ciclo de vida<br/>terminado, solo lectura, oculto]
+    CST --> LANE[hosted.ts<br/>carril de calentamiento]
+  end
+  DSC -. templateForOrderRef .-> DCS[packages/cases<br/>discovered.ts: caseFileOf]
+  DD -. templateOf, caseFileOf .-> DCS
+  FND -->|POST| SCN
+  CST -->|health cases| DD
+```
+
 ## Apps
 
 ### `apps/web` — el espacio de trabajo del comerciante (navegador)
@@ -34,6 +56,7 @@ recibos.
 | Acceso a PayPal | `domain/httpGateway.ts` (casos vinculados, a través del servidor), `domain/gateway.ts` (simulador) | La misma interfaz para el sandbox real y para PayPal simulado |
 | Subidas | `components/AddEvidence.tsx`, `UploadReview.tsx`, `PdfReview.tsx`, `PdfSelect.tsx`, `app/useUploads.ts` | Subir, tapar, revisar el texto, corregir y transcribir, confirmar |
 | Agente | `pages/AgentPage.tsx`, `domain/agentRun.ts`, `domain/compare.ts`, `app/useAgentRun.ts` | Objetivo y tope, pasos, recibo, uso, Stop, Compare, Keep |
+| Casos descubiertos | `components/FindNewDisputes.tsx`, `domain/discovered.ts`, `pages/InboxPage.tsx`, `domain/paypalNotices.ts`, `components/CaseHeader.tsx` | Botón **Find new disputes**, solo del propietario, y su resultado («Found 1 new · 2 skipped», cada descarte y su motivo al pasar el ratón); qué expediente abre un id descubierto (a partir de `cases` en `/api/health`, nunca en Explore demo); aviso de la bandeja «case created from order rk-std-…» y casos terminados listados después de los abiertos; línea de procedencia en la página del caso; *This case has ended · read-only* |
 | Cuentas | `pages/AuthPages.tsx`, `components/AccountMenu.tsx`, `domain/authClient.ts` | Inicio de sesión, invitaciones, passkeys, miembros |
 | Guarda del proxy de desarrollo | `vite.config.ts`, `src/proxyGuard.ts` | Añade el token por arranque en el lado del servidor; rechaza peticiones entre sitios |
 
@@ -54,6 +77,10 @@ No se lee ninguna variable `VITE_*`; nada secreto llega al bundle.
 | `mapping.ts`, `documents.ts` | Disputa de PayPal → vista del caso; documentos del caso y los PDF enviados a PayPal |
 | `analysis.ts` | Servicio del analista: ejecuciones guardadas/en directo, progreso, recomprobaciones, límites por hora, fijación de la entrada |
 | `webhook.ts` | `POST /api/paypal/webhook/<key>`: comprobaciones, verificación con PayPal, relectura |
+| `discovery.ts` | Reglas de admisión: si una disputa leída de PayPal se convierte en caso descubierto (vendedor, motivo, estado, fecha límite, captura, prefijo del pedido, importe esperado); una admisión cada vez; todo fallo es un descarte con motivo, nunca una excepción |
+| `caseStore.ts` | `CaseStore`: los casos descubiertos en `cases.json` (escritura duradera, tratamiento del archivo corrupto); `bindDiscovered` añade cada uno a las vinculaciones como su única disputa |
+| `app.ts` (partes de descubrimiento) | `POST /api/discovery/scan` (solo propietario, una por minuto y espacio de trabajo); entrega del webhook al descubrimiento; ciclo de vida de los casos descubiertos (`endOf`, `judged`, `lifecycleOf`, `endedRefusal` → `409 CASE_ENDED`); `cases` en `/api/health` |
+| `hosted.ts` (carril de calentamiento) | Analiza en segundo plano los casos descubiertos abiertos, uno cada vez, con al menos 10 min entre ellos, fuera del límite por hora de las personas, con 3 intentos como máximo por caso |
 | `metermcp.ts` | Cliente de las rutas de administración de MeterMCP y de la URL `/agent/mcp` |
 | `uploads/*` | Rutas de subida, decodificación de imágenes, proceso hijo y trabajo de PDF, OCR, texto, documentos (`E<n>`), permisos, almacén, límites |
 | `agent/*` | Servicio de ejecuciones del agente, almacén de ejecuciones, topes por persona, rutas |
@@ -80,7 +107,7 @@ No se lee ninguna variable `VITE_*`; nada secreto llega al bundle.
 | `@resolvekit/paypal` | Cliente REST de PayPal tipado: caché del token OAuth, reintentos, `PayPal-Request-Id`; disputas, verificación de webhooks, token de identidad, pedidos/pagos | servidor, MeterMCP, scripts |
 | `@resolvekit/analyst` | Prompts, esquemas, proveedores (Gemini, Groq sobre `fetch`), pipeline, comprobaciones deterministas, detección de inyección, clave de caché, análisis de referencia (golden), evaluaciones | servidor, web (clave y tipos), agente, casos |
 | `@resolvekit/agent` | Motor del agente comprador dirigido por el modelo, adaptadores de modelo con function calling, límites de ejecución | servidor, CLI de MeterMCP, `demo:prepare` |
-| `@resolvekit/cases` | Fixtures de los casos de demo y el montaje de los documentos del caso y de la entrada del analista, compartidos por la web y el servidor | web, servidor |
+| `@resolvekit/cases` | Fixtures de los casos de demo y el montaje de los documentos del caso y de la entrada del analista, compartidos por la web y el servidor; `discovered.ts`: la plantilla de una referencia de pedido (`templateForOrderRef`) y el expediente de un caso descubierto (`caseFileOf`: el expediente de la plantilla con el id de la disputa) | web, servidor |
 | `@resolvekit/hosting` | Utilidades del modo alojado: contadores diarios, limitador de tasa, dirección del cliente detrás de proxies, cabeceras de seguridad, sitio estático, guarda de `PAYPAL_ENV` | servidor, MeterMCP |
 | `@resolvekit/pdf` | Escritor de PDF mínimo: PDF de texto (Helvetica, WinAnsi) y PDF solo de imagen | servidor, MeterMCP |
 
@@ -132,6 +159,8 @@ texto).
 `model_unavailable`, `not_approved`, `interrupted`; liquidación, leída solo del recibo, `none`, `unverified`, `open`,
 `captured`, `capture_pending`, `capture_declined`, `voided`, `failed`, `not_approved`. Resultado y liquidación son
 independientes.
+
+**Caso descubierto**: abierto → terminado por `evidence`, `resolved`, `chargeback` o `past-due` (se guarda como `endedBy`) → solo lectura (`409 CASE_ENDED` en las escrituras); uno terminado como `resolved` o `past-due` sale de la bandeja 7 días después. Ver la [visión general](overview.md#casos-descubiertos).
 
 **Comprobación de vinculaciones**: `verified`, `invalid`, `unavailable`, `unchecked` (lo informa `/api/health`).
 

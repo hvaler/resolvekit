@@ -40,6 +40,7 @@ flowchart LR
 | Clientes MCP → MeterMCP | Llamadas a herramientas, peticiones de presupuesto | En nada | Cada sesión MCP solo alcanza su propia sesión de pago; en el modo alojado, crear un presupuesto requiere `x-demo-code` y una unidad diaria; topes de sesión; límites por IP |
 | Servidor / MeterMCP → PayPal | Lecturas de disputas, evidencia, pedidos, capturas | Las respuestas de PayPal, releídas | Credenciales de cliente OAuth por app; `PayPal-Request-Id` en cada POST; timeouts y reintentos acotados |
 | PayPal → servidor (webhook) | Eventos `CUSTOMER.DISPUTE.*` | El evento, solo como pista | Clave secreta en la URL, comprobación de las cabeceras de transmisión, cuerpo ≤ 64 KiB, verificación con el método de postback documentado por PayPal sobre el cuerpo en bruto; después la disputa se vuelve a leer de PayPal |
+| Datos de PayPal → un caso descubierto | Una disputa y su captura, leídas de PayPal por id | Nada del evento; cada campo de la disputa y de la captura solo tal como PayPal lo devuelve en nuestra propia lectura, y solo si cumple todas las reglas de admisión | Ver [Casos descubiertos](#casos-descubiertos-qué-puede-crear-un-caso) |
 | Navegador → PayPal | Aprobaciones del comprador, aprobación del inicio de sesión | — | Las páginas de retorno vuelven a leer el pedido o el token en PayPal; la query string no demuestra nada |
 
 ## Identidad
@@ -115,6 +116,35 @@ JSON, salvo la ruta de subida.
 | Sesión MCP ↔ sesión de pago | Una sesión MCP solo alcanza su propia sesión de pago | Implementado · Probado en local |
 | Avisos de webhook | Se muestran solo al espacio de trabajo del vendedor de la disputa | Implementado · Probado en local |
 | Varios comerciantes conectados | No construido: hay un único espacio de trabajo de evaluación. Aislamiento entre comerciantes conectados: **Pendiente** | Pendiente |
+
+## Casos descubiertos: qué puede crear un caso
+
+Ahora un caso puede crearse sin que un operador edite las vinculaciones (flujo: [visión general](overview.md#casos-descubiertos)),
+así que la pregunta es qué datos de PayPal pueden hacerlo y por qué la disputa de otro no puede.
+
+| Control | Regla | Dónde |
+|---|---|---|
+| El evento es una pista | Un webhook `CUSTOMER.DISPUTE.CREATED` o `.UPDATED` pasa primero las comprobaciones habituales y la verificación de firma con PayPal. El descubrimiento nunca lee el cuerpo del evento: la disputa se vuelve a leer con `GET` y esa respuesta es la que se juzga | `webhook.ts`, `app.ts` (`paypalNotified`) |
+| Solo el vendedor de la evaluación | El vendedor de la transacción disputada debe ser el comerciante de la evaluación (`EVALUATION_MERCHANT_ID` o, en modo alojado y sin ella, el único vendedor ya confirmado). Con ninguno o varios conocidos no se descubre nada. La disputa de otro vendedor se descarta (`another seller's dispute`) | `discovery.ts` |
+| El pedido sale de la captura | La captura disputada se lee de PayPal; su `invoice_id` debe cumplir `rk-std-…`, `rk-stl-…` o `mm-sess-<32 hex>-settle`. Una disputa sin ese pedido se descarta (`not from a ResolveKit order`) | `discovery.ts`, `packages/cases/src/discovered.ts` |
+| El importe sale del pedido, no de la disputa | El importe de la captura debe ser el de la plantilla (7.00 USD en los tipos estándar y de liquidación) o, para el agente, lo que el recibo de MeterMCP capturó en esa misma captura; y después la disputa debe pasar la misma comprobación de vinculación que cada envío (`verifyBinding`: importe disputado, importe bruto si se informa, la única captura disputada). Nunca se crea un caso que un envío rechazaría | `discovery.ts`, `bindings.ts` |
+| Admisión estrecha | Motivo `MERCHANDISE_OR_SERVICE_NOT_RECEIVED`, estado `WAITING_FOR_SELLER_RESPONSE`, fecha límite en el futuro, exactamente una captura disputada. Falla cerrado: una captura o un recibo ilegibles, o cualquier error inesperado, es un descarte, nunca un caso | `discovery.ts` |
+| Idempotente | Una admisión cada vez; una disputa (o un id de caso) que ya está en una vinculación, una reserva, un caso fijo o el almacén es `already bound`; el id de un caso fijo nunca se convierte en caso descubierto, así que un caso no puede tapar a otro | `discovery.ts`, `caseStore.ts` |
+| La búsqueda | `POST /api/discovery/scan` solo responde al propietario del espacio de la evaluación (si no, `403 OWNER_ONLY`; sin sesión, `401`), una búsqueda por minuto y espacio de trabajo (`429 SCAN_TOO_SOON`); lista las disputas `REQUIRED_ACTION`, salta las conocidas sin leerlas y entrega cada una de las demás, leída completa, a la misma admisión | `app.ts` (`scanRoute`) |
+
+Quién ve un caso descubierto: las mismas reglas que un caso fijo vinculado, con el vendedor guardado al crearlo. El
+propietario, los miembros y los revisores del espacio de la evaluación ven los tipos estándar y del agente; el tipo de
+liquidación, solo el propietario; cualquier otro espacio de trabajo y cualquier visitante sin sesión no ven nada (`404`, y
+`/api/health` no lo lista). Explore demo (`/demo`) nunca lista ni abre un caso descubierto, devuelva lo que devuelva el
+servidor.
+
+Un caso terminado es de solo lectura, y lo impone el servidor: `409 CASE_ENDED` en toda composición, aprobación, envío y
+subida nueva, juzgado según la última lectura de la disputa. La página web oculta los controles, pero el rechazo no
+depende de ello.
+
+Lo que esto **no** hace: no conecta las disputas de otro comerciante (hay un único vendedor de evaluación), y no envía
+nada ni crea ningún reembolso por sí solo: un caso solo aparece; enviar sigue exigiendo el intent aprobado por el
+propietario descrito arriba.
 
 ## Guardas de las peticiones en el modo alojado
 

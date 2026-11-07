@@ -169,8 +169,53 @@ Detalles: [agente comprador](../technical/buying-agent.md), [herramientas MCP](.
 
 ### Casos descubiertos
 
-Una disputa hecha a partir de un pedido de ResolveKit se convierte en su propio caso, sin editar `BINDINGS_JSON` ni Render. Estado (7/11/2026, rama `feat/discovered-cases` en `e89b91b`): Implementado · Probado en local · **no Desplegado** (el propietario lo despliega después) · **no Verificado en sandbox** (la comprobación en el sandbox real espera la aprobación del propietario). Los tres
+Una disputa hecha a partir de un pedido de ResolveKit se convierte en su propio caso, sin editar `BINDINGS_JSON` ni Render. Estado (7/11/2026): Implementado · Probado en local · Verificado en sandbox (7/11/2026, ejemplo real más abajo) · Desplegado (`main` en `a8af10d`, sin cambio de configuración en Render). Las correcciones del caso terminado `2f0dcf9` y `c3987b0` (rama `fix/ended-case`: un caso terminado conserva su último análisis y no ejecuta uno nuevo; una cita de la ficha trae a la vista el documento citado) están Implementadas · Probadas en local, no Desplegadas. Los tres
 casos fijos vinculados con `BINDINGS_JSON` (con su reserva y su rotación) no cambian y son el respaldo.
+
+```mermaid
+flowchart TB
+  WH[Webhook de PayPal<br/>CUSTOMER.DISPUTE.CREATED / UPDATED<br/>firma verificada con PayPal] --> GD
+  SC[Búsqueda del propietario: Find new disputes<br/>lista REQUIRED_ACTION, salta las conocidas] --> GD
+  GD[GET de la disputa a PayPal<br/>nunca el cuerpo del evento] --> F{Filtro de admisión<br/>vendedor de la evaluación, no recibido,<br/>WAITING_FOR_SELLER_RESPONSE,<br/>fecha límite futura, no vinculada ya}
+  F -->|falla una regla| SK[Descartada con un motivo<br/>registrado, visible en el resultado de la búsqueda]
+  F -->|pasa| GC[GET de la captura disputada]
+  GC --> TP{prefijo del invoice_id}
+  TP -->|rk-std-| T1[plantilla estándar]
+  TP -->|rk-stl-| T2[plantilla de liquidación, solo propietario]
+  TP -->|mm-sess-…-settle| T3[plantilla del agente]
+  TP -->|otro| SK
+  T1 & T2 --> AM{Importe de la captura =<br/>importe de la plantilla 7.00 USD<br/>y comprobación de vinculación del envío}
+  T3 --> AR{Importe de la captura =<br/>recibo de MeterMCP de esa captura<br/>y comprobación de vinculación del envío}
+  AM -->|no| SK
+  AR -->|no| SK
+  AM -->|sí| CS[(CaseStore: cases.json)]
+  AR -->|sí| CS
+  CS --> BD[Vinculado: una disputa, sin reserva]
+  BD --> WU[Carril de calentamiento: un análisis cada vez]
+  BD --> IN[Aviso en la bandeja: case created from order rk-std-…]
+```
+
+Ciclo de vida de un caso descubierto (punto 6 más abajo). El final se juzga a partir de cada lectura de la disputa y se
+guarda en `cases.json` la primera vez que se ve.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Abierto: caso creado
+  Abierto --> Terminado: evidencia registrada por PayPal
+  Abierto --> Terminado: disputa en la etapa CHARGEBACK
+  Abierto --> Terminado: disputa RESOLVED
+  Abierto --> Terminado: fecha límite vencida
+  Terminado --> SoloLectura: se abre en solo lectura, 409 CASE_ENDED en toda escritura
+  SoloLectura --> Oculto: 7 días tras un final RESOLVED o vencido
+  SoloLectura --> Listado: terminado por evidencia o contracargo sigue listado
+  Oculto --> [*]: sigue guardado y se abre por su dirección
+```
+
+Ejemplo real (sandbox, 7/11/2026; evidencia privada, no reproducible por los lectores). La disputa `PP-R-PKN-10196947`, del
+pedido `rk-std-8e26ab6396a6` (captura `07270070E3494640A`), llegó con `CUSTOMER.DISPUTE.CREATED` estando en
+`UNDER_REVIEW`: el aviso decía «not linked to a case yet» y no se creó ningún caso. En el siguiente `CUSTOMER.DISPUTE.UPDATED`
+estaba en `WAITING_FOR_SELLER_RESPONSE` y se convirtió en caso; el carril calentó su análisis; se envió la evidencia y se
+mostró como «Recorded by PayPal»; después el caso terminó y se abrió en solo lectura.
 
 1. **Dos entradas.** El webhook `CUSTOMER.DISPUTE.CREATED` o `.UPDATED` con firma verificada: tras la relectura habitual, si
    ninguna vinculación ni reserva lista la disputa, la disputa **tal como la devuelve PayPal** (nunca el cuerpo del evento)

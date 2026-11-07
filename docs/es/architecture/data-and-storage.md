@@ -18,6 +18,7 @@ servidor de base de datos. Código en el commit `334eeb3`.
 | `analysis-last.json` | Mapa JSON caso → `{key, input}`, escritura duradera | El último análisis que cada caso tuvo listo y la entrada de la que se hizo: un caso descubierto terminado lo sigue mostrando, sin ejecución nueva | `analysis.ts` |
 | `recheck-verdicts.json` | JSON `{v, verdicts}`, escritura duradera, se guardan 2 000 | Los veredictos del verificador sobre frases editadas, por clave de análisis y SHA-256 del texto (no el texto): una recomprobación sobrevive a un reinicio | `verdicts.ts` |
 | `reserve-position.json` | JSON `{v, used: {case: [dispute ids]}}`, escritura duradera | Las disputas que cada caso dejó atrás en su reserva, que se vuelven a saltar al arrancar | `reserve.ts` |
+| `cases.json` | JSON `{v: 1, cases: [...]}`, escritura duradera, se reescribe entero en cada cambio | Los casos descubiertos, un registro por disputa: `caseId` (igual a `disputeId`), `merchantId`, `disputeId`, `captureId`, `template` (`standard`, `settlement` o `agent`), `orderRef`, `source` (`webhook` o `scan`), `createdAt` y, cuando el caso termina, `endedAt` y `endedBy` (`resolved`, `past-due`, `evidence` o `chargeback`). Cada id de caso y cada id de disputa aparece una sola vez | `caseStore.ts` (`CaseStore`), construido en `main.ts` |
 | `intents.json` | JSON `{intents, sentDisputes}`, escritura duradera | Intents de envío, incluido el texto de las notas aprobadas | `intents.ts` |
 | `audit-events.jsonl` | JSONL de anexado (con fsync), compactado por encima de 4 MiB | Eventos de auditoría: códigos, hashes, ids, quién y cuándo; sin texto de documentos | `intents.ts` |
 | `audit-events-sends.jsonl` | JSONL de anexado (con fsync), nunca compactado ni caducado | Eventos de envío (iniciado, enviado, fallido) | `intents.ts` |
@@ -39,6 +40,22 @@ Un `intents.json`, `analysis-inputs.json`, `analysis-last.json`, `recheck-verdic
 `<file>.corrupt-<time>` y se informa (`storage` en `/api/health`, la comprobación del operador); el almacén empieza
 vacío. Escritura duradera: archivo temporal en el mismo directorio, fsync, rename y fsync del directorio en la medida
 de lo posible (`packages/hosting/src/durable.ts`).
+
+`cases.json` es más estricto que esos almacenes, porque perder un registro ocultaría un caso a su comerciante:
+
+| Situación | Qué hace el código |
+|---|---|
+| Sin archivo | Empieza vacío; el primer caso escrito lo crea |
+| Archivo válido | Se comprueba cada registro (campos obligatorios, plantilla y origen conocidos, `endedBy` uno de los cuatro valores, sin id de caso ni de disputa repetidos, `v` igual a 1) |
+| El archivo no se puede leer (error de E/S) | Se deja en su sitio y nunca se sobrescribe; no se añade ningún caso; `storage` de `/api/health` lo informa |
+| El archivo no tiene la forma esperada (o no es JSON) | Se aparta como `cases.json.corrupt-<time>`; el almacén empieza vacío e informa del problema; **no se añade ni se escribe ningún caso mientras el problema esté informado**, de modo que la copia apartada es la única |
+| El archivo no se puede apartar | Se deja en su sitio y nunca se sobrescribe; no se añade ningún caso; se informa |
+| Falla una escritura | El registro queda en memoria y el fallo se registra (`cases · cannot save …`); el caso se pierde en el siguiente reinicio salvo que la disputa se vuelva a encontrar (webhook o búsqueda) |
+
+Cada caso guardado se añade al mapa `bindings` al arrancar y tras recargar las vinculaciones (`bindDiscovered`), como su
+único `{dispute, capture}` y nunca como reserva; una vinculación fija de la misma disputa o del mismo id de caso
+prevalece y el caso se deja fuera (queda registrado). Sin `cases.json` los casos no se pierden en PayPal: el siguiente
+webhook o **Find new disputes** los vuelve a encontrar si siguen abiertos.
 
 ## Directorio de datos de MeterMCP
 
@@ -113,6 +130,7 @@ seguridad y la restauración están **Pendientes** (manuales): ver [copia de seg
 | `capture_pending` de MeterMCP | Se relee cada 30 s, bajo demanda y al cerrar |
 | Subidas pendientes, escrituras interrumpidas | Las elimina el barrido al arrancar y cada hora |
 | Vinculaciones | Se releen de `BINDINGS_JSON` o del archivo; cada una se verifica con una lectura fresca de PayPal en segundo plano |
+| Casos descubiertos | Se leen de `cases.json` al arrancar y se vinculan de nuevo; no se conserva su última lectura de la disputa, así que el final de un caso se vuelve a juzgar en la primera lectura tras el reinicio |
 | Análisis en el modo alojado | Precalentamiento: cada caso vinculado se analiza una vez tras el arranque o un cambio de vinculaciones (ejecuciones del sistema, mismos límites y topes) |
 
 Apagado (`SIGINT`/`SIGTERM`): los bucles del agente tienen 20 s para terminar y liquidar; después se vuelcan los

@@ -168,8 +168,53 @@ Details: [buying agent](../technical/buying-agent.md), [MCP tools](../technical/
 
 ### Discovered cases
 
-A dispute made from a ResolveKit order becomes its own case, without editing `BINDINGS_JSON` or Render. Status (7/11/2026, branch `feat/discovered-cases` at `e89b91b`): Implemented · Tested locally · **not Deployed** (the owner deploys later) · **not Verified in sandbox** (the real-sandbox check waits for the owner's approval). The three
+A dispute made from a ResolveKit order becomes its own case, without editing `BINDINGS_JSON` or Render. Status (7/11/2026): Implemented · Tested locally · Verified in sandbox (7/11/2026, worked example below) · Deployed (`main` at `a8af10d`, no Render configuration change). The ended-case fixes `2f0dcf9` and `c3987b0` (branch `fix/ended-case`: an ended case keeps its last analysis and runs no new one; a citation chip brings the cited document into view) are Implemented · Tested locally, not Deployed. The three
 fixed cases bound by `BINDINGS_JSON` (with their reserve and rotation) are unchanged and are the fallback.
+
+```mermaid
+flowchart TB
+  WH[PayPal webhook<br/>CUSTOMER.DISPUTE.CREATED / UPDATED<br/>signature verified with PayPal] --> GD
+  SC[Owner scan: Find new disputes<br/>list REQUIRED_ACTION, skip known ones] --> GD
+  GD[GET dispute from PayPal<br/>never the event body] --> F{Admission filter<br/>evaluation seller, not-received,<br/>WAITING_FOR_SELLER_RESPONSE,<br/>future due date, not already bound}
+  F -->|any rule fails| SK[Skipped with a reason<br/>logged, shown in the scan result]
+  F -->|passes| GC[GET the disputed capture]
+  GC --> TP{invoice_id prefix}
+  TP -->|rk-std-| T1[template standard]
+  TP -->|rk-stl-| T2[template settlement, owner only]
+  TP -->|mm-sess-…-settle| T3[template agent]
+  TP -->|other| SK
+  T1 & T2 --> AM{Capture amount =<br/>template amount 7.00 USD<br/>and send-time binding check}
+  T3 --> AR{Capture amount =<br/>MeterMCP receipt for this capture<br/>and send-time binding check}
+  AM -->|no| SK
+  AR -->|no| SK
+  AM -->|yes| CS[(CaseStore: cases.json)]
+  AR -->|yes| CS
+  CS --> BD[Bound: one dispute, no reserve]
+  BD --> WU[Warm-up lane: one analysis at a time]
+  BD --> IN[Inbox notice: case created from order rk-std-…]
+```
+
+Lifecycle of a discovered case (item 6 below). The end is judged from each read of the dispute and stored in
+`cases.json` the first time it is seen.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Open: case created
+  Open --> Ended: evidence recorded by PayPal
+  Open --> Ended: dispute in the CHARGEBACK stage
+  Open --> Ended: dispute RESOLVED
+  Open --> Ended: due date passed
+  Ended --> ReadOnly: opens read-only, 409 CASE_ENDED on every write
+  ReadOnly --> Hidden: 7 days after a RESOLVED or past-due end
+  ReadOnly --> Listed: ended by evidence or chargeback stays listed
+  Hidden --> [*]: still stored, still opens by its address
+```
+
+Worked example (real sandbox, 7/11/2026; private evidence, not reproducible by readers). Dispute `PP-R-PKN-10196947`,
+on order `rk-std-8e26ab6396a6` (capture `07270070E3494640A`), arrived through `CUSTOMER.DISPUTE.CREATED` while it was
+`UNDER_REVIEW`: the notice read «not linked to a case yet» and no case was made. On the next `CUSTOMER.DISPUTE.UPDATED`
+it was `WAITING_FOR_SELLER_RESPONSE` and became a case; the lane warmed its analysis up; evidence was sent and shown as
+«Recorded by PayPal»; then the case ended and opened read-only.
 
 1. **Two ways in.** The signature-verified `CUSTOMER.DISPUTE.CREATED` or `.UPDATED` webhook: after the usual re-read, if
    no binding or reserve lists the dispute, the dispute **as PayPal returns it** (never the event body) goes to

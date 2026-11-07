@@ -18,6 +18,28 @@ flowchart TB
 `apps/server` imports several modules from `apps/web/src/domain/` directly (`intent.ts`, `draft.ts`, `recorded.ts`,
 `binding.ts`, `types.ts`, `time.ts`) so the browser and the server compose and check intents with the same code.
 
+The modules behind discovered cases (the flow is in the [overview](overview.md#discovered-cases)):
+
+```mermaid
+flowchart LR
+  subgraph Web[apps/web]
+    FND[FindNewDisputes.tsx<br/>owner button] --> DD[domain/discovered.ts]
+    INB[InboxPage: notice and ended rows] --> DD
+    CH[CaseHeader: provenance line] --> DD
+  end
+  subgraph Srv[apps/server]
+    WHK[webhook.ts → app.ts paypalNotified] --> DSC[discovery.ts<br/>admission rules]
+    SCN[app.ts scan route<br/>POST /api/discovery/scan] --> DSC
+    DSC --> CST[caseStore.ts<br/>cases.json]
+    CST --> LIF[app.ts lifecycle<br/>ended, read-only, hidden]
+    CST --> LANE[hosted.ts<br/>warm-up lane]
+  end
+  DSC -. templateForOrderRef .-> DCS[packages/cases<br/>discovered.ts: caseFileOf]
+  DD -. templateOf, caseFileOf .-> DCS
+  FND -->|POST| SCN
+  CST -->|health cases| DD
+```
+
 ## Apps
 
 ### `apps/web` — the merchant workspace (browser)
@@ -32,6 +54,7 @@ Vite 8 + React 18 + TypeScript + Tailwind CSS; AG Grid Community 33.3.2 for the 
 | PayPal access | `domain/httpGateway.ts` (bound cases, through the server), `domain/gateway.ts` (simulator) | Same interface for real sandbox and simulated PayPal |
 | Uploads | `components/AddEvidence.tsx`, `UploadReview.tsx`, `PdfReview.tsx`, `PdfSelect.tsx`, `app/useUploads.ts` | Upload, cover, review text, correct and transcribe, confirm |
 | Agent | `pages/AgentPage.tsx`, `domain/agentRun.ts`, `domain/compare.ts`, `app/useAgentRun.ts` | Goal and cap, steps, receipt, usage, Stop, Compare, Keep |
+| Discovered cases | `components/FindNewDisputes.tsx`, `domain/discovered.ts`, `pages/InboxPage.tsx`, `domain/paypalNotices.ts`, `components/CaseHeader.tsx` | Owner-only **Find new disputes** button and its result («Found 1 new · 2 skipped», each skip and its reason on hover); which case file a discovered id opens (from `/api/health` `cases`, never in the Explore demo); inbox notice «case created from order rk-std-…» and ended cases listed after the open ones; provenance line on the case page; *This case has ended · read-only* |
 | Accounts | `pages/AuthPages.tsx`, `components/AccountMenu.tsx`, `domain/authClient.ts` | Sign-in, invites, passkeys, members |
 | Dev proxy guard | `vite.config.ts`, `src/proxyGuard.ts` | Adds the per-launch token server-side; refuses cross-site requests |
 
@@ -52,6 +75,10 @@ Node `http` with web-standard `Request`/`Response` handlers (`node.ts` adapts th
 | `mapping.ts`, `documents.ts` | PayPal dispute → case view; case documents and the PDFs sent to PayPal |
 | `analysis.ts` | Analyst service: stored/live runs, progress, re-checks, hourly limits, input pins |
 | `webhook.ts` | `POST /api/paypal/webhook/<key>`: checks, PayPal verification, re-read |
+| `discovery.ts` | Admission rules: whether a dispute read from PayPal becomes a discovered case (seller, reason, status, due date, capture, order prefix, expected amount); one admission at a time; every failure is a skip with a reason, never a throw |
+| `caseStore.ts` | `CaseStore`: the discovered cases in `cases.json` (durable write, corrupt-file handling); `bindDiscovered` adds each one to the bindings as its one dispute |
+| `app.ts` (discovery parts) | `POST /api/discovery/scan` (owner only, one a minute per workspace); webhook hand-over to discovery; lifecycle of discovered cases (`endOf`, `judged`, `lifecycleOf`, `endedRefusal` → `409 CASE_ENDED`); `cases` in `/api/health` |
+| `hosted.ts` (warm-up lane) | Analyses open discovered cases in the background, one at a time, at least 10 min apart, outside the people's hourly limit, at most 3 attempts per case |
 | `metermcp.ts` | Client of MeterMCP's admin routes and `/agent/mcp` URL |
 | `uploads/*` | Upload routes, image decode, PDF child and job, OCR, text, documents (`E<n>`), permissions, store, limits |
 | `agent/*` | Agent run service, run store, per-person caps, routes |
@@ -78,7 +105,7 @@ Node `http` with web-standard `Request`/`Response` handlers (`node.ts` adapts th
 | `@resolvekit/paypal` | Typed PayPal REST client: OAuth token cache, retries, `PayPal-Request-Id`; disputes, webhooks verification, identity token, orders/payments | server, MeterMCP, scripts |
 | `@resolvekit/analyst` | Prompts, schemas, providers (Gemini, Groq over `fetch`), pipeline, deterministic checks, injection scan, cache key, golden analyses, evals | server, web (key and types), agent, cases |
 | `@resolvekit/agent` | Model-driven buying agent engine, model adapters with function calling, run limits | server, MeterMCP CLI, `demo:prepare` |
-| `@resolvekit/cases` | Demo case fixtures and the assembly of case documents and analyst input, shared by web and server | web, server |
+| `@resolvekit/cases` | Demo case fixtures and the assembly of case documents and analyst input, shared by web and server; `discovered.ts`: the template of an order reference (`templateForOrderRef`) and the case file of a discovered case (`caseFileOf`: the template's file under the dispute's id) | web, server |
 | `@resolvekit/hosting` | Hosted-mode helpers: daily counters, rate limiter, client address behind proxies, security headers, static site, `PAYPAL_ENV` guard | server, MeterMCP |
 | `@resolvekit/pdf` | Minimal PDF writer: text PDFs (Helvetica, WinAnsi) and image-only PDFs | server, MeterMCP |
 
@@ -128,6 +155,8 @@ reads PayPal back before any retry.
 **Agent run**: outcome `done`, `cannot_do`, `out_of_budget`, `stopped` (with a stop reason), `model_unavailable`,
 `not_approved`, `interrupted`; settlement, read from the receipt only, `none`, `unverified`, `open`, `captured`,
 `capture_pending`, `capture_declined`, `voided`, `failed`, `not_approved`. Outcome and settlement are separate.
+
+**Discovered case**: open → ended by `evidence`, `resolved`, `chargeback` or `past-due` (stored as `endedBy`) → read-only (`409 CASE_ENDED` on writes); one ended as `resolved` or `past-due` is left out of the inbox 7 days later. See the [overview](overview.md#discovered-cases).
 
 **Binding check**: `verified`, `invalid`, `unavailable`, `unchecked` (reported by `/api/health`).
 

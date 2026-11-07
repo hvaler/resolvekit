@@ -39,6 +39,7 @@ flowchart LR
 | MCP clients → MeterMCP | Tool calls, budget requests | Nothing | Each MCP session reaches only its own payment session; hosted budget creation needs `x-demo-code` and a daily unit; session caps; per-IP limits |
 | Server / MeterMCP → PayPal | Dispute reads, evidence, orders, captures | PayPal's answers, read back | OAuth client credentials per app; `PayPal-Request-Id` on every POST; timeouts and bounded retries |
 | PayPal → server (webhook) | `CUSTOMER.DISPUTE.*` events | The event only as a hint | Secret URL key, transmission-header checks, body ≤ 64 KiB, verification with PayPal's documented postback method on the raw body; then the dispute is re-read from PayPal |
+| PayPal data → a discovered case | A dispute and its capture, read from PayPal by id | Nothing from the event; each field of the dispute and the capture only as PayPal returns it on our own read, and only if it passes every admission rule | See [Discovered cases](#discovered-cases-what-can-create-a-case) |
 | Browser → PayPal | Buyer approvals, sign-in approval | — | Return pages re-read the order or token from PayPal; the query string proves nothing |
 
 ## Identity
@@ -112,6 +113,33 @@ the upload route.
 | MCP session ↔ payment session | An MCP session reaches only its own payment session | Implemented · Tested locally |
 | Webhook notices | Shown only to the dispute's seller workspace | Implemented · Tested locally |
 | Several connected merchants | Not built: there is one evaluation workspace. Isolation between connected merchants: **Pending** | Pending |
+
+## Discovered cases: what can create a case
+
+A case can now be created without an operator editing the bindings (flow: [overview](overview.md#discovered-cases)),
+so the question is what PayPal data may do that, and why someone else's dispute cannot.
+
+| Control | Rule | Where |
+|---|---|---|
+| The event is a hint | A `CUSTOMER.DISPUTE.CREATED` or `.UPDATED` webhook passes the usual checks and PayPal's signature verification first. Discovery never reads the event body: the dispute is read again with `GET` and that answer is what is judged | `webhook.ts`, `app.ts` (`paypalNotified`) |
+| Only the evaluation seller | The seller on the disputed transaction must be the evaluation merchant (`EVALUATION_MERCHANT_ID`, or, hosted and without it, the one seller already confirmed). With none or several known, nothing is discovered. Another seller's dispute is skipped (`another seller's dispute`) | `discovery.ts` |
+| The order comes from the capture | The disputed capture is read from PayPal; its `invoice_id` must match `rk-std-…`, `rk-stl-…` or `mm-sess-<32 hex>-settle`. A dispute with no such order is skipped (`not from a ResolveKit order`) | `discovery.ts`, `packages/cases/src/discovered.ts` |
+| The amount comes from the order, not from the dispute | The capture's amount must equal the template's (7.00 USD for the standard and settlement kinds) or, for the agent, what MeterMCP's receipt captured on that very capture; and the dispute must then pass the same binding check as every send (`verifyBinding`: disputed amount, gross amount when reported, the one disputed capture). A case that a send would refuse is never made | `discovery.ts`, `bindings.ts` |
+| Narrow admission | Reason `MERCHANDISE_OR_SERVICE_NOT_RECEIVED`, status `WAITING_FOR_SELLER_RESPONSE`, a due date in the future, exactly one disputed capture. Fail closed: an unreadable capture or receipt, or any unexpected error, is a skip, never a case | `discovery.ts` |
+| Idempotent | One admission at a time; a dispute (or a case id) already in a binding, a reserve, a fixed case or the store is `already bound`; a fixed case's id is never made a discovered case, so a case cannot shadow another | `discovery.ts`, `caseStore.ts` |
+| The scan | `POST /api/discovery/scan` answers only the owner of the evaluation workspace (`403 OWNER_ONLY` otherwise, `401` signed out), one scan a minute per workspace (`429 SCAN_TOO_SOON`); it lists `REQUIRED_ACTION` disputes, skips known ones without reading them and sends every other one, read in full, through the same admission | `app.ts` (`scanRoute`) |
+
+Who sees a discovered case: the same rules as a fixed bound case, using the seller stored when it was made. Owner,
+members and reviewers of the evaluation workspace see the standard and agent kinds; the settlement kind only the
+Owner; any other workspace and any signed-out visitor see nothing (`404`, and `/api/health` does not list it). The
+Explore demo (`/demo`) never lists or opens a discovered case, whatever the server returns.
+
+An ended case is read-only, enforced on the server: `409 CASE_ENDED` on every compose, approval, send and new upload,
+judged on the last read of the dispute. The web page hides the controls, but the refusal does not depend on it.
+
+What this does **not** do: it does not connect another merchant's disputes (there is one evaluation seller), and it
+sends nothing and creates no refund by itself: a case only appears; sending still needs the owner-approved intent
+described above.
 
 ## Hosted request guards
 
