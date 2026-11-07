@@ -541,3 +541,97 @@ test('warm-up: a stored record under a fixed case’s id does not keep that fixe
     assert.ok(out.some((w) => w.caseId === CASE), JSON.stringify(out));
   });
 });
+
+// ------------------------------------------------------------------------------------------------ ended: analysis kept
+
+const postAs = (h: Hosted, path: string, body: unknown = {}) =>
+  h.app(new Request(ORIGIN + path, { method: 'POST', headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.7', cookie: owner(h) }, body: JSON.stringify(body) }));
+type AnalysisBody = { status?: string; key?: string; error?: string; detail?: string; analysis?: { key: string }; input?: { caseId: string } };
+const analyse = async (h: Hosted, caseId: string, refresh = false) => {
+  const r = await postAs(h, `/api/cases/${caseId}/analysis${refresh ? '?refresh=1' : ''}`);
+  return { status: r.status, body: (await r.json()) as AnalysisBody };
+};
+/** The owner opens the case and waits for its live analysis to be ready; its key. */
+async function analysedOnce(h: Hosted, caseId: string): Promise<string> {
+  let a = await analyse(h, caseId);
+  for (let i = 0; i < 400 && a.body.status !== 'ready'; i++) {
+    await sleep(5);
+    a = await analyse(h, caseId);
+  }
+  assert.equal(a.body.status, 'ready', JSON.stringify(a.body));
+  return a.body.analysis!.key;
+}
+/** PayPal's dispute changes; the read cache's minute passes and the owner opens the case again (a fresh read). */
+async function payPalMoves(h: Hosted, caseId: string, change: (d: Dispute) => Dispute) {
+  h.pp.disputes[caseId] = change(h.pp.disputes[caseId]!);
+  h.time.set(h.time.get() + 2 * MIN);
+  await open(h, caseId);
+}
+
+test('ended discovered case: its analysis is kept and no live run starts (with or without refresh), even after later PayPal status changes; the caps are not spent', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - DAY)] });
+    await open(h, A);
+    const key = await analysedOnce(h, A);
+    assert.equal(h.starts.length, 1);
+    const used = h.counters.state().caps['live-analysis']!.used;
+    const hourly = h.analyst.liveState().remaining;
+    // PayPal records the seller's evidence: the case ends. Then PayPal moves it on twice (each changes the read).
+    await payPalMoves(h, A, (d) => ({ ...evidenceInDispute(), dispute_id: d.dispute_id, dispute_amount: d.dispute_amount, disputed_transactions: d.disputed_transactions }));
+    assert.equal(h.store.get(A)!.endedBy, 'evidence');
+    for (const status of [null, 'UNDER_REVIEW', 'WAITING_FOR_BUYER_RESPONSE'] as const) {
+      if (status) await payPalMoves(h, A, (d) => ({ ...d, status, update_time: new Date(h.time.get()).toISOString() }));
+      for (const refresh of [false, true]) {
+        const a = await analyse(h, A, refresh);
+        assert.equal(a.status, 200, `${status} refresh=${refresh}: ${JSON.stringify(a.body)}`);
+        assert.equal(a.body.status, 'ready');
+        assert.equal(a.body.analysis!.key, key, `${status} refresh=${refresh}: the earlier analysis`);
+        assert.equal(a.body.input!.caseId, A);
+      }
+    }
+    await sleep(20);
+    assert.equal(h.starts.length, 1, 'no new live run');
+    assert.equal(h.counters.state().caps['live-analysis']!.used, used);
+    assert.equal(h.analyst.liveState().remaining, hourly);
+  });
+});
+
+test('ended discovered case with no stored analysis: 409 CASE_ENDED, nothing runs; re-checking a sentence on an ended case is 409 CASE_ENDED', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - DAY), record(B, 'standard', 'rk-std-b', T0 - DAY)] });
+    h.pp.disputes[A] = { ...h.pp.disputes[A]!, status: 'RESOLVED', update_time: new Date(T0).toISOString(), dispute_outcome: { outcome_code: 'RESOLVED_BUYER_FAVOUR' } };
+    await open(h, A);
+    for (const refresh of [false, true]) {
+      const a = await analyse(h, A, refresh);
+      assert.equal(a.status, 409, JSON.stringify(a.body));
+      assert.equal(a.body.error, 'CASE_ENDED');
+      assert.match(a.body.detail!, /^This case has ended \(resolved\); it is read-only/);
+    }
+    // B was analysed while open, then ended: its re-check is refused before anything else.
+    await open(h, B);
+    await analysedOnce(h, B);
+    await payPalMoves(h, B, (d) => ({ ...d, seller_response_due_date: new Date(h.time.get() - DAY).toISOString() }));
+    const v = await postAs(h, `/api/cases/${B}/analysis/verify`, { text: 'Delivered on 9 October.' });
+    const vb = (await v.json()) as AnalysisBody;
+    assert.equal(v.status, 409, JSON.stringify(vb));
+    assert.equal(vb.error, 'CASE_ENDED');
+    await sleep(20);
+    assert.deepEqual(h.starts.map((s) => s.caseId), [B]);
+  });
+});
+
+test('open discovered case and fixed case: a refresh still runs the analysis live, as before (a fixed case past due is not ended)', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - DAY)] });
+    await open(h, A);
+    await analysedOnce(h, A);
+    assert.equal((await analyse(h, A, true)).status, 202);
+    await until(() => h.starts.length === 2, 'the open case’s refresh');
+    h.pp.disputes[BOUND] = { ...h.pp.disputes[BOUND]!, seller_response_due_date: new Date(T0 - DAY).toISOString() };
+    await open(h, CASE);
+    const f = await analyse(h, CASE);
+    assert.equal(f.status, 202, JSON.stringify(f.body));
+    await until(() => h.starts.length === 3, 'the fixed case’s run');
+    assert.equal(h.starts[2]!.caseId, CASE);
+  });
+});

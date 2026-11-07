@@ -44,6 +44,21 @@ describe('an ended discovered case is read-only on screen', () => {
     // «+ Add evidence» is disabled with the reason.
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="This case has ended · read-only"[^>]*>\+ Add evidence<\/button>/);
   });
+  it('no live re-run or replay, and «What to do» offers no action, only the read-only line', () => {
+    const html = render(true);
+    expect(html).not.toContain('Re-run with AI');
+    expect(html).not.toContain('Replay analysis');
+    const what = html.slice(html.indexOf('>What to do<'));
+    expect(what).not.toContain('role="radio"');
+    expect(what).toContain('data-testid="actions-ended"');
+    expect(what).not.toContain('PayPal allows');
+  });
+  it('an open discovered case keeps the re-run and today’s «What to do» (PayPal’s actions; none while its read is pending)', () => {
+    const html = render(false);
+    expect(html).toContain('Re-run with AI');
+    expect(html.slice(html.indexOf('>What to do<'))).toContain('PayPal allows no actions for this dispute right now.');
+    expect(html).not.toContain('actions-ended');
+  });
   it('an open discovered case has no read-only line', () => {
     const html = render(false);
     expect(html).toContain('Discovered from PayPal (webhook)');

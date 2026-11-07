@@ -64,6 +64,7 @@ export function ActionChoice({
   sent,
   verdicts = {},
   drafted = [],
+  ended = false,
   onChoose,
 }: {
   c: CaseFile;
@@ -75,11 +76,23 @@ export function ActionChoice({
   verdicts?: Partial<Record<ActionCode, ActionCardVerdict>>;
   /** Actions whose unsent draft is kept while their dialog is closed. */
   drafted?: readonly ActionCode[];
+  /** An ended discovered case: read-only, so no action is offered (the server refuses them with CASE_ENDED). */
+  ended?: boolean;
   /** A card was chosen (the case page opens that action's dialog); absent: the selection only. */
   onChoose?: (code: ActionCode) => void;
 }) {
   const secs = useSecondsSince(checkedAt);
   const sendable = allowed.filter((code) => verdicts[code]?.sendable !== false).length;
+  if (ended) {
+    return (
+      <section aria-label="Action" className="flex flex-col gap-2">
+        <h3 className="m-0 text-[12.5px] font-semibold">What to do</h3>
+        <span data-testid="actions-ended" className="text-[11.5px] text-ink-3">
+          {CASE_ENDED_TEXT}
+        </span>
+      </section>
+    );
+  }
   return (
     <section aria-label="Action" className="flex flex-col gap-2">
       <h3 className="m-0 text-[12.5px] font-semibold">What to do</h3>
@@ -344,7 +357,7 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
         ) : (
           <>
             {!frozen && <Attachments c={c} />}
-            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} {...(actionVerdicts ? { verdicts: actionVerdicts } : {})} {...(draftedActions ? { drafted: draftedActions } : {})} {...(onChooseAction ? { onChoose: onChooseAction } : {})} />
+            <ActionChoice c={c} d={d} allowed={allowedActions} checkedAt={checkedAt} sent={submitted} {...(actionVerdicts ? { verdicts: actionVerdicts } : {})} {...(draftedActions ? { drafted: draftedActions } : {})} ended={ended} {...(onChooseAction ? { onChoose: onChooseAction } : {})} />
             {!frozen && (
               <section aria-label="Notes length" className="flex flex-col gap-1.5">
                 <div className="flex justify-between text-[12.5px]">

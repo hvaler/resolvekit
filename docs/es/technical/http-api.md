@@ -125,16 +125,18 @@ se abre en solo lectura, y lo impone el servidor: componer, aprobar, confirmar y
 `confirm`) responden `409 CASE_ENDED` «This case has ended (<cómo>); it is read-only». Se juzga sobre la última lectura
 del caso y otra vez sobre la lectura fresca que hace una composición o un envío, así que un envío cuya lectura encuentra
 el caso terminado no hace ningún POST. Cancelar, reconocer, releer (la relectura del envío que lo terminó sigue
-funcionando), la retención, el registro de auditoría, descartar o borrar una subida y toda lectura siguen abiertos. Un
-caso fijo nunca responde `CASE_ENDED`.
+funcionando), la retención, el registro de auditoría, descartar o borrar una subida y toda lectura siguen abiertos. Su
+análisis no vuelve a ejecutarse en directo: `POST …/analysis` (con o sin `refresh=1`) responde el análisis guardado de
+sus documentos, si no el último que el caso tuvo listo (con el `input` del que se hizo), y si no `409 CASE_ENDED`;
+`POST …/analysis/verify` responde `409 CASE_ENDED`. Un caso fijo nunca responde `CASE_ENDED`.
 
 ## Análisis
 
 | Método | Ruta | Autenticación / permiso | Propósito | Errores principales |
 |---|---|---|---|---|
-| POST | `/api/cases/:id/analysis[?refresh=1]` | espacio de trabajo del vendedor (alojado); una ejecución en directo consume una unidad `live-analysis` | `{}` → análisis guardado `200`, o ejecución en directo `202` con `input` y `key`; `refresh=1` fuerza una ejecución en directo | 404 `UNKNOWN_CASE`, 503 `ANALYST_UNAVAILABLE`/`ANALYST_UNCONFIGURED`, 429 `RATE_LIMITED`/`DAILY_CAP`, 409 `UPLOAD_CHANGED` |
+| POST | `/api/cases/:id/analysis[?refresh=1]` | espacio de trabajo del vendedor (alojado); una ejecución en directo consume una unidad `live-analysis` | `{}` → análisis guardado `200`, o ejecución en directo `202` con `input` y `key`; `refresh=1` fuerza una ejecución en directo | 404 `UNKNOWN_CASE`, 503 `ANALYST_UNAVAILABLE`/`ANALYST_UNCONFIGURED`, 429 `RATE_LIMITED`/`DAILY_CAP`, 409 `UPLOAD_CHANGED`/`CASE_ENDED` (un caso descubierto terminado sin análisis guardado) |
 | GET | `/api/cases/:id/analysis/progress?key=<64 hex>` | como arriba | Etapas hechas hasta ahora y después el resultado | 400 `INVALID_KEY` |
-| POST | `/api/cases/:id/analysis/verify` `{text}` | como arriba; una unidad `recheck` | Recomprobar una frase editada (1–600 caracteres, sin saltos de línea ni caracteres de control) → veredicto y citas | 400 `INVALID_TEXT`, 429, 502 `ANALYST_FAILED` |
+| POST | `/api/cases/:id/analysis/verify` `{text}` | como arriba; una unidad `recheck` | Recomprobar una frase editada (1–600 caracteres, sin saltos de línea ni caracteres de control) → veredicto y citas | 400 `INVALID_TEXT`, 409 `CASE_ENDED`, 429, 502 `ANALYST_FAILED` |
 
 ## Subidas
 

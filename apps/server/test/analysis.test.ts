@@ -152,3 +152,41 @@ test('analysis API: verify answers the verdict and the citations the verifier ch
   assert.deepEqual(v.citations.map((c) => [c.doc, c.valid]), [['E1', true], ['E3', true]]);
   assert.equal(v.model, 'fake-1');
 });
+
+test('kept (ended cases): the analysis of these documents, else the last one the case had ready (kept across a restart with its input), never a live run; forgetting it drops it', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'rk-kept-'));
+  try {
+    const store = new MemoryAnalysisStore();
+    const file = join(dir, 'analysis-last.json');
+    const make = () => {
+      const fm = fakeModel(standardScript);
+      const lines: string[] = [];
+      return { fm, lines, a: new AnalystService({ model: fm.model, primaryModel: 'gemini-3.8-flash', store, lastReadyFile: file, log: (l) => lines.push(l) }) };
+    };
+    const first = make();
+    const inp = input();
+    assert.equal((await first.a.kept(CASE, inp)), null, 'nothing ready yet: null, and nothing starts');
+    assert.equal(first.fm.requests.length, 0);
+    const r = await first.a.request(CASE, inp, false);
+    assert.equal(r.status, 202);
+    const key = (r.body as { key: string }).key;
+    await first.a.settled(key);
+    // Documents changed since (a later PayPal read): the earlier analysis, with the input it was made from.
+    const later = { ...inp, merchantNotes: [{ id: 'N9', text: 'A later note.' }] };
+    const again = make();
+    const k = await again.a.kept(CASE, later);
+    assert.ok(k);
+    assert.equal(k.answer.status, 200);
+    assert.equal((k.answer.body as { key: string; analysis: CaseAnalysis }).analysis.key, key);
+    assert.deepEqual(k.input, inp);
+    assert.equal(again.fm.requests.length, 0, 'no model call');
+    assert.equal(again.a.storageProblem(), null);
+    again.a.forget([key]);
+    assert.equal(await make().a.kept(CASE, later), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -42,7 +42,7 @@ caso propio, con el id de la disputa como nombre, y aparece en la bandeja con un
 ficha tiene una línea que dice cómo se encontró: la notificación de PayPal o **Find new disputes** del propietario (un botón de la
 bandeja solo para el propietario, que responde *Found N new · M skipped*). Sus documentos son los del pedido de prueba de su tipo; la
 disputa que lleva encima es la real del sandbox. Un caso está terminado cuando PayPal ha registrado evidencia, la disputa se resolvió o
-pasó a contracargo, o venció su fecha límite: baja debajo de los abiertos, y uno resuelto o vencido sale de la bandeja a los 7 días.
+pasó a contracargo, o venció su fecha límite: baja debajo de los abiertos, se abre en solo lectura y conserva su último análisis (no se ejecuta ninguno nuevo), y uno resuelto o vencido sale de la bandeja a los 7 días.
 Hasta que su análisis se ha ejecutado en segundo plano (un caso cada vez, con al menos 10 minutos entre ellos) el caso muestra *Analysis pending*.
 
 ## El análisis

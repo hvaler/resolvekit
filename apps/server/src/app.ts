@@ -664,6 +664,7 @@ export function createApi(opts: ApiOptions): Api {
     [
       { store: 'intents', problem: intents.storageProblem() },
       { store: 'analysis-inputs', problem: pins.storageProblem() },
+      { store: 'analysis-last', problem: opts.analyst?.storageProblem() ?? null },
       { store: 'recheck-verdicts', problem: verified.storageProblem() },
       { store: 'reserve-position', problem: opts.reserveMemory?.storageProblem() ?? null },
       { store: 'cases', problem: opts.caseStore?.storageProblem() ?? null },
@@ -992,6 +993,11 @@ export function createApi(opts: ApiOptions): Api {
       return json(r.status, r.body);
     }
     if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
+    // An ended discovered case is read-only: a re-check (it spends the re-check cap) is refused like any write.
+    if (sub === '/verify') {
+      const endedNow = endedRefusal(caseId);
+      if (endedNow) return endedNow;
+    }
     // The body carries at most the edited sentence of a re-check. Document data in it is ignored: the input is built
     // here from the server's own fixtures and reads.
     const parsed = await readJson(req);
@@ -1027,6 +1033,19 @@ export function createApi(opts: ApiOptions): Api {
         intents.record({ caseId, kind: 'edit_rechecked', actor: who.ok ? who.actor : 'visitor', ...(who.ok && who.team ? { team: who.team } : {}), detail: `${v.model}: ${label} · text sha256 ${sha256(text).slice(0, 12)}` });
       }
       return json(r.status, r.body);
+    }
+    // An ended discovered case (judged after this request's own read) never starts a live run, refresh or not: it keeps
+    // the analysis it had (of these documents, else its last one, with the input that one was made from).
+    const life = lifecycleOf(caseId);
+    if (life?.ended) {
+      const kept = await analyst.kept(caseId, input);
+      if (!kept) return json(409, { error: 'CASE_ENDED', detail: `This case has ended (${life.c.endedBy ?? 'ended'}); it is read-only and has no stored analysis, so none is run` });
+      const keptKey = (kept.answer.body as { key?: unknown }).key;
+      if (kept.input === input && uploadIds.length && typeof keptKey === 'string' && uploads.noteAnalysisKey(uploadIds, keptKey).length) {
+        forgetAnalyses([keptKey]);
+        return staleUpload();
+      }
+      return json(kept.answer.status, { ...(kept.answer.body as object), input: kept.input });
     }
     const r = await analyst.request(caseId, input, url.searchParams.get('refresh') === '1', liveGate(req, 'live-analysis'));
     // The uploads remember the analyses that read them (deleting one purges those).

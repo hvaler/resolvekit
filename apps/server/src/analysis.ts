@@ -10,6 +10,7 @@ import {
   analyzeCase,
   recheckSentence,
   type AnalysisInput,
+  type AnalysisOrigin,
   type AnalysisStore,
   type AnalystModel,
   type CallUsage,
@@ -33,6 +34,7 @@ export interface LiveState {
 interface Job {
   key: string;
   caseId: string;
+  input: AnalysisInput;
   progress: Progress[];
   status: 'running' | 'done' | 'failed';
   error?: string;
@@ -52,6 +54,11 @@ export interface AnalystServiceOptions {
   log?: (line: string) => void;
   onUsage?: (caseId: string, u: CallUsage) => void;
   now?: () => Date;
+  /**
+   * Where the last ready analysis of each case (its key and input) is kept across restarts (see {@link
+   * AnalystService.kept}); in memory only without it.
+   */
+  lastReadyFile?: string;
 }
 
 export type ServiceAnswer = { status: number; body: unknown };
@@ -74,6 +81,10 @@ export class AnalystService {
   private readonly verifies: RateLimiter;
   private readonly jobs = new Map<string, Job>();
   private readonly log: (line: string) => void;
+  /** The last analysis each case had ready (shown or just run): an ended case keeps showing it. */
+  private readonly lastReady = new Map<string, { key: string; input: AnalysisInput }>();
+  private lastProblem: string | null = null;
+  private lastBlocked = false;
 
   constructor(o: AnalystServiceOptions) {
     this.o = o;
@@ -81,6 +92,74 @@ export class AnalystService {
     this.live = o.liveLimit ?? new RateLimiter({ limit: 6, windowMs: HOUR });
     this.verifies = o.verifyLimit ?? new RateLimiter({ limit: 30, windowMs: HOUR });
     this.log = o.log ?? (() => {});
+    if (o.lastReadyFile) {
+      const opened = openStoreFile(
+        o.lastReadyFile,
+        (raw) => {
+          const saved = JSON.parse(raw) as Record<string, { key: string; input: AnalysisInput }>;
+          if (!saved || typeof saved !== 'object' || Array.isArray(saved)) throw new Error('not last analyses');
+          return saved;
+        },
+        { ifEmpty: 'An ended case with changed documents shows no analysis until it is open again', now: o.now?.() },
+      );
+      for (const [caseId, v] of Object.entries(opened.value ?? {})) {
+        if (v && typeof v === 'object' && typeof v.key === 'string' && v.input && typeof v.input === 'object') this.lastReady.set(caseId, { key: v.key, input: v.input });
+      }
+      this.lastBlocked = opened.blocked;
+      this.lastProblem = opened.problem;
+      if (this.lastProblem) this.log(`ERROR last analyses · ${this.lastProblem}`);
+    }
+  }
+
+  /** Why the saved last analyses could not be read at start, or null. */
+  storageProblem(): string | null {
+    return this.lastProblem;
+  }
+
+  /** Remember that this case had the analysis of `key` ready (made from `input`); persisted when given a file. */
+  private noteReady(caseId: string, key: string, input: AnalysisInput) {
+    if (this.lastReady.get(caseId)?.key === key) return;
+    this.lastReady.set(caseId, { key, input });
+    this.saveLast();
+  }
+
+  private saveLast() {
+    const file = this.o.lastReadyFile;
+    if (!file || this.lastBlocked) return;
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileDurable(file, JSON.stringify(Object.fromEntries(this.lastReady)));
+    } catch {
+      /* best effort: without it, an ended case whose documents changed after a restart shows no analysis */
+    }
+  }
+
+  /** The finished analysis of `key` (this process's run, the cache or golden) with where it came from, or null. */
+  private readyOf(key: string): { analysis: CaseAnalysis; origin: AnalysisOrigin } | null {
+    const result = this.jobs.get(key)?.result;
+    if (result) return { analysis: result, origin: 'live' };
+    return this.o.store.get(key);
+  }
+
+  /**
+   * An ended case (read-only): never a live run. The analysis of these documents if one is stored, else the last one
+   * the case had ready (with the input it was made from, which the answer must be mapped onto), else a run of these
+   * documents still going (started before it ended); null when there is none of these.
+   */
+  async kept(caseId: string, input: AnalysisInput): Promise<{ answer: ServiceAnswer; input: AnalysisInput } | null> {
+    const key = await this.key(input);
+    const ready = (k: string, inp: AnalysisInput, a: { analysis: CaseAnalysis; origin: AnalysisOrigin }) => {
+      this.noteReady(caseId, k, inp);
+      return { answer: { status: 200, body: { status: 'ready', key: k, origin: a.origin, analysis: a.analysis, live: this.liveState() } }, input: inp };
+    };
+    const now = this.readyOf(key);
+    if (now) return ready(key, input, now);
+    const last = this.lastReady.get(caseId);
+    const before = last ? this.readyOf(last.key) : null;
+    if (last && before) return ready(last.key, last.input, before);
+    const running = this.jobs.get(key);
+    if (running?.status === 'running') return { answer: { status: 202, body: { status: 'running', key, progress: running.progress, live: this.liveState() } }, input };
+    return null;
   }
 
   liveState(): LiveState {
@@ -103,7 +182,10 @@ export class AnalystService {
     if (running?.status === 'running') return { status: 202, body: { status: 'running', key, progress: running.progress, live: live() } };
     if (!refresh) {
       const stored = this.o.store.get(key);
-      if (stored) return { status: 200, body: { status: 'ready', key, origin: stored.origin, analysis: stored.analysis, live: live() } };
+      if (stored) {
+        this.noteReady(caseId, key, input);
+        return { status: 200, body: { status: 'ready', key, origin: stored.origin, analysis: stored.analysis, live: live() } };
+      }
     }
     if (!this.o.model) {
       return { status: 503, body: { error: 'ANALYST_UNCONFIGURED', detail: 'No analysis is stored for these documents and no model key (GEMINI_API_KEY / GROQ_API_KEY) is set on the server', key, live: live() } };
@@ -121,7 +203,7 @@ export class AnalystService {
   }
 
   private start(key: string, caseId: string, input: AnalysisInput) {
-    const job: Job = { key, caseId, progress: [], status: 'running', done: Promise.resolve() };
+    const job: Job = { key, caseId, input, progress: [], status: 'running', done: Promise.resolve() };
     this.jobs.set(key, job);
     const t = Date.now();
     this.log(`analysis started · case ${caseId} · ${key.slice(0, 12)} · ${this.primaryModel}`);
@@ -139,6 +221,7 @@ export class AnalystService {
         this.o.store.put(a);
         job.result = a;
         job.status = 'done';
+        this.noteReady(caseId, key, input);
         this.log(`analysis done · case ${caseId} · ${a.provider}/${a.model} · ${a.usage.calls.length} calls · in ${a.usage.inputTokens} out ${a.usage.outputTokens} thinking ${a.usage.thinkingTokens} tokens · ${Date.now() - t} ms`);
       },
       (e) => {
@@ -155,6 +238,13 @@ export class AnalystService {
       this.jobs.delete(key);
       this.o.store.delete(key);
     }
+    let dropped = false;
+    for (const [caseId, last] of this.lastReady) {
+      if (!keys.includes(last.key)) continue;
+      this.lastReady.delete(caseId);
+      dropped = true;
+    }
+    if (dropped) this.saveLast();
   }
 
   /** The answer once the run of `key` (if one is running) has finished. */

@@ -121,15 +121,17 @@ read-only, enforced here: composing, approving, confirming and sending (`/intent
 `409 CASE_ENDED` «This case has ended (<how>); it is read-only». It is judged on the case’s last read and again on the
 fresh read a compose or send makes, so a send whose read finds the case ended POSTs nothing. Cancelling,
 acknowledging, reading back (the read-back of the send that ended it still works), the hold, the audit trail,
-discarding or deleting an upload and every read stay open. A fixed case never answers `CASE_ENDED`.
+discarding or deleting an upload and every read stay open. Its analysis never runs live again: `POST …/analysis` (with or without
+`refresh=1`) answers the analysis stored for its documents, else the last one the case had ready (with the `input` it was
+made from), else `409 CASE_ENDED`; `POST …/analysis/verify` answers `409 CASE_ENDED`. A fixed case never answers `CASE_ENDED`.
 
 ## Analysis
 
 | Method | Path | Auth / permission | Purpose | Main errors |
 |---|---|---|---|---|
-| POST | `/api/cases/:id/analysis[?refresh=1]` | seller workspace (hosted); a live run takes a `live-analysis` unit | `{}` → stored analysis `200`, or live run `202` with `input` and `key`; `refresh=1` forces a live run | 404 `UNKNOWN_CASE`, 503 `ANALYST_UNAVAILABLE`/`ANALYST_UNCONFIGURED`, 429 `RATE_LIMITED`/`DAILY_CAP`, 409 `UPLOAD_CHANGED` |
+| POST | `/api/cases/:id/analysis[?refresh=1]` | seller workspace (hosted); a live run takes a `live-analysis` unit | `{}` → stored analysis `200`, or live run `202` with `input` and `key`; `refresh=1` forces a live run | 404 `UNKNOWN_CASE`, 503 `ANALYST_UNAVAILABLE`/`ANALYST_UNCONFIGURED`, 429 `RATE_LIMITED`/`DAILY_CAP`, 409 `UPLOAD_CHANGED`/`CASE_ENDED` (an ended discovered case with no stored analysis) |
 | GET | `/api/cases/:id/analysis/progress?key=<64 hex>` | as above | Stages done so far, then the result | 400 `INVALID_KEY` |
-| POST | `/api/cases/:id/analysis/verify` `{text}` | as above; a `recheck` unit | Re-check an edited sentence (1–600 chars, no line breaks or control characters) → verdict and citations | 400 `INVALID_TEXT`, 429, 502 `ANALYST_FAILED` |
+| POST | `/api/cases/:id/analysis/verify` `{text}` | as above; a `recheck` unit | Re-check an edited sentence (1–600 chars, no line breaks or control characters) → verdict and citations | 400 `INVALID_TEXT`, 409 `CASE_ENDED`, 429, 502 `ANALYST_FAILED` |
 
 ## Uploads
 

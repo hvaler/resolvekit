@@ -15,6 +15,7 @@ Code at commit `334eeb3`.
 | `analysis-cache/<sha256 key>.json` | JSON, durable write; unused 30 days or past 100 MiB swept | Live analyses (quotes from the documents, verdicts, draft) | `FileAnalysisStore` (`packages/analyst/src/cache.ts`) |
 | `analyst-usage.jsonl` | append JSONL; 90 days, 10 MiB | Token counts and timings per model call; no prompt or document text | `usage-log.ts` |
 | `analysis-inputs.json` | JSON map case → input, durable write | The input a case was analysed with before seller evidence went in (`InputPins`) | `analysis.ts` |
+| `analysis-last.json` | JSON map case → `{key, input}`, durable write | The last analysis each case had ready and the input it was made from: an ended discovered case keeps showing it, with no new run | `analysis.ts` |
 | `recheck-verdicts.json` | JSON `{v, verdicts}`, durable write, 2 000 kept | The verifier's verdicts on edited sentences, by analysis key and SHA-256 of the text (not the text): a re-check survives a restart | `verdicts.ts` |
 | `reserve-position.json` | JSON `{v, used: {case: [dispute ids]}}`, durable write | The disputes each case moved past in its reserve, skipped again at start | `reserve.ts` |
 | `intents.json` | JSON `{intents, sentDisputes}`, durable write | Submission intents, including the approved notes text | `intents.ts` |
@@ -33,7 +34,7 @@ The operator's `demo:prepare` writes `demo-prepare-runs/<run>.json` on the machi
 
 Unreadable `accounts.json` or `sellers.json` stops a hosted start (it would otherwise drop memberships). An
 unreadable `daily-caps.json` or a failed save makes capped actions refuse (`CAPS_UNAVAILABLE`, 503). An unreadable
-`intents.json`, `analysis-inputs.json`, `recheck-verdicts.json` or `reserve-position.json` is moved aside as
+`intents.json`, `analysis-inputs.json`, `analysis-last.json`, `recheck-verdicts.json` or `reserve-position.json` is moved aside as
 `<file>.corrupt-<time>` and reported (`/api/health` `storage`, the operator's check); the store starts empty. Durable
 write: temporary file in the same directory, fsync, rename, best-effort fsync of the directory
 (`packages/hosting/src/durable.ts`).

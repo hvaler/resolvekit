@@ -41,7 +41,7 @@ by its dispute id, and shows in the inbox with a notice (*New dispute … · cas
 saying how it was found: PayPal's notification or the owner's **Find new disputes** (an owner-only button in the inbox that
 answers *Found N new · M skipped*). Its documents are those of the test order of its kind; the dispute on top is the real
 sandbox one. A case is ended when PayPal has recorded evidence, the dispute is resolved or went to chargeback, or the due
-date passed: it moves below the open ones, and a resolved or past-due one leaves the inbox after 7 days. Until its analysis has run
+date passed: it moves below the open ones, it opens read-only and keeps its last analysis (no new one is run), and a resolved or past-due one leaves the inbox after 7 days. Until its analysis has run
 in the background (one case at a time, at least 10 minutes apart) the case reads *Analysis pending*.
 
 ## The analysis

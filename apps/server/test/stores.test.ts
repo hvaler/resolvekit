@@ -11,7 +11,8 @@ import { DailyCounters, durableTestHooks } from '@resolvekit/hosting';
 import { caseInput, standardCase } from '@resolvekit/cases';
 import { PayPalClient } from '@resolvekit/paypal';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
-import { InputPins } from '../src/analysis.ts';
+import { MemoryAnalysisStore } from '@resolvekit/analyst/node';
+import { AnalystService, InputPins } from '../src/analysis.ts';
 import { parseBindingPools } from '../src/bindings.ts';
 import { createHostedApp } from '../src/hosted.ts';
 import { IntentStore } from '../src/intents.ts';
@@ -222,6 +223,7 @@ for (const [name, make] of [
   ['analysis-inputs.json', (file: string) => new InputPins({ file, now: () => NOW })],
   ['recheck-verdicts.json', (file: string) => new RecheckVerdicts({ file, now: () => NOW })],
   ['reserve-position.json', (file: string) => new ReserveMemory({ file, now: () => NOW })],
+  ['analysis-last.json', (file: string) => new AnalystService({ model: null, primaryModel: 'gemini-3.8-flash', store: new MemoryAnalysisStore(), lastReadyFile: file, now: () => NOW })],
 ] as const) {
   test(`a read error on ${name} leaves the file in place and unwritten; only bad content is moved aside`, () => {
     const dir = tmp();

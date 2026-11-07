@@ -207,7 +207,7 @@ fixed cases bound by `BINDINGS_JSON` (with their reserve and rotation) are uncha
    owner; nobody else, and nobody without a session.
 6. **Lifecycle.** A case is *ended* when PayPal has recorded the seller's evidence, the dispute is `RESOLVED` or in the
    `CHARGEBACK` stage, or its due date has passed. Escalation to a claim alone does not end it: after it PayPal may still ask the seller for evidence; the case ends at `CHARGEBACK`. Ended cases are listed after the open ones, marked, and open
-   read-only (server-enforced: `409 CASE_ENDED` on every compose, approval, send and new upload; the read-back of the send that ended it still works), and the case page says *This case has ended · read-only*. A `RESOLVED` or past-due case is hidden from
+   read-only (server-enforced: `409 CASE_ENDED` on every compose, approval, send and new upload; the read-back of the send that ended it still works), keeps its last analysis and runs no new one (no live run, refresh or not; no re-check), and the case page says *This case has ended · read-only*, with no action, re-run or review control. A `RESOLVED` or past-due case is hidden from
    the inbox 7 days after it ended (it stays in the store and can still be opened by its address); one that ended by
    evidence or chargeback stays listed. The end is judged from a read of the dispute, so a due date that passes with
    no read is noticed at the next one.

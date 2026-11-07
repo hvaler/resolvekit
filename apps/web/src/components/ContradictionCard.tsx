@@ -11,9 +11,11 @@ export interface ContradictionCardProps {
   /** Rewrite the sentence that relies on it to state both values; absent when no sentence does. */
   onExplain?: (() => void) | undefined;
   onResolve: (note: string) => void;
+  /** An ended discovered case: read-only, so neither explaining nor marking resolved is offered. */
+  readOnly?: boolean;
 }
 
-export function ContradictionCard({ contradiction: c, resolution, visible, onExplain, onResolve }: ContradictionCardProps) {
+export function ContradictionCard({ contradiction: c, resolution, visible, onExplain, onResolve, readOnly = false }: ContradictionCardProps) {
   const hover = useHoverHighlight();
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState('');
@@ -68,7 +70,7 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
         ))}
       </div>
       <div className="text-[12px] leading-[1.4] text-ink-2">{c.assessment}</div>
-      {open && !noteOpen && (
+      {open && !noteOpen && !readOnly && (
         <div className="flex flex-wrap gap-1.5">
           {onExplain && (
             <MiniButton onClick={onExplain} className="border-warn-line font-medium text-ink">
@@ -78,7 +80,7 @@ export function ContradictionCard({ contradiction: c, resolution, visible, onExp
           <MiniButton onClick={() => setNoteOpen(true)}>Mark resolved…</MiniButton>
         </div>
       )}
-      {open && noteOpen && (
+      {open && noteOpen && !readOnly && (
         <div className="flex flex-col gap-1.5">
           <label htmlFor={noteId} className="text-[11.5px] text-ink-2">
             Note (saved to the audit log)

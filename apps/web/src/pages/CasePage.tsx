@@ -262,8 +262,8 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
           note={c.analysis.note}
           label={analysisLabel(an)}
           problem={d.analysisUnavailable ?? analysis.rerunError}
-          onReplay={submitted || an.kind !== 'ready' ? undefined : d.replay}
-          onRerun={submitted ? undefined : analysis.rerun}
+          onReplay={submitted || ended || an.kind !== 'ready' ? undefined : d.replay}
+          onRerun={submitted || ended ? undefined : analysis.rerun}
           rerunBlocked={analysis.rerunBlocked}
           live={analysis.live}
         />
@@ -281,6 +281,7 @@ function CaseFileScreen({ c: demo }: { c: CaseFile }) {
                   visible={d.contradictionsVisible}
                   onExplain={k.explainSentenceId ? () => d.explain(cid) : undefined}
                   onResolve={(note) => d.resolve(cid, note)}
+                  readOnly={ended}
                 />
               ) : null;
             }}

@@ -149,6 +149,8 @@ const analyst = new AnalystService({
   liveLimit: new RateLimiter({ limit: envInt(process.env, 'LIVE_ANALYSES_PER_HOUR', 6), windowMs: HOUR }),
   verifyLimit: new RateLimiter({ limit: envInt(process.env, 'RECHECKS_PER_HOUR', 30), windowMs: HOUR }),
   log,
+  // The last analysis each case had ready: an ended discovered case keeps showing it after a restart (no new run).
+  lastReadyFile: join(dataDir, 'analysis-last.json'),
   // Token counts and timings only: no prompt or document text.
   onUsage: (caseId, u) => {
     log(`analyst call · ${u.stage} · ${u.provider}/${u.model} · in ${u.inputTokens} out ${u.outputTokens} thinking ${u.thinkingTokens} · ${u.ms} ms`);
