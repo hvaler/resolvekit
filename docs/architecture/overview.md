@@ -175,13 +175,15 @@ fixed cases bound by `BINDINGS_JSON` (with their reserve and rotation) are uncha
    no binding or reserve lists the dispute, the dispute **as PayPal returns it** (never the event body) goes to
    discovery. Or the owner's **Find new disputes** button (`POST /api/discovery/scan`; owner of the evaluation
    workspace only; one scan a minute): it lists the disputes that need the seller (`dispute_state=REQUIRED_ACTION`),
-   reads each in full and submits it to the same discovery. Both can run at once: discovery handles one dispute at a
+   reads in full each one not already known (bound, in a reserve, a discovered case: skipped `already bound` with no
+   read) and submits it to the same discovery. Both can run at once: discovery handles one dispute at a
    time, so a dispute makes one case.
 2. **Admission rules**, checked in this order. The seller must be the evaluation seller, `EVALUATION_MERCHANT_ID` (or,
    hosted and without it, the one seller already confirmed by `SellerMemory`; with several or none, nothing is
    discovered). The reason must be `MERCHANDISE_OR_SERVICE_NOT_RECEIVED`, the status `WAITING_FOR_SELLER_RESPONSE`
    (a dispute that arrives in `UNDER_REVIEW` waits for a later `.UPDATED` event or a scan), the due date in the future,
-   and there must be exactly one disputed capture. The capture is read from PayPal and its `invoice_id` gives the
+   and there must be exactly one disputed capture. A dispute whose id is a fixed case’s id is `already bound` (a case id
+   is its dispute id, so it would shadow that case). The capture is read from PayPal and its `invoice_id` gives the
    template: `rk-std-…` (standard), `rk-stl-…` (owner settlement) or MeterMCP's `mm-sess-…-settle` (agent). The amounts must
    match the order: 7.00 USD for the first two, the MeterMCP receipt found for that capture for the agent. This uses the
    same binding check as every send (`verifyBinding`), so a case is never created that the send would then refuse.
@@ -204,14 +206,14 @@ fixed cases bound by `BINDINGS_JSON` (with their reserve and rotation) are uncha
    owner, members and reviewers of the evaluation workspace see standard and agent cases; settlement cases only the
    owner; nobody else, and nobody without a session.
 6. **Lifecycle.** A case is *ended* when PayPal has recorded the seller's evidence, the dispute is `RESOLVED` or in the
-   `CHARGEBACK` stage, or its due date has passed. Ended cases are listed after the open ones, marked, and open with
-   the actions PayPal still allows (the web app adds no lock of its own). A `RESOLVED` or past-due case is hidden from
+   `CHARGEBACK` stage, or its due date has passed. Escalation to a claim alone does not end it: after it PayPal may still ask the seller for evidence; the case ends at `CHARGEBACK`. Ended cases are listed after the open ones, marked, and open with
+   read-only (server-enforced: `409 CASE_ENDED` on every compose, approval, send and new upload; the read-back of the send that ended it still works), and the case page says *This case has ended · read-only*. A `RESOLVED` or past-due case is hidden from
    the inbox 7 days after it ended (it stays in the store and can still be opened by its address); one that ended by
    evidence or chargeback stays listed. The end is judged from a read of the dispute, so a due date that passes with
    no read is noticed at the next one.
 7. **Warm-up lane.** A new case has no stored analysis. A separate lane analyses discovered cases in the background:
    one analysis at a time, at least 10 minutes apart, outside the per-person hourly limit (each one counts in the
-   daily cap), skipping cases that are ended or already analysed, with at most 3 attempts per case until the next
+   daily cap), skipping cases that are ended or already analysed, with at most 3 attempts per case (a refusal because the shared daily cap is used up is not one: it resets the next day) until the next
    start. If no model answers, the case shows *Analysis pending* and the lane tries again in its next slot.
 8. **Seen by the operator.** `/api/health` has `cases` (template, order reference, source, created time and ended flag
    of each visible bound discovered case, under the same viewer rule as `bound`). `/api/ops/status` marks those

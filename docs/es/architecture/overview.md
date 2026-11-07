@@ -176,13 +176,15 @@ casos fijos vinculados con `BINDINGS_JSON` (con su reserva y su rotación) no ca
    ninguna vinculación ni reserva lista la disputa, la disputa **tal como la devuelve PayPal** (nunca el cuerpo del evento)
    pasa al descubrimiento. O el botón **Find new disputes** del propietario (`POST /api/discovery/scan`; solo el propietario
    del espacio de la evaluación; una búsqueda por minuto): lista las disputas que necesitan al vendedor
-   (`dispute_state=REQUIRED_ACTION`), lee cada una completa y la entrega al mismo descubrimiento. Ambas pueden coincidir:
+   (`dispute_state=REQUIRED_ACTION`), lee completa cada una que no se conozca ya (vinculada, en una
+   reserva, un caso descubierto: se salta como `already bound` sin leerla) y la entrega al mismo descubrimiento. Ambas pueden coincidir:
    el descubrimiento atiende una disputa cada vez, así que una disputa crea un solo caso.
 2. **Reglas de admisión**, comprobadas en este orden. El vendedor debe ser el de la evaluación, `EVALUATION_MERCHANT_ID` (o,
    en modo alojado y sin ella, el único vendedor ya confirmado por `SellerMemory`; con varios o ninguno no se descubre
    nada). El motivo debe ser `MERCHANDISE_OR_SERVICE_NOT_RECEIVED`, el estado `WAITING_FOR_SELLER_RESPONSE` (una disputa
    que llega en `UNDER_REVIEW` espera a un `.UPDATED` posterior o a una búsqueda), la fecha límite en el futuro y debe haber
-   exactamente una captura disputada. La captura se lee de PayPal y su `invoice_id` da la plantilla: `rk-std-…` (estándar),
+   exactamente una captura disputada. Una disputa cuyo id es el de un caso fijo es `already bound` (el id del caso es el
+   de su disputa, así que lo taparía). La captura se lee de PayPal y su `invoice_id` da la plantilla: `rk-std-…` (estándar),
    `rk-stl-…` (liquidación del propietario) o el `mm-sess-…-settle` de MeterMCP (agente). Los importes deben coincidir con el
    pedido: 7.00 USD en los dos primeros, el recibo de MeterMCP hallado para esa captura en el agente. Se usa la misma
    comprobación de vinculación que en cada envío (`verifyBinding`), así que nunca se crea un caso que el envío rechazaría después.
@@ -206,14 +208,14 @@ casos fijos vinculados con `BINDINGS_JSON` (con su reserva y su rotación) no ca
    propietario, miembros y revisores del espacio de la evaluación ven los casos estándar y del agente; los de liquidación,
    solo el propietario; nadie más, y nadie sin sesión.
 6. **Ciclo de vida.** Un caso está *terminado* cuando PayPal ha registrado la evidencia del vendedor, la disputa está `RESOLVED`
-   o en la etapa `CHARGEBACK`, o ha pasado su fecha límite. Los casos terminados se listan después de los abiertos, marcados,
-   y se abren con las acciones que PayPal aún permite (la web no añade un bloqueo propio). Un caso `RESOLVED` o vencido se
+   o en la etapa `CHARGEBACK`, o ha pasado su fecha límite. Escalar a reclamación no basta para terminarlo: después PayPal aún puede pedir evidencia al vendedor; el caso termina en `CHARGEBACK`. Los casos terminados se listan después de los abiertos, marcados,
+   y se abren con en solo lectura (lo impone el servidor: `409 CASE_ENDED` en toda composición, aprobación, envío y subida nueva; la relectura del envío que lo terminó sigue funcionando), y la página del caso dice *This case has ended · read-only*. Un caso `RESOLVED` o vencido se
    oculta de la bandeja 7 días después de terminar (sigue en el almacén y se puede abrir por su dirección); uno terminado por
    evidencia o por contracargo sigue listado. El final se juzga a partir de una lectura de la disputa, así que una fecha límite
    que pasa sin lectura se nota en la siguiente.
 7. **Carril de calentamiento.** Un caso nuevo no tiene análisis guardado. Un carril aparte analiza en segundo plano los casos
    descubiertos: un análisis cada vez, con al menos 10 minutos entre ellos, fuera del límite por hora de las personas (cada
-   uno cuenta en el tope diario), saltándose los casos terminados o ya analizados, con 3 intentos como máximo por caso hasta
+   uno cuenta en el tope diario), saltándose los casos terminados o ya analizados, con 3 intentos como máximo por caso (un rechazo porque el tope diario compartido está agotado no cuenta: se repone al día siguiente) hasta
    el próximo arranque. Si ningún modelo responde, el caso muestra *Analysis pending* y el carril lo reintenta en su
    siguiente turno.
 8. **Visto por el operador.** `/api/health` tiene `cases` (plantilla, referencia del pedido, origen, hora de creación y marca de
