@@ -44,6 +44,20 @@ export function useHoverHighlight() {
       : {};
 }
 
+/**
+ * The hover/focus handlers, plus `reveal` when the highlight starts (it was not on already): hovering or focusing a chip
+ * brings what it cites into view once, not on every mouse move or on a focus while it is lit.
+ */
+export function revealOnStart<H extends { onMouseEnter?: () => void; onFocus?: () => void }>(handlers: H, active: boolean, reveal: () => void): H {
+  if (active) return handlers;
+  const { onMouseEnter, onFocus } = handlers;
+  return {
+    ...handlers,
+    ...(onMouseEnter ? { onMouseEnter: () => (reveal(), onMouseEnter()) } : {}),
+    ...(onFocus ? { onFocus: () => (reveal(), onFocus()) } : {}),
+  };
+}
+
 /** Is this fragment of this document lit? */
 export function isFragmentLit(hl: Highlight | null, ev: string, fragment: string | undefined): boolean {
   return !!hl && hl.ev === ev && !!fragment && hl.frags.includes(fragment);

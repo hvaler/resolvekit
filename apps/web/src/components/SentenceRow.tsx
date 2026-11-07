@@ -1,8 +1,9 @@
 import { useId, useState } from 'react';
-import { useHighlight, useHoverHighlight } from '../app/highlight';
+import { revealOnStart, useHighlight, useHoverHighlight } from '../app/highlight';
 import type { Citation, Evidence, SentenceState, SentenceView } from '../domain/types';
 import type { Correction } from '../domain/draft';
 import { citationProvenance, confirmButtonLabel } from '../domain/uploads';
+import { revealEvidence } from './EvidenceCard';
 import { cx } from './ui';
 
 export const SENTENCE_TONE: Record<SentenceState, { label: string; short: string; icon: string; fg: string; soft: string; /** Left-rule shadow token class. */ rule: string }> = {
@@ -20,7 +21,7 @@ export function citationLabel(c: Citation, evidence: readonly Evidence[]): strin
   return base;
 }
 
-/** Pill linking a claim to its source. Hover or focus lights the cited fragments in the document. */
+/** Pill linking a claim to its source. Hover or focus lights the cited fragments in the document and brings it into view. */
 export function CitationChip({ sentenceId, citation, evidence }: { sentenceId: string; citation: Citation; evidence: readonly Evidence[] }) {
   const { hl } = useHighlight();
   const hover = useHoverHighlight();
@@ -35,7 +36,7 @@ export function CitationChip({ sentenceId, citation, evidence }: { sentenceId: s
       title={said || undefined}
       aria-label={`Source ${citation.evidenceId}, ${title}${said ? ` (${said})` : ''}. Focus to highlight the cited text.`}
       aria-pressed={active}
-      {...hover({ ev: citation.evidenceId, frags: citation.fragments, sid: sentenceId })}
+      {...revealOnStart(hover({ ev: citation.evidenceId, frags: citation.fragments, sid: sentenceId }), active, () => revealEvidence(citation.evidenceId))}
       className="inline-flex items-center gap-[5px] rounded-full px-2 py-[3px] font-mono text-caption font-medium leading-[1.2] transition-all duration-instant"
       style={{
         border: `1px solid ${active ? 'var(--acc)' : 'var(--acc-line)'}`,

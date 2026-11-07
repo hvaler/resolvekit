@@ -8,6 +8,41 @@ import { EvidenceTag, cx } from './ui';
 
 export const evidenceDomId = (id: string) => `evidence-${id}`;
 
+/** The bits of the DOM {@link revealEvidence} needs (the browser's by default; fakes in tests). */
+export interface RevealEnv {
+  byId: (id: string) => HTMLElement | null;
+  overflowY: (el: HTMLElement) => string;
+  reducedMotion: () => boolean;
+}
+
+const browserReveal = (): RevealEnv | null =>
+  typeof document === 'undefined'
+    ? null
+    : {
+        byId: (id) => document.getElementById(id),
+        overflowY: (el) => getComputedStyle(el).overflowY,
+        reducedMotion: () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches,
+      };
+
+/**
+ * Bring an evidence card into view inside its own scrolling column (the centre column), when it is outside it: a
+ * citation chip's highlight would otherwise light a card nobody sees. Only a column that scrolls by itself is moved:
+ * when none does (the narrow layout, where the page scrolls) nothing is. Instant when the person prefers reduced
+ * motion. Whether it scrolled.
+ */
+export function revealEvidence(evidenceId: string, env: RevealEnv | null = browserReveal()): boolean {
+  const el = env?.byId(evidenceDomId(evidenceId));
+  if (!env || !el) return false;
+  let box = el.parentElement;
+  while (box && !(/^(auto|scroll)$/.test(env.overflowY(box)) && box.scrollHeight > box.clientHeight)) box = box.parentElement;
+  if (!box) return false;
+  const r = el.getBoundingClientRect();
+  const b = box.getBoundingClientRect();
+  if (r.top >= b.top && r.bottom <= b.bottom) return false;
+  el.scrollIntoView({ block: 'nearest', behavior: env.reducedMotion() ? 'auto' : 'smooth' });
+  return true;
+}
+
 /** The provenance badge's colours: real data (MeterMCP, PayPal, ResolveKit's run record), a merchant upload, or a synthetic demo document. */
 export const PROVENANCE_CLASS: Record<Provenance['kind'], string> = {
   metermcp: 'border border-ok-line bg-ok-soft text-ok',
