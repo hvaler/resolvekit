@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { CASE_FILES } from '@resolvekit/cases';
 import type { Capture, Dispute, PayPalClient } from '@resolvekit/paypal';
 import { CaseStore } from '../src/caseStore.ts';
 import { createDiscovery, type Admission } from '../src/discovery.ts';
@@ -96,6 +97,13 @@ for (const [why, setup, d] of skips) {
 test('skipped: a dispute already in the store is already bound', withDiscovery({}, async (disc) => {
   assert.ok('created' in (await disc.admit(dispute(), 'webhook')));
   assert.equal(skipped(await disc.admit(dispute(), 'scan')), 'already bound');
+}));
+
+test('skipped: a dispute whose id is a fixed case’s id is already bound (a discovered case may never shadow a fixed one)', withDiscovery({}, async (disc, store) => {
+  for (const id of Object.keys(CASE_FILES)) {
+    assert.equal(skipped(await disc.admit(dispute({ dispute_id: id }), 'webhook')), 'already bound', id);
+  }
+  assert.deepEqual(store.all(), []);
 }));
 
 test('skipped: no due date is past its response date', withDiscovery({}, async (disc) => {

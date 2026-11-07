@@ -122,7 +122,7 @@ async function withDir(f: (dir: string) => Promise<void>) {
  * first run fails; `failCase`: every run of that case fails; `hangCase`: every run of that case never answers, and the
  * lane waits `waitMs` real ms for a run).
  */
-function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean; failCase?: string; hangCase?: string; waitMs?: number } = {}) {
+function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean; failCase?: string; hangCase?: string; waitMs?: number; cap?: number } = {}) {
   const time = fakeTime();
   const pp = fakePayPal();
   for (const c of o.seed ?? []) pp.disputes[c.caseId] = newDispute(c.caseId, T0);
@@ -158,7 +158,7 @@ function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean; 
     },
   });
   const discovery = createDiscovery({ paypal: pp.client, store, anchor: () => SELLER_ID, isBound: (id) => isBoundDispute({ bindings, reserve }, id) });
-  const counters = new DailyCounters({ file: null, limits: { 'live-analysis': 60 }, now: time.now });
+  const counters = new DailyCounters({ file: null, limits: { 'live-analysis': o.cap ?? 60 }, now: time.now });
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
@@ -491,5 +491,53 @@ test('warm-up lane: a case found analysed is not read from PayPal again by later
     await sleep(50);
     assert.equal(h.pp.reads(A), reads);
     assert.equal(h.starts.length, 1);
+  });
+});
+
+test('warm-up lane: a refusal because the shared daily cap is used up is not one of the 3 attempts; the case starts once the cap resets next day', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - MIN)], cap: 1 });
+    // Today's one live analysis is spent already (a visitor's run).
+    assert.ok(h.counters.reserve('live-analysis').ok);
+    h.app.warmDiscovered();
+    for (let k = 1; k <= 5; k++) {
+      await until(() => h.time.timers.length === 1, `refused pass ${k}`);
+      h.time.fire();
+    }
+    await until(() => h.time.timers.length === 1, 'the next slot');
+    assert.equal(h.starts.length, 0);
+    assert.ok(h.lines.some((l) => l.startsWith(`warm-up lane · case ${A} · refused · DAILY_CAP`) && l.includes('not counted as an attempt')), h.lines.join(' | '));
+    assert.ok(!h.lines.some((l) => l.includes('given up')), h.lines.join(' | '));
+    // The next day the cap resets: the case is analysed in the next slot.
+    h.time.set(T0 + DAY);
+    h.time.fire();
+    await until(() => h.starts.length === 1, 'the run after the reset');
+    assert.deepEqual(h.starts.map((x) => x.caseId), [A]);
+  });
+});
+
+test('warm-up lane: other refusals still count (CAPS_UNAVAILABLE is given up after 3)', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - MIN)] });
+    const reserve = h.counters.reserve.bind(h.counters);
+    h.counters.reserve = ((name: string) => (name === 'live-analysis' ? { ok: false, reason: 'storage' } : reserve(name))) as typeof h.counters.reserve;
+    h.app.warmDiscovered();
+    for (let k = 1; k <= 3; k++) {
+      await until(() => h.time.timers.length === 1, `refused pass ${k}`);
+      h.time.fire();
+    }
+    await sleep(50);
+    assert.equal(h.lines.filter((l) => l.startsWith(`warm-up lane · case ${A} · refused · CAPS_UNAVAILABLE`) && l.includes('given up after 3 attempts')).length, 1, h.lines.join(' | '));
+    assert.deepEqual(h.starts, []);
+  });
+});
+
+test('warm-up: a stored record under a fixed case’s id does not keep that fixed case out of the fixed warm-up', async () => {
+  await withDir(async (dir) => {
+    // Written before the app starts, as an older process might have left it (discovery never makes one now).
+    new CaseStore({ file: join(dir, 'cases.json') }).add({ ...record(A, 'standard', 'rk-std-a', T0 - DAY), caseId: CASE });
+    const h = hosted(dir);
+    const out = await h.app.warmUp();
+    assert.ok(out.some((w) => w.caseId === CASE), JSON.stringify(out));
   });
 });

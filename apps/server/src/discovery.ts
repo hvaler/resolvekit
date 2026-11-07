@@ -37,7 +37,8 @@ export function createDiscovery(o: {
     const txs = d.disputed_transactions ?? [];
     const merchantId = txs[0]?.seller?.merchant_id;
     if (!merchantId || merchantId !== anchor) return { skipped: "another seller's dispute" };
-    if (!id || o.isBound(id) || o.store.byDispute(id)) return { skipped: 'already bound' };
+    // A case's id is its dispute's: one equal to a fixed case's id would shadow that case, so it is never made.
+    if (!id || Object.hasOwn(CASE_FILES, id) || o.isBound(id) || o.store.byDispute(id)) return { skipped: 'already bound' };
     if (d.reason !== 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED') return { skipped: 'not a not-received dispute' };
     if (d.status !== 'WAITING_FOR_SELLER_RESPONSE') return { skipped: `not waiting for the seller (${d.status ?? 'no status'})` };
     const due = Date.parse(d.seller_response_due_date ?? '');

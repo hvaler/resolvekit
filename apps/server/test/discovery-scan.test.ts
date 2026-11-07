@@ -12,7 +12,7 @@ import { standardCase } from '@resolvekit/cases';
 import { PayPalClient, type Capture, type Dispute } from '@resolvekit/paypal';
 import { createApi } from '../src/app.ts';
 import { isBoundDispute, type Binding } from '../src/bindings.ts';
-import { CaseStore } from '../src/caseStore.ts';
+import { CaseStore, type DiscoveredCase } from '../src/caseStore.ts';
 import { createDiscovery } from '../src/discovery.ts';
 import { createHostedApp } from '../src/hosted.ts';
 import { SELLER_ID, STD_CAPTURE, TEST_SECRET, standardDispute, testAccounts } from './kit.ts';
@@ -25,6 +25,9 @@ const NEW = 'PP-R-SCAN-1';
 const NEW_CAPTURE = '5AB12345CD678901E';
 const FOREIGN = 'PP-R-SCAN-2';
 const UNREADABLE = 'PP-R-SCAN-3';
+/** A dispute in the standard case's reserve, and one a discovered case already holds. */
+const SPARE = 'PP-R-SCAN-4';
+const KNOWN = 'PP-R-SCAN-5';
 const IN_3_DAYS = () => new Date(Date.now() + 3 * 86_400_000).toISOString();
 
 function newDispute(id: string, capture: string, merchant = SELLER_ID): Dispute {
@@ -37,7 +40,7 @@ function newDispute(id: string, capture: string, merchant = SELLER_ID): Dispute 
   };
 }
 
-function fakePayPal(o: { listFails?: boolean; listed?: string[] } = {}) {
+function fakePayPal(o: { listFails?: boolean; listed?: string[]; reads?: string[] } = {}) {
   const disputes: Record<string, Dispute> = {
     [BOUND]: { ...standardDispute(), dispute_id: BOUND },
     [NEW]: newDispute(NEW, NEW_CAPTURE),
@@ -53,20 +56,22 @@ function fakePayPal(o: { listFails?: boolean; listed?: string[] } = {}) {
       return new Response(JSON.stringify({ items: listed.map((id) => ({ dispute_id: id, status: 'WAITING_FOR_SELLER_RESPONSE' })) }), { status: 200 });
     }
     const id = decodeURIComponent(u.pathname.split('/').pop()!);
+    if (!u.pathname.startsWith('/v2/payments/captures/')) o.reads?.push(id);
     const found = u.pathname.startsWith('/v2/payments/captures/') ? captures[id] : disputes[id];
     return found ? new Response(JSON.stringify(found), { status: 200 }) : new Response('{"name":"RESOURCE_NOT_FOUND"}', { status: 404 });
   }) as typeof globalThis.fetch;
   return new PayPalClient({ clientId: 'cid', clientSecret: 'secret', env: 'sandbox', fetch, sleep: async () => {} });
 }
 
-async function withApp(o: Parameters<typeof fakePayPal>[0], f: (x: { app: ReturnType<typeof createHostedApp>; people: ReturnType<typeof testAccounts>; store: CaseStore }) => Promise<void>) {
+async function withApp(o: Parameters<typeof fakePayPal>[0] & { seed?: DiscoveredCase[] }, f: (x: { app: ReturnType<typeof createHostedApp>; people: ReturnType<typeof testAccounts>; store: CaseStore }) => Promise<void>) {
   const dir = mkdtempSync(join(tmpdir(), 'rk-scan-'));
   try {
     const paypal = fakePayPal(o);
     const people = testAccounts();
     const store = new CaseStore({ file: join(dir, 'cases.json') });
+    for (const c of o?.seed ?? []) store.add(c);
     const bindings: Record<string, Binding> = { [CASE]: { dispute: BOUND, capture: STD_CAPTURE } };
-    const reserve: Record<string, Binding[]> = {};
+    const reserve: Record<string, Binding[]> = { [CASE]: [{ dispute: SPARE, capture: '8AB12345CD678901E' }] };
     const discovery = createDiscovery({ paypal, store, anchor: () => SELLER_ID, isBound: (id) => isBoundDispute({ bindings, reserve }, id), log: () => {} });
     const app = createHostedApp({
       paypal,
@@ -109,6 +114,19 @@ test('owner scan: the admissible dispute becomes a case; the foreign one and the
     assert.deepEqual(b.skipped.map((s) => s.disputeId).sort(), [BOUND, FOREIGN].sort());
     assert.ok(b.skipped.every((s) => s.why.length > 0));
     assert.equal(store.all().length, 1);
+  });
+});
+
+test('a listed dispute already bound (fixed, reserve) or already a discovered case is skipped before any read of it', async () => {
+  const reads: string[] = [];
+  const known: DiscoveredCase = { caseId: KNOWN, merchantId: SELLER_ID, disputeId: KNOWN, captureId: '9AB12345CD678901E', template: 'standard', orderRef: 'rk-std-t9', source: 'webhook', createdAt: new Date().toISOString() };
+  await withApp({ listed: [BOUND, SPARE, KNOWN, NEW], reads, seed: [known] }, async ({ app, people }) => {
+    const b = (await (await app(scan(people.ownerCookie))).json()) as ScanBody;
+    assert.deepEqual(b.created.map((c) => c.caseId), [NEW]);
+    assert.deepEqual(b.skipped, [BOUND, SPARE, KNOWN].map((disputeId) => ({ disputeId, why: 'already bound' })));
+    // The scan itself read only the new one (other reads, e.g. the sellers of the bound cases, are not the scan's).
+    for (const id of [SPARE, KNOWN]) assert.ok(!reads.includes(id), `${id} was read: ${reads.join(', ')}`);
+    assert.equal(reads.filter((id) => id === NEW).length, 1);
   });
 });
 

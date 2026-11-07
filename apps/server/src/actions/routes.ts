@@ -51,6 +51,8 @@ export interface ActionRouteDeps {
   intents: IntentStore;
   /** The case right now: a bound case read fresh from PayPal with its binding verified (app.ts), or a Response. */
   caseState: (caseId: string, req: Request) => Promise<CaseState | Response>;
+  /** 409 CASE_ENDED when the case is an ended discovered case (read-only), judged on its last read; else null. */
+  caseEnded?: (caseId: string) => Response | null;
   /** Hosted: refuses a person who does not act for the seller on the dispute as just read. */
   sellerRefusal: (req: Request, st: Pick<CaseState, 'dispute'>) => Response | null;
   actorOf: (req: Request, unlocked: boolean) => Actor;
@@ -165,6 +167,9 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
     const st = await deps.caseState(caseId, req);
     if (st instanceof Response) return st;
     if (!st.snap || !st.disputeId) return json(409, { error: 'SIMULATED_CASE', detail: 'This case runs on the simulator: its actions are played in the browser, never sent to PayPal' });
+    // The fresh read may have found the case ended: read-only.
+    const ended = deps.caseEnded?.(caseId);
+    if (ended) return ended;
     const notSeller = deps.sellerRefusal(req, st);
     if (notSeller) return notSeller;
     const built = ar.action === 'send_message' && ar.attachments.length ? await deps.uploadFiles(caseId, st, ar.attachments) : [];
@@ -342,6 +347,11 @@ export function createActionRoutes(deps: ActionRouteDeps): ActionRoutes {
         claim = intents.beginSend(intentId, caseId, who.actor);
         if (!claim.ok) return claimRefusal(claim);
       }
+
+      // An ended case (the fresh read may have just found it closed, evidence recorded, in chargeback or past due) is
+      // read-only: nothing is POSTed (a reconciliation above that PayPal proves recorded has already answered).
+      const ended = deps.caseEnded?.(caseId);
+      if (ended) return refuse(ended, 'the case has ended', true);
 
       // 5. Compose again on the fresh read: availability, stage, amount, text and the pin must give the approved hash.
       let files: EvidenceFile[] = [];

@@ -361,3 +361,40 @@ test('regression: with fixed bindings only and an empty store, the API behaves a
     assert.equal(store.all().length, 0);
   });
 });
+
+// ------------------------------------------------------------------------- a fixed case's id is never a discovered one
+
+test('a stored record under a fixed case’s id (discovery never makes one now) does not stop that fixed case’s reserve rotation', async () => {
+  await withDir(async (dir) => {
+    const pp = fakePayPal();
+    const store = new CaseStore({ file: join(dir, 'cases.json') });
+    store.add({ ...record(DISC, DISC_CAPTURE, 'standard', 'rk-std-t1'), caseId: CASE });
+    const NEXT = 'PP-R-REAL-2';
+    const usd = { currency_code: 'USD', value: '7.00' };
+    const used = evidenceInDispute();
+    pp.disputes[BOUND] = { ...used, dispute_id: BOUND, dispute_amount: usd, disputed_transactions: [{ ...used.disputed_transactions![0]!, seller_transaction_id: STD_CAPTURE, gross_amount: usd, seller: { merchant_id: SELLER_ID } }] };
+    const bindings: Record<string, Binding> = { [CASE]: { dispute: BOUND, capture: STD_CAPTURE } };
+    const lines: string[] = [];
+    const api = createApi({ paypal: pp.client, env: 'sandbox', bindings, reserve: { [CASE]: [{ dispute: NEXT, capture: '3AB12345CD678901E' }] }, rotateAfterMs: 0, caseStore: store, log: (l) => lines.push(l) });
+    assert.equal((await api(localGet(`/api/disputes/${CASE}`))).status, 200);
+    assert.equal(bindings[CASE]!.dispute, NEXT, lines.join('\n'));
+  });
+});
+
+// ------------------------------------------------------------------------------------------- notices (owner-only)
+
+test('notices: a member or reviewer never receives the notice of a discovered settlement case; the owner does', async () => {
+  await withDir(async (dir) => {
+    const { app, people, store } = hosted(dir);
+    assert.equal((await app(delivery('CUSTOMER.DISPUTE.CREATED', STL))).status, 200);
+    await until(async () => (await notices(app, people.ownerCookie)).length > 0);
+    assert.equal(store.get(STL)?.template, 'settlement');
+    const own = await notices(app, people.ownerCookie);
+    assert.deepEqual(own.map((n) => n.caseId), [STL]);
+    for (const who of [people.fullMember(), people.member()]) assert.deepEqual(await notices(app, who), []);
+    // Its UPDATED event (the case exists now): still the owner's only.
+    await app(delivery('CUSTOMER.DISPUTE.UPDATED', STL));
+    await until(async () => (await notices(app, people.ownerCookie)).length > 1);
+    for (const who of [people.fullMember(), people.member()]) assert.deepEqual(await notices(app, who), []);
+  });
+});

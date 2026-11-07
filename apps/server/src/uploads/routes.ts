@@ -94,6 +94,11 @@ export interface UploadRoutesOptions {
   person: (req: Request) => ActingPerson | null;
   /** Whether this request may address the case at all (false: UNKNOWN_CASE). Hosted: the seller's workspace only. */
   caseVisible: (req: Request, caseId: string) => Promise<boolean>;
+  /**
+   * 409 CASE_ENDED when the case is an ended discovered case (read-only): no new upload, page choice, redaction or
+   * confirmation. Discarding an unconfirmed upload, deleting one and every read stay open. Absent: never ended.
+   */
+  caseEnded?: (caseId: string) => Response | null;
   /** Hosted: reserve one of the day's `upload` units (seller workspace, cap, caps file). null: no cap (local mode). */
   reserve: ((req: Request) => Reservation) | null;
   /** The case's active PayPal dispute id, or null for a simulated case. */
@@ -842,6 +847,10 @@ export function createUploadRoutes(o: UploadRoutesOptions): (req: Request, url: 
     const method = !m[2] ? ['GET', 'POST'] : m[4] || m[3] === 'image' ? ['GET'] : !m[3] ? ['DELETE'] : ['POST'];
     if (!method.includes(req.method)) return early(refuse(405, 'METHOD_NOT_ALLOWED'));
     if (!(await o.caseVisible(req, caseId))) return early(refuse(404, 'UNKNOWN_CASE'));
+    if (req.method === 'POST' && m[3] !== 'discard') {
+      const ended = o.caseEnded?.(caseId);
+      if (ended) return early(ended);
+    }
     const person = o.person(req);
     if (!person) return early(refuse(401, 'SIGN_IN_REQUIRED', 'Sign in to add evidence: with PayPal (merchants) or with the invite link you were given.'));
     s = { caseId, person, disputeId: o.caseBinding(caseId), worked: false };

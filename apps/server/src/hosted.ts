@@ -601,7 +601,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
         // An owner-only case (the settlement case) is never analysed ahead: nobody else may see it.
         if (caseFileOf(caseId, (id) => o.caseStore?.templateOf(id) ?? null)?.audience === 'owner') continue;
         // A discovered case is warmed in its own lane (warmDiscovered), never with the people's hourly live analyses.
-        if (o.caseStore?.get(caseId)) continue;
+        // (A stored record under a fixed case's id is not one: the fixed case is warmed here as always.)
+        if (api.isDiscoveredBound(caseId)) continue;
         let w: WarmUpOutcome;
         try {
           w = await warmCase(caseId);
@@ -625,7 +626,8 @@ export function createHostedApp(o: HostedOptions): HostedApp {
   // warm-up above) that takes no slot of the people's hourly limit. A pass starts at most one analysis; the next pass is
   // scheduled for the next slot while something is left to try (a failed run, a refusal, an unreadable dispute);
   // otherwise the lane stops until the next case is made (or the next start). A case that failed or was refused 3
-  // times is given up until the next start, so it neither blocks the newer ones nor spends the daily cap.
+  // times is given up until the next start, so it neither blocks the newer ones nor spends the daily cap. A refusal
+  // because the shared daily cap is used up is not one of those attempts: it resets the next day.
   const LANE_GAP_MS = o.warmLane?.gapMs ?? 10 * MIN;
   /** How long the lane waits for one run (each model call has its own timeout, the run as a whole none). */
   const LANE_WAIT_MS = o.warmLane?.waitMs ?? 15 * MIN;
@@ -717,7 +719,10 @@ export function createHostedApp(o: HostedOptions): HostedApp {
       }
       laneStarted = now().getTime();
       if (r.status !== 202 || !body.key) {
-        laneFailed(caseId, `refused · ${`${body.error ?? r.status}: ${body.detail ?? ''}`.trim()}`);
+        const why = `refused · ${`${body.error ?? r.status}: ${body.detail ?? ''}`.trim()}`;
+        // The shared daily cap used up is no fault of the case (it resets the next day): not one of its attempts.
+        if (body.error === 'DAILY_CAP') log(`warm-up lane · case ${caseId} · ${why} · not counted as an attempt · tried again in the next slot`);
+        else laneFailed(caseId, why);
         return LANE_GAP_MS;
       }
       const end = await settledWithin(analyst, body.key);

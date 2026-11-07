@@ -296,6 +296,8 @@ export type Api = Handler & {
    * the hosted warm-up lane analyses ahead; an ended case is read-only and is not analysed ahead.
    */
   discoveredToWarm: () => string[];
+  /** Whether this case id is a discovered case bound to its one dispute now (a fixed case's id never is). */
+  isDiscoveredBound: (caseId: string) => boolean;
   /** The intents and audit log (tests, main.ts). */
   intents: IntentStore;
   /** For the operator's check (hosted /api/ops/status): PayPal's state and each binding verified on a fresh read now. */
@@ -427,6 +429,15 @@ export function createApi(opts: ApiOptions): Api {
     const since = Date.parse(c.endedAt ?? '');
     const hidden = !!c.endedBy && HIDING.includes(c.endedBy) && Number.isFinite(since) && now().getTime() - since > HIDE_AFTER_MS;
     return { c, ended: !!c.endedAt, hidden };
+  };
+  /**
+   * An ended discovered case is read-only (decision A): 409 CASE_ENDED for every write (compose, approve, confirm,
+   * send, new uploads), judged on its last read; null for an open discovered case and for every fixed case.
+   */
+  const endedRefusal = (caseId: string): Response | null => {
+    const life = lifecycleOf(caseId);
+    if (!life?.ended) return null;
+    return json(409, { error: 'CASE_ENDED', detail: `This case has ended (${life.c.endedBy ?? 'ended'}); it is read-only` });
   };
   // The discovered cases already stored are bound now (their one dispute each; a fixed binding of the same dispute wins).
   if (opts.caseStore) {
@@ -790,7 +801,7 @@ export function createApi(opts: ApiOptions): Api {
     if (bindingOf(caseId)?.dispute !== binding.dispute) return;
     // A discovered case has exactly its own dispute: it is never moved on (it ends there, used or not). Used is still
     // reported (PayPal has the seller's evidence, or closed it), for the operator's check.
-    if (opts.caseStore?.get(caseId)) {
+    if (discoveredBound(caseId)) {
       usedNow.set(caseId, sellerEvidenceBlocks(snap) || snap.status === 'RESOLVED');
       return;
     }
@@ -1068,6 +1079,9 @@ export function createApi(opts: ApiOptions): Api {
     if (full) return tooMany(full);
     const st = await caseState(caseId, req);
     if (st instanceof Response) return st;
+    // That fresh read may have found the case ended (closed, evidence recorded, chargeback, past due): read-only.
+    const endedNow = endedRefusal(caseId);
+    if (endedNow) return endedNow;
     const notSeller = sellerRefusal(req, st);
     if (notSeller) return notSeller;
     const composed = await compose(caseId, st, ir);
@@ -1173,6 +1187,10 @@ export function createApi(opts: ApiOptions): Api {
       if (st.disputeId !== boundId) {
         return refuse(json(409, { error: 'BINDING_CHANGED', detail: `This intent was composed for ${boundId}; the case is bound to ${st.disputeId} now` }), 'the case moved to another dispute', true);
       }
+      // The fresh read may have found a discovered case ended (closed, evidence recorded, chargeback, past due): it is
+      // read-only, so nothing is sent and the intent is over.
+      const endedNow = endedRefusal(caseId);
+      if (endedNow) return refuse(endedNow, 'the case has ended', true);
       // On the dispute as just read: the person must act for its seller.
       const notSeller = sellerRefusal(req, st);
       if (notSeller) return refuse(notSeller, 'not the seller on this dispute', true);
@@ -1365,6 +1383,7 @@ export function createApi(opts: ApiOptions): Api {
     store: uploads,
     person: personOf,
     caseVisible,
+    caseEnded: (caseId) => endedRefusal(caseId),
     reserve: opts.gate ? (req) => opts.gate!.reserve(req, 'upload') : null,
     pdfJob: createPdfJob({ store: uploads, log, ...(opts.uploadStorageBytes ? { maxStorageBytes: opts.uploadStorageBytes } : {}) }),
     meterPages: opts.gate?.meterPages ? (req, pages) => opts.gate!.meterPages!(req, pages) : null,
@@ -1406,6 +1425,7 @@ export function createApi(opts: ApiOptions): Api {
   const actions = createActionRoutes({
     intents,
     caseState: (caseId, req) => caseState(caseId, req),
+    caseEnded: (caseId) => endedRefusal(caseId),
     sellerRefusal,
     actorOf,
     personOf,
@@ -1464,6 +1484,11 @@ export function createApi(opts: ApiOptions): Api {
     for (const item of listed) {
       const id = item.dispute_id;
       if (!id) continue;
+      // Known already (a fixed binding or reserve, a discovered case, a fixed case's id): no read of it.
+      if (Object.hasOwn(CASE_FILES, id) || casesListing(id).length || opts.caseStore?.byDispute(id)) {
+        skipped.push({ disputeId: id, why: 'already bound' });
+        continue;
+      }
       let d: Dispute;
       try {
         d = await paypal.disputes.get(id);
@@ -1521,6 +1546,12 @@ export function createApi(opts: ApiOptions): Api {
     const sub = m[2];
     const intentId = m[3];
     if (!(await caseVisible(req, caseId))) return json(404, { error: 'UNKNOWN_CASE' });
+    // An ended discovered case is read-only: no new intent, approval, confirmation or send. Cancelling, acknowledging,
+    // reading back (the send that ended it is still proven or released), the hold, the audit trail and reads stay open.
+    if (req.method === 'POST' && (sub === 'evidence' || sub === 'send' || (sub === 'intent' && (!intentId || m[4] === '/approve' || m[4] === '/confirm')))) {
+      const ended = endedRefusal(caseId);
+      if (ended) return ended;
+    }
 
     // Intents and the audit log exist for every case: a simulated case's intent is approved here too, and the
     // in-browser simulator records it.
@@ -1600,6 +1631,7 @@ export function createApi(opts: ApiOptions): Api {
           return !!life && !life.ended && !life.hidden;
         })
         .map((c) => c.caseId),
+    isDiscoveredBound: (caseId: string) => !!discoveredBound(caseId),
     intents,
     opsReport,
     opsReadBack: (intentId: string) => actions.opsReadBack(intentId),
