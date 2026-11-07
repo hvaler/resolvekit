@@ -11,7 +11,7 @@ import { DailyCounters, durableTestHooks } from '@resolvekit/hosting';
 import { caseInput, standardCase } from '@resolvekit/cases';
 import { PayPalClient } from '@resolvekit/paypal';
 import { createApp, DEFAULT_ORIGINS, TOKEN_HEADER } from '../src/app.ts';
-import { MemoryAnalysisStore } from '@resolvekit/analyst/node';
+import { MemoryAnalysisStore, analysisKey, type CaseAnalysis } from '@resolvekit/analyst/node';
 import { AnalystService, InputPins } from '../src/analysis.ts';
 import { parseBindingPools } from '../src/bindings.ts';
 import { createHostedApp } from '../src/hosted.ts';
@@ -241,3 +241,52 @@ for (const [name, make] of [
     }
   });
 }
+
+/** An analyst whose store holds an analysis of the standard case's input, and which has served it (so it is remembered). */
+async function rememberedAnalyst(file: string) {
+  const input = caseInput(standardCase, { kind: 'simulated' });
+  const key = await analysisKey(input, 'gemini-3.8-flash');
+  const store = new MemoryAnalysisStore();
+  store.cached.set(key, { key, caseId: CASE } as CaseAnalysis);
+  const analyst = new AnalystService({ model: null, primaryModel: 'gemini-3.8-flash', store, lastReadyFile: file, now: () => NOW });
+  assert.equal((await analyst.request(CASE, input, false)).status, 200);
+  const later = { ...input, merchantNotes: [{ id: 'N9', text: 'A later note.' }] };
+  return { analyst, key, later };
+}
+
+test('analysis-last.json: forgetting a remembered analysis fails closed when the file cannot be rewritten (the entry is restored, the purge throws)', async () => {
+  const dir = tmp();
+  try {
+    const file = join(dir, 'analysis-last.json');
+    const { analyst, key, later } = await rememberedAnalyst(file);
+    assert.ok(readFileSync(file, 'utf8').includes(key));
+    Object.assign(durableTestHooks, { failAt: 'write', match: /analysis-last\.json/ });
+    assert.throws(() => analyst.forget([key]));
+    Object.assign(durableTestHooks, { failAt: null, match: null });
+    assert.ok(readFileSync(file, 'utf8').includes(key), 'the file still holds it');
+    assert.equal((await analyst.kept(CASE, later))?.answer.status, 200, 'restored in memory, and the stored analysis kept');
+    // Retried with the file writable: gone from both.
+    analyst.forget([key]);
+    assert.ok(!readFileSync(file, 'utf8').includes(key));
+    assert.equal(await analyst.kept(CASE, later), null);
+  } finally {
+    Object.assign(durableTestHooks, { failAt: null, match: null });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('analysis-last.json unreadable at start (left in place): forgetting a remembered analysis throws', async () => {
+  const dir = tmp();
+  try {
+    const file = join(dir, 'analysis-last.json');
+    writeFileSync(file, 'kept as it is');
+    durableTestHooks.readError = { match: /analysis-last\.json$/, code: 'EPERM' };
+    const { analyst, key } = await rememberedAnalyst(file);
+    durableTestHooks.readError = null;
+    assert.throws(() => analyst.forget([key]), /unreadable/);
+    assert.equal(readFileSync(file, 'utf8'), 'kept as it is');
+  } finally {
+    durableTestHooks.readError = null;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

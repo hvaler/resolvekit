@@ -59,6 +59,8 @@ export interface AnalystServiceOptions {
    * AnalystService.kept}); in memory only without it.
    */
   lastReadyFile?: string;
+  /** Which cases are remembered there (app.ts: the discovered cases only); every case without it. */
+  remember?: (caseId: string) => boolean;
 }
 
 export type ServiceAnswer = { status: number; body: unknown };
@@ -85,6 +87,7 @@ export class AnalystService {
   private readonly lastReady = new Map<string, { key: string; input: AnalysisInput }>();
   private lastProblem: string | null = null;
   private lastBlocked = false;
+  private remember: ((caseId: string) => boolean) | null;
 
   constructor(o: AnalystServiceOptions) {
     this.o = o;
@@ -92,6 +95,7 @@ export class AnalystService {
     this.live = o.liveLimit ?? new RateLimiter({ limit: 6, windowMs: HOUR });
     this.verifies = o.verifyLimit ?? new RateLimiter({ limit: 30, windowMs: HOUR });
     this.log = o.log ?? (() => {});
+    this.remember = o.remember ?? null;
     if (o.lastReadyFile) {
       const opened = openStoreFile(
         o.lastReadyFile,
@@ -116,22 +120,30 @@ export class AnalystService {
     return this.lastProblem;
   }
 
-  /** Remember that this case had the analysis of `key` ready (made from `input`); persisted when given a file. */
-  private noteReady(caseId: string, key: string, input: AnalysisInput) {
-    if (this.lastReady.get(caseId)?.key === key) return;
-    this.lastReady.set(caseId, { key, input });
-    this.saveLast();
+  /** Only these cases' last ready analyses are remembered from now on (the discovered cases: see app.ts). */
+  rememberOnly(which: (caseId: string) => boolean) {
+    this.remember = which;
   }
 
-  private saveLast() {
-    const file = this.o.lastReadyFile;
-    if (!file || this.lastBlocked) return;
+  /** Remember that this case had the analysis of `key` ready (made from `input`); persisted when given a file. */
+  private noteReady(caseId: string, key: string, input: AnalysisInput) {
+    if (this.remember && !this.remember(caseId)) return;
+    if (this.lastReady.get(caseId)?.key === key) return;
+    this.lastReady.set(caseId, { key, input });
     try {
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileDurable(file, JSON.stringify(Object.fromEntries(this.lastReady)));
+      this.writeLast();
     } catch {
       /* best effort: without it, an ended case whose documents changed after a restart shows no analysis */
     }
+  }
+
+  /** Durable write of the last ready analyses. Throws when the file was unreadable at start (left in place) or the write fails. */
+  private writeLast() {
+    const file = this.o.lastReadyFile;
+    if (!file) return;
+    if (this.lastBlocked) throw new Error(`${basename(file)} is unreadable and left in place`);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileDurable(file, JSON.stringify(Object.fromEntries(this.lastReady)));
   }
 
   /** The finished analysis of `key` (this process's run, the cache or golden) with where it came from, or null. */
@@ -157,8 +169,10 @@ export class AnalystService {
     const last = this.lastReady.get(caseId);
     const before = last ? this.readyOf(last.key) : null;
     if (last && before) return ready(last.key, last.input, before);
-    const running = this.jobs.get(key);
-    if (running?.status === 'running') return { answer: { status: 202, body: { status: 'running', key, progress: running.progress, live: this.liveState() } }, input };
+    // A run of these documents, else one of this case started under an older key before it ended: followed, never a new one.
+    const current = this.jobs.get(key);
+    const running = current?.status === 'running' ? current : [...this.jobs.values()].find((j) => j.caseId === caseId && j.status === 'running');
+    if (running) return { answer: { status: 202, body: { status: 'running', key: running.key, progress: running.progress, live: this.liveState() } }, input: running.input };
     return null;
   }
 
@@ -234,17 +248,22 @@ export class AnalystService {
 
   /** Drop what is held for these analyses: running or finished job, progress, stored copy. Throws if a stored file stays. */
   forget(keys: string[]) {
+    // The remembered last analyses first, failing closed (as InputPins.forget): if the file cannot be rewritten the
+    // entries are restored and this throws, so the purge fails and the upload is not deleted (it can be retried).
+    const dropped = [...this.lastReady].filter(([, last]) => keys.includes(last.key));
+    if (dropped.length) {
+      for (const [caseId] of dropped) this.lastReady.delete(caseId);
+      try {
+        this.writeLast();
+      } catch (e) {
+        for (const [caseId, last] of dropped) this.lastReady.set(caseId, last);
+        throw e;
+      }
+    }
     for (const key of keys) {
       this.jobs.delete(key);
       this.o.store.delete(key);
     }
-    let dropped = false;
-    for (const [caseId, last] of this.lastReady) {
-      if (!keys.includes(last.key)) continue;
-      this.lastReady.delete(caseId);
-      dropped = true;
-    }
-    if (dropped) this.saveLast();
   }
 
   /** The answer once the run of `key` (if one is running) has finished. */

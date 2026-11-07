@@ -123,7 +123,9 @@ fresh read a compose or send makes, so a send whose read finds the case ended PO
 acknowledging, reading back (the read-back of the send that ended it still works), the hold, the audit trail,
 discarding or deleting an upload and every read stay open. Its analysis never runs live again: `POST …/analysis` (with or without
 `refresh=1`) answers the analysis stored for its documents, else the last one the case had ready (with the `input` it was
-made from), else `409 CASE_ENDED`; `POST …/analysis/verify` answers `409 CASE_ENDED`. A fixed case never answers `CASE_ENDED`.
+made from), else `202` following a run of the case that started before it ended and is still going, else
+`409 CASE_ENDED`; `POST …/analysis/verify` answers `409 CASE_ENDED`, judged on the request's own read too, before any
+re-check is spent. Only discovered cases are remembered in `analysis-last.json`. A fixed case never answers `CASE_ENDED`.
 
 ## Analysis
 

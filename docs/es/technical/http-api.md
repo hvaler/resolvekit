@@ -127,8 +127,10 @@ del caso y otra vez sobre la lectura fresca que hace una composición o un enví
 el caso terminado no hace ningún POST. Cancelar, reconocer, releer (la relectura del envío que lo terminó sigue
 funcionando), la retención, el registro de auditoría, descartar o borrar una subida y toda lectura siguen abiertos. Su
 análisis no vuelve a ejecutarse en directo: `POST …/analysis` (con o sin `refresh=1`) responde el análisis guardado de
-sus documentos, si no el último que el caso tuvo listo (con el `input` del que se hizo), y si no `409 CASE_ENDED`;
-`POST …/analysis/verify` responde `409 CASE_ENDED`. Un caso fijo nunca responde `CASE_ENDED`.
+sus documentos, si no el último que el caso tuvo listo (con el `input` del que se hizo), si no `202` siguiendo una
+ejecución del caso que empezó antes de terminar y aún sigue, y si no `409 CASE_ENDED`; `POST …/analysis/verify` responde
+`409 CASE_ENDED`, juzgado también sobre la propia lectura de la petición, antes de gastar ninguna recomprobación. Solo
+los casos descubiertos se recuerdan en `analysis-last.json`. Un caso fijo nunca responde `CASE_ENDED`.
 
 ## Análisis
 

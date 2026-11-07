@@ -190,3 +190,29 @@ test('kept (ended cases): the analysis of these documents, else the last one the
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('kept (ended cases): a run of the case started before it ended, under an older key, is still followed (202 with that key), nothing new starts', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const fm = fakeModel(standardScript);
+  const lines: string[] = [];
+  const a = new AnalystService({
+    model: { ...fm.model, generate: async (r) => (await gate, fm.model.generate(r)) },
+    primaryModel: 'gemini-3.8-flash',
+    store: new MemoryAnalysisStore(),
+    log: (l) => lines.push(l),
+  });
+  const inp = input();
+  const r = await a.request(CASE, inp, false);
+  assert.equal(r.status, 202);
+  const key = (r.body as { key: string }).key;
+  const later = { ...inp, merchantNotes: [{ id: 'N9', text: 'A later note.' }] };
+  const k = await a.kept(CASE, later);
+  assert.ok(k);
+  assert.equal(k.answer.status, 202);
+  assert.equal((k.answer.body as { key: string }).key, key);
+  assert.equal(await a.kept('PP-R-OTHER-1', later), null, 'another case’s run is not followed');
+  assert.equal(lines.filter((l) => l.startsWith('analysis started')).length, 1);
+  release();
+  await a.settled(key);
+});

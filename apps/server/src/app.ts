@@ -382,6 +382,8 @@ export function createApi(opts: ApiOptions): Api {
   };
   /** A discovered case's id (not a fixed case's): it exists for a request only while bound to its one dispute. */
   const isDiscovered = (caseId: string) => !Object.hasOwn(CASE_FILES, caseId) && !!templateOf(caseId);
+  // Only a discovered case can end (and so needs its last analysis kept): fixed and simulated cases never write it.
+  opts.analyst?.rememberOnly(isDiscovered);
 
   // ------------------------------------------------------------------- lifecycle of discovered cases (decision A)
   /** Ended closed or past due more than this long ago: left out of the inbox (still stored, still addressable). */
@@ -1017,6 +1019,9 @@ export function createApi(opts: ApiOptions): Api {
     if (built instanceof Response) return built;
     const { input, uploadIds } = built;
     if (sub === '/verify') {
+      // Judged again on this request's own read (it may be the one that shows the end): refused before a re-check is spent.
+      const endedNow = endedRefusal(caseId);
+      if (endedNow) return endedNow;
       const r = await analyst.verify(input, text, liveGate(req, 'recheck'));
       if (r.status === 200) {
         const v = r.body as { verdict: Recheck['state']; reason: string | null; citations: Parameters<typeof toCitations>[1]; model: string };

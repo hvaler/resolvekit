@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DailyCounters } from '@resolvekit/hosting';
@@ -122,7 +122,7 @@ async function withDir(f: (dir: string) => Promise<void>) {
  * first run fails; `failCase`: every run of that case fails; `hangCase`: every run of that case never answers, and the
  * lane waits `waitMs` real ms for a run).
  */
-function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean; failCase?: string; hangCase?: string; waitMs?: number; cap?: number } = {}) {
+function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean; failCase?: string; hangCase?: string; waitMs?: number; cap?: number; lastReadyFile?: string } = {}) {
   const time = fakeTime();
   const pp = fakePayPal();
   for (const c of o.seed ?? []) pp.disputes[c.caseId] = newDispute(c.caseId, T0);
@@ -152,13 +152,14 @@ function hosted(dir: string, o: { seed?: DiscoveredCase[]; failFirst?: boolean; 
     primaryModel: 'gemini-3.8-flash',
     store: new MemoryAnalysisStore(),
     liveLimit: new RateLimiter({ limit: 6, windowMs: 3_600_000 }),
+    ...(o.lastReadyFile ? { lastReadyFile: o.lastReadyFile } : {}),
     log: (l) => {
       const m = /^analysis started · case (\S+)/.exec(l);
       if (m) starts.push({ caseId: m[1]!, at: time.get() });
     },
   });
   const discovery = createDiscovery({ paypal: pp.client, store, anchor: () => SELLER_ID, isBound: (id) => isBoundDispute({ bindings, reserve }, id) });
-  const counters = new DailyCounters({ file: null, limits: { 'live-analysis': o.cap ?? 60 }, now: time.now });
+  const counters = new DailyCounters({ file: null, limits: { 'live-analysis': o.cap ?? 60, recheck: 60 }, now: time.now });
   const app = createHostedApp({
     paypal: pp.client,
     env: 'sandbox',
@@ -633,5 +634,37 @@ test('open discovered case and fixed case: a refresh still runs the analysis liv
     assert.equal(f.status, 202, JSON.stringify(f.body));
     await until(() => h.starts.length === 3, 'the fixed case’s run');
     assert.equal(h.starts[2]!.caseId, CASE);
+  });
+});
+
+test('verify on a case that the request’s own fresh read finds ended: 409 CASE_ENDED, no re-check spent', async () => {
+  await withDir(async (dir) => {
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - DAY)] });
+    await open(h, A);
+    await analysedOnce(h, A);
+    // PayPal closes it; this server's last read still says open (no one opened the case since).
+    h.pp.disputes[A] = { ...h.pp.disputes[A]!, status: 'RESOLVED', update_time: new Date(h.time.get()).toISOString(), dispute_outcome: { outcome_code: 'RESOLVED_BUYER_FAVOUR' } };
+    h.time.set(h.time.get() + 2 * MIN);
+    assert.equal(h.store.get(A)!.endedAt, undefined);
+    const before = h.counters.state().caps['recheck']!.used;
+    const v = await postAs(h, `/api/cases/${A}/analysis/verify`, { text: 'Delivered on 9 October.' });
+    const vb = (await v.json()) as AnalysisBody;
+    assert.equal(v.status, 409, JSON.stringify(vb));
+    assert.equal(vb.error, 'CASE_ENDED');
+    assert.equal(h.counters.state().caps['recheck']!.used, before);
+  });
+});
+
+test('analysis-last.json records only discovered cases: a fixed case’s ready analysis is never written to it', async () => {
+  await withDir(async (dir) => {
+    const file = join(dir, 'analysis-last.json');
+    const h = hosted(dir, { seed: [record(A, 'standard', 'rk-std-a', T0 - DAY)], lastReadyFile: file });
+    await open(h, CASE);
+    await analysedOnce(h, CASE);
+    assert.ok(!existsSync(file) || !Object.hasOwn(JSON.parse(readFileSync(file, 'utf8')), CASE), 'no fixed case in the file');
+    await open(h, A);
+    await analysedOnce(h, A);
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(saved), [A]);
   });
 });

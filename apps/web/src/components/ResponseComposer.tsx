@@ -334,25 +334,34 @@ export function ResponseComposer({ c, d, allowedActions, actionVerdicts, checked
         {isAgent ? (
           <>
             {c.fulfillment.digital ? <DigitalDelivery c={c} /> : !frozen && <Attachments c={c} />}
-            <section aria-label="Action" className="flex flex-col gap-1.5">
-              <div className="flex justify-between text-[12.5px]">
-                <span className="font-semibold">
-                  Action · Provide evidence{' '}
-                  {allowedActions.includes('provide_evidence') ? (
-                    <span className="font-mono text-[10px] font-normal leading-none text-ok">✓ allowed</span>
-                  ) : (
-                    <span className="font-mono text-[10px] font-normal leading-none text-ink-3">× not allowed now</span>
-                  )}
+            {ended ? (
+              <section aria-label="Action" className="flex flex-col gap-1.5">
+                <span className="text-[12.5px] font-semibold">Action</span>
+                <span data-testid="actions-ended" className="text-[11.5px] text-ink-3">
+                  {CASE_ENDED_TEXT}
                 </span>
-                <span className="font-mono text-[12px] text-ink-2">{notesCountLabel(d.notes)}</span>
-              </div>
-              {alsoAllowed.length > 0 && (
-                <span className="text-[11.5px] text-ink-3">
-                  Also allowed now:{' '}
-                  {alsoAllowed.map((a) => (a === 'accept_claim' ? `accept claim (refund ${c.refundText})` : ACTION_LABEL[a].toLowerCase())).join(', ')}.
-                </span>
-              )}
-            </section>
+              </section>
+            ) : (
+              <section aria-label="Action" className="flex flex-col gap-1.5">
+                <div className="flex justify-between text-[12.5px]">
+                  <span className="font-semibold">
+                    Action · Provide evidence{' '}
+                    {allowedActions.includes('provide_evidence') ? (
+                      <span className="font-mono text-[10px] font-normal leading-none text-ok">✓ allowed</span>
+                    ) : (
+                      <span className="font-mono text-[10px] font-normal leading-none text-ink-3">× not allowed now</span>
+                    )}
+                  </span>
+                  <span className="font-mono text-[12px] text-ink-2">{notesCountLabel(d.notes)}</span>
+                </div>
+                {alsoAllowed.length > 0 && (
+                  <span className="text-[11.5px] text-ink-3">
+                    Also allowed now:{' '}
+                    {alsoAllowed.map((a) => (a === 'accept_claim' ? `accept claim (refund ${c.refundText})` : ACTION_LABEL[a].toLowerCase())).join(', ')}.
+                  </span>
+                )}
+              </section>
+            )}
           </>
         ) : (
           <>
