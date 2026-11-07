@@ -76,6 +76,13 @@ timeout). It never appears on a case running on real PayPal.
 9. **Audit log** lists the approval (with your name and the content hash) and the send (PayPal-Request-Id and PayPal's
    answer). Editing a sentence after approving voids the approval.
 
+**B2. Discovered cases (once deployed).** Status (7/11/2026, branch `feat/discovered-cases` at `e89b91b`): Implemented · Tested locally · **not Deployed** (the owner deploys later) · **not Verified in sandbox** (the real-sandbox check waits for the owner's approval). A dispute made from a ResolveKit order then appears in the
+inbox by itself, after the webhook or after the owner presses **Find new disputes** (*Found N new · M skipped*; hover for the
+skip reasons). Open it: the header carries its own dispute id, and a line under it reads *Discovered from PayPal (webhook) ·
+dispute … · capture … · order rk-std-…*. Ended cases sit below the open ones. Standard and agent cases follow track B;
+a settlement case is the owner's only. These cases start with no stored analysis, so the first open can read *Analysis pending*
+until the background lane (one case at a time, at least 10 minutes apart) reaches it.
+
 ## C. Add and sanitise your own evidence
 
 1. In a Test Store case press **+ Add evidence**. The panel says *It is read on this server only…*.

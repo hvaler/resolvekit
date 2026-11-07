@@ -12,6 +12,11 @@ logs. «Alojado» significa `RESOLVEKIT_MODE=hosted` (servidor) o `METERMCP_MODE
 
 ## Servidor de ResolveKit (`apps/server`)
 
+**`cases.json`** (`{v: 1, cases}`, escritura duradera, un registro por caso descubierto, siendo el id del caso el id de la disputa) vive en el
+directorio de datos, así que sobrevive a reinicios y despliegues en el disco del servicio. Un archivo ilegible o con forma incorrecta
+nunca se sobrescribe y se notifica con los demás problemas de almacenamiento. Ver la
+[visión general de la arquitectura](../architecture/overview.md#casos-descubiertos).
+
 ### Modo, red y almacenamiento
 
 | Variable | R/O | Secret | Por defecto | Efecto |
@@ -43,10 +48,13 @@ logs. «Alojado» significa `RESOLVEKIT_MODE=hosted` (servidor) o `METERMCP_MODE
 
 ### Vinculaciones
 
+Los casos descubiertos no salen de estas variables: se guardan en `cases.json` (en `RESOLVEKIT_DATA_DIR`) y se vinculan al arrancar. Estado: Implementado · Probado en local · no Desplegado (7/11/2026, `e89b91b`).
+
 | Variable | R/O | Secret | Por defecto | Efecto |
 |---|---|---|---|---|
 | `BINDINGS_JSON` | O alojado | sensible | — | Caso → `{dispute, capture[, session, run]}` (o una lista: reserva, el primero activo). En el modo alojado prevalece sobre el archivo; un JSON incorrecto, o una disputa listada dos veces (en cualquier caso), detiene el arranque |
 | `RESOLVEKIT_BINDINGS` | O | — | alojado `<data>/bindings.json`, local `apps/server/bindings.json` | Archivo de vinculaciones; en el modo alojado sin `BINDINGS_JSON` se relee cada 30 s |
+| `EVALUATION_MERCHANT_ID` | O alojado | — | el único vendedor que confirmó `sellers.json`, si no ninguno | El id de comercio del vendedor de la evaluación (el vendedor sandbox de las disputas vinculadas). El descubrimiento solo admite disputas de este vendedor; sin ella, con varios (o ningún) vendedores confirmados, no se descubre nada. No es un secreto |
 
 ### Cuentas y operaciones
 

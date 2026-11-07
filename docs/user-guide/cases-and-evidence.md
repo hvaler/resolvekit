@@ -34,6 +34,16 @@ A line you corrected is marked «corrected by <name>»; a line typed by hand on 
 manually by <name>». Hover a value to see it in its document. «used in 2 claims» / «not used in any claim» says how
 the draft uses the document.
 
+## Cases found from a PayPal order
+
+Status (7/11/2026, branch `feat/discovered-cases` at `e89b91b`): Implemented · Tested locally · **not Deployed** (the owner deploys later) · **not Verified in sandbox** (the real-sandbox check waits for the owner's approval). In the sandbox evaluation, a dispute that PayPal opens on a ResolveKit test order becomes a case of its own, named
+by its dispute id, and shows in the inbox with a notice (*New dispute … · case created from order …*). Its case page has a line
+saying how it was found: PayPal's notification or the owner's **Find new disputes** (an owner-only button in the inbox that
+answers *Found N new · M skipped*). Its documents are those of the test order of its kind; the dispute on top is the real
+sandbox one. A case is ended when PayPal has recorded evidence, the dispute is resolved or went to chargeback, or the due
+date passed: it moves below the open ones, and a resolved or past-due one leaves the inbox after 7 days. Until its analysis has run
+in the background (one case at a time, at least 10 minutes apart) the case reads *Analysis pending*.
+
 ## The analysis
 
 - The label says who made it, e.g. `<model> · cached` or `· live`; hover it for the prompt version, model calls and

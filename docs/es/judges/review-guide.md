@@ -161,6 +161,16 @@ largo te pide elegir hasta 5 páginas. Tapar el texto junto a un código de barr
 contiene el código. No subas datos personales que te importen. Estado: subida de imagen enviada a PayPal y registrada
 (18/10/2026); envíos de PDF y de texto pegado a PayPal Pendiente. Detalles: [revisión de PDF](../user-guide/pdf-review.md).
 
+## Casos descubiertos (nuevo, aún sin desplegar)
+
+Estado (7/11/2026, rama `feat/discovered-cases` en `e89b91b`): Implementado · Probado en local · **no Desplegado** (el propietario lo despliega después) · **no Verificado en sandbox** (la comprobación en el sandbox real espera la aprobación del propietario). Con el código en este estado, una disputa nueva del sandbox hecha a partir de un pedido de ResolveKit (`invoice_id`
+`rk-std-…`, `rk-stl-…` o el `mm-sess-…-settle` de MeterMCP) se convierte sola en su propio caso en la bandeja: por el webhook
+`CUSTOMER.DISPUTE.CREATED`/`.UPDATED` verificado, o por **Find new disputes** del propietario. Su expediente es la plantilla de su tipo
+de pedido con el id de la disputa, y la disputa real se superpone; la ficha del caso dice cómo se encontró. Los casos de liquidación
+son solo del propietario y Explore demo nunca lista uno. Hasta que el propietario lo despliegue, el servicio alojado ejecuta los casos
+fijos de `BINDINGS_JSON`. Cómo funciona y qué rechaza: [visión general de la arquitectura](../architecture/overview.md#casos-descubiertos).
+Tests: `apps/server/test/discovery*.test.ts`, `discovered-cases.test.ts`, `discovered-lifecycle.test.ts`, `case-store.test.ts`.
+
 ## Si una disputa ya se usó, la reserva está vacía o se alcanzó un límite
 
 | Ves | Por qué | Qué hacer |

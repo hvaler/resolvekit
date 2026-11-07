@@ -35,6 +35,16 @@ Una línea que has corregido se marca como «corrected by <name>»; una línea e
 marca como «Transcribed manually by <name>». Pasa el ratón sobre un valor para verlo en su documento. «used in 2
 claims» / «not used in any claim» indica cómo usa el borrador el documento.
 
+## Casos que nacen de un pedido de PayPal
+
+Estado (7/11/2026, rama `feat/discovered-cases` en `e89b91b`): Implementado · Probado en local · **no Desplegado** (el propietario lo despliega después) · **no Verificado en sandbox** (la comprobación en el sandbox real espera la aprobación del propietario). En la evaluación en sandbox, una disputa que PayPal abre sobre un pedido de prueba de ResolveKit se convierte en un
+caso propio, con el id de la disputa como nombre, y aparece en la bandeja con un aviso (*New dispute … · case created from order …*). Su
+ficha tiene una línea que dice cómo se encontró: la notificación de PayPal o **Find new disputes** del propietario (un botón de la
+bandeja solo para el propietario, que responde *Found N new · M skipped*). Sus documentos son los del pedido de prueba de su tipo; la
+disputa que lleva encima es la real del sandbox. Un caso está terminado cuando PayPal ha registrado evidencia, la disputa se resolvió o
+pasó a contracargo, o venció su fecha límite: baja debajo de los abiertos, y uno resuelto o vencido sale de la bandeja a los 7 días.
+Hasta que su análisis se ha ejecutado en segundo plano (un caso cada vez, con al menos 10 minutos entre ellos) el caso muestra *Analysis pending*.
+
 ## El análisis
 
 - La etiqueta dice quién lo hizo, p. ej. `<model> · cached` o `· live`; pasa el ratón por encima para ver la versión

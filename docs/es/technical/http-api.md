@@ -41,7 +41,7 @@ vinculados son casos de demo y solo viven en el navegador.
 | Método | Ruta | Modo | Autenticación | Respuesta | Errores principales |
 |---|---|---|---|---|---|
 | GET, HEAD | `/healthz` | alojado | ninguna | Comprobación de salud de Render | 405 |
-| GET | `/api/health` | ambos | ninguna (cada vinculación solo se lista para el espacio de trabajo de su propio vendedor) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`, solo cuando un archivo de almacén no se pudo leer al arrancar: los nombres de los almacenes en modo local, `true` en modo alojado) | — |
+| GET | `/api/health` | ambos | ninguna (cada vinculación solo se lista para el espacio de trabajo de su propio vendedor) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, cases{<caseId>: {template, orderRef, source, createdAt, ended}}, storage?}` (`cases`: los casos descubiertos visibles para quien mira, con la misma regla que `bound`; los `RESOLVED` o vencidos terminados se omiten 7 días después de terminar) (`storage`, solo cuando un archivo de almacén no se pudo leer al arrancar: los nombres de los almacenes en modo local, `true` en modo alojado) | — |
 | GET | `/api/demo` | ambos | ninguna | alojado `{hosted:true, day, resetsAt, caps, reasons}`; local `{hosted:false}` | 405 |
 | GET | `/api/ops/status[?probe=models]` | alojado | Bearer de operaciones | Estado de PayPal, webhook activado/desactivado, cada vinculación verificada con una lectura fresca (puede rotar un caso usado), precalentamiento, topes, archivos de almacén ilegibles (`storage`, también en `problems`); con `probe=models`, una llamada mínima por cada modelo configurado | 404, 405, 429 |
 | GET | `/api/ops/agent-run/<run-id>` | alojado | Bearer de operaciones | Registro de la ejecución + recibo, para `demo:prepare --agent-run` | 400 `INVALID_RUN_ID`, 404 |
@@ -49,6 +49,13 @@ vinculados son casos de demo y solo viven en el navegador.
 | GET | `/api/paypal/notices` | ambos | alojado: solo el vendedor de las disputas | Últimos avisos de webhook verificados (≤ 50) | 405 |
 | POST | `/api/paypal/webhook/<key>` | alojado, con el entorno del webhook | clave + verificación con PayPal | 200 (evento atendido o ignorado) | 404 clave incorrecta, 405, 400 `BAD_TRANSMISSION`/`NOT_AN_EVENT`/`NOT_VERIFIED`, 408, 413, 429, 503 `BUSY`/`VERIFY_UNAVAILABLE` |
 | GET | todo lo demás | alojado | — | App web compilada (las rutas desconocidas caen en `index.html`; los archivos desconocidos dan 404) | 404 |
+
+| Método | Ruta | Modo | Autenticación | Respuesta | Errores principales |
+|---|---|---|---|---|---|
+| POST | `/api/discovery/scan` | ambos | propietario del espacio de la evaluación (no revisor); una por minuto y espacio, consumida aunque el listado falle después | «Find new disputes»: lista las disputas `REQUIRED_ACTION`, lee cada una, la admite → `{created: [{caseId, orderRef}], skipped: [{disputeId, why}]}` | 401 `SIGN_IN_REQUIRED`, 403 `OWNER_ONLY`, 405, 429 `SCAN_TOO_SOON` (`retryAfterSec`), 503 `PAYPAL_UNAVAILABLE` |
+
+Los casos descubiertos usan las mismas rutas `/api/disputes/:case…` que los fijos, con el id de la disputa como id del caso; un caso
+terminado que se oculta a los 7 días sigue siendo accesible por su dirección. Estado (7/11/2026, rama `feat/discovered-cases` en `e89b91b`): Implementado · Probado en local · **no Desplegado** (el propietario lo despliega después) · **no Verificado en sandbox** (la comprobación en el sandbox real espera la aprobación del propietario).
 
 ## Cuentas (alojado)
 

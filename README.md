@@ -153,6 +153,18 @@ after an injected failure (0.05 USD captured, 1.95 released); one ended *Done* (
 The 1.37 USD agent case in the demo is invented demo data whose figures match a sandbox session made by a scripted
 client on 09/10/2026; it tests the analyst, not the agent. Guide: [buying agent](docs/user-guide/buying-agent.md) · [how it works](docs/technical/buying-agent.md).
 
+## Discovered cases
+
+A dispute made from a ResolveKit order (capture `invoice_id` `rk-std-…`, `rk-stl-…` or MeterMCP's `mm-sess-…-settle`) becomes its
+own case: from the signature-verified `CUSTOMER.DISPUTE.CREATED`/`.UPDATED` webhook (the dispute is read again from PayPal)
+or from the owner's **Find new disputes** (`POST /api/discovery/scan`). Only the evaluation seller's disputes, for
+not-received claims, waiting for the seller, with a future due date and the order's amounts, are admitted; each skip has
+a stated reason. The case (id = dispute id) is stored per merchant in `cases.json`, its case file is its order kind's template, and a
+background lane analyses new ones one at a time, at least 10 minutes apart, outside the per-person hourly limit.
+`BINDINGS_JSON` still works for the fixed cases. Refilling no longer needs a Render edit. Status (7/11/2026, `feat/discovered-cases`
+at `e89b91b`): Implemented · Tested locally · **not Deployed** · **not Verified in sandbox** (pending the owner's approval).
+Details: [architecture overview](docs/architecture/overview.md#discovered-cases) · [runbook](docs/operations/runbook.md#refill-without-editing-render).
+
 ## Merchant connection status
 
 **Pending: not implemented in the app, not deployed, not available to merchants.** ResolveKit cannot yet read a
@@ -235,6 +247,7 @@ More: [architecture overview](docs/architecture/overview.md) · [trust boundarie
 
 ## Verification
 
+- **Tests (branch, not deployed)**: 7/11/2026, commit `e89b91b` (`feat/discovered-cases`), `npm test`: 1,640 tests, all passed (node:test 1,105 + vitest 535). Typecheck clean. This adds the discovered cases above; the last deployed run follows.
 - **Tests**: 1/11/2026, commit `334eeb3` (`main`, deployed), `npm test`: 1,541 tests, all passed (node:test 1,025 + vitest 516). Typecheck clean. Not run on Linux. Earlier run, 31/10/2026 (night), commit `667abb3`: 1,523 tests, all passed (node:test 1,025 + vitest 498). Earlier run, 31/10/2026, commit `d654478`: 1,521 tests, all passed (node:test 1,025 + vitest 496). Earlier run, 29/10/2026, commit `be7491d` (branch `fix/pre-submission`: the pre-submission code fixes plus docs), Node 24 on Windows: 1,488 tests, all passed (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 failed, 0 skipped; every node:test suite has a 60 s per-test timeout). Earlier run, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, all passed (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Earlier run, 21/10/2026, commit `81c6242`: 1,479 tests, all passed (same per-suite counts). Earlier run, 20/10/2026,
   commit `5111b88`: 1,453 tests, all passed (vitest 447). Earlier run, 19/10/2026 12:35 UTC, commit
   `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 passed, 1 failed intermittently

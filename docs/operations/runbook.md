@@ -170,6 +170,27 @@ stage lasts up to 20 days unless escalated
 (https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api); check each dispute's
 `seller_response_due_date` and prepare disputes for the dates they are needed.
 
+### Refill without editing Render
+
+Status (7/11/2026, branch `feat/discovered-cases` at `e89b91b`): Implemented · Tested locally · **not Deployed** (the owner deploys later) · **not Verified in sandbox** (the real-sandbox check waits for the owner's approval). Cases for disputes made from ResolveKit orders are discovered by the server, so a refill needs no
+`BINDINGS_JSON` change and no redeploy (the fixed cases keep their reserve, as above).
+
+1. Once, in Render: set `EVALUATION_MERCHANT_ID` to the sandbox seller's merchant id (otherwise discovery uses the one
+   seller already confirmed). This is the only Render edit.
+2. On your machine: `npm run demo:prepare -- --standard --count N` (and `--settlement` for owner settlement cases; an agent
+   run on `/agent` already carries `mm-sess-…-settle`). Each order's `invoice_id` is its order reference (`rk-std-…`,
+   `rk-stl-…`), printed by the script.
+3. Approve each order and open each dispute as the buyer, as before.
+4. The webhook creates each case when its dispute reaches `WAITING_FOR_SELLER_RESPONSE` (the `.UPDATED` event after
+   `UNDER_REVIEW`). If an event was missed, the owner presses **Find new disputes** (once a minute). The `BINDINGS_JSON`
+   the script still prints is then only for the fixed cases.
+5. Check: `GET /api/health` lists the new ids under `cases`; the log has `discovery · <id> · case created (…)` or
+   `skipped: <why>`; `/api/ops/status` shows them as `discovered`. The warm-up lane analyses them one at a time, at least
+   10 minutes apart, so a refill of N cases is fully analysed after about N × 10 minutes.
+
+A discovered case is not rotated: when its dispute is used the case is *ended* (listed after the open ones) and the next dispute is a
+new case. Ended `RESOLVED` or past-due cases leave the inbox after 7 days.
+
 ### Preparing the reserve: `npm run demo:prepare`
 
 Runs on the operator's machine against the PayPal **sandbox** only (refuses anything else). You act as the sandbox

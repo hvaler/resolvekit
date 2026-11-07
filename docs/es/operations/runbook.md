@@ -176,6 +176,27 @@ PayPal documenta que la fase de consulta (inquiry) dura hasta 20 días salvo que
 (https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api); comprueba el
 `seller_response_due_date` de cada disputa y prepara disputas para las fechas en que se necesiten.
 
+### Reponer sin editar Render
+
+Estado (7/11/2026, rama `feat/discovered-cases` en `e89b91b`): Implementado · Probado en local · **no Desplegado** (el propietario lo despliega después) · **no Verificado en sandbox** (la comprobación en el sandbox real espera la aprobación del propietario). Los casos de disputas hechas a partir de pedidos de ResolveKit los descubre el servidor, así que reponer no exige cambiar
+`BINDINGS_JSON` ni volver a desplegar (los casos fijos conservan su reserva, como arriba).
+
+1. Una sola vez, en Render: pon `EVALUATION_MERCHANT_ID` con el id de comercio del vendedor sandbox (si no, el descubrimiento
+   usa el único vendedor ya confirmado). Es la única edición en Render.
+2. En tu máquina: `npm run demo:prepare -- --standard --count N` (y `--settlement` para los casos de liquidación del propietario; una
+   ejecución del agente en `/agent` ya lleva `mm-sess-…-settle`). El `invoice_id` de cada orden es su referencia de pedido
+   (`rk-std-…`, `rk-stl-…`), que el script imprime.
+3. Aprueba cada orden y abre cada disputa como comprador, como antes.
+4. El webhook crea cada caso cuando su disputa llega a `WAITING_FOR_SELLER_RESPONSE` (el evento `.UPDATED` tras
+   `UNDER_REVIEW`). Si se perdió un evento, el propietario pulsa **Find new disputes** (una vez por minuto). El
+   `BINDINGS_JSON` que el script sigue imprimiendo es entonces solo para los casos fijos.
+5. Comprobación: `GET /api/health` lista los ids nuevos en `cases`; el registro tiene `discovery · <id> · case created (…)` o
+   `skipped: <why>`; `/api/ops/status` los muestra como `discovered`. El carril de calentamiento los analiza de uno en uno, con al
+   menos 10 minutos entre ellos, así que una reposición de N casos queda analizada del todo en unos N × 10 minutos.
+
+Un caso descubierto no rota: cuando se usa su disputa el caso queda *terminado* (listado después de los abiertos) y la siguiente
+disputa es un caso nuevo. Los casos terminados `RESOLVED` o vencidos salen de la bandeja a los 7 días.
+
 ### Preparar la reserva: `npm run demo:prepare`
 
 Se ejecuta en la máquina del operador y solo contra el **sandbox** de PayPal (rechaza cualquier otra cosa). Tú actúas

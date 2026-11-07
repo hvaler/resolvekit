@@ -166,6 +166,65 @@ sequenceDiagram
 
 Details: [buying agent](../technical/buying-agent.md), [MCP tools](../technical/mcp-tools.md).
 
+### Discovered cases
+
+A dispute made from a ResolveKit order becomes its own case, without editing `BINDINGS_JSON` or Render. Status (7/11/2026, branch `feat/discovered-cases` at `e89b91b`): Implemented · Tested locally · **not Deployed** (the owner deploys later) · **not Verified in sandbox** (the real-sandbox check waits for the owner's approval). The three
+fixed cases bound by `BINDINGS_JSON` (with their reserve and rotation) are unchanged and are the fallback.
+
+1. **Two ways in.** The signature-verified `CUSTOMER.DISPUTE.CREATED` or `.UPDATED` webhook: after the usual re-read, if
+   no binding or reserve lists the dispute, the dispute **as PayPal returns it** (never the event body) goes to
+   discovery. Or the owner's **Find new disputes** button (`POST /api/discovery/scan`; owner of the evaluation
+   workspace only; one scan a minute): it lists the disputes that need the seller (`dispute_state=REQUIRED_ACTION`),
+   reads each in full and submits it to the same discovery. Both can run at once: discovery handles one dispute at a
+   time, so a dispute makes one case.
+2. **Admission rules**, checked in this order. The seller must be the evaluation seller, `EVALUATION_MERCHANT_ID` (or,
+   hosted and without it, the one seller already confirmed by `SellerMemory`; with several or none, nothing is
+   discovered). The reason must be `MERCHANDISE_OR_SERVICE_NOT_RECEIVED`, the status `WAITING_FOR_SELLER_RESPONSE`
+   (a dispute that arrives in `UNDER_REVIEW` waits for a later `.UPDATED` event or a scan), the due date in the future,
+   and there must be exactly one disputed capture. The capture is read from PayPal and its `invoice_id` gives the
+   template: `rk-std-…` (standard), `rk-stl-…` (owner settlement) or MeterMCP's `mm-sess-…-settle` (agent). The amounts must
+   match the order: 7.00 USD for the first two, the MeterMCP receipt found for that capture for the agent. This uses the
+   same binding check as every send (`verifyBinding`), so a case is never created that the send would then refuse.
+   A dispute that fails a rule is skipped with one of these reasons, shown in the scan result and logged: `no evaluation
+   seller configured`, `another seller's dispute`, `already bound`, `not a not-received dispute`, `not waiting for the
+   seller (<status>)`, `past its response date`, `no disputed capture`, `capture could not be read`, `not from a
+   ResolveKit order`, `amount does not match the order`, `no MeterMCP receipt for this capture`, `dispute could not be
+   checked`, `case could not be stored`; the scan adds `dispute could not be read`.
+3. **Stored per merchant.** The case is written to `cases.json` in the data directory (case id, merchant id, dispute id,
+   capture id, template, order reference, source `webhook` or `scan`, creation time, and when and why it ended), so it
+   survives restarts. The **case id is the dispute id**. There is one dispute per case: no reserve, no rotation. At start
+   (and after a bindings reload) each stored case is added to the same `bindings` map as a fixed one, so reads, the
+   send-time check and the read-back are the same code; a fixed binding of the same dispute wins. A corrupt `cases.json`
+   is not overwritten: no case is added until it is fixed, and the problem shows with the storage problems.
+4. **Case file from the order.** One resolver (`caseFileOf`, shared by server and web) returns the fixed case file or,
+   for a discovered case, a clone of its template with the id changed; the real dispute is laid over it as for any
+   bound case. The expected payment comes from the order or the receipt, never from the dispute itself. The Explore demo
+   never lists a discovered case.
+5. **Visibility** is that of a fixed bound case, using the seller stored at discovery (no PayPal read per case):
+   owner, members and reviewers of the evaluation workspace see standard and agent cases; settlement cases only the
+   owner; nobody else, and nobody without a session.
+6. **Lifecycle.** A case is *ended* when PayPal has recorded the seller's evidence, the dispute is `RESOLVED` or in the
+   `CHARGEBACK` stage, or its due date has passed. Ended cases are listed after the open ones, marked, and open with
+   the actions PayPal still allows (the web app adds no lock of its own). A `RESOLVED` or past-due case is hidden from
+   the inbox 7 days after it ended (it stays in the store and can still be opened by its address); one that ended by
+   evidence or chargeback stays listed. The end is judged from a read of the dispute, so a due date that passes with
+   no read is noticed at the next one.
+7. **Warm-up lane.** A new case has no stored analysis. A separate lane analyses discovered cases in the background:
+   one analysis at a time, at least 10 minutes apart, outside the per-person hourly limit (each one counts in the
+   daily cap), skipping cases that are ended or already analysed, with at most 3 attempts per case until the next
+   start. If no model answers, the case shows *Analysis pending* and the lane tries again in its next slot.
+8. **Seen by the operator.** `/api/health` has `cases` (template, order reference, source, created time and ended flag
+   of each visible bound discovered case, under the same viewer rule as `bound`). `/api/ops/status` marks those
+   bindings `discovered` and gives them `used`; no reserve warning is raised for them. The inbox notice reads
+   «… case created from order rk-std-…», and the case page has a provenance line (how it was found, dispute, capture,
+   order, time).
+
+`npm run demo:prepare` writes the order reference into each order's `invoice_id` (`--settlement` also creates the
+settlement kind). Refilling for judging is then: create orders and disputes, and let the webhook (or **Find new
+disputes**) do the rest; see the [runbook](../operations/runbook.md#refill-without-editing-render).
+
+Sources: `apps/server/src/discovery.ts`, `caseStore.ts`, `app.ts`, `hosted.ts`; `packages/cases/src/discovered.ts`.
+
 ## Key decisions
 
 The decisions that shape the current architecture, with the reason and where to see them in the code:

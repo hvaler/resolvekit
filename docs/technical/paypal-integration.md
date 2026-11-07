@@ -27,6 +27,13 @@ sandbox · live» followed by a dispute id means a live read of a **sandbox** di
 Every client authenticates with OAuth 2.0 client credentials (`POST /v1/oauth2/token`), caches the token and
 refreshes it 60 s before expiry. Requests time out after 30 s (the servers' setting).
 
+**Discovered cases.** After the verification above, a `CUSTOMER.DISPUTE.CREATED` or `.UPDATED` event for a dispute that
+no binding or reserve lists is also a hint for discovery: the server reads the dispute, reads its capture and, if the
+capture's `invoice_id` is a ResolveKit order and the dispute meets the admission rules, creates a case. The
+event body is never used to create it. The same path runs from the owner's **Find new disputes**, which lists
+`REQUIRED_ACTION` disputes (a list item has no capture or invoice, so each is read in full). Rules, skip reasons and
+storage: [architecture overview](../architecture/overview.md#discovered-cases). Status (7/11/2026, branch `feat/discovered-cases` at `e89b91b`): Implemented · Tested locally · **not Deployed** (the owner deploys later) · **not Verified in sandbox** (the real-sandbox check waits for the owner's approval).
+
 ## Endpoints actually called
 
 | Endpoint | Caller | Credential |
@@ -34,6 +41,8 @@ refreshes it 60 s before expiry. Requests time out after 30 s (the servers' sett
 | `POST /v1/oauth2/token` | `packages/paypal/src/client.ts` | each app its own |
 | `GET /v1/customer/disputes/{id}` | server: case read, compose, send, bindings check, webhook re-read; `demo:prepare` | seller app |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | `demo:prepare` only | seller app |
+| `GET /v1/customer/disputes?dispute_state=REQUIRED_ACTION&page_size=50` | server, `POST /api/discovery/scan` (Find new disputes) | seller app |
+| `GET /v2/payments/captures/{id}` (the disputed capture) | server, discovery: its `invoice_id` and amount | seller app |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | server, `POST /api/disputes/:case/evidence` | seller app |
 | `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` with a file), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | server, `POST /api/disputes/:case/send` (Tested locally with fakes; Verified in sandbox through the app on a local server, 20/10/2026; Deployed as code; on the hosted service only make an offer has been exercised, 31/10/2026) | seller app |
 | `GET /v2/payments/refunds/{id}` | `npm run contract:read -- --refund <id>` only (read-only contract reads) | seller app |

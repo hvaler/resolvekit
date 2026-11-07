@@ -147,6 +147,17 @@ asks you to choose up to 5 pages. Covering the text next to a barcode or QR code
 Do not upload personal data you care about. Status: image upload sent to PayPal and recorded (18/10/2026); PDF and
 pasted-text sends to PayPal Pending. Details: [PDF review](../user-guide/pdf-review.md).
 
+## Discovered cases (new, not yet deployed)
+
+Status (7/11/2026, branch `feat/discovered-cases` at `e89b91b`): Implemented · Tested locally · **not Deployed** (the owner deploys later) · **not Verified in sandbox** (the real-sandbox check waits for the owner's approval). On the code at this status, a new sandbox dispute made from a ResolveKit order (`invoice_id` `rk-std-…`,
+`rk-stl-…` or MeterMCP's `mm-sess-…-settle`) becomes its own case in the inbox by itself: from the verified
+`CUSTOMER.DISPUTE.CREATED`/`.UPDATED` webhook, or the owner's **Find new disputes**. Its case file is the template of
+its order kind with the dispute's id, and the real dispute is laid over it; the case page says how it was found.
+Settlement cases are the owner's only, and the Explore demo never lists one. Until the owner deploys it, the hosted
+service runs the fixed cases of `BINDINGS_JSON`. How it works and what it refuses:
+[architecture overview](../architecture/overview.md#discovered-cases). Tests: `apps/server/test/discovery*.test.ts`,
+`discovered-cases.test.ts`, `discovered-lifecycle.test.ts`, `case-store.test.ts`.
+
 ## If a dispute was used, the reserve is empty or a cap is reached
 
 | You see | Why | What to do |

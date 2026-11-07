@@ -26,7 +26,9 @@ Requires Node 24+ (TypeScript runs natively). `npm test` makes no network call a
 
 ## Latest recorded run
 
-**2026-11-01 · commit `334eeb3` (`main`, deployed).** `npm test` passed; `npm run typecheck` was clean. 1,541 tests, all passed: node:test 1,025 and vitest 516. This run recorded the two totals only; the per-suite counts below are those of the 29/10/2026 run.
+**2026-11-07 · commit `e89b91b` (branch `feat/discovered-cases`, not deployed).** `npm test` passed; `npm run typecheck` was clean. 1,640 tests, all passed: node:test 1,105 (paypal 40, hosting 32, cases 18, analyst 159, agent 52, server 717, metermcp 87) and vitest 535 (47 files). This run adds the discovered cases (store, discovery, webhook and scan wiring, lifecycle, warm-up lane, web, `demo:prepare`). It is not Deployed; the run below is the last deployed one.
+
+The run before that: **2026-11-01 · commit `334eeb3` (`main`, deployed).** `npm test` passed; `npm run typecheck` was clean. 1,541 tests, all passed: node:test 1,025 and vitest 516. This run recorded the two totals only; the per-suite counts below are those of the 29/10/2026 run.
 
 The run before that: **2026-10-31 (night) · commit `667abb3` (`main`).** `npm test` passed; `npm run typecheck` was clean. 1,523 tests, all passed: node:test 1,025 and vitest 498. This run recorded the two totals only; the per-suite counts below are those of the 29/10/2026 run.
 

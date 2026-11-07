@@ -12,6 +12,10 @@ Legend: **R** required, **O** optional; **Secret** = never commit, never log. "H
 
 ## ResolveKit server (`apps/server`)
 
+**`cases.json`** (`{v: 1, cases}`, durable write, one record per discovered case, the case id being the dispute id) lives in the data
+directory, so it survives restarts and deploys on the service disk. An unreadable or badly shaped file is never overwritten and is
+reported with the other storage problems. See the [architecture overview](../architecture/overview.md#discovered-cases).
+
 ### Mode, network and storage
 
 | Variable | R/O | Secret | Default | Effect |
@@ -43,10 +47,13 @@ Legend: **R** required, **O** optional; **Secret** = never commit, never log. "H
 
 ### Bindings
 
+Discovered cases do not come from these variables: they are stored in `cases.json` (in `RESOLVEKIT_DATA_DIR`) and bound at start. Status: Implemented · Tested locally · not Deployed (7/11/2026, `e89b91b`).
+
 | Variable | R/O | Secret | Default | Effect |
 |---|---|---|---|---|
 | `BINDINGS_JSON` | O hosted | sensitive | — | Case → `{dispute, capture[, session, run]}` (or a list: reserve, first active). Wins over the file in hosted mode; bad JSON, or a dispute listed twice (in any case), stops the start |
 | `RESOLVEKIT_BINDINGS` | O | — | hosted `<data>/bindings.json`, local `apps/server/bindings.json` | Bindings file; hosted without `BINDINGS_JSON` it is re-read every 30 s |
+| `EVALUATION_MERCHANT_ID` | O hosted | — | the one seller `sellers.json` confirmed, else none | The evaluation seller's merchant id (the sandbox seller of the bound disputes). Discovery only admits disputes of this seller; unset, with several (or no) confirmed sellers, nothing is discovered. Not a secret |
 
 ### Accounts and operations
 

@@ -40,7 +40,7 @@ Anyone else, including the seller of another bound case, and every request while
 | Method | Path | Mode | Auth | Answer | Main errors |
 |---|---|---|---|---|---|
 | GET, HEAD | `/healthz` | hosted | none | Render health check | 405 |
-| GET | `/api/health` | both | none (each binding listed only for its own seller's workspace) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, storage?}` (`storage`, only when a store file could not be read at start: the store names in local mode, `true` in hosted mode) | — |
+| GET | `/api/health` | both | none (each binding listed only for its own seller's workspace) | `{paypal: "sandbox"\|"live"\|"unconfigured", error?, bound, bindings{status, reasons, checkedAt}, cases{<caseId>: {template, orderRef, source, createdAt, ended}}, storage?}` (`cases`: the discovered cases visible to the viewer, under the same rule as `bound`; ended `RESOLVED` or past-due cases are left out 7 days after they ended) (`storage`, only when a store file could not be read at start: the store names in local mode, `true` in hosted mode) | — |
 | GET | `/api/demo` | both | none | hosted `{hosted:true, day, resetsAt, caps, reasons}`; local `{hosted:false}` | 405 |
 | GET | `/api/ops/status[?probe=models]` | hosted | ops Bearer | PayPal state, webhook on/off, each binding verified on a fresh read (may rotate a used case), warm-up, caps, unreadable store files (`storage`, also in `problems`); with `probe=models` one tiny call per configured model | 404, 405, 429 |
 | GET | `/api/ops/agent-run/<run-id>` | hosted | ops Bearer | Run record + receipt, for `demo:prepare --agent-run` | 400 `INVALID_RUN_ID`, 404 |
@@ -48,6 +48,13 @@ Anyone else, including the seller of another bound case, and every request while
 | GET | `/api/paypal/notices` | both | hosted: the disputes' seller only | Latest verified webhook notices (≤ 50) | 405 |
 | POST | `/api/paypal/webhook/<key>` | hosted, with webhook env | key + PayPal verification | 200 (event acted on or ignored) | 404 wrong key, 405, 400 `BAD_TRANSMISSION`/`NOT_AN_EVENT`/`NOT_VERIFIED`, 408, 413, 429, 503 `BUSY`/`VERIFY_UNAVAILABLE` |
 | GET | everything else | hosted | — | Built web app (unknown paths fall back to `index.html`; unknown files 404) | 404 |
+
+| Method | Path | Mode | Auth | Answer | Main errors |
+|---|---|---|---|---|---|
+| POST | `/api/discovery/scan` | both | owner of the evaluation workspace (not a reviewer); one per minute per workspace, used even if the listing then fails | «Find new disputes»: lists `REQUIRED_ACTION` disputes, reads each, admits it → `{created: [{caseId, orderRef}], skipped: [{disputeId, why}]}` | 401 `SIGN_IN_REQUIRED`, 403 `OWNER_ONLY`, 405, 429 `SCAN_TOO_SOON` (`retryAfterSec`), 503 `PAYPAL_UNAVAILABLE` |
+
+Discovered cases use the same `/api/disputes/:case…` routes as fixed ones, with the dispute id as the case id; an ended case
+that is hidden after 7 days stays addressable. Status (7/11/2026, branch `feat/discovered-cases` at `e89b91b`): Implemented · Tested locally · **not Deployed** (the owner deploys later) · **not Verified in sandbox** (the real-sandbox check waits for the owner's approval).
 
 ## Accounts (hosted)
 

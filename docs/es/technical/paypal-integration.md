@@ -28,6 +28,13 @@ etiqueta de la UI «PayPal sandbox · live» seguida de un id de disputa signifi
 Cada cliente se autentica con credenciales de cliente OAuth 2.0 (`POST /v1/oauth2/token`), guarda el token en caché
 y lo renueva 60 s antes de que caduque. Las peticiones expiran a los 30 s (ajuste de los servidores).
 
+**Casos descubiertos.** Tras la verificación anterior, un evento `CUSTOMER.DISPUTE.CREATED` o `.UPDATED` de una disputa que
+ninguna vinculación ni reserva lista es también una pista para el descubrimiento: el servidor lee la disputa, lee su captura y, si
+el `invoice_id` de la captura es un pedido de ResolveKit y la disputa cumple las reglas de admisión, crea un caso. El cuerpo del
+evento nunca se usa para crearlo. El mismo camino se recorre desde **Find new disputes** del propietario, que lista las disputas
+`REQUIRED_ACTION` (un elemento de la lista no trae captura ni factura, así que cada una se lee completa). Reglas, motivos de
+descarte y almacenamiento: [visión general de la arquitectura](../architecture/overview.md#casos-descubiertos). Estado (7/11/2026, rama `feat/discovered-cases` en `e89b91b`): Implementado · Probado en local · **no Desplegado** (el propietario lo despliega después) · **no Verificado en sandbox** (la comprobación en el sandbox real espera la aprobación del propietario).
+
 ## Endpoints que se llaman realmente
 
 | Endpoint | Quién llama | Credencial |
@@ -35,6 +42,8 @@ y lo renueva 60 s antes de que caduque. Las peticiones expiran a los 30 s (ajust
 | `POST /v1/oauth2/token` | `packages/paypal/src/client.ts` | cada app la suya |
 | `GET /v1/customer/disputes/{id}` | servidor: lectura del caso, composición, envío, comprobación de vinculaciones, relectura tras webhook; `demo:prepare` | app del vendedor |
 | `GET /v1/customer/disputes?disputed_transaction_id={capture}` | solo `demo:prepare` | app del vendedor |
+| `GET /v1/customer/disputes?dispute_state=REQUIRED_ACTION&page_size=50` | servidor, `POST /api/discovery/scan` (Find new disputes) | app del vendedor |
+| `GET /v2/payments/captures/{id}` (la captura disputada) | servidor, descubrimiento: su `invoice_id` e importe | app del vendedor |
 | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart) | servidor, `POST /api/disputes/:case/evidence` | app del vendedor |
 | `POST /v1/customer/disputes/{id}/send-message` (JSON; multipart `input` + `message_document` con un archivo), `…/accept-claim`, `…/make-offer`, `…/escalate` (JSON) | servidor, `POST /api/disputes/:case/send` (Probado en local con fakes; Verificado en sandbox a través de la app en un servidor local, 20/10/2026; Desplegado como código; en el servicio alojado solo se ha ejercitado hacer una oferta, 31/10/2026) | app del vendedor |
 | `GET /v2/payments/refunds/{id}` | solo `npm run contract:read -- --refund <id>` (lecturas de contrato de solo lectura) | app del vendedor |

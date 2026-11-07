@@ -161,6 +161,19 @@ capturados, 1.08 liberados). Una tercera ejecución, en el servicio alojado el 3
 cifras coinciden con una sesión de sandbox hecha por un cliente con guion (scripted) el 09/10/2026; pone a prueba al
 analista, no al agente. Guía: [agente comprador](docs/es/user-guide/buying-agent.md) · [cómo funciona](docs/es/technical/buying-agent.md).
 
+## Casos descubiertos
+
+Una disputa hecha a partir de un pedido de ResolveKit (`invoice_id` de la captura `rk-std-…`, `rk-stl-…` o el `mm-sess-…-settle` de
+MeterMCP) se convierte en su propio caso: por el webhook `CUSTOMER.DISPUTE.CREATED`/`.UPDATED` con firma verificada (la disputa se
+vuelve a leer de PayPal) o por **Find new disputes** del propietario (`POST /api/discovery/scan`). Solo se admiten disputas del vendedor
+de la evaluación, por no recibido, a la espera del vendedor, con fecha límite futura y los importes del pedido; cada descarte tiene un
+motivo declarado. El caso (id = id de la disputa) se guarda por comercio en `cases.json`, su expediente es la plantilla de su tipo de
+pedido, y un carril en segundo plano analiza los nuevos de uno en uno, con al menos 10 minutos entre ellos, fuera del límite por hora de
+las personas. `BINDINGS_JSON` sigue funcionando para los casos fijos. Reponer ya no exige editar Render. Estado (7/11/2026,
+`feat/discovered-cases` en `e89b91b`): Implementado · Probado en local · **no Desplegado** · **no Verificado en sandbox** (a la espera de
+la aprobación del propietario). Detalles: [visión general de la arquitectura](docs/es/architecture/overview.md#casos-descubiertos) ·
+[runbook](docs/es/operations/runbook.md#reponer-sin-editar-render).
+
 ## Estado de la conexión de comerciantes
 
 **Pendiente: no implementado en la aplicación, no desplegado, no disponible para comerciantes.** ResolveKit todavía no
@@ -246,6 +259,7 @@ cada uno con un disco. Más: [visión general de la arquitectura](docs/es/archit
 
 ## Verificación
 
+- **Tests (rama, sin desplegar)**: 7/11/2026, commit `e89b91b` (`feat/discovered-cases`), `npm test`: 1,640 tests, todos superados (node:test 1,105 + vitest 535). Typecheck limpio. Esto añade los casos descubiertos de arriba; la última ejecución desplegada sigue.
 - **Tests**: 1/11/2026, commit `334eeb3` (`main`, desplegado), `npm test`: 1,541 tests, todos superados (node:test 1,025 + vitest 516). Typecheck limpio. No se ejecutó en Linux. Ejecución anterior, 31/10/2026 (noche), commit `667abb3`: 1,523 tests, todos superados (node:test 1,025 + vitest 498). Ejecución anterior, 31/10/2026, commit `d654478`: 1,521 tests, todos superados (node:test 1,025 + vitest 496). Ejecución anterior, 29/10/2026, commit `be7491d` (rama `fix/pre-submission`: las correcciones de código previas a la entrega más la documentación), Node 24 en Windows: 1,488 tests, todos superados (node:test paypal 37 + hosting 32 + cases 12 + analyst 159 + agent 52 + server 638 + metermcp 87 = 1,017, vitest 471 (38 files); 0 fallos, 0 omitidos; cada suite de node:test tiene un tiempo límite de 60 s por test). Ejecución anterior, 21/10/2026, commit `c12faea` (`main`): 1,479 tests, todos superados (node:test 36 + 32 + 12 + 159 + 52 + 637 + 80 = 1,008, vitest 471). Ejecución anterior, 21/10/2026, commit `81c6242`: 1,479 tests, todos superados (mismas cifras por suite).
   Ejecución anterior, 20/10/2026, commit `5111b88`: 1,453 tests, todos superados (vitest 447). Ejecución anterior,
   19/10/2026 12:35 UTC, commit `fbe9621`, Node 24.19.0: 1,131 tests, 1,130 superados, 1 falló de forma intermitente

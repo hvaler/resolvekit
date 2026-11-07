@@ -83,6 +83,14 @@ revisión, tiempo agotado). Nunca aparece en un caso que funcione sobre PayPal r
 9. **Audit log** lista la aprobación (con tu nombre y el hash del contenido) y el envío (PayPal-Request-Id y la
    respuesta de PayPal). Editar una frase después de aprobar anula la aprobación.
 
+**B2. Casos descubiertos (una vez desplegado).** Estado (7/11/2026, rama `feat/discovered-cases` en `e89b91b`): Implementado · Probado en local · **no Desplegado** (el propietario lo despliega después) · **no Verificado en sandbox** (la comprobación en el sandbox real espera la aprobación del propietario). Una disputa hecha a partir de un pedido de ResolveKit aparece entonces
+sola en la bandeja, tras el webhook o tras pulsar el propietario **Find new disputes** (*Found N new · M skipped*; pasa el cursor
+para ver los motivos de descarte). Ábrela: la cabecera lleva su propio id de disputa y debajo una línea dice *Discovered from PayPal
+(webhook) · dispute … · capture … · order rk-std-…*. Los casos terminados quedan debajo de los abiertos. Los casos estándar y del agente
+siguen el recorrido B; un caso de liquidación es solo del propietario. Estos casos empiezan sin análisis guardado, así que la primera
+apertura puede mostrar *Analysis pending* hasta que el carril en segundo plano (un caso cada vez, con al menos 10 minutos entre
+ellos) llegue a él.
+
 ## C. Añadir y sanear tu propia evidencia
 
 1. En un caso de Test Store pulsa **+ Add evidence**. El panel dice *It is read on this server only…*.

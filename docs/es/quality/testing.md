@@ -27,7 +27,9 @@ Requiere Node 24+ (TypeScript se ejecuta de forma nativa). `npm test` no hace ni
 
 ## Última ejecución registrada
 
-**2026-11-01 · commit `334eeb3` (`main`, desplegado).** `npm test` pasó; `npm run typecheck` salió limpio. 1,541 tests, todos superados: node:test 1,025 y vitest 516. Esta ejecución registró solo los dos totales; las cifras por suite de abajo son las de la ejecución del 29/10/2026.
+**2026-11-07 · commit `e89b91b` (rama `feat/discovered-cases`, sin desplegar).** `npm test` pasó; `npm run typecheck` salió limpio. 1,640 tests, todos superados: node:test 1,105 (paypal 40, hosting 32, cases 18, analyst 159, agent 52, server 717, metermcp 87) y vitest 535 (47 archivos). Esta ejecución añade los casos descubiertos (almacén, descubrimiento, conexión del webhook y de la búsqueda, ciclo de vida, carril de calentamiento, web, `demo:prepare`). No está Desplegado; la ejecución de abajo es la última desplegada.
+
+La ejecución anterior: **2026-11-01 · commit `334eeb3` (`main`, desplegado).** `npm test` pasó; `npm run typecheck` salió limpio. 1,541 tests, todos superados: node:test 1,025 y vitest 516. Esta ejecución registró solo los dos totales; las cifras por suite de abajo son las de la ejecución del 29/10/2026.
 
 La ejecución anterior: **2026-10-31 (noche) · commit `667abb3` (`main`).** `npm test` pasó; `npm run typecheck` salió limpio. 1,523 tests, todos superados: node:test 1,025 y vitest 498. Esta ejecución registró solo los dos totales; las cifras por suite de abajo son las de la ejecución del 29/10/2026.
 
